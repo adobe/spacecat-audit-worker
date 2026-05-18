@@ -207,119 +207,6 @@ describe('LLMO Customer Analysis Handler', () => {
       });
     });
 
-    it('should detect AI categorization changes and trigger cdn-logs-report', async () => {
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: {
-            'cat-1': { name: 'AI Generated Category', region: 'us', origin: 'ai' },
-          },
-          topics: {},
-          ai_topics: {
-            'topic-1': {
-              name: 'AI Generated Topic',
-              category: 'cat-1',
-              prompts: [
-                {
-                  prompt: 'AI Generated Prompt',
-                  regions: ['us'],
-                  origin: 'ai',
-                  source: 'api',
-                },
-              ],
-            },
-          },
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          ai_topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(sqs.sendMessage).to.have.callCount(1);
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({
-          type: 'cdn-logs-report',
-          auditContext: {
-            weekOffset: -1,
-            categoriesUpdated: true,
-            refreshAgenticDailyExport: true,
-          },
-        }),
-      );
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
-    });
-
-    it('should skip cdn-logs-report when categories change but the handler is disabled for the site', async () => {
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      configuration.isHandlerEnabledForSite.callsFake(() => false);
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: { 'cat-1': { name: 'Category A' } },
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
-      );
-      expect(result.auditResult.status).to.equal('completed');
-      // drs-brand-detection fires (categories = hasBrandPresenceChanges), so configChangesDetected is true
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.not.include('cdn-logs-report');
-      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
-    });
-
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
       const auditContext = {
         configVersion: 'v1',
@@ -599,7 +486,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.callCount(4);
     });
 
-    it('should handle multiple changes and trigger cdn-logs-report', async () => {
+    it('triggers brand-presence refresh + brand detection on combined changes', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -632,27 +519,12 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // cdn-logs-report + geo-brand-presence-trigger-refresh
-      expect(sqs.sendMessage).to.have.callCount(2);
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({
-          type: 'cdn-logs-report',
-          auditContext: {
-            weekOffset: -1,
-            categoriesUpdated: true,
-            refreshAgenticDailyExport: true,
-          },
-        }),
-      );
+      expect(sqs.sendMessage).to.have.callCount(1);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
         sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
       );
       expect(triggerBrandDetectionStub).to.have.been.calledOnce;
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
@@ -740,49 +612,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
-    });
-
-    it('should trigger cdn-logs-report when only categories change', async () => {
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: { 'cat-1': { name: 'Category A' }, 'cat-2': { name: 'Category B' } },
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(sqs.sendMessage).to.have.callCount(1);
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
     });
 
     it('should handle error when llmoConfig.readConfig fails for current version', async () => {
@@ -949,26 +778,17 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Should trigger:
-      // - 4 referral traffic imports (one for each of the 4 weeks) via SQS
-      // - 1 cdn-logs-report (categories changed) via SQS
-      // Total: 5 SQS messages
-      expect(sqs.sendMessage).to.have.callCount(5);
+      // Should trigger 4 referral traffic imports (one per week) via SQS.
+      expect(sqs.sendMessage).to.have.callCount(4);
 
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/imports-queue',
         sinon.match({ type: 'traffic-analysis' }),
       );
 
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
-
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
       expect(result.fullAuditRef).to.equal('https://example.com');
@@ -1014,7 +834,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
-    it('should trigger cdn-logs-report alongside drs-brand-detection when categories change with names', async () => {
+    it('triggers drs-brand-detection when categories change with names', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -1052,8 +872,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // cdn-logs-report should still be triggered
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
       expect(result.auditResult.status).to.equal('completed');
     });
 

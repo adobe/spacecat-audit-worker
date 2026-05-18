@@ -88,10 +88,10 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.true;
-    expect(options.context.log.info).to.have.been.calledWith('No DB patterns found, generating fresh rules...');
-    expect(options.context.log.info).to.have.been.calledWith('Fetched 2 URLs for pattern generation');
+    expect(options.context.log.info).to.have.been.calledWith('patterns: generating fresh rules');
+    expect(options.context.log.info).to.have.been.calledWith('patterns: fetched 2 URLs from Athena');
     expect(options.context.log.info).to.have.been.calledWith(
-      'Successfully synced patterns to DB for site test-site: 1 category rules, 1 page type rules',
+      'patterns: synced 1 category rules, 1 page type rules (source=cdn-logs)',
     );
     expect(mockAnalyzeProducts).to.have.been.called;
     expect(mockAnalyzePageTypes).to.have.been.called;
@@ -100,7 +100,7 @@ describe('Patterns Uploader', () => {
       context: options.context,
       categoryRules: [{ name: 'product-1', regex: 'regex-1', sort_order: 0 }],
       pageTypeRules: [{ name: 'pagetype-1', regex: 'regex-1', sort_order: 0 }],
-      updatedBy: 'audit-worker:agentic-patterns',
+      updatedBy: 'audit-worker:agentic-patterns:cdn-logs',
     }));
   });
 
@@ -114,7 +114,7 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.false;
-    expect(options.context.log.warn).to.have.been.calledWith('No URLs fetched from Athena for pattern generation');
+    expect(options.context.log.warn).to.have.been.calledWith('patterns: no URLs fetched from Athena');
   });
 
   it('returns false when athena query returns null', async () => {
@@ -127,7 +127,7 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.false;
-    expect(options.context.log.warn).to.have.been.calledWith('No URLs fetched from Athena for pattern generation');
+    expect(options.context.log.warn).to.have.been.calledWith('patterns: no URLs fetched from Athena');
   });
 
   it('handles empty product regexes', async () => {
@@ -158,7 +158,7 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.false;
-    expect(options.context.log.warn).to.have.been.calledWith('No pattern data available to generate report');
+    expect(options.context.log.warn).to.have.been.calledWith('patterns: no pattern data available');
     expect(mockReplaceRules).to.not.have.been.called;
   });
 
@@ -185,7 +185,7 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.true;
-    expect(options.context.log.info).to.have.been.calledWith('Fetched 2 URLs for pattern generation');
+    expect(options.context.log.info).to.have.been.calledWith('patterns: fetched 2 URLs from Athena');
   });
 
   it('processes product and pagetype data correctly', async () => {
@@ -214,7 +214,12 @@ describe('Patterns Uploader', () => {
     }));
   });
 
-  it('merges new and existing patterns and keep only config categories', async () => {
+  it('reuses existing topic patterns without re-running LLM analysis (LLMO-4748)', async () => {
+    // Before LLMO-4748 this scenario re-ran analyzeProducts whenever the
+    // customer's LLMO config contained a category that wasn't yet in the DB.
+    // After LLMO-4748 the customer's LLMO config no longer drives derivation,
+    // so an audit run with existing topic patterns simply preserves them and
+    // skips the LLM call.
     mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
 
     const existingPatterns = {
@@ -222,16 +227,38 @@ describe('Patterns Uploader', () => {
       pagePatterns: [{ name: 'old-page', regex: 'regex-old' }],
     };
 
-    const options = createMockOptions({ existingPatterns, configCategories: ['new-product'] });
+    const options = createMockOptions({ existingPatterns });
+    const result = await generatePatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
+    const callArgs = mockReplaceRules.getCall(0).args[0];
+    expect(callArgs.categoryRules).to.deep.equal([
+      { name: 'old-product', regex: 'regex-old', sort_order: 0 },
+    ]);
+    expect(callArgs.pageTypeRules).to.deep.equal([
+      { name: 'old-page', regex: 'regex-old', sort_order: 0 },
+    ]);
+  });
+
+  it('does NOT cull LLM-derived categories against any LLMO allowlist (LLMO-4748)', async () => {
+    // Sanity check: when there are NO existing patterns, the LLM-derived
+    // categories must be persisted as-is. Before LLMO-4748 this output was
+    // strictly intersected with the customer's LLMO config categories,
+    // dropping anything not on the list. That filter is gone.
+    mockAnalyzeProducts.resolves({
+      'auto-derived-a': 'regex-a',
+      'auto-derived-b': 'regex-b',
+      'auto-derived-c': 'regex-c',
+    });
+
+    const options = createMockOptions();
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.true;
     const callArgs = mockReplaceRules.getCall(0).args[0];
-    expect(callArgs.categoryRules).to.deep.equal([
-      { name: 'new-product', regex: 'regex-new', sort_order: 0 },
-    ]);
-    expect(callArgs.pageTypeRules).to.deep.equal([
-      { name: 'old-page', regex: 'regex-old', sort_order: 0 },
+    expect(callArgs.categoryRules.map((r) => r.name)).to.deep.equal([
+      'auto-derived-a', 'auto-derived-b', 'auto-derived-c',
     ]);
   });
 
@@ -258,26 +285,30 @@ describe('Patterns Uploader', () => {
     ]);
   });
 
-  it('reindexes merged rules sequentially regardless of existing sort order', async () => {
+  it('reindexes existing rules sequentially regardless of original sort order', async () => {
+    // With LLMO-4748 we no longer re-run analyzeProducts when topic patterns
+    // already exist (the LLMO-config-driven refresh trigger is gone), so this
+    // case becomes a pure "reindex existing rules to 0..N-1" verification.
     mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
     mockAnalyzePageTypes.resolves({});
 
     const existingPatterns = {
-      topicPatterns: [{ name: 'old-product', regex: 'regex-old', sort_order: 3 }],
+      topicPatterns: [
+        { name: 'first', regex: 'regex-first', sort_order: 3 },
+        { name: 'second', regex: 'regex-second', sort_order: 7 },
+      ],
       pagePatterns: [],
     };
 
-    const options = createMockOptions({
-      existingPatterns,
-      configCategories: ['old-product', 'new-product'],
-    });
+    const options = createMockOptions({ existingPatterns });
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.true;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
     const callArgs = mockReplaceRules.getCall(0).args[0];
     expect(callArgs.categoryRules).to.deep.equal([
-      { name: 'old-product', regex: 'regex-old', sort_order: 0 },
-      { name: 'new-product', regex: 'regex-new', sort_order: 1 },
+      { name: 'first', regex: 'regex-first', sort_order: 0 },
+      { name: 'second', regex: 'regex-second', sort_order: 1 },
     ]);
   });
 
@@ -289,7 +320,7 @@ describe('Patterns Uploader', () => {
 
     expect(result).to.be.true;
     expect(options.context.log.info).to.have.been.calledWith(
-      'Successfully synced patterns to DB for site test-site: 1 category rules, 1 page type rules',
+      'patterns: synced 1 category rules, 1 page type rules (source=cdn-logs)',
     );
   });
 });

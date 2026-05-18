@@ -306,8 +306,7 @@ describe('CDN Logs Report Handler', function test() {
           generateReportingPeriods: sandbox.stub().returns({
             weeks: [],
             periodIdentifier: 'w12-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: fetchRulesStub,
@@ -375,8 +374,7 @@ describe('CDN Logs Report Handler', function test() {
           generateReportingPeriods: sandbox.stub().returns({
             weeks: [],
             periodIdentifier: 'w12-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: fetchRulesStub,
@@ -451,8 +449,7 @@ describe('CDN Logs Report Handler', function test() {
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/utils/report-utils.js': {
           loadSql: sandbox.stub().resolves('SELECT 1'),
-          generateReportingPeriods: sandbox.stub().returns({ weeks: [], periodIdentifier: 'w12-2026' }),
-          getConfigCategories: sandbox.stub().resolves([]),
+          generateReportingPeriods: sandbox.stub().returns({ weeks: [], periodIdentifier: 'w12-2026' })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: fetchRulesStub,
@@ -524,8 +521,7 @@ describe('CDN Logs Report Handler', function test() {
           generateReportingPeriods: sandbox.stub().returns({
             weeks: [],
             periodIdentifier: 'w12-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: fetchRulesStub,
@@ -715,8 +711,7 @@ describe('CDN Logs Report Handler', function test() {
           generateReportingPeriods: sandbox.stub().returns({
             weeks: [],
             periodIdentifier: 'w12-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
@@ -973,8 +968,7 @@ describe('CDN Logs Report Handler', function test() {
               endDate: new Date('2026-04-05T23:59:59.999Z'),
             }],
             periodIdentifier: 'w14-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
@@ -1030,8 +1024,7 @@ describe('CDN Logs Report Handler', function test() {
               endDate: new Date('2026-04-05T23:59:59.999Z'),
             }],
             periodIdentifier: 'w14-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
@@ -1090,8 +1083,7 @@ describe('CDN Logs Report Handler', function test() {
               endDate: new Date('2026-04-05T23:59:59.999Z'),
             }],
             periodIdentifier: 'w14-2026',
-          }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
+          })
         },
         '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
@@ -1318,40 +1310,6 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(runDailyReferralExportStub.firstCall.args[0].referenceDate.toISOString())
         .to.equal('2026-04-01T10:00:00.000Z');
-    });
-
-    it('skips daily referral export for category-refresh agentic DB fanout messages', async () => {
-      const runDailyAgenticExportStub = sandbox.stub().resolves({ enabled: true, success: true });
-      const runDailyReferralExportStub = sandbox.stub().resolves({ enabled: true, success: true });
-      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
-        '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          runDailyAgenticExport: runDailyAgenticExportStub,
-        },
-        '../../../src/cdn-logs-report/referral-daily-export.js': {
-          runDailyReferralExport: runDailyReferralExportStub,
-        },
-      }, {
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
-          saveExcelReport: saveExcelReportStub,
-          bulkPublishToAdminHlx: sandbox.stub().resolves(),
-        },
-      });
-
-      const result = await localHandler.runner(
-        'https://example.com',
-        context,
-        site,
-        createAuditContext(sandbox, {
-          date: '2026-04-01T00:00:00.000Z',
-          refreshAgenticDailyExport: true,
-          categoriesUpdated: true,
-          sourceWeekOffset: -1,
-        }),
-      );
-
-      expect(runDailyReferralExportStub).to.not.have.been.called;
-      expect(result.dailyReferralExport).to.equal(undefined);
     });
 
     it('runs daily referral export for BYOCDN other agentic DB fanout messages', async () => {

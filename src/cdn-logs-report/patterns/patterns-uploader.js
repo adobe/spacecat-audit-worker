@@ -13,145 +13,173 @@ import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 import { replaceAgenticUrlClassificationRules } from '../utils/report-utils.js';
+import { fetchSitemapSample, collectUrlSignals } from './url-signals.js';
+import { deriveCategories } from './category-deriver.js';
 
+const MIN_SITEMAP_URLS = 50;
+
+// Merge existing DB rules with newly-generated regexes, preserving existing
+// names (first-match wins) and re-indexing sort_order sequentially.
 function mergePatternRules(existingRules = [], generatedRegexes = {}) {
-  const regexes = generatedRegexes || {};
-  const rulesByName = new Map();
+  const byName = new Map();
 
   existingRules.forEach((rule) => {
     if (rule?.name && rule?.regex) {
-      rulesByName.set(rule.name.toLowerCase(), {
-        name: rule.name.toLowerCase(),
-        regex: rule.regex,
-      });
+      const name = rule.name.toLowerCase();
+      byName.set(name, { name, regex: rule.regex });
     }
   });
 
-  Object.entries(regexes).forEach(([name, regex]) => {
-    const normalizedName = name.toLowerCase();
-    if (normalizedName && regex && !rulesByName.has(normalizedName)) {
-      rulesByName.set(normalizedName, {
-        name: normalizedName,
-        regex,
-      });
+  Object.entries(generatedRegexes || {}).forEach(([rawName, regex]) => {
+    const name = rawName.toLowerCase();
+    if (name && regex && !byName.has(name)) {
+      byName.set(name, { name, regex });
     }
   });
 
-  // Re-index after merging so persisted rules have sequential first-match order.
-  return Array.from(rulesByName.values())
-    .map((rule, index) => ({
-      ...rule,
-      sort_order: index,
-    }));
+  return Array.from(byName.values()).map((rule, index) => ({ ...rule, sort_order: index }));
 }
 
-export async function generatePatternsWorkbook(options) {
-  const {
+function rulesArrayToRegexMap(rules = []) {
+  return rules.reduce((acc, rule) => {
+    if (rule?.name && rule?.regex) {
+      acc[rule.name] = rule.regex;
+    }
+    return acc;
+  }, {});
+}
+
+// Phase A — sitemap-first derivation. Returns null when no usable sitemap so
+// the caller can fall through to the legacy Athena top-URL flow.
+async function generateRulesFromSitemap({ site, context }) {
+  const { log } = context;
+  const baseUrl = site.getBaseURL?.();
+  if (!baseUrl) {
+    return null;
+  }
+
+  const sample = await fetchSitemapSample(baseUrl, log);
+  if (!sample || sample.urls.length < MIN_SITEMAP_URLS) {
+    log.info(`patterns: sitemap returned ${sample?.urls?.length || 0} URLs (< ${MIN_SITEMAP_URLS}); falling back to CDN logs`);
+    return null;
+  }
+
+  const { records } = await collectUrlSignals(sample.urls, { site, context });
+  const withSignal = records.filter((r) => r.signal).length;
+  log.info(`patterns: ${withSignal}/${records.length} URLs enriched with breadcrumb/schema/title signals`);
+
+  const domain = new URL(baseUrl).hostname;
+  const categoryResult = await deriveCategories(records, domain, context);
+  const pageTypeRegexes = await analyzePageTypes(domain, records.map((r) => r.path), context);
+
+  log.info(
+    `patterns: derived ${categoryResult.tiers.total} categories `
+    + `(breadcrumb=${categoryResult.tiers.breadcrumb}, path=${categoryResult.tiers.path}, llm=${categoryResult.tiers.llm}) `
+    + `— coverage ${categoryResult.coverage.percent}%`,
+  );
+
+  return {
+    categoryRegexes: rulesArrayToRegexMap(categoryResult.rules),
+    pageTypeRegexes: pageTypeRegexes || {},
+  };
+}
+
+async function persistRules(site, context, productData, pagetypeData, source) {
+  const result = await replaceAgenticUrlClassificationRules({
     site,
     context,
-    athenaClient,
-    s3Config,
-    periods,
-    configCategories = [],
-    existingPatterns = null,
+    categoryRules: productData,
+    pageTypeRules: pagetypeData,
+    updatedBy: `audit-worker:agentic-patterns:${source}`,
+  });
+  context.log.info(
+    `patterns: synced ${result?.category_rules ?? productData.length} category rules, `
+    + `${result?.page_type_rules ?? pagetypeData.length} page type rules (source=${source})`,
+  );
+}
+
+// Phase B — legacy Athena top-URLs flow. Used when sitemap is unavailable.
+async function generateRulesFromCdnLogs(options) {
+  const {
+    site, context, athenaClient, s3Config, periods, existingPatterns,
   } = options;
   const { log } = context;
 
+  const query = await weeklyBreakdownQueries.createTopUrlsQuery({
+    periods,
+    databaseName: s3Config.databaseName,
+    tableName: s3Config.tableName,
+    site,
+  });
+  const rows = await athenaClient.query(
+    query,
+    s3Config.databaseName,
+    '[Athena Query] Fetch top URLs from CDN logs for pattern generation',
+  );
+  const paths = rows?.map((row) => row.url).filter(Boolean) || [];
+
+  if (!paths.length) {
+    log.warn('patterns: no URLs fetched from Athena');
+    return null;
+  }
+  log.info(`patterns: fetched ${paths.length} URLs from Athena`);
+
+  const domain = new URL(site.getBaseURL()).hostname;
+
+  // Skip per-tier analysis when corresponding existing rules are present.
+  const pagetypeRegexes = existingPatterns?.pagePatterns?.length
+    ? {}
+    : await analyzePageTypes(domain, paths, context);
+  const productRegexes = existingPatterns?.topicPatterns?.length
+    ? {}
+    : await analyzeProducts(domain, paths, context);
+
+  return { categoryRegexes: productRegexes, pageTypeRegexes: pagetypeRegexes };
+}
+
+export async function generatePatternsWorkbook(options) {
+  const { site, context, existingPatterns = null } = options;
+  const { log } = context;
+
   try {
-    log.info(existingPatterns ? 'Generating DB patterns with merge of existing rules...' : 'No DB patterns found, generating fresh rules...');
+    log.info(existingPatterns ? 'patterns: regenerating with merge of existing rules' : 'patterns: generating fresh rules');
 
-    const query = await weeklyBreakdownQueries.createTopUrlsQuery({
-      periods,
-      databaseName: s3Config.databaseName,
-      tableName: s3Config.tableName,
-      site,
-    });
-
-    const rows = await athenaClient.query(query, s3Config.databaseName, '[Athena Query] Fetch top URLs from CDN logs for pattern generation');
-    const paths = rows?.map((row) => row.url).filter(Boolean) || [];
-
-    if (paths.length === 0) {
-      log.warn('No URLs fetched from Athena for pattern generation');
-      return false;
-    }
-
-    log.info(`Fetched ${paths.length} URLs for pattern generation`);
-
-    // Extract domain from site
-    const baseURL = site.getBaseURL();
-    const domain = new URL(baseURL).hostname;
-
-    // Skip page type analysis if patterns already exist
-    const pagetypeRegexes = existingPatterns?.pagePatterns?.length
-      ? (log.info('Reusing existing page type patterns'), {})
-      : await analyzePageTypes(domain, paths, context);
-
-    // Filter new categories and skip product analysis if all exist
-    const existingCategories = existingPatterns?.topicPatterns?.map(
-      (p) => p.name.toLowerCase(),
-    ) || [];
-    const newCategories = configCategories.filter(
-      (cat) => !existingCategories.includes(cat.toLowerCase()),
-    );
-    const categoriesToAnalyze = newCategories.length ? newCategories : configCategories;
-
-    let productRegexes;
-    if (!existingPatterns?.topicPatterns?.length || newCategories.length) {
-      if (newCategories.length) {
-        log.info(`Analyzing ${newCategories.length} new categories`);
-      }
-      productRegexes = await analyzeProducts(domain, paths, context, categoriesToAnalyze);
-    } else {
-      log.info('Reusing existing product patterns');
-      productRegexes = {};
-    }
-
-    const existingTopicPatterns = Array.isArray(existingPatterns?.topicPatterns)
+    const existingTopics = Array.isArray(existingPatterns?.topicPatterns)
       ? existingPatterns.topicPatterns
       : [];
-    const existingPagePatterns = Array.isArray(existingPatterns?.pagePatterns)
+    const existingPages = Array.isArray(existingPatterns?.pagePatterns)
       ? existingPatterns.pagePatterns
       : [];
 
-    if (existingPatterns) {
-      log.info('Merging with existing DB patterns...');
-      log.info(`Preserved ${existingTopicPatterns.length} existing product patterns`);
-      log.info(`Preserved ${existingPagePatterns.length} existing page type patterns`);
+    // Phase A — sitemap-first.
+    let derived = null;
+    try {
+      derived = await generateRulesFromSitemap({ site, context });
+    } catch (err) {
+      log.warn(`patterns: sitemap-based generation failed, falling back: ${err.message}`);
+    }
+    if (derived) {
+      const productData = mergePatternRules(existingTopics, derived.categoryRegexes);
+      const pagetypeData = mergePatternRules(existingPages, derived.pageTypeRegexes);
+      if (productData.length || pagetypeData.length) {
+        await persistRules(site, context, productData, pagetypeData, 'sitemap');
+        return true;
+      }
+      log.warn('patterns: sitemap clustering produced no rules, falling back to CDN logs');
     }
 
-    // Prepare data for DB with unique lowercase names.
-    let productData = mergePatternRules(existingTopicPatterns, productRegexes);
-
-    // Filter product data based on config categories if they exist
-    if (configCategories.length > 0) {
-      const configCategoriesLower = configCategories.map((cat) => cat.toLowerCase());
-      const productCountBeforeFilter = productData.length;
-      productData = productData.filter((item) => configCategoriesLower.includes(item.name));
-      productData = productData.map((item, index) => ({
-        ...item,
-        sort_order: index,
-      }));
-      log.info(`Filtered product patterns to match config categories. Kept ${productData.length} patterns out of ${productCountBeforeFilter}`);
-    }
-
-    const pagetypeData = mergePatternRules(existingPagePatterns, pagetypeRegexes);
-
-    // Return early if both arrays are empty
-    if (productData.length === 0 && pagetypeData.length === 0) {
-      log.warn('No pattern data available to generate report');
+    // Phase B — CDN-log Athena fallback.
+    const fromLogs = await generateRulesFromCdnLogs({ ...options, existingPatterns });
+    if (!fromLogs) {
       return false;
     }
-
-    const result = await replaceAgenticUrlClassificationRules({
-      site,
-      context,
-      categoryRules: productData,
-      pageTypeRules: pagetypeData,
-      updatedBy: 'audit-worker:agentic-patterns',
-    });
-
-    log.info(`Successfully synced patterns to DB for site ${site.getId?.()}: ${result?.category_rules ?? productData.length} category rules, ${result?.page_type_rules ?? pagetypeData.length} page type rules`);
-
+    const productData = mergePatternRules(existingTopics, fromLogs.categoryRegexes);
+    const pagetypeData = mergePatternRules(existingPages, fromLogs.pageTypeRegexes);
+    if (!productData.length && !pagetypeData.length) {
+      log.warn('patterns: no pattern data available');
+      return false;
+    }
+    await persistRules(site, context, productData, pagetypeData, 'cdn-logs');
     return true;
   } catch (error) {
     log.error(`Failed to generate patterns: ${error.message}`);

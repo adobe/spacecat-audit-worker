@@ -13,190 +13,76 @@
 /* c8 ignore start */
 import { prompt } from './prompt.js';
 
+const COMMON_PAGE_TYPES = [
+  'homepage', 'product listing page', 'product detail page', 'blog',
+  'about', 'help', 'contact', 'search', 'cart', 'checkout', 'legal',
+];
+
+const HOMEPAGE_REGEX = '(?i)^(/(home|index)?)?$';
+
+const DEFAULT_PATTERNS = {
+  Robots: '(?i).*/robots.txt$',
+  Sitemap: '(?i).*/sitemap.*.xml$',
+  'Error Pages': '(?i)(404|500|error|goodbye)',
+};
+
+const parseLenient = (s) => {
+  const trimmed = s.trim();
+  const stripped = trimmed.startsWith('```')
+    ? trimmed.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+    : trimmed;
+  return JSON.parse(stripped);
+};
+
+const accumulateUsage = (acc, usage) => {
+  if (!usage) {
+    return;
+  }
+  acc.prompt_tokens += usage.prompt_tokens || 0;
+  acc.completion_tokens += usage.completion_tokens || 0;
+  acc.total_tokens += usage.total_tokens || 0;
+};
+
+// Step 1 — classify each URL into a page type (FORMAT of the page, not topic).
 async function derivePageTypesForPaths(domain, paths, context) {
   const { log } = context;
-  const systemPrompt = `You are an expert web page classifier. Your task is to analyze URL paths and categorize them into page types based on web conventions and URL patterns.
+  const systemPrompt = `You classify URL paths into PAGE TYPES — the FORMAT/KIND of the page, not its topic.
 
-## OBJECTIVE
-Classify each provided URL path by discovering and assigning appropriate page types. Return results in strict JSON format.
+FIRST: infer the site type from the domain and the URL set:
+- E-commerce / retail → expect product listing page, product detail page, cart, checkout, search.
+- News / blog / media → expect article, blog, section/topic page, video, gallery.
+- B2B / SaaS / corporate → expect solution page, product page, customer story, pricing, docs, contact.
+- Documentation / community → expect docs, tutorial, api reference, guide, forum.
+- Government / NGO / education → expect program, policy, course, event, services, resources.
 
-## ANALYTICAL THINKING PROCESS
+THEN classify accordingly. Don't force e-commerce labels on a non-e-commerce site; don't invent a "product detail page" type for a news site, etc. You may emit any page-type label that fits the site (recipe, podcast, event, course, …).
 
-Think like you're analyzing a spreadsheet of URLs - follow these steps systematically:
+Universal rules:
+- Root path ("/", "/home", "/index") → "homepage" first, before any other matching.
+- If a URL doesn't fit any clear type for THIS site, use "other". Keep "other" rare.
 
-### STEP 1: DOMAIN CONTEXT ANALYSIS
-- What type of website is this? (E-commerce, SaaS, content/publishing, corporate, community)
-- What pages would this type of site typically have?
-- What URL conventions does this domain appear to follow?
+Return JSON ONLY (no markdown, no fences):
+{"paths":[{"path":"/example","pageType":"label"}, ...]}
 
-### STEP 2: URL STRUCTURE DECOMPOSITION
-For each URL path, break it down:
-- **Path segments**: Identify /segment1/segment2/segment3
-- **Keyword indicators**: Look for standard web keywords (blog, product, about, help, etc.)
-- **Depth analysis**: How many levels deep? First segment often indicates page type
-- **ID/Slug detection**: Does it contain identifiers (numbers, slugs, UUIDs)?
-
-### STEP 3: PAGE TYPE IDENTIFICATION LOGIC
-Ask yourself systematically (GROUP BY SECTION, not by function):
-1. "Is this the homepage?" → Check for /, /home, /index - **ALWAYS CHECK THIS FIRST!**
-2. "What section does this belong to?" → Look for keywords in the URL
-   - Contains "product", "shop", "store", "category", "collection" WITHOUT specific item → product listing page
-   - Contains "product", "shop", "store" WITH specific item slug/ID → product detail page
-   - Contains "blog", "article", "news", "post" → blog
-   - Contains "help", "support", "faq", "docs", "guide" → help
-   - Contains "about", "company", "team" → about
-   - Contains "contact", "reach" → contact
-3. "Is this a special page?" → Check for /cart, /checkout, /search
-4. "Is this legal/policy?" → Check for /legal, /privacy, /terms, /cookies
-5. "Cannot determine?" → Default to "other" (use this sparingly)
-
-### IMPORTANT: product listing page vs product detail page Distinction
-- **product listing page**: Category/listing pages showing multiple products (e.g., /products, /shop/electronics, /category/shoes)
-- **product detail page**: Individual product pages with specific item identifier/slug (e.g., /products/iphone-15, /p/12345)
-- Key indicator: Does the URL end with a specific product identifier (slug, SKU, ID)? → product detail page
-- Key indicator: Is it a browsing/filtering page without specific item? → product listing page
-
-### STEP 4: PATTERN MATCHING WITH EXAMPLES
-Examples of thinking process:
-
-Example A: "/products/nike-air-max-270"
-- Thinking: "products" → e-commerce section, "nike-air-max-270" → specific product slug/identifier
-- ID/Slug: Has descriptive slug (specific item identifier) → this is a DETAIL page
-- Result: pageType = "product detail page"
-
-Example B: "/products"
-- Thinking: "products" → products section, listing page showing multiple products
-- Pattern: No specific item identifier, this is a LISTING page
-- Result: pageType = "product listing page"
-
-Example C: "/shop/electronics/laptops"
-- Thinking: URL contains "shop" keyword → product-related, "laptops" is a category not a specific item
-- Pattern: Category/filtering path without specific product identifier
-- Result: pageType = "product listing page"
-
-Example C2: "/shop/electronics/laptops/macbook-pro-16"
-- Thinking: "macbook-pro-16" is a specific product slug/identifier
-- Pattern: Has specific item at the end → detail page
-- Result: pageType = "product detail page"
-
-Example C3: "/en-us/products/photoshop"  
-- Thinking: URL contains "product" keyword, "photoshop" is a specific product
-- Pattern: Specific product identifier present
-- Result: pageType = "product detail page"
-
-Example C4: "/category/shoes" or "/collections/summer-sale"
-- Thinking: Category or collection page showing multiple items
-- Pattern: No specific product identifier
-- Result: pageType = "product listing page"
-
-Example D: "/blog/how-to-improve-seo-2024"
-- Thinking: "blog" → content section, "how-to-improve-seo-2024" → article slug
-- Pattern: Follows /content-type/article-slug pattern
-- Result: pageType = "blog"
-
-Example E: "/help/getting-started"
-- Thinking: "help" → support section, "getting-started" → specific help topic
-- Pattern: Support/documentation structure
-- Result: pageType = "help"
-
-Example F: "/"
-- Thinking: Root path, entry point to site
-- Result: pageType = "homepage"
-
-Example G: "/user/dashboard/settings"
-- Thinking: User-specific path, doesn't match standard public page types
-- Pattern: Application/admin interface
-- Result: pageType = "other"
-
-### STEP 5: VALIDATION & OUTPUT RULES
-Ask yourself:
-- "Is this the homepage (/, /home, /index)?" → Classify as "homepage" FIRST, don't apply keyword matching
-- "Does this path have multiple possible classifications?" → Choose most specific
-- "Is this path ambiguous?" → Look for keywords in URL, not just first segment
-- "Could this be misclassified?" → Check against common patterns  
-- "What if it doesn't fit anywhere?" → Try harder to find keywords before defaulting to "other"
-- **IMPORTANT:** Minimize "other" usage - look for keywords anywhere in the URL path
-
-## PAGE TYPE CLASSIFICATION APPROACH
-You are FREE to discover and create page types based on what you see in the URLs. Common types include:
-- homepage - root/landing pages
-- product listing page - category/listing pages showing multiple products
-- product detail page - individual product pages with specific item identifier
-- blog - content/articles
-- about - company info
-- help - support/documentation
-- legal - legal/policy pages
-- search - search pages
-- contact - contact pages
-
-BUT you can create NEW page types if URLs suggest different categories!
-
-Examples of flexible classification:
-- URLs with "/learn/", "/education/" → could be "education" or "learning"
-- URLs with "/gallery/", "/photos/" → could be "gallery" 
-- URLs with "/events/", "/calendar/" → could be "events"
-- URLs with "/resources/", "/downloads/" → could be "resources"
-
-Primary rule: Look for patterns and group similar URLs together, then name the group appropriately
-
-## RESPONSE FORMAT
-Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
-{
-  "paths": [
-    { "path": "/", "pageType": "homepage" },
-    { "path": "/about", "pageType": "about" },
-    { "path": "/products/123", "pageType": "product" }
-  ]
-}
-
-## JSON FORMATTING RULES (CRITICAL)
-- NO markdown formatting (no code blocks)
-- NO explanations or comments
-- NO line breaks inside strings
-- Properly escape special characters in strings
-- Use double quotes, not single quotes
-- Ensure all strings are properly closed
-- Return ONLY the JSON object
-
-## CRITICAL REQUIREMENTS
-- Include ALL provided paths in your response
-- You can create new page types based on what you discover
-- Return valid JSON with NO additional text or explanations
-- Ensure proper JSON syntax and formatting`;
-
-  const userPrompt = `Domain: ${domain}
-
-URL Paths:
-${JSON.stringify(paths, null, 2)}`;
-
-  const createDefaultPaths = () => paths.map((path) => ({ path, pageType: 'other' }));
+Include every input path.`;
+  const userPrompt = `Domain: ${domain}\n\nURL Paths:\n${JSON.stringify(paths, null, 2)}`;
+  const fallback = () => paths.map((path) => ({ path, pageType: 'other' }));
 
   try {
-    log.info('Extracting page types from URL paths');
-    const promptResponse = await prompt(systemPrompt, userPrompt, context);
-
-    if (!promptResponse?.content) {
-      log.info('No content received; defaulting all paths to "other"');
-      return { paths: createDefaultPaths(), usage: null };
+    const resp = await prompt(systemPrompt, userPrompt, context);
+    if (!resp?.content) {
+      log.info('page-type-analysis: no LLM content, defaulting all paths to "other"');
+      return { paths: fallback(), usage: null };
     }
-
-    // Clean up markdown formatting and parse
-    let content = promptResponse.content.trim();
-    if (content.startsWith('```')) {
-      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    }
-
-    const parsed = JSON.parse(content);
+    const parsed = parseLenient(resp.content);
     if (parsed?.paths && Array.isArray(parsed.paths)) {
-      log.info('Successfully extracted page types from URL paths');
-      return { paths: parsed.paths, usage: promptResponse.usage };
+      return { paths: parsed.paths, usage: resp.usage };
     }
-
-    log.warn('Invalid response structure; defaulting all paths to "other"');
-    return { paths: createDefaultPaths(), usage: promptResponse.usage };
-  } catch (error) {
-    log.error(`Failed to get page types: ${error.message}`);
-    return { paths: createDefaultPaths(), usage: null };
+    log.warn('page-type-analysis: invalid LLM response shape');
+    return { paths: fallback(), usage: resp.usage };
+  } catch (err) {
+    log.error(`page-type-analysis: classification failed: ${err.message}`);
+    return { paths: fallback(), usage: null };
   }
 }
 
@@ -210,220 +96,90 @@ function groupPathsByPageType(pathTypeArray) {
   }, {});
 }
 
+// Step 2 — produce one POSIX regex per discovered page type.
 async function deriveRegexesForPageTypes(domain, groupedPaths, context) {
   const { log } = context;
+  const systemPrompt = `Generate one POSIX regex per page type that matches its URLs (and similar future URLs) in CDN logs.
 
-  const systemPrompt = `You are a regex pattern generator for URL page type classification in Amazon Athena SQL.
+CDN-log URLs are plain paths; leading slash is optional. Regex rules:
+- Start with (?i) for case-insensitive matching.
+- Keyword-based; pick tokens that actually appear in the example URLs (not the label).
+- No lookaround, no non-capturing groups (Athena POSIX).
+- Don't anchor on slash position for keywords — the keyword can appear anywhere in the path.
+- EXCEPTION: homepage is anchored, e.g. (?i)^(/(home|index)?)?$ — root paths only.
 
-## OBJECTIVE
-Generate SIMPLE, GENERIC regex patterns that can identify which page type a URL belongs to.
+Return JSON ONLY, no markdown:
+{"page-type-name": "(?i)keyword-regex", ...}`;
+  const userPrompt = `Domain: ${domain}\n\nPage types with example URLs:\n${JSON.stringify(groupedPaths, null, 2)}`;
 
-## INPUT
-You receive page types with example URLs that belong to each page type.
-
-## GOAL
-Create simple patterns that:
-1. Match URLs of that page type
-2. Are easy to understand and maintain
-3. Work with future URLs of the same page type
-
-## STRATEGY
-**IMPORTANT**: The page type name is just a LABEL. Analyze the ACTUAL URLs to find patterns!
-
-For each page type:
-1. **Look at the actual URLs** in that page type
-2. **Find common keywords** that appear in those URLs
-3. **Identify common path segments** in those URLs
-4. **Create a pattern** based on what you see in the URLs, NOT the page type name
-5. **Keep it SIMPLE**: Prefer broad matching over complex patterns
-
-## EXAMPLES (Page type is just a LABEL - analyze the actual URLs!)
-
-Example 1 - Page type "homepage" with URLs: ["/", "/home", "/index"]
-Pattern: (?i)^(/(home|index)?)?$
-Explanation: These are root-level URLs, so match empty or home/index
-
-Example 2 - Page type "product" with URLs: ["/products/item-123", "/shop/widget", "/store/catalog"]
-Pattern: (?i)(products?|shop|store)
-Explanation: These URLs contain shopping keywords, so match those
-
-Example 3 - Page type "blog" with URLs: ["/articles/post", "/news/update", "/stories"]
-Pattern: (?i)(articles?|news|stories)
-Explanation: Look for keywords that actually appear in the URLs
-
-Example 4 - Page type "help" with URLs: ["/help", "/support", "/faq"]
-Pattern: (?i)(help|support|faq)
-Explanation: Match the actual keywords found in these URLs
-
-CRITICAL: Do NOT use the page type name in the pattern unless it actually appears in the URLs!
-
-## SLASH HANDLING
-- URLs may or may not start with a forward slash
-- Focus on KEYWORD MATCHING, not strict slash positioning
-- DON'T require slashes before/after keywords: use (?i)(keyword) not (?i)/keyword/ or (?i)/(keyword)/
-- The pattern should match keywords wherever they appear in the path
-- CRITICAL EXCEPTION: Root paths like "/" or "/home" or "/index" MUST be classified as "homepage" FIRST, before any keyword matching
-- Homepage patterns need specific structure like (?i)^(/(home|index)?)?$ to match root URLs only
-
-## POSIX REGEX REQUIREMENTS (for Amazon Athena)
-- Start with (?i) for case-insensitive matching
-- NO lookahead (?=) or lookbehind (?<=)
-- NO non-capturing groups (?:)
-- Use alternation (|), ? for optional, * for zero-or-more
-- Escape special chars: \\., \\-, \\+, \\?, \\*, etc.
-- Keep patterns SIMPLE: Focus on keyword matching without requiring specific slash positions
-
-## OUTPUT FORMAT
-Return ONLY valid JSON. No markdown, no code blocks, no explanations:
-{
-  "pageType1": "(?i)simple-pattern",
-  "pageType2": "(?i)simple-pattern"
-}
-
-## JSON FORMATTING RULES (CRITICAL)
-- NO markdown formatting (no code blocks)
-- NO explanations or comments
-- NO line breaks inside strings
-- Properly escape special characters in strings
-- Use double quotes, not single quotes
-- Ensure all strings are properly closed
-- Return ONLY the JSON object
-
-## CRITICAL RULES
-- Analyze the ACTUAL URLs provided
-- Keep patterns SIMPLE and GENERIC
-- Each pattern must start with (?i)
-- Return only JSON, no additional text`;
-
-  const userPrompt = `Domain: ${domain}
-
-Page types with their example URLs:
-${JSON.stringify(groupedPaths, null, 2)}
-
-Generate simple regex patterns for each page type that can match these URLs and similar future URLs.`;
-
-  const createFallbackPatterns = () => Object.keys(groupedPaths).reduce((acc, type) => {
-    const keyword = type.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    acc[type] = `(?i)(${keyword})`;
+  const fallback = () => Object.keys(groupedPaths).reduce((acc, type) => {
+    const slug = type.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    acc[type] = `(?i)(${slug})`;
     return acc;
   }, {});
 
   try {
-    log.info('Generating regex patterns for page types');
-    const promptResponse = await prompt(systemPrompt, userPrompt, context);
-
-    if (!promptResponse?.content) {
-      log.warn('No content received; using fallback patterns');
-      return { regexes: createFallbackPatterns(), usage: null };
+    const resp = await prompt(systemPrompt, userPrompt, context);
+    if (!resp?.content) {
+      log.warn('page-type-analysis: no regex content from LLM; using fallback');
+      return { regexes: fallback(), usage: null };
     }
-
-    // Clean up markdown formatting and parse
-    let content = promptResponse.content.trim();
-    if (content.startsWith('```')) {
-      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    }
-
-    const parsed = JSON.parse(content);
+    const parsed = parseLenient(resp.content);
     if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-      log.info('Successfully generated regex patterns for page types');
-      return { regexes: parsed, usage: promptResponse.usage };
+      return { regexes: parsed, usage: resp.usage };
     }
-
-    log.warn('Empty response; using fallback patterns');
-    return { regexes: createFallbackPatterns(), usage: promptResponse.usage };
-  } catch (error) {
-    log.error(`Failed to generate regex patterns: ${error.message}`);
-    return { regexes: createFallbackPatterns(), usage: null };
+    log.warn('page-type-analysis: empty regex response; using fallback');
+    return { regexes: fallback(), usage: resp.usage };
+  } catch (err) {
+    log.error(`page-type-analysis: regex generation failed: ${err.message}`);
+    return { regexes: fallback(), usage: null };
   }
+}
+
+function withoutNoise(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== 'other' && k !== 'unknown'));
+}
+
+function orderRegexes(regexes) {
+  const ordered = {};
+  COMMON_PAGE_TYPES.forEach((pt) => {
+    if (regexes[pt]) {
+      ordered[pt] = regexes[pt];
+    }
+  });
+  Object.keys(regexes)
+    .filter((pt) => !COMMON_PAGE_TYPES.includes(pt))
+    .sort()
+    .forEach((pt) => {
+      ordered[pt] = regexes[pt];
+    });
+  return ordered;
 }
 
 export async function analyzePageTypes(domain, paths, context) {
   const { log } = context;
-
-  log.info(`Starting page type analysis for domain: ${domain}`);
-
-  const totalTokenUsage = {
-    prompt_tokens: 0,
-    completion_tokens: 0,
-    total_tokens: 0,
-  };
+  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  log.info(`page-type-analysis: domain=${domain}, urls=${paths.length}`);
 
   try {
-    const pathClassifications = await derivePageTypesForPaths(domain, paths, context);
+    const classified = await derivePageTypesForPaths(domain, paths, context);
+    accumulateUsage(usage, classified.usage);
 
-    // Track token usage from path classification
-    if (pathClassifications.usage) {
-      totalTokenUsage.prompt_tokens += pathClassifications.usage.prompt_tokens || 0;
-      totalTokenUsage.completion_tokens += pathClassifications.usage.completion_tokens || 0;
-      totalTokenUsage.total_tokens += pathClassifications.usage.total_tokens || 0;
+    const grouped = withoutNoise(groupPathsByPageType(classified.paths));
+    const regexResult = await deriveRegexesForPageTypes(domain, grouped, context);
+    accumulateUsage(usage, regexResult.usage);
+
+    const ordered = orderRegexes(withoutNoise(regexResult.regexes));
+    if (!ordered.homepage) {
+      ordered.homepage = HOMEPAGE_REGEX;
+      log.info('page-type-analysis: added default homepage pattern');
     }
 
-    const groupedPaths = groupPathsByPageType(pathClassifications.paths);
-
-    // Keep all discovered page types - don't limit to predefined list
-    const filteredGroupedPaths = Object.entries(groupedPaths)
-      .filter(([pageType]) => pageType !== 'other' && pageType !== 'unknown')
-      .reduce((acc, [pageType, pathsForType]) => {
-        acc[pageType] = pathsForType;
-        return acc;
-      }, {});
-
-    const regexPatterns = await deriveRegexesForPageTypes(domain, filteredGroupedPaths, context);
-
-    // Track token usage from regex generation
-    if (regexPatterns.usage) {
-      totalTokenUsage.prompt_tokens += regexPatterns.usage.prompt_tokens || 0;
-      totalTokenUsage.completion_tokens += regexPatterns.usage.completion_tokens || 0;
-      totalTokenUsage.total_tokens += regexPatterns.usage.total_tokens || 0;
-    }
-
-    // Log total token usage
-    log.info(`Total token usage for page type analysis: ${JSON.stringify(totalTokenUsage)}`);
-
-    log.info(`Page type analysis complete for domain: ${domain}`);
-
-    // Filter out "other" and "unknown" page types
-    const filteredRegexes = Object.entries(regexPatterns.regexes)
-      .filter(([pageType]) => pageType !== 'other' && pageType !== 'unknown')
-      .reduce((acc, [pageType, regex]) => {
-        acc[pageType] = regex;
-        return acc;
-      }, {});
-
-    // Order page types: homepage first, then common types, then discovered types alphabetically
-    const commonPageTypes = ['homepage', 'product listing page', 'product detail page', 'blog', 'about', 'help', 'contact', 'search', 'cart', 'checkout', 'legal'];
-    const orderedRegexes = {};
-
-    commonPageTypes.forEach((pageType) => {
-      if (filteredRegexes[pageType]) {
-        orderedRegexes[pageType] = filteredRegexes[pageType];
-      }
-    });
-
-    const discoveredTypes = Object.keys(filteredRegexes)
-      .filter((pageType) => !commonPageTypes.includes(pageType))
-      .sort();
-
-    discoveredTypes.forEach((pageType) => {
-      orderedRegexes[pageType] = filteredRegexes[pageType];
-    });
-
-    if (!orderedRegexes.homepage) {
-      orderedRegexes.homepage = '(?i)^(/(home|index)?)?$';
-      log.info('Added default homepage pattern as it was not detected in the data');
-    }
-
-    // Add default patterns at the end
-    const defaultPatterns = {
-      Robots: '(?i).*/robots.txt$',
-      Sitemap: '(?i).*/sitemap.*.xml$',
-      'Error Pages': '(?i)(404|500|error|goodbye)',
-    };
-
-    return { ...orderedRegexes, ...defaultPatterns };
-  } catch (error) {
-    log.error(`Failed to complete page type analysis: ${error.message}`);
-    throw error;
+    log.info(`page-type-analysis: tokens=${JSON.stringify(usage)}`);
+    return { ...ordered, ...DEFAULT_PATTERNS };
+  } catch (err) {
+    log.error(`page-type-analysis failed: ${err.message}`);
+    throw err;
   }
 }
 /* c8 ignore end */

@@ -18,9 +18,7 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import {
-  compareConfigs, areCategoryNamesDifferent,
-} from './utils.js';
+import { compareConfigs } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
@@ -261,28 +259,6 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const siteId = site.getSiteId();
-
-  log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
-
-  // first send with categoriesUpdated flag for last week
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: 'cdn-logs-report',
-    siteId,
-    auditContext: {
-      weekOffset: -1,
-      categoriesUpdated: true,
-      refreshAgenticDailyExport: true,
-    },
-  });
-
-  log.info('Successfully triggered cdn-logs-report audit');
-}
-
 async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
@@ -433,8 +409,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
-  const hasCdnLogsChanges = changes.categories
-    && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
   if (changes.cdnBucketConfig) {
     try {
@@ -461,19 +435,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       triggeredSteps.push('cdn-bucket-config');
     } catch (error) {
       log.error(`Error processing CDN bucket configuration changes for siteId: ${siteId}`, error);
-    }
-  }
-
-  if (hasCdnLogsChanges) {
-    const configuration = await Configuration.findLatest();
-    const isCdnLogsReportEnabled = await configuration.isHandlerEnabledForSite('cdn-logs-report', site);
-
-    if (isCdnLogsReportEnabled) {
-      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      await triggerCdnLogsReport(context, site);
-      triggeredSteps.push('cdn-logs-report');
-    } else {
-      log.info('LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site');
     }
   }
 
