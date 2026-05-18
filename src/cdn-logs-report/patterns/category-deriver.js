@@ -30,13 +30,19 @@ const LLM_MAX_ITEMS = 200;
 // Locale prefixes we strip before path bucketing. Explicit allowlist because
 // some 2-letter codes (e.g. "ai") are valid topical categories.
 const LOCALES = new Set([
+  // ISO 639-1 languages
   'en', 'es', 'de', 'fr', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'cs',
   'ru', 'tr', 'ar', 'he', 'hi', 'th', 'vi', 'id', 'ms', 'tl', 'el', 'hu', 'ro',
-  'sk', 'uk', 'bg', 'sr', 'hr', 'sl', 'lv', 'lt', 'et',
+  'sk', 'uk', 'bg', 'sr', 'hr', 'sl', 'lv', 'lt', 'et', 'ur', 'bn', 'ta', 'te',
   'ja', 'jp', 'ko', 'kr', 'zh', 'cn', 'tw', 'hk',
+  // ISO 3166-1 country codes
   'au', 'ca', 'in', 'br', 'mx', 'ie', 'nz', 'za', 'us', 'gb', 'sg', 'my', 'ph',
   'ae', 'sa', 'eg', 'cl', 'co', 'ar', 'pe', 've', 'ch', 'at', 'be', 'lu',
   'dk', 'se', 'gr', 'is', 'mt', 'cy', 'ee', 'si',
+  'kz', 'kg', 'uz', 'tj', 'tm', 'az', 'ge', 'am', 'by', 'md', 'rs',
+  'iq', 'om', 'qa', 'jo', 'lb', 'sy', 'ye', 'kw', 'bh', 'ps',
+  'pk', 'bd', 'lk', 'np', 'mm', 'kh', 'la', 'mn',
+  'ng', 'ke', 'gh', 'tz', 'ug', 'rw', 'et', 'ma', 'tn', 'dz', 'sn', 'ci',
 ]);
 const LOCALE_REGION_RE = /^[a-z]{2}[-_][a-z]{2,4}$/i;
 const PAGE_EXT_RE = /\.(?:html?|aspx?|php|jsp|do|action|xml)$/i;
@@ -54,6 +60,7 @@ const PAGE_TYPE_SEGMENTS = new Set([
   'search', 'find', 'results', 'cart', 'basket', 'bag', 'checkout',
   'login', 'signin', 'signup', 'register', 'account',
   'events', 'event', 'webinars', 'webinar', 'calendar', 'sitemap', 'robots',
+  'error', 'errors', '404', '500', 'not-found', 'maintenance',
 ]);
 
 const END = '(/|$|\\?|#|\\.)';
@@ -74,11 +81,15 @@ function topicalSegs(p) {
   return segs.map((s) => s.toLowerCase().replace(PAGE_EXT_RE, '')).filter(Boolean);
 }
 
+// Longest TOPICAL path-segment prefix shared by every URL — leading locale
+// segments are stripped first so multi-locale clusters don't collapse to
+// just the locale (e.g. /bg_bg/zheni/... ∩ /bg_bg/maje/... should yield
+// nothing, not "/bg_bg").
 function commonPrefix(paths, maxDepth = 2) {
   if (!paths.length) {
     return [];
   }
-  const split = paths.map(segsOf);
+  const split = paths.map(topicalSegs);
   const out = [];
   for (let d = 0; d < maxDepth; d += 1) {
     const head = split[0][d];
@@ -117,9 +128,18 @@ function clusterByBreadcrumb(records) {
       return;
     }
     const prefix = commonPrefix(paths);
-    const regex = prefix.length
-      ? bucketRegex(prefix)
-      : `(?i)(^|/)${escapeRe(key.replace(/\s+/g, '[-_ ]'))}${END}`;
+    let regex;
+    if (prefix.length) {
+      regex = bucketRegex(prefix);
+    } else if (/^[\x20-\x7e]+$/.test(key)) {
+      // Bucket name is ASCII — fall back to keyword regex from the name.
+      regex = `(?i)(^|/)${escapeRe(key.replace(/\s+/g, '[-_ ]'))}${END}`;
+    } else {
+      // Non-Latin breadcrumb label (e.g. Bulgarian, Korean) with no usable
+      // path prefix. The label can't be matched against romanised URL slugs,
+      // so drop the bucket — URLs fall through to later tiers.
+      return;
+    }
     buckets.push({
       name: titleCase(label),
       source: 'breadcrumb',
@@ -375,10 +395,13 @@ export async function deriveCategories(records, domain, context) {
   const llm = await clusterByLlm(records.filter((r) => !claimed.has(r.path)), domain, context);
   log?.info(`category-deriver: tier3 llm=${llm.length} buckets`);
 
-  // Dedupe by lowercase name; tier order in the spread decides who wins.
+  // Dedupe by diacritic-normalised lowercase name so e.g. "muži"
+  // (Czech breadcrumb) collapses with "muzi" (path-frequency from the
+  // ASCII URL slug). Tier order in the spread decides who wins.
+  const dedupKey = (s) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
   const seen = new Map();
   for (const b of [...crumb, ...path, ...llm]) {
-    const k = b.name.toLowerCase();
+    const k = dedupKey(b.name);
     if (!seen.has(k)) {
       seen.set(k, b);
     }
