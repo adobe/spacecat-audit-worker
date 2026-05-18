@@ -728,7 +728,7 @@ export async function handleAiOnlyMode(context) {
     }
   }
 
-  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
+  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}, generatePrompts=${generatePrompts}`);
 
   // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
