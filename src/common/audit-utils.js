@@ -13,6 +13,7 @@
 import { isValidUUID, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { retrieveAuditById } from '../utils/data-access.js';
+import { isTransientTierClientError } from './tier-client-error-classifier.js';
 
 /**
  * Check if site has site enrollment for any of the product codes
@@ -35,15 +36,22 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
           const tierResult = await tierClient.checkValidEntitlement();
           return tierResult.siteEnrollment || false;
         } catch (error) {
-          context.log.error(`Failed to check entitlement for product code ${productCode}:`, error);
+          if (isTransientTierClientError(error)) {
+            context.log.error(`Transient error checking entitlement for product ${productCode}, will retry:`, error);
+            throw new Error(`Transient entitlement check error for ${productCode}: ${error.message}`, { cause: error });
+          }
+          context.log.warn(`Site not entitled for product code ${productCode}:`, error);
           return false;
         }
       }),
     );
     return enrollmentChecks.some((hasEnrollment) => hasEnrollment);
   } catch (error) {
-    context.log.error('Error checking product code entitlements:', error);
-    return false; // Fail safe - deny audit if entitlement check fails
+    // Any error reaching here (transient or unexpected) triggers retry rather than cancellation.
+    // Inner loop only throws on transient errors, but this also catches unexpected errors
+    // from Promise.all or the enrollment check itself, which is safer than returning false.
+    context.log.error('Error in entitlement check, job will retry:', error);
+    throw error; // Propagate to trigger Lambda retry
   }
 }
 

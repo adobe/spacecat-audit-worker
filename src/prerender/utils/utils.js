@@ -16,6 +16,7 @@
 
 import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { isTransientTierClientError } from '../../common/tier-client-error-classifier.js';
 
 /**
  * Common non-HTML file extensions that should be filtered out
@@ -114,6 +115,10 @@ export async function isPaidLLMOCustomer(context) {
     log.debug(`Prerender - isPaidLLMOCustomer check: siteId=${site.getId()}, tier=${tier}, isPaid=${isPaid}`);
     return isPaid;
   } catch (e) {
+    if (isTransientTierClientError(e)) {
+      log.error(`Transient error checking paid LLMO status for siteId=${site.getId()}: ${e.message}`);
+      throw new Error(`Transient entitlement check error: ${e.message}`, { cause: e });
+    }
     log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
   }

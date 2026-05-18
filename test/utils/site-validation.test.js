@@ -13,10 +13,13 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 import { checkSiteRequiresValidation, IS_LLMO_OPPTY } from '../../src/utils/site-validation.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('utils/site-validation', () => {
   let sandbox;
@@ -112,14 +115,43 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(true);
   });
 
-  it('returns false and logs warn when entitlement check throws', async () => {
+  it('returns false and logs warn when permanent error occurs', async () => {
     const site = { getId: sandbox.stub().returns('site-err') };
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+    const permanentError = new Error('Not Found');
+    permanentError.statusCode = 404;
+    sandbox.stub(TierClient, 'createForSite').rejects(permanentError);
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(false);
     expect(context.log.warn).to.have.been.called;
+  });
+
+  it('throws when transient PGRST003 error occurs', async () => {
+    const site = { getId: sandbox.stub().returns('site-transient') };
+    const pgrstError = {
+      code: 'PGRST003',
+      message: 'Timed out acquiring connection from connection pool',
+    };
+    const dbError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
+    context.log.error = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').rejects(dbError);
+
+    await expect(checkSiteRequiresValidation(site, context))
+      .to.be.rejectedWith(Error, 'Transient entitlement check error');
+    expect(context.log.error).to.have.been.called;
+  });
+
+  it('throws when transient network error occurs', async () => {
+    const site = { getId: sandbox.stub().returns('site-network-err') };
+    const networkCause = { message: 'Network error occurred' };
+    const networkError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
+    context.log.error = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').rejects(networkError);
+
+    await expect(checkSiteRequiresValidation(site, context))
+      .to.be.rejectedWith(Error, 'Transient entitlement check error');
+    expect(context.log.error).to.have.been.called;
   });
 
   // Removed legacy fallback tests since validation is entitlement-driven only
@@ -135,9 +167,10 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(false);
   });
 
-  it('logs warn when entitlement check throws', async () => {
+  it('logs warn when permanent error throws', async () => {
     const site = { getId: sandbox.stub().returns('site-warn-info') };
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+    const permanentError = new Error('No entitlement found');
+    sandbox.stub(TierClient, 'createForSite').rejects(permanentError);
     context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
