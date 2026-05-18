@@ -15,6 +15,25 @@ import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id',
+  'srsltid', 'fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid',
+]);
+
+function stripTrackingParams(url) {
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) {
+        parsed.searchParams.delete(key);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Suggestion, Site } = dataAccess;
@@ -98,8 +117,18 @@ export default async function handler(message, context) {
     }
 
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
+    const seen = new Set();
+    const cleanedUrls = validSuggestedUrls
+      .map(stripTrackingParams)
+      .filter((url) => {
+        if (seen.has(url)) {
+          return false;
+        }
+        seen.add(url);
+        return true;
+      });
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
-      validSuggestedUrls,
+      cleanedUrls,
       effectiveBaseURL,
     );
     const existingData = suggestion.getData() || {};

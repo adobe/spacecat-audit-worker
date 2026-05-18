@@ -50,19 +50,6 @@
       "text":"PREVIOUSLY ADDED BY BACKOFFICE UI",
       "metrics": [
         {
-          "deviceType": "desktop",
-          "pageviews": 2420,
-          "organic": 1800,
-          "lcp": 2099.699999988079,
-          "lcpCount": 8,
-          "cls": 0.011145537287059668,
-          "clsCount": 7,
-          "inp": 8,
-          "inpCount": 5,
-          "ttfb": 548,
-          "ttfbCount": 16
-        },
-        {
           "deviceType": "mobile",
           "pageviews": 100,
           "organic": 100,

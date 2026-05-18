@@ -13,15 +13,17 @@
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
+const LOG_PREFIX = '[Cited]';
 
 /**
  * Handles Mystique response for Cited analysis
@@ -32,12 +34,15 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
+  // Note: any inbound `brandId` from Mystique is informational only. Scope is
+  // re-resolved server-side via resolveBrandResultForSite; trusting the inbound
+  // value would let a tampered message re-attribute the opportunity.
   const { siteId, auditId, data } = message;
 
-  log.info(`[Cited] Received cited analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`${LOG_PREFIX} Received cited analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
   if (data?.error) {
-    log.error(`[Cited] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    log.error(`${LOG_PREFIX} Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
     return noContent();
   }
 
@@ -46,17 +51,12 @@ export default async function handler(message, context) {
 
   if (presignedUrl) {
     try {
-      log.info(`[Cited] Fetching analysis data from presigned URL: ${presignedUrl}`);
-      const response = await fetch(presignedUrl);
-
-      if (!response.ok) {
-        log.error(`[Cited] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
-        return badRequest(`Failed to fetch analysis data: ${response.statusText}`);
-      }
-
-      analysisData = await response.json();
+      analysisData = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+        log,
+        prefix: LOG_PREFIX,
+      });
     } catch (error) {
-      log.error(`[Cited] Error fetching from presigned URL: ${error.message}`);
+      log.error(`${LOG_PREFIX} Error fetching from presigned URL: ${error.message}`);
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
   } else if (data?.analysis) {
@@ -74,8 +74,6 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
-  const baseUrl = site.getBaseURL();
-
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
@@ -85,15 +83,17 @@ export default async function handler(message, context) {
   }
 
   try {
+    const brandResult = await resolveBrandResultForSite(context, site);
+    const baseUrl = site.getBaseURL();
     const suggestions = analysisData.suggestions || [];
     const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
-      log.info('[Cited] No suggestions found in analysis');
+      log.info(`${LOG_PREFIX} No suggestions found in analysis`);
       return noContent();
     }
 
-    log.info(`[Cited] Processing ${suggestions.length} suggestions for ${companyName}`);
+    log.info(`${LOG_PREFIX} Processing ${suggestions.length} suggestions for ${companyName}`);
 
     const auditType = opportunityData.type || AUDIT_TYPE;
 
@@ -111,6 +111,20 @@ export default async function handler(message, context) {
       (oppty) => oppty.getAuditId() === auditId,
     );
 
+    // Persist the opportunity (with scope) BEFORE syncing suggestions. Reversed
+    // ordering avoids the partial-write window where syncSuggestions succeeds
+    // but opportunity.save() throws — that previously left suggestions orphaned
+    // against an unsaved opportunity, which re-runs would observe in an
+    // unrecoverable state.
+    applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
+    const status = opportunityData.status || 'NEW';
+    opportunity.setStatus(status);
+    opportunity.setData({
+      ...opportunity.getData(),
+      fullAnalysis: analysisData,
+    });
+    await opportunity.save();
+
     await syncSuggestions({
       context,
       opportunity,
@@ -124,15 +138,7 @@ export default async function handler(message, context) {
       }),
     });
 
-    const status = opportunityData.status || 'NEW';
-    opportunity.setStatus(status);
-    opportunity.setData({
-      ...opportunity.getData(),
-      fullAnalysis: analysisData,
-    });
-    await opportunity.save();
-
-    log.info(`[Cited] Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    log.info(`${LOG_PREFIX} Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);

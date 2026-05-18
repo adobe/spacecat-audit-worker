@@ -184,7 +184,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
 
       expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
+      expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
       expect(mappedSuggestion.rank).to.equal(0);
       expect(mappedSuggestion.data).to.deep.equal(testData);
     });
@@ -313,10 +313,11 @@ describe('Semantic Value Visibility Guidance Handler', () => {
   });
 
   describe('stale opportunity cleanup', () => {
-    it('should mark stale opportunity as RESOLVED when no new suggestions', async () => {
+    it('should mark stale SVV opportunity as RESOLVED when no new suggestions', async () => {
       const staleOpportunity = {
         getId: sinon.stub().returns('stale-oppty-123'),
-        getType: sinon.stub().returns('semantic-value-visibility'),
+        getType: sinon.stub().returns('generic-autofix-edge'),
+        getData: sinon.stub().returns({ additionalMetrics: [{ key: 'subtype', value: 'semantic-value-visibility' }] }),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -328,15 +329,123 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         siteId: 'site-123',
         auditId: 'audit-456',
         url: 'https://example.com',
-        data: {
-          suggestions: [],
-        },
+        data: { suggestions: [] },
       };
 
       await handler(message, context);
 
       expect(staleOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(staleOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should not resolve a foreign generic-autofix-edge opportunity on the same site', async () => {
+      const foreignOpportunity = {
+        getId: sinon.stub().returns('foreign-oppty-456'),
+        getType: sinon.stub().returns('generic-autofix-edge'),
+        // different subtype — belongs to another audit, not SVV
+        getData: sinon.stub().returns({ additionalMetrics: [{ key: 'subtype', value: 'canonical' }] }),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      Opportunity.allBySiteIdAndStatus.resolves([foreignOpportunity]);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: { suggestions: [] },
+      };
+
+      await handler(message, context);
+
+      expect(foreignOpportunity.setStatus).not.to.have.been.called;
+      expect(foreignOpportunity.save).not.to.have.been.called;
+    });
+
+    it('should resolve legacy semantic-value-visibility opportunity during transition', async () => {
+      const legacyOpportunity = {
+        getId: sinon.stub().returns('legacy-oppty-789'),
+        getType: sinon.stub().returns('semantic-value-visibility'),
+        getData: sinon.stub().returns({}),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      Opportunity.allBySiteIdAndStatus.resolves([legacyOpportunity]);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: { suggestions: [] },
+      };
+
+      await handler(message, context);
+
+      expect(legacyOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(legacyOpportunity.save).to.have.been.calledOnce;
+    });
+  });
+
+  describe('convertToOpportunity comparisonFn', () => {
+    it('should pass comparisonFn as seventh argument to convertToOpportunity', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      expect(comparisonFn).to.be.a('function');
+    });
+
+    it('comparisonFn should return true for SVV opportunity with correct subtype', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      const svvOppty = { getData: () => ({ additionalMetrics: [{ key: 'subtype', value: 'semantic-value-visibility' }] }) };
+      expect(comparisonFn(svvOppty)).to.equal(true);
+    });
+
+    it('comparisonFn should return false for foreign opportunity with different subtype', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      const foreignOppty = { getData: () => ({ additionalMetrics: [{ key: 'subtype', value: 'canonical' }] }) };
+      expect(comparisonFn(foreignOppty)).to.equal(false);
     });
   });
 });

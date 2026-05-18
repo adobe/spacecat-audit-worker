@@ -12,8 +12,8 @@
 
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
-import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
 // ============================================================================
 // CONSTANTS
@@ -132,6 +132,10 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
+function sqlEscape(s) {
+  return String(s).replace(/'/g, "''");
+}
+
 function buildCountryExtractionSQL() {
   const extracts = DEFAULT_COUNTRY_PATTERNS
     .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
@@ -140,40 +144,13 @@ function buildCountryExtractionSQL() {
   return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
 }
 
-export async function fetchRemotePatterns(site) {
-  const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
-  if (!dataFolder) {
-    return null;
-  }
-
-  try {
-    const url = `${ELMO_LIVE_HOST}/${dataFolder}/agentic-traffic/patterns/patterns.json`;
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'spacecat-audit-worker',
-        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
-      },
-    });
-    if (!res.ok) {
-      return null;
-    }
-    const data = await res.json();
-    return {
-      pagePatterns: data.pagetype?.data || [],
-      topicPatterns: data.products?.data || [],
-    };
-  } catch {
-    return null;
-  }
-}
-
 function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
   if (patterns.length === 0) {
     return "'Other'";
   }
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${sqlEscape(pattern.regex)}') THEN '${sqlEscape(pattern.name)}'`)
     .join('\n');
   return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
 }
@@ -185,9 +162,9 @@ function buildTopicExtractionSQL(remotePatterns = null) {
     const extractPatterns = [];
     patterns.forEach(({ regex, name }) => {
       if (name) {
-        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${sqlEscape(regex)}') THEN '${sqlEscape(name)}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${sqlEscape(regex)}', 1), '')`);
       }
     });
     if (namedPatterns.length > 0 && extractPatterns.length > 0) {
@@ -212,6 +189,7 @@ export async function buildLlmErrorPagesQuery(options) {
     llmProviders = null,
     siteFilters = [],
     site = null,
+    context = {},
   } = options;
 
   const conditions = [];
@@ -223,7 +201,7 @@ export async function buildLlmErrorPagesQuery(options) {
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
-  const remotePatterns = site ? await fetchRemotePatterns(site) : null;
+  const remotePatterns = site ? await fetchAgenticUrlClassificationRules(site, context) : null;
 
   return getStaticContent({
     databaseName,

@@ -44,6 +44,9 @@ import {
   SLOW_MODE_ENTRY_DELAY_MS,
   urlLooksLike404Page,
   formatUrlProbeErrorDetail,
+  pathnameKey,
+  suggestedUrlMatchesCanonicalUrlWithoutSuffix,
+  extractCanonicalHrefFromHtml,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -52,6 +55,9 @@ import { DATA_SOURCES } from '../../src/common/constants.js';
 use(sinonChai);
 use(chaiAsPromised);
 const sandbox = sinon.createSandbox();
+
+/** Minimal HTML returned by GET after redirect probes (no canonical tag). */
+const HTML_PROBE_EMPTY = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body></body></html>';
 
 describe('Sitemap Audit', () => {
   let context;
@@ -645,6 +651,9 @@ describe('Sitemap Audit', () => {
       nock(url)
         .head('/baz')
         .reply(301, '', { Location: `${url}/zzz` });
+      nock(url)
+        .get('/zzz')
+        .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
       const result = await findSitemap('https://some-domain.adobe', {
         info: () => {},
@@ -1406,7 +1415,7 @@ describe('Sitemap Audit', () => {
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
-        recommendedAction: 'use this url instead: https://example.com/new-page',
+        recommendedAction: 'use this URL instead: https://example.com/new-page',
       });
     });
   });
@@ -1418,7 +1427,7 @@ describe('Sitemap Audit', () => {
       pageUrl: 'https://example.com/page',
       statusCode: 301,
       urlsSuggested: 'https://example.com/new',
-      recommendedAction: 'use this url instead: https://example.com/new',
+      recommendedAction: 'use this URL instead: https://example.com/new',
     };
 
     it('removes null error for type url after merge', () => {
@@ -2010,11 +2019,12 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.ok).to.have.lengthOf(2);
   });
 
-  it('should capture final redirect URLs for 301/302 responses', async () => {
+  it('should capture final redirect URLs for 301/302/303 responses', async () => {
     const urls = [
       'https://example.com/ok',
       'https://example.com/permanent-redirect',
       'https://example.com/temporary-redirect',
+      'https://example.com/see-other-redirect',
       'https://example.com/not-found',
     ];
 
@@ -2026,6 +2036,9 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
     nock('https://example.com').head('/new-location').reply(200);
+    nock('https://example.com')
+      .get('/new-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     nock('https://example.com')
       .head('/temporary-redirect')
@@ -2034,6 +2047,21 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
     nock('https://example.com').head('/temp-location').reply(200);
+    nock('https://example.com')
+      .get('/temp-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/see-other-location' });
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/see-other-location' });
+    nock('https://example.com').head('/see-other-location').reply(200);
+    nock('https://example.com')
+      .get('/see-other-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
     nock('https://example.com').head('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
@@ -2049,6 +2077,11 @@ describe('filterValidUrls with redirect handling', () => {
         url: 'https://example.com/temporary-redirect',
         statusCode: 302,
         urlsSuggested: 'https://example.com/temp-location',
+      },
+      {
+        url: 'https://example.com/see-other-redirect',
+        statusCode: 303,
+        urlsSuggested: 'https://example.com/see-other-location',
       },
       {
         url: 'https://example.com/not-found',
@@ -2077,12 +2110,18 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-200')
       .reply(302, '', { Location: 'https://example.com/valid-page' });
     nock('https://example.com').head('/valid-page').reply(200);
+    nock('https://example.com')
+      .get('/valid-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     // Redirect to a URL that contains '404.html' in the path
     nock('https://example.com')
       .head('/redirect-to-404-custom-path')
       .reply(301, '', { Location: 'https://example.com/errors/404.html' });
     nock('https://example.com').head('/errors/404.html').reply(200); // Even with 200 response, path detection should work
+    nock('https://example.com')
+      .get('/errors/404.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     // Test with subdomain
     nock('https://subdomain.example.com')
@@ -2096,7 +2135,7 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-to-404',
-        statusCode: 301,
+        statusCode: 404,
         urlsSuggested: '',
       },
       {
@@ -2106,12 +2145,12 @@ describe('filterValidUrls with redirect handling', () => {
       },
       {
         url: 'https://example.com/redirect-to-404-custom-path',
-        statusCode: 301,
+        statusCode: 404,
         urlsSuggested: '',
       },
       {
         url: 'https://subdomain.example.com/redirect-to-404',
-        statusCode: 302,
+        statusCode: 404,
         urlsSuggested: '',
       },
     ]);
@@ -2128,6 +2167,9 @@ describe('filterValidUrls with redirect handling', () => {
     // Follow-up to validate redirect target fails before a usable terminal URL is known
     nock('https://example.com')
       .head('/error')
+      .replyWithError('Network error');
+    nock('https://example.com')
+      .get('/error')
       .replyWithError('Network error');
 
     const result = await filterValidUrls(urls);
@@ -2189,6 +2231,9 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(301, '', { Location: 'https://example.com/new-location' });
 
     nock('https://example.com').head('/new-location').reply(200);
+    nock('https://example.com')
+      .get('/new-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     nock('https://example.com')
       .head('/network-error')
@@ -2304,6 +2349,9 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(302, '', { Location: 'https://example.com/some-page' });
 
     nock('https://example.com').head('/some-page').reply(200);
+    nock('https://example.com')
+      .get('/some-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -2330,10 +2378,26 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-no-location',
-        statusCode: 301,
+        statusCode: 404,
         urlsSuggested: '',
       },
     ]);
+  });
+
+  it('treats self-redirect (Location same as probed URL) as ok when terminal cannot be validated', async () => {
+    const urls = ['https://example.com/self-redirect-loop'];
+    nock('https://example.com')
+      .head('/self-redirect-loop')
+      .reply(301, '', { Location: 'https://example.com/self-redirect-loop' });
+    nock('https://example.com').head('/self-redirect-loop').reply(404);
+    nock('https://example.com').get('/self-redirect-loop').reply(404);
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    const result = await filterValidUrls(urls, log);
+
+    expect(result.ok).to.deep.equal(['https://example.com/self-redirect-loop']);
+    expect(result.notOk).to.be.empty;
+    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop equals probed/));
   });
 
   it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
@@ -2368,6 +2432,9 @@ describe('filterValidUrls with redirect handling', () => {
     nock('https://example.com')
       .head('/end')
       .reply(200);
+    nock('https://example.com')
+      .get('/end')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -2378,6 +2445,428 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: 'https://example.com/end',
       },
     ]);
+  });
+
+  it('promotes redirect to ok when GET HTML declares probed URL as canonical', async () => {
+    const probed = 'https://example.com/sitemap-old-url';
+    const finalPage = 'https://example.com/final-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${probed}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/sitemap-old-url')
+      .reply(301, '', { Location: finalPage });
+    nock('https://example.com').head('/final-page').reply(200);
+    nock('https://example.com')
+      .get('/final-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.ok).to.deep.equal([probed]);
+    expect(result.notOk).to.be.empty;
+  });
+
+  it('uses canonical href for urlsSuggested when same path as planned terminal (tracking stripped)', async () => {
+    const probed = 'https://example.com/r';
+    const terminalWithQuery = 'https://example.com/p?x=1';
+    const canonicalClean = 'https://example.com/p';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/r')
+      .reply(301, '', { Location: terminalWithQuery });
+    nock('https://example.com').head('/p').query(true).reply(200);
+    nock('https://example.com')
+      .get('/p')
+      .query(true)
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/suggesting the canonical URL/));
+  });
+
+  it('does not replace urlsSuggested when canonical points to a different path', async () => {
+    const probed = 'https://example.com/r2';
+    const terminal = 'https://example.com/terminal';
+    const html = '<!DOCTYPE html><html><head><link rel="canonical" href="https://example.com/other" /></head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/r2')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/terminal').reply(200);
+    nock('https://example.com')
+      .get('/terminal')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: terminal,
+      },
+    ]);
+  });
+
+  it('uses canonical href when terminal pathname extends canonical by dot suffix (e.g. .page)', async () => {
+    const probed = 'https://example.com/r-dot';
+    const terminal = 'https://example.com/support/contact-us.page';
+    const canonicalClean = 'https://example.com/support/contact-us';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/r-dot')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/support/contact-us.page').reply(200);
+    nock('https://example.com')
+      .get('/support/contact-us.page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/terminal path extends canonical by dot suffix/));
+  });
+
+  it('GET for canonical uses non-HTML response without changing redirect notOk', async () => {
+    const probed = 'https://example.com/r-json';
+    const terminal = 'https://example.com/data.json';
+
+    nock('https://example.com')
+      .head('/r-json')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/data.json').reply(200);
+    nock('https://example.com')
+      .get('/data.json')
+      .reply(200, '{}', { 'Content-Type': 'application/json' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('leaves redirect notOk when GET for canonical document fails', async () => {
+    const probed = 'https://example.com/r-get-fail';
+    const terminal = 'https://example.com/dest-fail';
+
+    nock('https://example.com')
+      .head('/r-get-fail')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/dest-fail').reply(200);
+    nock('https://example.com')
+      .get('/dest-fail')
+      .replyWithError('ECONNRESET');
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('parses canonical when GET uses non-sniffable content-type but body starts with tag', async () => {
+    const probed = 'https://example.com/r-sniff';
+    const terminal = 'https://example.com/same-page?tracked=1';
+    const canonicalClean = 'https://example.com/same-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head></html>`;
+
+    nock('https://example.com')
+      .head('/r-sniff')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/same-page').query(true).reply(200);
+    nock('https://example.com')
+      .get('/same-page')
+      .query(true)
+      .reply(200, html, { 'Content-Type': 'application/xml' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('applies request throttle before canonical GET on redirect probes', async () => {
+    const probed = 'https://example.com/r-can-throttle';
+    const terminal = 'https://example.com/can-throttle-term';
+    const intervalMs = 35;
+
+    nock('https://example.com')
+      .head('/r-can-throttle')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/can-throttle-term').reply(200);
+    nock('https://example.com')
+      .get('/can-throttle-term')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    const started = Date.now();
+    const result = await filterValidUrls([probed], undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+      pageUrlBatchDelayMs: 0,
+      pageUrlHttpRequestIntervalMs: intervalMs,
+    });
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+    expect(Date.now() - started).to.be.at.least(intervalMs - 5);
+  });
+
+  it('skips canonical parsing when GET document returns non-OK status', async () => {
+    const probed = 'https://example.com/r-can-500';
+    const terminal = 'https://example.com/can-500-term';
+
+    nock('https://example.com')
+      .head('/r-can-500')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/can-500-term').reply(200);
+    nock('https://example.com').get('/can-500-term').reply(500);
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('treats text/html with empty body as no canonical for redirect refine', async () => {
+    const probed = 'https://example.com/r-empty-html';
+    const terminal = 'https://example.com/empty-html-term';
+
+    nock('https://example.com')
+      .head('/r-empty-html')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/empty-html-term').reply(200);
+    nock('https://example.com')
+      .get('/empty-html-term')
+      .reply(200, '', { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('parses canonical when GET omits Content-Type but body is HTML', async () => {
+    const probed = 'https://example.com/r-no-ct';
+    const terminal = 'https://example.com/same-no-ct?x=1';
+    const canonicalClean = 'https://example.com/same-no-ct';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head></html>`;
+
+    nock('https://example.com')
+      .head('/r-no-ct')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/same-no-ct').query(true).reply(200);
+    nock('https://example.com').get('/same-no-ct').query(true).reply(200, html);
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('uses content-type only for HTML detection when body does not start with a tag', async () => {
+    const probed = 'https://example.com/r-plain-in-html';
+    const terminal = 'https://example.com/plain-in-html-term';
+
+    nock('https://example.com')
+      .head('/r-plain-in-html')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/plain-in-html-term').reply(200);
+    nock('https://example.com')
+      .get('/plain-in-html-term')
+      .reply(200, 'no angle bracket here', { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('ignores non-http(s) canonical href from HTML', async () => {
+    const probed = 'https://example.com/r-ftp';
+    const terminal = 'https://example.com/ftp-page';
+    const html = '<!DOCTYPE html><html><head>'
+      + '<link rel="canonical" href="ftp://example.com/same" />'
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/r-ftp')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/ftp-page').reply(200);
+    nock('https://example.com')
+      .get('/ftp-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('promotes redirect to ok when canonical matches probed URL with trailing slash', async () => {
+    const probed = 'https://example.com/probed-trailing/';
+    const finalPage = 'https://example.com/final-ts';
+    const html = '<!DOCTYPE html><html><head>'
+      + '<link rel="canonical" href="https://example.com/probed-trailing" />'
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/probed-trailing/')
+      .reply(301, '', { Location: finalPage });
+    nock('https://example.com').head('/final-ts').reply(200);
+    nock('https://example.com')
+      .get('/final-ts')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.ok).to.deep.equal([probed]);
+  });
+});
+
+describe('pathnameKey', () => {
+  it('normalizes trailing slash on pathname (except root)', () => {
+    expect(pathnameKey('https://ExAmple.com/foo/')).to.equal('https://example.com/foo');
+    expect(pathnameKey('https://example.com/')).to.equal('https://example.com/');
+  });
+
+  it('returns original string when URL parsing fails', () => {
+    expect(pathnameKey('not-a-valid-url')).to.equal('not-a-valid-url');
+  });
+});
+
+describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
+  it('returns true when terminal path is canonical path plus dot suffix (e.g. .page)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://www.ups.com/us/en/support/contact-us.page',
+      'https://www.ups.com/us/en/support/contact-us',
+    )).to.equal(true);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://Example.COM/a/b.html',
+      'https://example.com/a/b',
+    )).to.equal(true);
+  });
+
+  it('returns true when trailing slashes normalize to the same dot-suffix relationship', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/dir/name.page/',
+      'https://example.com/dir/name/',
+    )).to.equal(true);
+  });
+
+  it('returns false when extra segment would be another path level', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/foo/bar',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when suggested pathname does not start with canonical pathname', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/a/c.page',
+      'https://example.com/a/b',
+    )).to.equal(false);
+  });
+
+  it('returns false when dot-suffix segment contains a slash', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/can./more',
+      'https://example.com/can',
+    )).to.equal(false);
+  });
+
+  it('returns false when rest is only a dot (no suffix segment)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/foo.',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths share a string prefix but not a dot boundary (e.g. /blog vs /blogging)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/blogging',
+      'https://example.com/blog',
+    )).to.equal(false);
+  });
+
+  it('returns false for invalid URLs, mismatched host, or mismatched protocol', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix('', 'https://example.com/a')).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'not-a-url',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/a.page',
+      'not-a-url',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://other.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'http://example.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths are identical', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/p',
+      'https://example.com/p',
+    )).to.equal(false);
+  });
+});
+
+describe('extractCanonicalHrefFromHtml', () => {
+  it('returns null for empty or non-string body', () => {
+    expect(extractCanonicalHrefFromHtml('', 'https://example.com/')).to.be.null;
+    expect(extractCanonicalHrefFromHtml(null, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns resolved href for canonical in body when missing from head', () => {
+    const html = '<!DOCTYPE html><html><head></head><body>'
+      + '<link rel="canonical" href="/from-body" /></body></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/doc')).to.equal(
+      'https://example.com/from-body',
+    );
+  });
+
+  it('returns null when href is empty', () => {
+    const html = '<html><head><link rel="canonical" href="" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns null when href is only whitespace', () => {
+    const html = '<html><head><link rel="canonical" href="   " /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns null when documentUrl is missing', () => {
+    const html = '<html><head><link rel="canonical" href="/x" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, '')).to.be.null;
+  });
+
+  it('returns null when new URL throws for href resolution', () => {
+    const html = '<html><head><link rel="canonical" href="http://[" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
   });
 });
 
@@ -2437,11 +2926,12 @@ describe('filterValidUrls with status code tracking', () => {
     nock.cleanAll();
   });
 
-  it('should only track specified status codes (301, 302, 404)', async () => {
+  it('should only track specified status codes (301, 302, 303, 404)', async () => {
     const urls = [
       'https://example.com/ok',
       'https://example.com/permanent-redirect',
       'https://example.com/temp-redirect',
+      'https://example.com/see-other-redirect',
       'https://example.com/not-found',
       'https://example.com/server-error',
       'https://example.com/forbidden',
@@ -2454,6 +2944,9 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com')
       .head('/temp-redirect')
       .reply(302, '', { Location: 'https://example.com/temp' });
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/other' });
     nock('https://example.com').head('/not-found').reply(404);
     nock('https://example.com').head('/server-error').reply(500);
     nock('https://example.com').head('/forbidden').reply(403);
@@ -2461,6 +2954,16 @@ describe('filterValidUrls with status code tracking', () => {
     // Mock validation of suggested URLs
     nock('https://example.com').head('/new').reply(200);
     nock('https://example.com').head('/temp').reply(200);
+    nock('https://example.com').head('/other').reply(200);
+    nock('https://example.com')
+      .get('/new')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+    nock('https://example.com')
+      .get('/temp')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+    nock('https://example.com')
+      .get('/other')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -2477,6 +2980,11 @@ describe('filterValidUrls with status code tracking', () => {
         url: 'https://example.com/temp-redirect',
         statusCode: 302,
         urlsSuggested: 'https://example.com/temp',
+      },
+      {
+        url: 'https://example.com/see-other-redirect',
+        statusCode: 303,
+        urlsSuggested: 'https://example.com/other',
       },
       {
         url: 'https://example.com/not-found',
@@ -2523,6 +3031,9 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com').head('/errors/404/page').reply(404);
     nock('https://example.com').get('/errors/404/page').reply(404);
     nock('https://example.com').head('/valid-page').reply(200);
+    nock('https://example.com')
+      .get('/valid-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -2535,7 +3046,7 @@ describe('filterValidUrls with status code tracking', () => {
     );
 
     redirectsTo404.forEach((item) => {
-      expect(item.statusCode).to.equal(301);
+      expect(item.statusCode).to.equal(404);
       expect(item.urlsSuggested).to.equal('');
     });
 
@@ -2633,7 +3144,10 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
 
     // Target page returns 404 for HEAD but 200 for GET
     nock('https://example.com').head('/target-page').reply(404);
-    nock('https://example.com').get('/target-page').reply(200);
+    nock('https://example.com')
+      .get('/target-page')
+      .times(2)
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -2698,22 +3212,25 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop redirect target/));
   });
 
-  it('calls log.error when redirect terminal is clearly bad and log is provided', async () => {
+  it('calls log.debug when redirect terminal is clearly bad and log is provided', async () => {
     const urls = ['https://example.com/orig-301-404'];
     nock('https://example.com')
       .head('/orig-301-404')
       .reply(301, '', { Location: 'https://example.com/term-404' });
     nock('https://example.com').head('/term-404').reply(404);
-    nock('https://example.com').get('/term-404').reply(404);
+    nock('https://example.com')
+      .get('/term-404')
+      .times(2)
+      .reply(404);
     const log = { error: sandbox.spy(), debug: sandbox.spy() };
 
     const result = await filterValidUrls(urls, log);
 
-    expect(log.error).to.have.been.calledWith(sinon.match(/does not resolve to a valid terminal/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/does not resolve to a valid terminal/));
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/orig-301-404',
-        statusCode: 301,
+        statusCode: 404,
         urlsSuggested: '',
       },
     ]);
