@@ -64,7 +64,7 @@ async function generateRulesFromSitemap({ site, context }) {
     return null;
   }
 
-  const { records } = await collectUrlSignals(sample.urls, { site, context });
+  const { records } = await collectUrlSignals(sample.urls, { context });
   const withSignal = records.filter((r) => r.signal).length;
   log.info(`patterns: ${withSignal}/${records.length} URLs enriched with breadcrumb/schema/title signals`);
 

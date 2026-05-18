@@ -199,12 +199,22 @@ function signalFromHtml(html) {
 
 // ──────────────── per-URL signal acquisition ────────────────
 
-async function s3Signal(s3Client, bucket, siteId, path, log) {
-  if (!s3Client || !bucket) {
+// Resolve the most recent default-processing scrape for a URL via the
+// data-access layer (ScrapeUrl model). The S3 key is whatever path the
+// scrape-job service wrote, which today is `scrapes/{scrapeJobId}/{...}/scrape.json`
+// — a UUID-keyed location we can't compute from siteId.
+async function s3Signal(s3Client, bucket, scrapeUrlModel, url, log) {
+  if (!s3Client || !bucket || !scrapeUrlModel) {
     return null;
   }
   try {
-    const obj = await getObjectFromKey(s3Client, bucket, `scrapes/${siteId}${path}/scrape.json`, log);
+    const records = await scrapeUrlModel.allRecentByUrlAndProcessingType(url, 'default');
+    const latest = records?.[0];
+    const key = typeof latest?.getPath === 'function' ? latest.getPath() : latest?.path;
+    if (!key) {
+      return null;
+    }
+    const obj = await getObjectFromKey(s3Client, bucket, key, log);
     return obj && typeof obj === 'object' ? signalFromScrape(obj) : null;
   } catch {
     return null;
@@ -251,18 +261,23 @@ async function parallelMap(items, concurrency, worker) {
 /**
  * Attach a `signal` field to each `{url, path}` record:
  *   `{ source: 's3'|'fetch', title, h1, breadcrumb: string[], schemaTypes: string[] }`
- * S3 scrape cache is tried first; misses fall back to a direct HTTP GET.
+ *
+ * For each URL, looks up the most recent default-processing scrape via the
+ * ScrapeUrl data-access model and reads the cached scrape.json from S3. If
+ * no scrape record exists, falls back to a direct HTTP GET against the URL.
  */
-export async function collectUrlSignals(records, { site, context, allowDirectFetch = true }) {
-  const { log, s3Client, env } = context;
+export async function collectUrlSignals(records, { context, allowDirectFetch = true }) {
+  const {
+    log, s3Client, env, dataAccess,
+  } = context;
   const bucket = env?.S3_SCRAPER_BUCKET_NAME;
-  const siteId = site.getId();
+  const scrapeUrlModel = dataAccess?.ScrapeUrl;
   const stats = { s3Hits: 0, fetchHits: 0, misses: 0 };
 
   const s3 = await parallelMap(
     records,
     FETCH_CONCURRENCY,
-    (r) => s3Signal(s3Client, bucket, siteId, r.path, log),
+    (r) => s3Signal(s3Client, bucket, scrapeUrlModel, r.url, log),
   );
   s3.forEach((s) => {
     if (s) {
