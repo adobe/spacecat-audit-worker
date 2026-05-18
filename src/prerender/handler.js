@@ -926,7 +926,7 @@ export async function submitForScraping(context) {
 
   // Sticky domain bot-block from status.json (Slack runs bypass so operators can force a re-scrape)
   if (!isSlackTriggered && isStickyBotBlocked(siteStatus)) {
-    log.info(`${LOG_PREFIX} Sticky scrapeForbidden within ${DOMAIN_STICKY_BOT_SKIP_MS / 86400000}d window, skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+    log.info(`${LOG_PREFIX} Sticky scrapeForbidden within ${DOMAIN_STICKY_BOT_SKIP_MS / 86400000}d window, skipping. baseUrl=${site.getBaseURL()}, siteId=${siteId}, blockedSince=${siteStatus.scrapeForbiddenSince}`);
     return {
       urls: [],
       siteId,
@@ -1709,6 +1709,7 @@ export async function processContentAndGenerateOpportunities(context) {
         } catch (e) {
           log.warn(`${LOG_PREFIX} detectBotBlocker failed after high 403 ratio: ${e.message}. baseUrl=${site.getBaseURL()}`);
         }
+        log.info(`${LOG_PREFIX} Bot-block detection result: ratio403=${ratio403}, scrapeForbidden=${scrapeForbidden}, scrapeForbiddenSince=${scrapeForbiddenSince ?? 'n/a'}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
       }
     }
 

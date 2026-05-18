@@ -1552,11 +1552,15 @@ describe('Prerender Audit', () => {
       it('skips URL fetching and creates scrape-forbidden opportunity when domainBlocked', async function () {
         this.timeout(5000);
         const convertToOpportunityStub = sandbox.stub().resolves();
+        const syncSuggestionsStub = sandbox.stub().resolves();
         const isPaidLLMOCustomerStub = sandbox.stub().resolves(false);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: isPaidLLMOCustomerStub,
@@ -1592,11 +1596,11 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
-        // Flows through the existing scrapeForbidden=true branch — returns standard complete shape
         expect(result).to.be.an('object');
         expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
-        // Forbidden opportunity was created via existing scrapeForbidden branch
+        // createScrapeForbiddenOpportunity was called (not syncSuggestions)
         expect(convertToOpportunityStub).to.have.been.calledOnce;
+        expect(syncSuggestionsStub).to.not.have.been.called;
         // uploadStatusSummaryToS3 was called (S3 PutObject written)
         expect(s3SendStub).to.have.been.called;
       });
@@ -1951,7 +1955,15 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.scrapeForbidden).to.be.true;
+        expect(result.auditResult.scrapeForbiddenSince).to.be.a('string');
         expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
+
+        // Verify scrapeForbidden and scrapeForbiddenSince are forwarded to status.json
+        const putCall = mockS3Client.send.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand');
+        expect(putCall).to.exist;
+        const statusBody = JSON.parse(putCall.args[0].input.Body);
+        expect(statusBody.scrapeForbidden).to.be.true;
+        expect(statusBody.scrapeForbiddenSince).to.be.a('string');
 
         // Verify that convertToOpportunity was called for notification
         expect(convertToOpportunityStub).to.have.been.calledOnce;
