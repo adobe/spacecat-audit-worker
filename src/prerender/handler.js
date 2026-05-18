@@ -1134,7 +1134,7 @@ export async function processOpportunityAndSuggestions(
     // Key on pathname only so that domain shifts (e.g. after page-citability migration
     // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
     // suggestions for the same page path.
-    return `${toPathname(data.url)}|${AUDIT_TYPE}`;
+    return toPathname(data.url);
   };
 
   // Helper function to extract only the fields we want in suggestions
@@ -1734,7 +1734,7 @@ export async function processContentAndGenerateOpportunities(context) {
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => `${toPathname(suggestionData.url)}|${AUDIT_TYPE}`,
+          buildKey: (suggestionData) => toPathname(suggestionData.url),
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });

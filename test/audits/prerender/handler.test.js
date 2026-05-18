@@ -1664,9 +1664,9 @@ describe('Prerender Audit', () => {
         expect(syncCall.mapNewSuggestion).to.be.a('function');
         expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
 
-        // buildKey must match the format used in processOpportunityAndSuggestions
-        expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/|prerender');
-        expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page|prerender');
+        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
+        expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
+        expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
         expect(syncCall.mapNewSuggestion()).to.deep.equal({});
 
         expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
@@ -2801,8 +2801,8 @@ describe('Prerender Audit', () => {
         const { buildKey } = syncSuggestionsStub.firstCall.args[0];
 
         // Both domain variants of the same page must produce the same key
-        expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page|prerender');
-        expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page|prerender');
+        expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
+        expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
 
         // Domain-wide suggestions (with a `key` field) pass through unchanged
         expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');

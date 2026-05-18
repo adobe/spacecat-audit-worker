@@ -20,10 +20,9 @@ import { toPathname } from '../../../src/prerender/utils/utils.js';
 use(sinonChai);
 
 // Mirrors the buildKey in processOpportunityAndSuggestions
-const AUDIT_TYPE = 'prerender';
 const buildKey = (data) => {
   if (data.key) return data.key;
-  return `${toPathname(data.url)}|${AUDIT_TYPE}`;
+  return toPathname(data.url);
 };
 
 // Mirrors the pathname-normalized scrapedUrlsSet created in processOpportunityAndSuggestions
@@ -68,7 +67,7 @@ describe('Prerender syncSuggestions integration', () => {
     opportunity = {
       getId: () => 'opp-1',
       getSiteId: () => 'site-1',
-      getType: () => AUDIT_TYPE,
+      getType: () => 'prerender',
       getSuggestions: sandbox.stub(),
       addSuggestions,
     };
