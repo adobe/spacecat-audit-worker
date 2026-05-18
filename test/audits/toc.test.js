@@ -3031,6 +3031,32 @@ describe('TOC (Table of Contents) Audit', () => {
         const result = extractTocData($, getHeadingSelector);
         expect(result[0].selector).to.equal('h1#main');
       });
+      it('excludes headings inside .form-step containers', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">Get Your Quote</h1>'
+          + '<div class="form-step"><h2>Step 1: Personal Details</h2></div>'
+          + '<div class="form-step"><h2>Step 2: Coverage Options</h2></div>'
+          + '<h2 id="sec">Why Choose Us</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Get Your Quote', 'Why Choose Us']);
+      });
+      it('deduplicates headings with identical normalised text', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">Coverage Options</h1>'
+          + '<h2 id="b">Section One</h2>'
+          + '<h2 id="c">Coverage Options</h2>'
+          + '<h2 id="d">Section Two</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result.map((r) => r.text)).to.deep.equal(['Coverage Options', 'Section One', 'Section Two']);
+      });
     });
 
     describe('tocArrayToHast', () => {
@@ -3049,6 +3075,20 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(ul.children[1].properties.className).to.include('toc-sub');
         expect(ul.children[0].children[0].properties['data-selector']).to.equal('h1#main');
         expect(ul.children[0].children[0].children[0].value).to.equal('Title');
+      });
+
+      it('filters out items with empty or whitespace-only text', () => {
+        const tocData = [
+          { text: 'Valid Heading', level: 1, selector: 'h1#valid' },
+          { text: '', level: 1, selector: 'h1#empty' },
+          { text: '   ', level: 2, selector: 'h2#whitespace' },
+          { text: 'Another Valid', level: 2, selector: 'h2#also-valid' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        const ul = hast.children[0].children[0];
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[0].children[0].children[0].value).to.equal('Valid Heading');
+        expect(ul.children[1].children[0].children[0].value).to.equal('Another Valid');
       });
     });
 

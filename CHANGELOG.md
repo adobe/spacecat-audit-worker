@@ -1,3 +1,11 @@
+## [1.443.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.443.0...v1.443.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **toc:** exclude form-step headings and deduplicate heading extraction (LLMO-4946) ([#2521](https://github.com/adobe/spacecat-audit-worker/issues/2521)) ([4040760](https://github.com/adobe/spacecat-audit-worker/commit/4040760d74fe8d938139a653d4a462478aad9fc7))
+* **toc:** guard tocArrayToHast against empty-text headings (LLMO-4947) ([#2522](https://github.com/adobe/spacecat-audit-worker/issues/2522)) ([8e35e68](https://github.com/adobe/spacecat-audit-worker/commit/8e35e68505e3c2d0b1121a16d379e854ebcdae86))
+
 # [1.443.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.442.0...v1.443.0) (2026-05-14)
 
 
