@@ -406,5 +406,17 @@ describe('Prerender Shared Utils', () => {
     it('should return the raw string for an invalid URL', () => {
       expect(toPathname('not-a-valid-url')).to.equal('not-a-valid-url');
     });
+
+    it('should strip trailing slash from non-root paths', () => {
+      expect(toPathname('https://www.adobe.com/test/page/')).to.equal('/test/page');
+    });
+
+    it('should preserve trailing slash for root path', () => {
+      expect(toPathname('https://adobe.com/')).to.equal('/');
+    });
+
+    it('should return / for a bare domain with no path', () => {
+      expect(toPathname('https://adobe.com')).to.equal('/');
+    });
   });
 });

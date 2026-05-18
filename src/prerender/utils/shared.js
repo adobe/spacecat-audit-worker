@@ -43,7 +43,8 @@ export function generateReportingPeriods(referenceDate = new Date()) {
  */
 export function toPathname(url) {
   try {
-    return new URL(url).pathname;
+    const { pathname } = new URL(url);
+    return pathname === '/' ? pathname : pathname.replace(/\/$/, '');
   } catch {
     return url;
   }
