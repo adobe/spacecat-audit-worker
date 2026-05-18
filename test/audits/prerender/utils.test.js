@@ -14,6 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { toPathname } from '../../../src/prerender/utils/utils.js';
 
 use(sinonChai);
 
@@ -393,11 +394,7 @@ describe('Prerender Utils', () => {
       expect(result.filteredCount).to.equal(3);
     });
   });
-});
 
-import { toPathname } from '../../../src/prerender/utils/utils.js';
-
-describe('Prerender Shared Utils', () => {
   describe('toPathname', () => {
     it('should return the pathname for a valid URL', () => {
       expect(toPathname('https://www.adobe.com/test/page')).to.equal('/test/page');
@@ -411,7 +408,7 @@ describe('Prerender Shared Utils', () => {
       expect(toPathname('https://www.adobe.com/test/page/')).to.equal('/test/page');
     });
 
-    it('should preserve trailing slash for root path', () => {
+    it('should preserve / for root path', () => {
       expect(toPathname('https://adobe.com/')).to.equal('/');
     });
 
