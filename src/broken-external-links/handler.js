@@ -52,11 +52,12 @@ export function buildSuggestions(brokenLinksBySrcPage) {
  * and creates an Opportunity with per-broken-URL Suggestions.
  *
  * @param {string} auditUrl - The resolved base URL for the audit.
- * @param {Object} context - Lambda context (site, dataAccess, log).
+ * @param {Object} context - Lambda context (dataAccess, log, etc.).
+ * @param {Object} site - The site object.
  * @returns {Promise<{auditData: Object, fullAuditRef: string}>}
  */
-export async function brokenExternalLinksRunner(auditUrl, context) {
-  const { site, dataAccess, log } = context;
+export async function brokenExternalLinksRunner(auditUrl, context, site) {
+  const { dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(
