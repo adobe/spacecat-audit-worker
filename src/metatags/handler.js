@@ -11,7 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as OpportunityModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
@@ -307,6 +307,26 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Check if there are any detected tags BEFORE proceeding
   if (!validatedDetectedTags || Object.keys(validatedDetectedTags).length === 0) {
     log.info(`[metatags] No valid metatag issues detected for ${site.getId()}, skipping opportunity creation`);
+
+    try {
+      const opportunities = await context.dataAccess.Opportunity
+        .allBySiteIdAndStatus(site.getId(), OpportunityModel.STATUSES.NEW);
+      const opportunity = opportunities.find((oppty) => oppty.getType() === auditType);
+      if (opportunity) {
+        log.info(`[metatags] Resolving existing meta-tags opportunity ${opportunity.getId()} for ${site.getId()}`);
+        await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
+        const suggestions = await opportunity.getSuggestions();
+        if (suggestions?.length > 0) {
+          await context.dataAccess.Suggestion
+            .bulkUpdateStatus(suggestions, SuggestionModel.STATUSES.OUTDATED);
+        }
+        opportunity.setUpdatedBy('system');
+        await opportunity.save();
+      }
+    } catch (e) {
+      log.error(`[metatags] Failed to resolve opportunity for ${site.getId()}: ${e.message}`);
+    }
+
     return {
       status: 'complete',
     };
