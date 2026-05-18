@@ -24,11 +24,19 @@ import { getObjectFromKey } from '../../utils/s3-utils.js';
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const DEFAULT_SAMPLE_SIZE = 300;
-const SITEMAP_MAX_PAGES = 5000;
+const numEnv = (name, fallback) => {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+
+// Conservative defaults that fit a Lambda budget. Overridable via env so
+// they can be tuned without redeploying.
+const DEFAULT_SAMPLE_SIZE = numEnv('CDN_PATTERNS_SAMPLE_SIZE', 150);
+const SITEMAP_MAX_PAGES = numEnv('CDN_PATTERNS_SITEMAP_MAX_PAGES', 5000);
 const DEDUP_DEPTH = 3;
-const FETCH_TIMEOUT_MS = 20_000;
-const FETCH_CONCURRENCY = 3;
+const FETCH_TIMEOUT_MS = numEnv('CDN_PATTERNS_FETCH_TIMEOUT_MS', 10_000);
+const FETCH_CONCURRENCY = numEnv('CDN_PATTERNS_FETCH_CONCURRENCY', 3);
+const SIGNAL_BUDGET_MS = numEnv('CDN_PATTERNS_SIGNAL_BUDGET_MS', 240_000);
 
 const JSON_LD_RE = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
 const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title>/i;
@@ -243,11 +251,15 @@ async function httpSignal(url, log) {
   }
 }
 
-async function parallelMap(items, concurrency, worker) {
+// Bounded-concurrency map with an optional wall-clock deadline. Once the
+// deadline fires, in-flight workers finish but no new work is claimed —
+// the remaining slots in `out` stay `undefined` so callers can detect them.
+async function parallelMap(items, concurrency, worker, deadline = Infinity) {
   const out = new Array(items.length);
   let cursor = 0;
+  const stop = () => Date.now() >= deadline;
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (cursor < items.length) {
+    while (cursor < items.length && !stop()) {
       const idx = cursor;
       cursor += 1;
       // eslint-disable-next-line no-await-in-loop
@@ -272,12 +284,16 @@ export async function collectUrlSignals(records, { context, allowDirectFetch = t
   } = context;
   const bucket = env?.S3_SCRAPER_BUCKET_NAME;
   const scrapeUrlModel = dataAccess?.ScrapeUrl;
-  const stats = { s3Hits: 0, fetchHits: 0, misses: 0 };
+  const deadline = Date.now() + SIGNAL_BUDGET_MS;
+  const stats = {
+    s3Hits: 0, fetchHits: 0, misses: 0, deadlineHit: false,
+  };
 
   const s3 = await parallelMap(
     records,
     FETCH_CONCURRENCY,
     (r) => s3Signal(s3Client, bucket, scrapeUrlModel, r.url, log),
+    deadline,
   );
   s3.forEach((s) => {
     if (s) {
@@ -296,6 +312,7 @@ export async function collectUrlSignals(records, { context, allowDirectFetch = t
       needsFetch,
       FETCH_CONCURRENCY,
       (idx) => httpSignal(records[idx].url, log),
+      deadline,
     );
   }
 
@@ -314,7 +331,11 @@ export async function collectUrlSignals(records, { context, allowDirectFetch = t
     return { ...r, signal: signal || null };
   });
 
-  log?.info(`url-signals: s3=${stats.s3Hits}, fetch=${stats.fetchHits}, miss=${stats.misses}`);
+  if (Date.now() >= deadline) {
+    stats.deadlineHit = true;
+    log?.warn?.(`url-signals: signal-collection budget (${SIGNAL_BUDGET_MS}ms) exhausted — ${stats.misses} URLs unresolved`);
+  }
+  log?.info(`url-signals: s3=${stats.s3Hits}, fetch=${stats.fetchHits}, miss=${stats.misses}, deadlineHit=${stats.deadlineHit}`);
   return { records: out, stats };
 }
 /* c8 ignore end */
