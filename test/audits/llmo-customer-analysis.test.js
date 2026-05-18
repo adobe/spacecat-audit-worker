@@ -1625,12 +1625,16 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Chain the eq calls and resolve with matching brand
+      // Q1 direct match: site_id = 'site-123' → brand-uuid-1 returned immediately
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-uuid-1', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1682,17 +1686,35 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Q1 direct: no direct site_id match; Q2 brand_sites join returns brand-fb
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-fb', site_id: null, brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
@@ -1720,18 +1742,35 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Return brands without brand_sites property
-      const brandsQuery = {
+      // Both queries return empty: no direct match, no brand_sites match
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-no-sites', site_id: null }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
@@ -1755,17 +1794,35 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Server-side filtering: 'other-site' doesn't match siteId 'site-123' — both queries empty
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-other', site_id: 'other-site', brand_sites: [{ site_id: 'other-site' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis(
@@ -1779,7 +1836,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(createCall).to.exist;
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.be.undefined;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
     it('should prefer baseSiteId match over brand_sites match', async () => {
@@ -1796,16 +1853,16 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Two brands: one with baseSiteId (site_id) match, one with only brand_sites match.
-      // The baseSiteId match should be preferred (it has the correct base URL).
+      // Q1 direct: filters by site_id='site-123' server-side → only brand-base returned (Q2 never called)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [
-                { id: 'brand-sub', site_id: null, brand_sites: [{ site_id: 'site-123' }] },
-                { id: 'brand-base', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] },
-              ],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-base' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1847,11 +1904,17 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Mock postgrestClient that throws
+      // Mock postgrestClient that rejects on limit() (matching the order/limit terminal pattern)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().rejects(new Error('DB error')),
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().rejects(new Error('DB error')),
+                }),
+              }),
+            }),
           }),
         }),
       };
@@ -1995,7 +2058,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(log.warn).to.have.been.calledWith(sinon.match(/postgrestClient not available/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
     it('should continue when brandalf helper warns on error', async () => {

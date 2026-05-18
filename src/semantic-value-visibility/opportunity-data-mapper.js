@@ -11,6 +11,7 @@
  */
 
 import { DATA_SOURCES } from '../common/constants.js';
+import { AUDIT_TYPE } from './constants.js';
 
 export function createOpportunityData(props = {}) {
   const { guidance = {} } = props;
@@ -28,6 +29,10 @@ export function createOpportunityData(props = {}) {
     tags: ['isElmo', 'content', 'edgeOptimize'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
+      // Stable per-audit discriminator — required because OPPORTUNITY_TYPE is a shared bucket
+      // (generic-autofix-edge). Without this, stale-scan and upsert would match any
+      // generic-autofix-edge opportunity on the site, not just SVV ones.
+      additionalMetrics: [{ key: 'subtype', value: AUDIT_TYPE }],
     },
   };
 }
