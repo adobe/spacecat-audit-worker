@@ -40,6 +40,13 @@ describe('Semantic Value Visibility Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });
 
+    it('should include additionalMetrics subtype discriminator', () => {
+      const result = createOpportunityData({ guidance: krisshopFixture.guidance });
+
+      expect(result.data.additionalMetrics).to.be.an('array').with.lengthOf(1);
+      expect(result.data.additionalMetrics[0]).to.deep.equal({ key: 'subtype', value: 'semantic-value-visibility' });
+    });
+
     it('should include guidance with insight, rationale, recommendation', () => {
       const result = createOpportunityData({ guidance: krisshopFixture.guidance });
 
