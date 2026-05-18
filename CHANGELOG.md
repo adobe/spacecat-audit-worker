@@ -1,3 +1,10 @@
+## [1.444.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.1...v1.444.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* Sitemap honors protocol compatibility ([#2528](https://github.com/adobe/spacecat-audit-worker/issues/2528)) ([a1d2fe6](https://github.com/adobe/spacecat-audit-worker/commit/a1d2fe6e1da9391f1eda4eb761315769d703d02a))
+
 ## [1.444.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.0...v1.444.1) (2026-05-18)
 
 
