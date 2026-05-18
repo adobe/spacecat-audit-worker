@@ -416,4 +416,65 @@ describe('Prerender Utils', () => {
       expect(toPathname('https://adobe.com')).to.equal('/');
     });
   });
+
+  describe('pathname-based suggestion key dedup', () => {
+    const AUDIT_TYPE = 'prerender';
+    const buildKey = (data) => (data.key ? data.key : `${toPathname(data.url)}|${AUDIT_TYPE}`);
+
+    // Case 1: existing suggestion updated in place after domain shift (no duplicate created)
+    it('should match existing and new suggestion by pathname when domain shifts (www → no-www)', () => {
+      const existing = [{ url: 'https://www.adobe.com/test' }];
+      const newData = [{ url: 'https://adobe.com/test' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const updatedInPlace = existing.filter((s) => newDataKeySet.has(buildKey(s)));
+      const createdNew = newData.filter(
+        (d) => !new Set(existing.map(buildKey)).has(buildKey(d)),
+      );
+
+      expect(updatedInPlace).to.have.lengthOf(1);
+      expect(createdNew).to.have.lengthOf(0);
+    });
+
+    // Case 1: trailing slash variant treated as same page (no duplicate)
+    it('should match existing and new suggestion by pathname when trailing slash differs', () => {
+      const existing = [{ url: 'https://adobe.com/products' }];
+      const newData = [{ url: 'https://adobe.com/products/' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const updatedInPlace = existing.filter((s) => newDataKeySet.has(buildKey(s)));
+      const createdNew = newData.filter(
+        (d) => !new Set(existing.map(buildKey)).has(buildKey(d)),
+      );
+
+      expect(updatedInPlace).to.have.lengthOf(1);
+      expect(createdNew).to.have.lengthOf(0);
+    });
+
+    // Case 2: existing suggestion marked outdated when page is scraped but no longer needs prerender
+    it('should identify existing suggestion as outdated when its pathname is not in new audit data', () => {
+      const existing = [{ url: 'https://adobe.com/old-page' }];
+      const newData = [{ url: 'https://adobe.com/new-page' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const outdated = existing.filter((s) => !newDataKeySet.has(buildKey(s)));
+
+      expect(outdated).to.have.lengthOf(1);
+    });
+
+    // Case 5: genuinely new page creates a new suggestion
+    it('should identify new audit data as a new suggestion when no existing suggestion matches its pathname', () => {
+      const existing = [{ url: 'https://adobe.com/existing-page' }];
+      const newData = [
+        { url: 'https://adobe.com/existing-page' },
+        { url: 'https://adobe.com/brand-new-page' },
+      ];
+
+      const existingKeySet = new Set(existing.map(buildKey));
+      const createdNew = newData.filter((d) => !existingKeySet.has(buildKey(d)));
+
+      expect(createdNew).to.have.lengthOf(1);
+      expect(createdNew[0].url).to.equal('https://adobe.com/brand-new-page');
+    });
+  });
 });
