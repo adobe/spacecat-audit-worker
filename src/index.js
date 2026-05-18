@@ -125,6 +125,7 @@ import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
+import brokenExternalLinks from './broken-external-links/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -145,6 +146,7 @@ const HANDLERS = {
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
+  'broken-external-links': brokenExternalLinks,
   'broken-internal-links': internalLinks,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
