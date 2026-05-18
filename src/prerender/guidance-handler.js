@@ -11,8 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidLLMOCustomer } from './utils/utils.js';
-import { toPathname } from './utils/shared.js';
+import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 

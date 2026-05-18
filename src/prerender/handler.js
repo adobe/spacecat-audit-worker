@@ -20,8 +20,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
-import { toPathname } from './utils/shared.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -1208,6 +1207,7 @@ export async function processOpportunityAndSuggestions(
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
+    existingSuggestions: existingSuggestionsForSync,
     context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
@@ -1776,7 +1776,7 @@ export async function processContentAndGenerateOpportunities(context) {
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => `${toPathname(suggestionData.url)}|${AUDIT_TYPE}`,
+          buildKey: (suggestionData) => toPathname(suggestionData.url),
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });

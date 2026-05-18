@@ -395,7 +395,7 @@ describe('Prerender Utils', () => {
   });
 });
 
-import { toPathname } from '../../../src/prerender/utils/shared.js';
+import { toPathname } from '../../../src/prerender/utils/utils.js';
 
 describe('Prerender Shared Utils', () => {
   describe('toPathname', () => {
