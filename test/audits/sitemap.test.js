@@ -2398,7 +2398,7 @@ describe('filterValidUrls with redirect handling', () => {
 
     expect(result.ok).to.deep.equal(['https://example.com/self-redirect-loop']);
     expect(result.notOk).to.be.empty;
-    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop equals probed/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
   });
 
   it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
@@ -2490,7 +2490,7 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: canonicalClean,
       },
     ]);
-    expect(log.debug).to.have.been.calledWith(sinon.match(/suggesting the canonical URL/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
   });
 
   it('does not replace urlsSuggested when canonical points to a different path', async () => {
@@ -3251,18 +3251,18 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     expect(log.error).to.have.been.calledWith(sinon.match(/no 'Location' header/));
   });
 
-  it('calls log.debug for first-hop redirect suggestion when log is provided', async () => {
+  it('calls log.info for first-hop redirect suggestion when log is provided', async () => {
     const urls = ['https://example.com/redirect-waf'];
     nock('https://example.com')
       .head('/redirect-waf')
       .reply(301, '', { Location: 'https://example.com/first-hop-page' });
     nock('https://example.com').head('/first-hop-page').reply(403);
     nock('https://example.com').get('/first-hop-page').reply(403);
-    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
 
     await filterValidUrls(urls, log);
 
-    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop redirect target/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/recommending first hop URL/));
   });
 
   it('calls log.debug when redirect terminal is clearly bad and log is provided', async () => {
