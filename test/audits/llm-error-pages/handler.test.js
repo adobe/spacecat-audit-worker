@@ -1316,6 +1316,9 @@ describe('LLM Error Pages Handler – default export routing', function () {
       isLive: true,
     });
     expect(createPayload.auditResult).to.deep.equal({ backfill: true, weekOffset: -1 });
+    // Verify context.audit is mutated so the persister (which receives the original
+    // context, not enrichedContext) can access and update the pre-created audit row.
+    expect(mockContext.audit).to.equal(preCreatedAudit);
 
     sandbox.restore();
   });

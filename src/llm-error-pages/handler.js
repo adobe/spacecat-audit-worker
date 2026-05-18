@@ -376,6 +376,9 @@ const backfillAudit = new AuditBuilder()
       auditResult: { backfill: true, weekOffset: auditContext.weekOffset },
       fullAuditRef: site.getBaseURL(),
     });
+    // Mutate context directly so the persister (which receives the original context,
+    // not enrichedContext) can access the pre-created audit row.
+    context.audit = audit;
     const enrichedContext = {
       ...context, site, auditContext, audit,
     };
