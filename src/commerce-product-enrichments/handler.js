@@ -406,7 +406,7 @@ export async function runAuditAndProcessResults(context) {
     });
 
   // Send separate enrichment requests per storeViewUrl group
-  log.info(`${LOG_PREFIX} Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
+  log.info(`${LOG_PREFIX}  Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
   const enrichmentPromises = [...groups.values()].map((group) => sendEnrichment(
     group.products,
     group.config,
