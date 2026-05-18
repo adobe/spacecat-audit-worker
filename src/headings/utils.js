@@ -51,6 +51,9 @@ export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
   '[id*="sidebar"]',
   '[class*="menu"]',
   '[id*="nav"]',
+
+  // Quote/premium calculator form widgets — step labels use <h2> for UI navigation
+  '.form-step',
 ];
 
 /**
@@ -306,6 +309,7 @@ export function extractTocData($, getHeadingSelectorFn) {
     ? $('body > main h1, body > main h2').toArray()
     : $('h1, h2').toArray();
 
+  const seen = new Set();
   return headings
     .filter((h) => {
       const text = $(h).text().trim();
@@ -318,6 +322,11 @@ export function extractTocData($, getHeadingSelectorFn) {
       if (isExcludedConsentHeadingText(text)) {
         return false;
       }
+      const normalized = normalizeHeadingTextForMatch(text);
+      if (seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
       return true;
     })
     .map((h) => {
@@ -335,26 +344,28 @@ export function extractTocData($, getHeadingSelectorFn) {
  */
 export function tocArrayToHast(tocData) {
   // children for <ul>
-  const liNodes = tocData.map((item) => {
-    const isSub = Number(item.level) === 2;
+  const liNodes = tocData
+    .filter((item) => item.text && item.text.trim())
+    .map((item) => {
+      const isSub = Number(item.level) === 2;
 
-    return {
-      type: 'element',
-      tagName: 'li',
-      properties: isSub ? { className: ['toc-sub'] } : {},
-      children: [
-        {
-          type: 'element',
-          tagName: 'a',
-          properties: {
-            href: '#',
-            'data-selector': item.selector,
+      return {
+        type: 'element',
+        tagName: 'li',
+        properties: isSub ? { className: ['toc-sub'] } : {},
+        children: [
+          {
+            type: 'element',
+            tagName: 'a',
+            properties: {
+              href: '#',
+              'data-selector': item.selector,
+            },
+            children: [{ type: 'text', value: item.text }],
           },
-          children: [{ type: 'text', value: item.text }],
-        },
-      ],
-    };
-  });
+        ],
+      };
+    });
 
   const ul = {
     type: 'element',
