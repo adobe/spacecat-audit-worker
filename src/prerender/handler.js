@@ -1722,14 +1722,10 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Include domain-wide URL so aggregate suggestion can be marked outdated
-        // when appropriate. Normalize to pathnames so domain shifts don't prevent
-        // outdating.
+        // Normalize scraped URLs to pathnames so domain shifts don't prevent
+        // outdating existing suggestions.
         const scrapedPathnames = new Set(
           [...scrapedUrlsSet].map(toPathname),
-        );
-        scrapedPathnames.add(
-          toPathname(getDomainWideSuggestionUrl(site.getBaseURL())),
         );
         const scrapedUrlsForNoOppty = {
           has: (url) => scrapedPathnames.has(toPathname(url)),

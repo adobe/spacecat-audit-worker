@@ -1663,7 +1663,6 @@ describe('Prerender Audit', () => {
         expect(syncCall.buildKey).to.be.a('function');
         expect(syncCall.mapNewSuggestion).to.be.a('function');
         expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
-        expect(syncCall.scrapedUrlsSet.has('https://example.com/* (All Domain URLs)')).to.be.true;
 
         // buildKey uses pathname-based keying (no audit type suffix needed at runtime)
         expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
