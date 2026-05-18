@@ -1734,7 +1734,7 @@ export async function processContentAndGenerateOpportunities(context) {
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => toPathname(suggestionData.url),
+          buildKey: (suggestionData) => `${toPathname(suggestionData.url)}|${AUDIT_TYPE}`,
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
