@@ -81,7 +81,8 @@ export const PREFLIGHT_HANDLERS = {
 };
 
 export async function scrapePages(context) {
-  const { site, job } = context;
+  const { site, job, log } = context;
+  log.debug('[preflight-audit] scrapePages started');
   const siteId = site.getId();
 
   const jobMetadata = job.getMetadata();
@@ -91,6 +92,7 @@ export async function scrapePages(context) {
     throw new Error(`[preflight-audit] site: ${siteId}. Invalid urls provided for scraping`);
   }
 
+  log.debug(`[preflight-audit] scrapePages urls: ${JSON.stringify(urls)}`);
   return {
     urls: urls.map((url) => ({
       url: `${stripTrailingSlash(url)}`,
@@ -109,10 +111,10 @@ export async function scrapePages(context) {
 export const preflightAudit = async (context) => {
   const startTime = Date.now();
   const startTimestamp = new Date().toISOString();
-
   const {
     site, job, s3Client, log, dataAccess,
   } = context;
+  log.debug(`[preflight-audit] preflightAudit started : startTimestamp: ${startTimestamp}`);
   const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();

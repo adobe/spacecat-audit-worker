@@ -339,8 +339,8 @@ async function run(message, context) {
 
 export const main = wrap(run)
   .with(dataAccess)
-  .with(sqsEventAdapter)
   .with(logWrapper)
+  .with(sqsEventAdapter)
   .with(sqs)
   .with(s3Client)
   .with(postgrestSamTemplateOverride)
