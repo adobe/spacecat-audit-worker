@@ -1,3 +1,10 @@
+## [1.445.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.3...v1.445.4) (2026-05-19)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** bound bulkPublishToAdminHlx wait, fire-and-forget publish ([#2531](https://github.com/adobe/spacecat-audit-worker/issues/2531)) ([0b918d1](https://github.com/adobe/spacecat-audit-worker/commit/0b918d193f87607116cf8fe725a3aeee60c09538)), closes [#1](https://github.com/adobe/spacecat-audit-worker/issues/1)
+
 ## [1.445.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.2...v1.445.3) (2026-05-19)
 
 
