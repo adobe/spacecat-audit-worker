@@ -21,10 +21,6 @@ const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
 const XLSX_RETRY_MAX = 3;
 const XLSX_RETRY_DELAY_MS = 60_000;
 
-// admin.hlx.page bulk-job polling. Cap was 10 min (120 x 5s) before SKYSI-79147
-// showed stuck publishes holding ~30/50 SQS-Lambda slots for 13-15 min and
-// starving the audit queue. Coralogix data put the 99th percentile preview
-// completion at ~2.6 min, so 3 min covers observed cases with margin.
 const BULK_POLL_INTERVAL_MS = 5_000;
 const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
 const BULK_POLL_MAX_ATTEMPTS = Math.ceil(BULK_POLL_TIMEOUT_MS / BULK_POLL_INTERVAL_MS);
@@ -341,18 +337,10 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
 }
 
 /**
- * Bulk preview and publish files to admin.hlx.page.
- *
- * Preview is awaited (preview must be ready for publish to do anything useful).
- * Publish is submitted fire-and-forget so the audit Lambda does not hold its
- * SQS concurrency slot waiting on admin.hlx.page job completion. The job
- * continues server-side; the returned jobUrl is the correlation handle for
- * out-of-band verification.
- *
+ * Bulk preview (awaited) and publish (fire-and-forget) files to admin.hlx.page.
  * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
  * @param {object} log - Logger
  * @returns {Promise<{ previewJobUrl: string, publishJobUrl: string } | undefined>}
- *   The admin.hlx.page job URLs for each leg, or undefined if no reports.
  */
 export async function bulkPublishToAdminHlx(reports, log) {
   if (!reports?.length) {

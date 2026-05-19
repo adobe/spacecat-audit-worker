@@ -198,9 +198,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  // Batch publish all uploaded reports using bulk API. The publish leg is
-  // fire-and-forget, so we record the jobUrls in the return value for
-  // out-of-band verification when the admin.hlx.page job completes.
+  // Publish is fire-and-forget; record jobUrls for out-of-band verification.
   let bulkPublish;
   if (reportsToPublish.length > 0) {
     try {
