@@ -251,9 +251,20 @@ export function buildExcludedUrlSuffixesFilter(suffixes = []) {
   return `AND NOT regexp_like(url, '${pattern}')`;
 }
 
+function buildStatusFilter(statuses) {
+  const safe = statuses.map((s) => {
+    const n = Number(s);
+    if (!Number.isInteger(n) || n < 100 || n > 599) {
+      throw new Error(`Invalid HTTP status code for SQL filter: ${s}`);
+    }
+    return n;
+  });
+  return `AND status IN (${safe.join(', ')})`;
+}
+
 async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
+    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [], statuses = [],
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -265,6 +276,17 @@ async function createTopUrlsQueryWithLimit(options) {
   );
 
   const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
+
+  if (statuses.length > 0) {
+    return loadSql('top-agentic-urls-by-status-and-limit', {
+      databaseName,
+      tableName,
+      whereClause,
+      limit,
+      excludedUrlSuffixesFilter,
+      statusFilter: buildStatusFilter(statuses),
+    });
+  }
 
   return loadSql('top-agentic-urls-by-limit', {
     databaseName,

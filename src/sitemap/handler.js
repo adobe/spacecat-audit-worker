@@ -84,7 +84,7 @@ export async function findSitemap(inputUrl, log) {
   if (!siteMapUrlsResult.success) {
     /* c8 ignore start */
     const reasons = siteMapUrlsResult.reasons || [];
-    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason(s)`);
+    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason`);
     reasons.forEach((r, i) => {
       log?.error(`  reason ${i + 1}: error=${r.error ?? '(none)'}, value=${r.value ?? '(none)'}`);
     });
@@ -341,7 +341,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
     /* c8 ignore start */
     const wouldCreate = auditData.suggestions ?? [];
-    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
+    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestions would have been created for ${auditUrl}`);
     wouldCreate.forEach((s, i) => {
       log.info(`.... Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
     });
