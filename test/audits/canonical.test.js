@@ -2797,7 +2797,10 @@ describe('Canonical URL Tests', () => {
 
         const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
 
-        const mockSuggestions = [{ getId: () => 'suggestion-1' }];
+        const mockSuggestions = [
+          { getId: () => 'suggestion-1', getStatus: () => 'NEW' },
+          { getId: () => 'suggestion-2', getStatus: () => 'PENDING_VALIDATION' },
+        ];
         const mockOpportunity = {
           getId: sinon.stub().returns('oppty-id-1'),
           getType: sinon.stub().returns('canonical'),
@@ -2856,6 +2859,123 @@ describe('Canonical URL Tests', () => {
         expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
         expect(mockOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
         expect(mockOpportunity.save).to.have.been.calledOnce;
+      });
+
+      it('should not call bulkUpdateStatus when all suggestions are in preserved states', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/page1', inHead: true },
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
+          },
+        };
+
+        const bulkUpdateStatusStub = sinon.stub().resolves();
+        const mockOpportunity = {
+          getId: sinon.stub().returns('oppty-id-1'),
+          getType: sinon.stub().returns('canonical'),
+          setStatus: sinon.stub(),
+          // null covers the (suggestions || []) fallback branch
+          getSuggestions: sinon.stub().resolves(null),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            ...context.dataAccess,
+            Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]) },
+            Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub().resolves(scrapedContent) },
+            '../../src/common/opportunity-utils.js': { checkGoogleConnection: sinon.stub().resolves(false) },
+          },
+        );
+
+        await processScrapedContentMocked(testContext);
+
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
+        expect(mockOpportunity.save).to.have.been.calledOnce;
+      });
+
+      it('should only mark NEW and PENDING_VALIDATION suggestions as OUTDATED, preserving FIXED/SKIPPED/REJECTED', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://example.com/page1',
+              inHead: true,
+            },
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
+          },
+        };
+
+        const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+        const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+        const fixedSuggestion = { getId: () => 's-fixed', getStatus: () => 'FIXED' };
+        const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
+        const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
+        const allSuggestions = [
+          newSuggestion, pendingSuggestion, fixedSuggestion, skippedSuggestion, rejectedSuggestion,
+        ];
+
+        const bulkUpdateStatusStub = sinon.stub().resolves();
+        const mockOpportunity = {
+          getId: sinon.stub().returns('oppty-id-1'),
+          getType: sinon.stub().returns('canonical'),
+          setStatus: sinon.stub(),
+          getSuggestions: sinon.stub().resolves(allSuggestions),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            ...context.dataAccess,
+            Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]) },
+            Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub().resolves(scrapedContent) },
+            '../../src/common/opportunity-utils.js': { checkGoogleConnection: sinon.stub().resolves(false) },
+          },
+        );
+
+        await processScrapedContentMocked(testContext);
+
+        expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+          [newSuggestion, pendingSuggestion],
+          'OUTDATED',
+        );
       });
 
       it('should log error and still return success when opportunity lookup fails on no-issues path', async () => {

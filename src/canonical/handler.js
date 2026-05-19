@@ -691,9 +691,13 @@ export async function processScrapedContent(context) {
         log.info(`[canonical] Resolving existing canonical opportunity ${opportunity.getId()} for ${baseURL}`);
         await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
         const suggestions = await opportunity.getSuggestions();
-        if (suggestions?.length > 0) {
+        const suggestionsToOutdate = (suggestions || []).filter((s) => [
+          SuggestionModel.STATUSES.NEW,
+          SuggestionModel.STATUSES.PENDING_VALIDATION,
+        ].includes(s.getStatus()));
+        if (suggestionsToOutdate.length > 0) {
           await dataAccess.Suggestion
-            .bulkUpdateStatus(suggestions, SuggestionModel.STATUSES.OUTDATED);
+            .bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
         }
         opportunity.setUpdatedBy('system');
         await opportunity.save();
