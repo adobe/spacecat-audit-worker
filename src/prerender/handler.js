@@ -127,14 +127,14 @@ async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
  * the Current tab when the backend clears coveredByDomainWide on domain-wide rollback.
  * @param {Object} opportunity - The opportunity object
  * @param {Object} context - Audit context with dataAccess and log
- * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @param {Set<string>} deployedAtEdgePathnames - Pathnames confirmed deployed at edge in this audit
  * @param {string} domainWideSuggestionId - ID of the deployed domain-wide suggestion
  * @returns {Promise<void>}
  */
 async function markDeployedUrlSuggestionsAsCovered(
   opportunity,
   context,
-  deployedAtEdgeUrls,
+  deployedAtEdgePathnames,
   domainWideSuggestionId,
 ) {
   const { dataAccess, log, site } = context;
@@ -157,11 +157,10 @@ async function markDeployedUrlSuggestionsAsCovered(
     return;
   }
 
-  const suggestionsToCover = deployedAtEdgeUrls?.size > 0
+  const suggestionsToCover = deployedAtEdgePathnames?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
-      // Normalize to pathname for domain-shift-safe comparison
-      return deployedAtEdgeUrls.has(toPathname(data?.url)) && !data?.edgeDeployed;
+      return deployedAtEdgePathnames.has(toPathname(data?.url)) && !data?.edgeDeployed;
     })
     : [];
 
@@ -183,10 +182,10 @@ async function markDeployedUrlSuggestionsAsCovered(
  * restricting to URLs confirmed deployed at edge in the current audit run.
  * @param {Object|null} opportunity - The opportunity object (no-op if null)
  * @param {Object} context - Audit context with dataAccess and log
- * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @param {Set<string>} deployedAtEdgePathnames - Pathnames confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeUrls) {
+async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgePathnames) {
   const { log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
   const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
@@ -197,7 +196,7 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeU
   await markDeployedUrlSuggestionsAsCovered(
     opportunity,
     context,
-    deployedAtEdgeUrls,
+    deployedAtEdgePathnames,
     domainWideSuggestion.getId(),
   );
 }
@@ -1165,13 +1164,9 @@ export async function processOpportunityAndSuggestions(
     ? [...preRenderSuggestions, domainWideSuggestion]
     : [...preRenderSuggestions];
 
-  // Pre-fetch existing suggestions to avoid a redundant DB round-trip inside syncSuggestions.
-  const existingSuggestionsForSync = await opportunity.getSuggestions();
-
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
-    existingSuggestions: existingSuggestionsForSync,
     context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
@@ -1743,13 +1738,13 @@ export async function processContentAndGenerateOpportunities(context) {
     }
 
     // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
-    // Only mark suggestions for URLs confirmed deployed at edge in this audit run
-    const deployedAtEdgeUrls = new Set(
+    // Only mark suggestions for pathnames confirmed deployed at edge in this audit run
+    const deployedAtEdgePathnames = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
         .map((r) => toPathname(r.url)),
     );
-    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
+    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgePathnames);
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
