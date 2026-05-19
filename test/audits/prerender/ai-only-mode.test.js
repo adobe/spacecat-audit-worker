@@ -183,7 +183,7 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.error).to.match(/scrapeJobId not found/);
       expect(result.fullAuditRef).to.match(/ai-only\/failed-/);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/status.json not found/),
+        sinon.match(/No scrapeJobId found in status\.json/),
       );
     });
 
@@ -199,8 +199,8 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.status).to.equal('failed');
       expect(result.error).to.match(/scrapeJobId not found/);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error fetching status.json: S3 connection timeout/),
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Could not read status\.json.*S3 connection timeout/),
       );
     });
 
