@@ -1,3 +1,10 @@
+# [1.446.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.6...v1.446.0) (2026-05-19)
+
+
+### Features
+
+* **broken-links:** entity replacement detection and parent path fallback  ([#2517](https://github.com/adobe/spacecat-audit-worker/issues/2517)) ([f074630](https://github.com/adobe/spacecat-audit-worker/commit/f0746300d2f81d2e80716f76265037f6a69e6ee7))
+
 ## [1.445.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.5...v1.445.6) (2026-05-19)
 
 
