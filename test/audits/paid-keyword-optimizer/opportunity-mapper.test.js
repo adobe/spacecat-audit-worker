@@ -351,6 +351,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.type).to.equal('ad-intent-mismatch');
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
+      expect(result.guidance).to.be.null;
     });
 
     it('creates correct title', () => {
@@ -373,7 +374,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.description).to.include('2 of 3 clusters show alignment gaps');
+      expect(result.description).to.include('2 of 3 clusters show significant alignment gaps');
       expect(result.description).to.include('~$1.0K/month');
     });
 

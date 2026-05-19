@@ -104,7 +104,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   );
 
   const description = 'Multiple keyword intent groups target this page. '
-    + `${misalignedClusters} of ${totalClusters} clusters show alignment gaps. `
+    + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
     + `Estimated misaligned spend: ~${formatCurrency(totalMisalignedSpend)}/month (based on Semrush data).`;
 
   return {
