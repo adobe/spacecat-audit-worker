@@ -198,15 +198,11 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  // Publish is fire-and-forget; record jobUrls for out-of-band verification.
-  let bulkPublish;
   if (reportsToPublish.length > 0) {
     try {
-      const jobUrls = await bulkPublishToAdminHlx(reportsToPublish, log);
-      bulkPublish = { success: true, ...jobUrls };
+      await bulkPublishToAdminHlx(reportsToPublish, log);
     } catch (error) {
       log.error('Failed to bulk publish reports:', error);
-      bulkPublish = { success: false, error: error.message };
     }
   }
 
@@ -228,7 +224,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     ...agenticDbExportResult,
     auditResult,
     dailyReferralExport,
-    bulkPublish,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
