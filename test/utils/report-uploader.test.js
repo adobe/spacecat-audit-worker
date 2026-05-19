@@ -515,7 +515,7 @@ describe('Utils Report Uploader', () => {
   });
 
   describe('bulkPublishToAdminHlx', () => {
-    it('should retry bulk status checks when Helix returns 429', async function bulkPollRetryTest() {
+    it('should retry preview status checks when Helix returns 429 and fire-and-forget publish', async function bulkPollRetryTest() {
       this.timeout(2000);
 
       const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
@@ -554,33 +554,69 @@ describe('Utils Report Uploader', () => {
         statusText: 'OK',
         json: sandbox.stub().resolves({ links: { self: liveJobUrl } }),
       });
-      fetchStub.onCall(4).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'stopped',
-          progress: {
-            total: 2,
-            processed: 2,
-            failed: 0,
-          },
-        }),
-      });
 
       await bulkPublishToAdminHlx([
         { filename: 'agentictraffic-w10-2026.xlsx', outputLocation: 'allianz-at/agentic-traffic' },
         { filename: 'referral-traffic-w10-2026.xlsx', outputLocation: 'allianz-at/referral-traffic-cdn' },
       ], mockContext.log);
 
-      expect(fetchStub.callCount).to.equal(5);
+      // 4 calls: POST preview, GET preview status (429), GET preview status (stopped), POST publish
+      // No 5th call — publish is fire-and-forget
+      expect(fetchStub.callCount).to.equal(4);
+      const publishStatusChecks = fetchStub.getCalls().filter((c) => c.args[0] === liveJobUrl);
+      expect(publishStatusChecks).to.have.lengthOf(0);
       expect(mockContext.log.warn).to.have.been.calledWith(
         sinon.match(/preview status check Helix API failed with error 429 Too Many Requests.*retrying in \d+ms.*attempt 1\/3/),
       );
       expect(sleepStub).to.have.been.calledWith(10000);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/publish job fire-and-forget, not polling for completion/),
+      );
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Bulk publish submitted for 2 files \(preview complete, publish fire-and-forget\)/),
+      );
       expect(mockContext.log.error).to.not.have.been.calledWith(
         sinon.match(/Bulk publish failed/),
       );
+    });
+
+    it('should throw when publish POST returns no job URL', async () => {
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      fetchStub.onCall(1).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'stopped',
+          progress: { total: 1, processed: 1, failed: 0 },
+        }),
+      });
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: {} }),
+      });
+
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+      )).to.be.rejectedWith('No job URL from publish');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Bulk publish failed/),
+      );
+    });
+
+    it('should be a no-op when given no reports', async () => {
+      await bulkPublishToAdminHlx([], mockContext.log);
+      expect(fetchStub.callCount).to.equal(0);
     });
   });
 });
