@@ -1,3 +1,10 @@
+## [1.445.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.5...v1.445.6) (2026-05-19)
+
+
+### Bug Fixes
+
+* summarization - use updateByKeys to persist audit result in send-to-mystique step ([#2529](https://github.com/adobe/spacecat-audit-worker/issues/2529)) ([532107a](https://github.com/adobe/spacecat-audit-worker/commit/532107a461cc9630363046d6ed104110f5970d01))
+
 ## [1.445.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.4...v1.445.5) (2026-05-19)
 
 
