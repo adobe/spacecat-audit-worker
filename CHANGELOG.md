@@ -1,3 +1,22 @@
+# [1.445.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.2...v1.445.0) (2026-05-19)
+
+
+### Bug Fixes
+
+* **validation:** skip PENDING_VALIDATION for internal orgs in ASO_PLG_EXCLUDED_ORGS ([#2518](https://github.com/adobe/spacecat-audit-worker/issues/2518)) ([495ad96](https://github.com/adobe/spacecat-audit-worker/commit/495ad96da523be4924b85879007508c55db95281))
+
+
+### Features
+
+* **AGENTCOM-684:** slim catalog enrichment payload ([#2525](https://github.com/adobe/spacecat-audit-worker/issues/2525)) ([643f75d](https://github.com/adobe/spacecat-audit-worker/commit/643f75dbc08f72276004794f1f04b1cbb3f47efe))
+
+## [1.444.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.1...v1.444.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* Sitemap honors protocol compatibility ([#2528](https://github.com/adobe/spacecat-audit-worker/issues/2528)) ([a1d2fe6](https://github.com/adobe/spacecat-audit-worker/commit/a1d2fe6e1da9391f1eda4eb761315769d703d02a))
+
 ## [1.444.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.0...v1.444.1) (2026-05-18)
 
 
