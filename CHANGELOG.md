@@ -1,3 +1,10 @@
+## [1.445.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.4...v1.445.5) (2026-05-19)
+
+
+### Bug Fixes
+
+* **prerender:** key suggestions on pathname to prevent duplicates after domain shift ([#2397](https://github.com/adobe/spacecat-audit-worker/issues/2397)) ([f028166](https://github.com/adobe/spacecat-audit-worker/commit/f02816662c7f7dc689bf1663c8ad83c71fb4777e))
+
 ## [1.445.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.3...v1.445.4) (2026-05-19)
 
 
