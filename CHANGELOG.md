@@ -1,3 +1,10 @@
+## [1.445.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.0...v1.445.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* **prerender:** reduce scrape error rate — SQL 404 filter, bot-block detection, skip deployed URLs ([#2510](https://github.com/adobe/spacecat-audit-worker/issues/2510)) ([721a9c9](https://github.com/adobe/spacecat-audit-worker/commit/721a9c9964645039bcac3decf477e5dd1b8b14f0))
+
 # [1.445.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.2...v1.445.0) (2026-05-19)
 
 
