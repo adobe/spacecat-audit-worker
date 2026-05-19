@@ -1,3 +1,10 @@
+## [1.445.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.1...v1.445.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* **paid-keyword-optimizer:** guidance validation error on opportunity create ([#2494](https://github.com/adobe/spacecat-audit-worker/issues/2494)) ([ece4a90](https://github.com/adobe/spacecat-audit-worker/commit/ece4a901facf656f32ad2206815042a47729f0db)), closes [mystique#2185](https://github.com/mystique/issues/2185)
+
 ## [1.445.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.0...v1.445.1) (2026-05-19)
 
 
