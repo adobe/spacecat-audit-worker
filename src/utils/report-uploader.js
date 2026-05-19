@@ -311,8 +311,8 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
     return;
   }
 
-  // Poll until complete for 2 minutes
-  for (let i = 0; i < 24; i += 1) {
+  // Poll until complete for 3 minutes
+  for (let i = 0; i < 36; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     await sleep(5000);
     // eslint-disable-next-line no-await-in-loop
