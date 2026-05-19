@@ -198,6 +198,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  // Batch publish all uploaded reports using bulk API
   if (reportsToPublish.length > 0) {
     try {
       await bulkPublishToAdminHlx(reportsToPublish, log);

@@ -312,7 +312,7 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
 
   if (!wait) {
     log.info(`%s: ${operation} job fire-and-forget, not polling for completion: ${jobUrl}`, AUDIT_NAME);
-    return jobUrl;
+    return;
   }
 
   for (let i = 0; i < BULK_POLL_MAX_ATTEMPTS; i += 1) {
@@ -330,31 +330,29 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
     const { state, progress } = status;
     log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
     if (state === 'stopped') {
-      return jobUrl;
+      return;
     }
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
 }
 
 /**
- * Bulk preview (awaited) and publish (fire-and-forget) files to admin.hlx.page.
+ * Bulk preview and publish files to admin.hlx.page
  * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
  * @param {object} log - Logger
- * @returns {Promise<{ previewJobUrl: string, publishJobUrl: string } | undefined>}
  */
 export async function bulkPublishToAdminHlx(reports, log) {
   if (!reports?.length) {
-    return undefined;
+    return;
   }
 
   const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
   log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
 
   try {
-    const previewJobUrl = await runBulkJob('preview', 'preview', paths, log);
-    const publishJobUrl = await runBulkJob('live', 'publish', paths, log, { wait: false });
+    await runBulkJob('preview', 'preview', paths, log);
+    await runBulkJob('live', 'publish', paths, log, { wait: false });
     log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
-    return { previewJobUrl, publishJobUrl };
   } catch (error) {
     log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
     throw error;

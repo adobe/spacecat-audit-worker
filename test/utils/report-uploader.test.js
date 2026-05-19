@@ -654,39 +654,5 @@ describe('Utils Report Uploader', () => {
         sinon.match(/Bulk publish failed/),
       );
     });
-
-    it('should return job URLs on success', async () => {
-      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
-      const publishJobUrl = 'https://admin.hlx.page/job/publish-job';
-
-      fetchStub.onCall(0).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
-      });
-      fetchStub.onCall(1).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'stopped',
-          progress: { total: 1, processed: 1, failed: 0 },
-        }),
-      });
-      fetchStub.onCall(2).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: publishJobUrl } }),
-      });
-
-      const result = await bulkPublishToAdminHlx(
-        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
-        mockContext.log,
-      );
-
-      expect(result).to.deep.equal({ previewJobUrl, publishJobUrl });
-    });
   });
 });
