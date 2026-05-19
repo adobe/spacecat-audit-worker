@@ -1,3 +1,10 @@
+## [1.445.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.2...v1.445.3) (2026-05-19)
+
+
+### Bug Fixes
+
+* organic urls limit ([#2532](https://github.com/adobe/spacecat-audit-worker/issues/2532)) ([b10ec48](https://github.com/adobe/spacecat-audit-worker/commit/b10ec48006cffa2ba52c71166a582e4d8b49f9ff))
+
 ## [1.445.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.1...v1.445.2) (2026-05-19)
 
 
