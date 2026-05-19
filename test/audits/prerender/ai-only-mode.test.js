@@ -653,8 +653,7 @@ describe('Prerender AI-Only Mode', () => {
       );
 
       expect(opportunity).to.equal(mockOpportunityNormal);
-      // getSuggestions is called once by findPreservableDomainWideSuggestion only —
-      // suggestionId is now the URL itself, no post-sync DB fetch needed.
+      // getSuggestions is called once by findPreservableDomainWideSuggestion.
       expect(getSuggestionsStub).to.have.been.calledOnce;
       // One candidate per URL in the current batch — plain objects with S3 keys and suggestionId
       expect(auditRunCandidates).to.have.lengthOf(1);
