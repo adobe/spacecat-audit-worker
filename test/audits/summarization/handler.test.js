@@ -82,6 +82,9 @@ describe('Summarization Handler', () => {
       Opportunity: {
         allBySiteIdAndStatus: sandbox.stub().resolves([]),
       },
+      Audit: {
+        updateByKeys: sandbox.stub().resolves(),
+      },
     };
 
     context = {
@@ -630,7 +633,7 @@ describe('Summarization Handler', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(sqs.sendMessage).not.to.have.been.called;
-      expect(audit.save).not.to.have.been.called;
+      expect(dataAccess.Audit.updateByKeys).not.to.have.been.called;
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] No pages to send to Mystique after filtering',
       );
@@ -656,19 +659,19 @@ describe('Summarization Handler', () => {
 
       await handler.sendToMystique(context);
 
-      expect(audit.setAuditResult).to.have.been.calledOnce;
-      const auditResultArg = audit.setAuditResult.getCall(0).args[0];
-      expect(auditResultArg.scrapedUrlsSent).to.deep.equal([
+      expect(dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      const [keyArg, updateArg] = dataAccess.Audit.updateByKeys.getCall(0).args;
+      expect(keyArg).to.deep.equal({ auditId: 'audit-id-456' });
+      expect(updateArg.auditResult.scrapedUrlsSent).to.deep.equal([
         'https://adobe.com/page1',
         'https://adobe.com/page2',
         'https://adobe.com/page3',
       ]);
-      expect(auditResultArg.urlToContentHash).to.deep.equal({
+      expect(updateArg.auditResult.urlToContentHash).to.deep.equal({
         'https://adobe.com/page1': hash1,
         'https://adobe.com/page2': hash2,
         'https://adobe.com/page3': hash3,
       });
-      expect(audit.save).to.have.been.calledOnce;
     });
 
     it('should store empty urlToContentHash in audit result when s3Client is not configured (LLMO-4454)', async () => {
@@ -677,15 +680,15 @@ describe('Summarization Handler', () => {
 
       await sendToMystique(context);
 
-      expect(audit.setAuditResult).to.have.been.calledOnce;
-      const auditResultArg = audit.setAuditResult.getCall(0).args[0];
-      expect(auditResultArg.urlToContentHash).to.deep.equal({});
-      expect(auditResultArg.scrapedUrlsSent).to.deep.equal([
+      expect(dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      const [keyArg, updateArg] = dataAccess.Audit.updateByKeys.getCall(0).args;
+      expect(keyArg).to.deep.equal({ auditId: 'audit-id-456' });
+      expect(updateArg.auditResult.urlToContentHash).to.deep.equal({});
+      expect(updateArg.auditResult.scrapedUrlsSent).to.deep.equal([
         'https://adobe.com/page1',
         'https://adobe.com/page2',
         'https://adobe.com/page3',
       ]);
-      expect(audit.save).to.have.been.calledOnce;
     });
 
     it('should send all pages when no matching summarization opportunity exists (LLMO-4454)', async () => {
@@ -1115,6 +1118,9 @@ describe('Summarization Handler - Athena/SEO fallback', () => {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
         },
+        Audit: {
+          updateByKeys: sandbox.stub().resolves(),
+        },
       },
       scrapeResultPaths: new Map([
         ['https://adobe.com/athena-page1', 'path1'],
@@ -1168,6 +1174,9 @@ describe('Summarization Handler - Athena/SEO fallback', () => {
       dataAccess: {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+        Audit: {
+          updateByKeys: sandbox.stub().resolves(),
         },
       },
       scrapeResultPaths: new Map([
