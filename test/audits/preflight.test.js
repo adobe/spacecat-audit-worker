@@ -512,6 +512,7 @@ describe('Preflight Audit', () => {
     it('returns the correct object for valid input', async () => {
       const context = {
         site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        log: { debug: sinon.stub() },
         job: {
           getMetadata: () => ({
             payload: {
@@ -543,6 +544,7 @@ describe('Preflight Audit', () => {
       const enableAuthentication = false;
       const context = {
         site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        log: { debug: sinon.stub() },
         job: {
           getMetadata: () => ({
             payload: {
@@ -575,6 +577,7 @@ describe('Preflight Audit', () => {
     it('includes promiseToken in options if context.promiseToken exists', async () => {
       const context = {
         site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        log: { debug: sinon.stub() },
         job: {
           getMetadata: () => ({
             payload: {
@@ -594,6 +597,7 @@ describe('Preflight Audit', () => {
     it('throws an error if urls are invalid', async () => {
       const context = {
         site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        log: { debug: sinon.stub() },
         job: {
           getMetadata: () => ({
             payload: {
