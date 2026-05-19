@@ -488,6 +488,63 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.misalignedClusters).to.equal(1);
     });
 
+    it('excludes good-aligned clusters from misalignedClusters count', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: 'good',
+          clusterMisalignedSpend: 0,
+        }),
+        makeCluster({
+          clusterId: 'c2',
+          recommendation: { type: 'audit_required' },
+          overallAlignmentScore: 'poor',
+          clusterMisalignedSpend: 500,
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.totalClusters).to.equal(2);
+      expect(result.data.misalignedClusters).to.equal(1);
+      expect(result.data.totalMisalignedSpend).to.equal(500);
+    });
+
+    it('counts poor-aligned clusters as misaligned', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: 'poor',
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.misalignedClusters).to.equal(1);
+    });
+
+    it('treats null overallAlignmentScore as not misaligned', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: null,
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.misalignedClusters).to.equal(0);
+    });
+
     it('includes correct tags', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();

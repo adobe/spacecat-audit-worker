@@ -14,6 +14,8 @@ import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
+const MISALIGNED_SCORES = new Set(['poor', 'fair']);
+
 /**
  * Formats a currency value with $ prefix and K suffix for thousands.
  * @param {number} num - The number to format
@@ -44,6 +46,10 @@ export function assignClusterRanks(clusterResults) {
     return [];
   }
 
+  // Ranking tiers use "has recommendation" (not alignment score) intentionally:
+  // clusters with any recommendation sort first so the UI surfaces them at top,
+  // even if the alignment is "good" (minor heading tweak). The separate
+  // misalignedClusters count in the opportunity uses MISALIGNED_SCORES instead.
   const isMismatched = (c) => c.analysisStatus !== 'failed' && c.recommendation;
   const isAligned = (c) => c.analysisStatus !== 'failed' && !c.recommendation;
   const isFailed = (c) => c.analysisStatus === 'failed';
@@ -88,10 +94,9 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   ).length > 1;
 
   const totalClusters = clusterResults.length;
-  const misalignedScores = new Set(['poor', 'fair']);
   const misalignedClusters = clusterResults.filter(
     (c) => c.analysisStatus !== 'failed' && c.recommendation
-      && misalignedScores.has(c.overallAlignmentScore),
+      && MISALIGNED_SCORES.has(c.overallAlignmentScore),
   ).length;
   const totalMisalignedSpend = clusterResults.reduce(
     (sum, c) => sum + (c.clusterMisalignedSpend || 0),
