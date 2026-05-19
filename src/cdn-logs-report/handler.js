@@ -198,12 +198,17 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  // Batch publish all uploaded reports using bulk API
+  // Batch publish all uploaded reports using bulk API. The publish leg is
+  // fire-and-forget, so we record the jobUrls in the return value for
+  // out-of-band verification when the admin.hlx.page job completes.
+  let bulkPublish;
   if (reportsToPublish.length > 0) {
     try {
-      await bulkPublishToAdminHlx(reportsToPublish, log);
+      const jobUrls = await bulkPublishToAdminHlx(reportsToPublish, log);
+      bulkPublish = { success: true, ...jobUrls };
     } catch (error) {
       log.error('Failed to bulk publish reports:', error);
+      bulkPublish = { success: false, error: error.message };
     }
   }
 
@@ -225,6 +230,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     ...agenticDbExportResult,
     auditResult,
     dailyReferralExport,
+    bulkPublish,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }

@@ -21,6 +21,14 @@ const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
 const XLSX_RETRY_MAX = 3;
 const XLSX_RETRY_DELAY_MS = 60_000;
 
+// admin.hlx.page bulk-job polling. Cap was 10 min (120 x 5s) before SKYSI-79147
+// showed stuck publishes holding ~30/50 SQS-Lambda slots for 13-15 min and
+// starving the audit queue. Coralogix data put the 99th percentile preview
+// completion at ~2.6 min, so 3 min covers observed cases with margin.
+const BULK_POLL_INTERVAL_MS = 5_000;
+const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
+const BULK_POLL_MAX_ATTEMPTS = Math.ceil(BULK_POLL_TIMEOUT_MS / BULK_POLL_INTERVAL_MS);
+
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
@@ -308,13 +316,12 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
 
   if (!wait) {
     log.info(`%s: ${operation} job fire-and-forget, not polling for completion: ${jobUrl}`, AUDIT_NAME);
-    return;
+    return jobUrl;
   }
 
-  // Poll until complete for 3 minutes
-  for (let i = 0; i < 36; i += 1) {
+  for (let i = 0; i < BULK_POLL_MAX_ATTEMPTS; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    await sleep(5000);
+    await sleep(BULK_POLL_INTERVAL_MS);
     // eslint-disable-next-line no-await-in-loop
     const statusRes = await fetchWithRetry(
       jobUrl,
@@ -327,29 +334,39 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
     const { state, progress } = status;
     log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
     if (state === 'stopped') {
-      return;
+      return jobUrl;
     }
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
 }
 
 /**
- * Bulk preview and publish files to admin.hlx.page
+ * Bulk preview and publish files to admin.hlx.page.
+ *
+ * Preview is awaited (preview must be ready for publish to do anything useful).
+ * Publish is submitted fire-and-forget so the audit Lambda does not hold its
+ * SQS concurrency slot waiting on admin.hlx.page job completion. The job
+ * continues server-side; the returned jobUrl is the correlation handle for
+ * out-of-band verification.
+ *
  * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
  * @param {object} log - Logger
+ * @returns {Promise<{ previewJobUrl: string, publishJobUrl: string } | undefined>}
+ *   The admin.hlx.page job URLs for each leg, or undefined if no reports.
  */
 export async function bulkPublishToAdminHlx(reports, log) {
   if (!reports?.length) {
-    return;
+    return undefined;
   }
 
   const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
   log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
 
   try {
-    await runBulkJob('preview', 'preview', paths, log);
-    await runBulkJob('live', 'publish', paths, log, { wait: false });
+    const previewJobUrl = await runBulkJob('preview', 'preview', paths, log);
+    const publishJobUrl = await runBulkJob('live', 'publish', paths, log, { wait: false });
     log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
+    return { previewJobUrl, publishJobUrl };
   } catch (error) {
     log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
     throw error;

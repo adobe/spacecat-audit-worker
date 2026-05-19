@@ -618,5 +618,75 @@ describe('Utils Report Uploader', () => {
       await bulkPublishToAdminHlx([], mockContext.log);
       expect(fetchStub.callCount).to.equal(0);
     });
+
+    it('should throw preview timeout when state never reaches stopped within the cap', async function previewCapTest() {
+      this.timeout(5000);
+
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      // All subsequent status checks return 'running' so the loop runs to the cap
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'running',
+          progress: { total: 1, processed: 0, failed: 0 },
+        }),
+      });
+
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+      )).to.be.rejectedWith(/^preview timeout for job URL:/);
+
+      // 36 iterations of sleep(5000) -> sleep stubbed, no real wait
+      expect(sleepStub.withArgs(5000).callCount).to.equal(36);
+      // 1 POST + 36 status GETs = 37 fetches
+      expect(fetchStub.callCount).to.equal(37);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Bulk publish failed/),
+      );
+    });
+
+    it('should return job URLs on success', async () => {
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+      const publishJobUrl = 'https://admin.hlx.page/job/publish-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      fetchStub.onCall(1).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'stopped',
+          progress: { total: 1, processed: 1, failed: 0 },
+        }),
+      });
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: publishJobUrl } }),
+      });
+
+      const result = await bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal({ previewJobUrl, publishJobUrl });
+    });
   });
 });
