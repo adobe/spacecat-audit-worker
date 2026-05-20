@@ -4853,7 +4853,7 @@ describe('Prerender Audit', () => {
         && call[0].includes('Failed to load top pages for fallback'))).to.be.true;
     });
 
-    it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
+    it('should handle sheet load failures gracefully and continue scraping', async () => {
       const athenaQueryStub = sinon.stub().resolves([]);
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {

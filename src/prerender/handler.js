@@ -1639,7 +1639,8 @@ export async function processContentAndGenerateOpportunities(context) {
         // records the correct failed URLs. Running a top-page fallback here would write phantom
         // 'error' entries for URLs that were never submitted to this scrape job.
         log.warn(`${LOG_PREFIX} No COMPLETE scrape results for baseUrl=${site.getBaseURL()}, `
-          + `siteId=${siteId}. Skipping comparison; failed URLs recorded via ScrapeUrl DB.`);
+          + `siteId=${siteId}, scrapeJobId=${auditContext?.scrapeJobId ?? 'unknown'}. `
+          + 'Skipping comparison; failed URLs recorded via ScrapeUrl DB.');
       }
     }
 
