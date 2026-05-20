@@ -14,7 +14,6 @@ import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-
 import SeoClient from '@adobe/mysticat-shared-seo-client';
 import {
   Audit,
-  Opportunity as OpportunityModel,
   Suggestion as SuggestionModel,
   FixEntity as FixEntityModel,
 } from '@adobe/spacecat-shared-data-access';
@@ -22,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
@@ -296,29 +295,12 @@ export const generateSuggestionData = async (context) => {
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
 
-    try {
-      const opportunities = await dataAccess.Opportunity
-        .allBySiteIdAndStatus(site.getId(), OpportunityModel.STATUSES.NEW);
-      const opportunity = opportunities
-        .find((oppty) => oppty.getType() === Audit.AUDIT_TYPES.BROKEN_BACKLINKS);
-      if (opportunity) {
-        log.info(`Resolving existing broken-backlinks opportunity ${opportunity.getId()} for ${site.getId()}`);
-        await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
-        const suggestions = await opportunity.getSuggestions();
-        const suggestionsToOutdate = (suggestions || []).filter((s) => [
-          SuggestionModel.STATUSES.NEW,
-          SuggestionModel.STATUSES.PENDING_VALIDATION,
-        ].includes(s.getStatus()));
-        if (suggestionsToOutdate.length > 0) {
-          await dataAccess.Suggestion
-            .bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
-        }
-        opportunity.setUpdatedBy('system');
-        await opportunity.save();
-      }
-    } catch (e) {
-      log.error(`Failed to resolve broken-backlinks opportunity for ${site.getId()}: ${e.message}`);
-    }
+    await resolveOpportunityIfNoIssues(
+      site.getId(),
+      Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+      dataAccess,
+      log,
+    );
 
     return {
       status: 'complete',

@@ -27,7 +27,7 @@ import {
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { validateDetectedIssues } from './ssr-meta-validator.js';
@@ -307,6 +307,9 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Check if there are any detected tags BEFORE proceeding
   if (!validatedDetectedTags || Object.keys(validatedDetectedTags).length === 0) {
     log.info(`[metatags] No valid metatag issues detected for ${site.getId()}, skipping opportunity creation`);
+
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+
     return {
       status: 'complete',
     };

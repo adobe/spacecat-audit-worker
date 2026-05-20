@@ -3037,7 +3037,7 @@ describe('Canonical URL Tests', () => {
           },
         });
         expect(context.log.error).to.have.been.calledWith(
-          '[canonical] Failed to resolve opportunity for https://example.com: DB connection error',
+          'Failed to resolve canonical opportunity for test-site-id: DB connection error',
         );
       });
 

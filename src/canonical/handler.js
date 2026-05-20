@@ -13,7 +13,7 @@
 import {
   composeBaseURL, hasText, isString, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
-import { Audit, Opportunity as OpportunityModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -22,6 +22,7 @@ import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import {
   syncSuggestions,
   keepLatestMergeDataFunction,
+  resolveOpportunityIfNoIssues,
 } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -683,28 +684,7 @@ export async function processScrapedContent(context) {
     log.info(`[canonical] No canonical issues detected for ${baseURL}`);
 
     const { dataAccess } = context;
-    try {
-      const opportunities = await dataAccess.Opportunity
-        .allBySiteIdAndStatus(site.getId(), OpportunityModel.STATUSES.NEW);
-      const opportunity = opportunities.find((oppty) => oppty.getType() === auditType);
-      if (opportunity) {
-        log.info(`[canonical] Resolving existing canonical opportunity ${opportunity.getId()} for ${baseURL}`);
-        await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
-        const suggestions = await opportunity.getSuggestions();
-        const suggestionsToOutdate = (suggestions || []).filter((s) => [
-          SuggestionModel.STATUSES.NEW,
-          SuggestionModel.STATUSES.PENDING_VALIDATION,
-        ].includes(s.getStatus()));
-        if (suggestionsToOutdate.length > 0) {
-          await dataAccess.Suggestion
-            .bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
-        }
-        opportunity.setUpdatedBy('system');
-        await opportunity.save();
-      }
-    } catch (e) {
-      log.error(`[canonical] Failed to resolve opportunity for ${baseURL}: ${e.message}`);
-    }
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, dataAccess, log);
 
     return {
       fullAuditRef: baseURL,
