@@ -1596,7 +1596,6 @@ export async function processContentAndGenerateOpportunities(context) {
 
   const siteId = site.getId();
   const startTime = process.hrtime();
-  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
   const isDomainBlocked = auditContext?.domainBlocked === true;
 
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
@@ -1614,58 +1613,19 @@ export async function processContentAndGenerateOpportunities(context) {
 
   try {
     let urlsToCheck = [];
-    /* c8 ignore next */
-    let agenticUrls = [];
 
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
-      // Try to get URLs from the audit context first
       if (scrapeResultPaths?.size > 0) {
         urlsToCheck = Array.from(context.scrapeResultPaths.keys());
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
-        /* c8 ignore start */
-        // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
-        if (!isSlackTriggered) {
-          try {
-            agenticUrls = await getTopAgenticUrls(site, context);
-          } catch (e) {
-            log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
-          }
-        }
-
-        // Load top organic pages cache for fallback merging
-        const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-        const preferredBase = getPreferredBaseUrl(site, context);
-        const rebasedFallbackOrganicUrls = topPagesUrls
-          .map((url) => rebaseUrl(url, preferredBase, log));
-        const fallbackIncludedURLs = (
-          await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)
-        ) || [];
-        const rebasedFallbackIncludedURLs = fallbackIncludedURLs
-          .map((url) => rebaseUrl(url, preferredBase, log));
-        // Use the same normalization and filtering logic for consistency
-        const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-          rebasedFallbackOrganicUrls,
-          agenticUrls,
-          rebasedFallbackIncludedURLs,
-        );
-        const statusData = await readSiteStatusJson(siteId, context);
-        const edgeDeployedPathnames = getEdgeDeployedPathnames(statusData);
-        urlsToCheck = edgeDeployedPathnames.size > 0
-          ? filteredUrls.filter((u) => !edgeDeployedPathnames.has(normalizePathname(u)))
-          : filteredUrls;
-
-        /* c8 ignore stop */
-        const edgeDeployedFilteredCount = filteredUrls.length - urlsToCheck.length;
-        const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
-          + `Using agenticURLs=${agenticUrls.length}, `
-          + `topPages=${rebasedFallbackOrganicUrls.length}, `
-          + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
-          + `filteredOutUrls=${filteredCount}, `
-          + `edgeDeployedFiltered=${edgeDeployedFilteredCount}, `
-          + `total=${urlsToCheck.length}`;
-        log.info(`${LOG_PREFIX} ${msg}`);
+        // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.
+        // getScrapeJobStats reads the ScrapeUrl DB and populates missingPages so status.json
+        // records the correct failed URLs. Running a top-page fallback here would write phantom
+        // 'error' entries for URLs that were never submitted to this scrape job.
+        log.warn(`${LOG_PREFIX} No COMPLETE scrape results for baseUrl=${site.getBaseURL()}, `
+          + `siteId=${siteId}. Skipping comparison; failed URLs recorded via ScrapeUrl DB.`);
       }
     }
 
