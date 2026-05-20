@@ -1,3 +1,10 @@
+## [1.447.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.0...v1.447.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **prerender:** remove fallback that wrote phantom error entries to status.json ([#2538](https://github.com/adobe/spacecat-audit-worker/issues/2538)) ([505391d](https://github.com/adobe/spacecat-audit-worker/commit/505391dc5908297432b5137432fd850156297a14))
+
 # [1.447.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.446.0...v1.447.0) (2026-05-20)
 
 
