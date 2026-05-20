@@ -152,12 +152,12 @@ describe('commerce-config-resolver', () => {
   });
 
   describe('configGroupKey', () => {
-    it('returns storeViewCode from headers', () => {
+    it('returns storeViewUrl', () => {
       const config = {
         url: 'https://example.com/graphql',
-        headers: { 'Magento-Store-View-Code': 'view-ro' },
+        storeViewUrl: 'https://www.example.com/ro',
       };
-      expect(configGroupKey(config)).to.equal('view-ro');
+      expect(configGroupKey(config)).to.equal('https://www.example.com/ro');
     });
 
     it('returns _default for null config', () => {
@@ -168,7 +168,7 @@ describe('commerce-config-resolver', () => {
       expect(configGroupKey(undefined)).to.equal('_default');
     });
 
-    it('returns _default when header is missing', () => {
+    it('returns _default when storeViewUrl is missing', () => {
       expect(configGroupKey({ headers: {} })).to.equal('_default');
       expect(configGroupKey({})).to.equal('_default');
     });

@@ -1,3 +1,71 @@
+# [1.446.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.6...v1.446.0) (2026-05-19)
+
+
+### Features
+
+* **broken-links:** entity replacement detection and parent path fallback  ([#2517](https://github.com/adobe/spacecat-audit-worker/issues/2517)) ([f074630](https://github.com/adobe/spacecat-audit-worker/commit/f0746300d2f81d2e80716f76265037f6a69e6ee7))
+
+## [1.445.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.5...v1.445.6) (2026-05-19)
+
+
+### Bug Fixes
+
+* summarization - use updateByKeys to persist audit result in send-to-mystique step ([#2529](https://github.com/adobe/spacecat-audit-worker/issues/2529)) ([532107a](https://github.com/adobe/spacecat-audit-worker/commit/532107a461cc9630363046d6ed104110f5970d01))
+
+## [1.445.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.4...v1.445.5) (2026-05-19)
+
+
+### Bug Fixes
+
+* **prerender:** key suggestions on pathname to prevent duplicates after domain shift ([#2397](https://github.com/adobe/spacecat-audit-worker/issues/2397)) ([f028166](https://github.com/adobe/spacecat-audit-worker/commit/f02816662c7f7dc689bf1663c8ad83c71fb4777e))
+
+## [1.445.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.3...v1.445.4) (2026-05-19)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** bound bulkPublishToAdminHlx wait, fire-and-forget publish ([#2531](https://github.com/adobe/spacecat-audit-worker/issues/2531)) ([0b918d1](https://github.com/adobe/spacecat-audit-worker/commit/0b918d193f87607116cf8fe725a3aeee60c09538)), closes [#1](https://github.com/adobe/spacecat-audit-worker/issues/1)
+
+## [1.445.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.2...v1.445.3) (2026-05-19)
+
+
+### Bug Fixes
+
+* organic urls limit ([#2532](https://github.com/adobe/spacecat-audit-worker/issues/2532)) ([b10ec48](https://github.com/adobe/spacecat-audit-worker/commit/b10ec48006cffa2ba52c71166a582e4d8b49f9ff))
+
+## [1.445.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.1...v1.445.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* **paid-keyword-optimizer:** guidance validation error on opportunity create ([#2494](https://github.com/adobe/spacecat-audit-worker/issues/2494)) ([ece4a90](https://github.com/adobe/spacecat-audit-worker/commit/ece4a901facf656f32ad2206815042a47729f0db)), closes [mystique#2185](https://github.com/mystique/issues/2185)
+
+## [1.445.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.0...v1.445.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* **prerender:** reduce scrape error rate — SQL 404 filter, bot-block detection, skip deployed URLs ([#2510](https://github.com/adobe/spacecat-audit-worker/issues/2510)) ([721a9c9](https://github.com/adobe/spacecat-audit-worker/commit/721a9c9964645039bcac3decf477e5dd1b8b14f0))
+
+# [1.445.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.2...v1.445.0) (2026-05-19)
+
+
+### Bug Fixes
+
+* **validation:** skip PENDING_VALIDATION for internal orgs in ASO_PLG_EXCLUDED_ORGS ([#2518](https://github.com/adobe/spacecat-audit-worker/issues/2518)) ([495ad96](https://github.com/adobe/spacecat-audit-worker/commit/495ad96da523be4924b85879007508c55db95281))
+
+
+### Features
+
+* **AGENTCOM-684:** slim catalog enrichment payload ([#2525](https://github.com/adobe/spacecat-audit-worker/issues/2525)) ([643f75d](https://github.com/adobe/spacecat-audit-worker/commit/643f75dbc08f72276004794f1f04b1cbb3f47efe))
+
+## [1.444.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.1...v1.444.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* Sitemap honors protocol compatibility ([#2528](https://github.com/adobe/spacecat-audit-worker/issues/2528)) ([a1d2fe6](https://github.com/adobe/spacecat-audit-worker/commit/a1d2fe6e1da9391f1eda4eb761315769d703d02a))
+
 ## [1.444.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.0...v1.444.1) (2026-05-18)
 
 
