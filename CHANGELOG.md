@@ -1,3 +1,10 @@
+# [1.447.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.446.0...v1.447.0) (2026-05-20)
+
+
+### Features
+
+* for offsite audits, read brand presence execution data from PostgREST (LLMO-4307) ([#2389](https://github.com/adobe/spacecat-audit-worker/issues/2389)) ([8e0cda8](https://github.com/adobe/spacecat-audit-worker/commit/8e0cda8db0983e4bf7f0c12170cd892cb8992531))
+
 # [1.446.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.6...v1.446.0) (2026-05-19)
 
 
