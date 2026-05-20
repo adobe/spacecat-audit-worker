@@ -4658,6 +4658,60 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
+    it('should warn and continue when SiteTopPage.allBySiteIdAndSourceAndGeo throws', async () => {
+      const athenaQueryStub = sinon.stub().resolves([]);
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+        },
+        '../../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
+          },
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [],
+          }),
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+      });
+
+      const warn = sinon.stub();
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          // allBySiteIdAndSourceAndGeo is defined but throws — exercises the catch in getTopOrganicUrlsFromSeo
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().rejects(new Error('DB connection lost')),
+          },
+        },
+        log: { info: sinon.stub(), warn, debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+      expect(warn.args.some((call) => typeof call[0] === 'string'
+        && call[0].includes('Failed to load top pages for fallback'))).to.be.true;
+    });
+
     it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
       const athenaQueryStub = sinon.stub().resolves([]);
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
