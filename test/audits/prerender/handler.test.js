@@ -1636,54 +1636,6 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when agentic URL fetch fails', async function () {
-        this.timeout(5000);
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-          },
-          dataAccess: {
-            SiteTopPage: {
-              // No top pages, we don't want to exercise that path here
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
-            },
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          scrapeResultPaths: new Map(),
-          s3Client: {},
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(result).to.be.an('object');
-        expect(result.status).to.equal('complete');
-        expect(result.auditResult).to.be.an('object');
-
-        // Should warn about agentic URL fetch failure
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Failed to fetch agentic URLs: athena fetch failed/),
-        );
-      });
-
       it('should process URLs with scrape result paths', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -1762,28 +1714,14 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.totalUrlsChecked).to.equal(0);
       });
 
-      it('should not fetch agentic URLs in fallback path when triggered from Slack', async () => {
-        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: athenaStub,
-            getPreferredBaseUrl: () => 'https://example.com',
-          },
-        });
-
+      it('should log a warning and skip comparison when scrapeResultPaths is empty', async () => {
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           audit: { getId: () => 'audit-id' },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                { getUrl: () => 'https://example.com/organic-1', getTraffic: () => 100 },
-              ]),
-            },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -1793,22 +1731,20 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
-          scrapeResultPaths: new Map(), // No scrape results → triggers fallback path
-          s3Client: { send: sandbox.stub().rejects(new Error('No S3 data')) },
+          scrapeResultPaths: new Map(), // empty — all submitted URLs had FAILED status
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: {
-            scrapeJobId: 'test-job-id',
-            slackContext: { channelId: 'C123', threadTs: '1.0' },
-          },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
-        await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await processContentAndGenerateOpportunities(context);
 
-        expect(athenaStub).to.not.have.been.called;
+        expect(result.status).to.equal('complete');
+        expect(context.log.warn.args.some((call) => typeof call[0] === 'string'
+          && call[0].includes('No COMPLETE scrape results'))).to.be.true;
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
-        // This test covers line 341 by ensuring the full opportunity processing flow executes
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
           getSuggestions: sinon.stub().resolves([]),
@@ -1823,39 +1759,34 @@ describe('Prerender Audit', () => {
           },
         });
 
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1', getTraffic: () => 500 },
-          ]),
-        };
-
+        const pageUrl = 'https://example.com/page1';
+        const scrapeJobId = 'test-job-id';
         const serverHtml = '<html><body><h1>Title</h1></body></html>';
         const clientHtml = '<html><body><h1>Title</h1><p>Significant additional content here</p><div>More dynamic content loaded by JavaScript</div><p>Even more substantial content that greatly increases the word count to trigger prerender detection</p></body></html>';
 
-        const noSuchKey = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
+        // Step 3 doesn't call readSiteStatusJson upfront; first S3 calls are the HTML fetches.
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().rejects(noSuchKey) // readSiteStatusJson (status.json) in fallback path
+            .onFirstCall().resolves({
+              ContentType: 'text/html',
+              Body: { transformToString: () => Promise.resolve(serverHtml) },
+            })
             .onSecondCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(serverHtml) }
-            })
-            .onThirdCall().resolves({
-              ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(clientHtml) }
+              Body: { transformToString: () => Promise.resolve(clientHtml) },
             }),
         };
+
+        const scrapeResultPaths = new Map([[pageUrl, {}]]);
 
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: {
-            getId: () => 'audit-id',
-          },
+          audit: { getId: () => 'audit-id' },
           dataAccess: {
-            SiteTopPage: mockSiteTopPage,
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log: {
             info: sandbox.stub(),
@@ -1865,17 +1796,16 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
+          auditContext: { scrapeJobId },
+          scrapeResultPaths,
         };
 
-        // This should fully execute the opportunity processing path including line 341
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
-        expect(context.log.info).to.have.been.called;
-        // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
+        expect(context.log.info.args.some((call) => typeof call[0] === 'string'
+          && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
       });
 
 
@@ -1939,6 +1869,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log: {
             info: sandbox.stub(),
@@ -1948,6 +1879,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           auditContext: { scrapeJobId: 'test-job-id' },
         };
 
@@ -2017,6 +1949,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log,
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: { send: sandbox.stub().resolves({}) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -2153,10 +2086,11 @@ describe('Prerender Audit', () => {
         expect(syncCall.context).to.equal(context);
         expect(syncCall.buildKey).to.be.a('function');
         expect(syncCall.mapNewSuggestion).to.be.a('function');
-        expect(syncCall.scrapedUrlsSet).to.be.an.instanceOf(Set);
-        expect(syncCall.scrapedUrlsSet.has('https://example.com/* (All Domain URLs)')).to.be.true;
+        expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
 
-        expect(syncCall.buildKey({ url: 'https://test.com' })).to.equal('https://test.com');
+        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
+        expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
+        expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
         expect(syncCall.mapNewSuggestion()).to.deep.equal({});
 
         expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
@@ -2668,7 +2602,7 @@ describe('Prerender Audit', () => {
 
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        expect(syncArgs.scrapedUrlsSet).to.be.an.instanceOf(Set);
+        expect(syncArgs.scrapedUrlsSet).to.have.property('has').that.is.a('function');
         expect(syncArgs.scrapedUrlsSet.has(deployedUrl)).to.be.false;
       });
     });
@@ -3231,6 +3165,146 @@ describe('Prerender Audit', () => {
 
         const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
         expect(mappedData.data.citabilityScore).to.be.null;
+      });
+
+      it('should build suggestion key from pathname so domain shifts do not create duplicates', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://www.example.com/some/page',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://www.example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const { buildKey } = syncSuggestionsStub.firstCall.args[0];
+
+        // Both domain variants of the same page must produce the same key
+        expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
+        expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
+
+        // Domain-wide suggestions (with a `key` field) pass through unchanged
+        expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
+      });
+
+      it('should normalize scrapedUrlsSet to pathname so domain-shifted suggestions are correctly outdated', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        // scrapedUrlsSet uses the new preferred domain (example.com)
+        const scrapedUrlsSet = new Set([
+          'https://example.com/some/page',
+          'https://example.com/other/page',
+        ]);
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          scrapedUrlsSet,
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/some/page',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const { scrapedUrlsSet: normalizedSet } = syncSuggestionsStub.firstCall.args[0];
+
+        // Old-domain suggestion URLs must match the pathname-normalized set
+        expect(normalizedSet.has('https://www.example.com/some/page')).to.be.true;
+        expect(normalizedSet.has('https://example.com/some/page')).to.be.true;
+        // Unscraped paths must not match
+        expect(normalizedSet.has('https://example.com/unscraped/page')).to.be.false;
+        // Non-URL values (e.g. domain-wide keys) pass through as-is
+        expect(normalizedSet.has('not-a-url')).to.be.false;
       });
 
       it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
@@ -4348,6 +4422,7 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
         env: { S3_SCRAPER_BUCKET_NAME: 'b' },
+        scrapeResultPaths: new Map([['https://example.com/inc', {}]]),
         auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
@@ -4458,7 +4533,7 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        // No scrapeResultPaths so includedURLs are used to build urlsToCheck
+        scrapeResultPaths: new Map([['https://example.com/inc', {}]]),
         auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
@@ -4724,7 +4799,61 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
-    it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
+    it('should warn and continue when SiteTopPage.allBySiteIdAndSourceAndGeo throws', async () => {
+      const athenaQueryStub = sinon.stub().resolves([]);
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+        },
+        '../../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
+          },
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [],
+          }),
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+      });
+
+      const warn = sinon.stub();
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          // allBySiteIdAndSourceAndGeo is defined but throws — exercises the catch in getTopOrganicUrlsFromSeo
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().rejects(new Error('DB connection lost')),
+          },
+        },
+        log: { info: sinon.stub(), warn, debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+      expect(warn.args.some((call) => typeof call[0] === 'string'
+        && call[0].includes('Failed to load top pages for fallback'))).to.be.true;
+    });
+
+    it('should handle sheet load failures gracefully and continue scraping', async () => {
       const athenaQueryStub = sinon.stub().resolves([]);
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
@@ -4775,112 +4904,6 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
-    it('should log detailed fallback message when building URL list from fallbacks', async function () {
-      this.timeout(5000);
-      const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/agentic-urls.js': {
-          getTopAgenticLiveUrlsFromAthena: async () => ['https://example.com/agentic'],
-        },
-        '../../../src/utils/s3-utils.js': {
-          getObjectFromKey: async () => html,
-        },
-      });
-
-      const info = sinon.stub();
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: () => ['https://example.com/included'],
-          }),
-        },
-        audit: {
-          getId: () => 'a',
-        },
-        dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-              { getUrl: () => 'https://example.com/top1' },
-            ]),
-          },
-          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sinon.stub().resolves() },
-        },
-        log: { info, warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
-        s3Client: { send: sinon.stub().resolves({}) },
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        // Empty scrapeResultPaths to force fallback URL list composition branch
-        scrapeResultPaths: new Map(),
-        auditContext: { scrapeJobId: 'test-job-id' },
-      };
-
-      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
-      expect(res.status).to.equal('complete');
-
-      const loggedFallback = info.args
-        .map((a) => String(a[0]))
-        .find((msg) => msg.includes('Prerender - Fallback for baseUrl=https://example.com, siteId=site.'));
-
-      expect(loggedFallback).to.exist;
-      expect(loggedFallback).to.include('agenticURLs=1');
-      expect(loggedFallback).to.include('topPages=1');
-      expect(loggedFallback).to.include('includedURLs=1');
-    });
-
-    it('rebases organic and included URLs to preferredBase in fallback URL-list path', async () => {
-      const html = '<html><body><p>hello world content here</p></body></html>';
-      let capturedArgs = [];
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/agentic-urls.js': {
-          getTopAgenticLiveUrlsFromAthena: async () => [],
-          getPreferredBaseUrl: () => 'https://example.com',
-        },
-        '../../../src/utils/s3-utils.js': {
-          getObjectFromKey: async () => html,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: sinon.stub().resolves(false),
-          mergeAndGetUniqueHtmlUrls: (...args) => {
-            capturedArgs = args.flat();
-            return { urls: capturedArgs, filteredCount: 0 };
-          },
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: async () => ['https://www.example.com/included'],
-          }),
-        },
-        audit: { getId: () => 'a' },
-        dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-              { getUrl: () => 'https://www.example.com/organic' },
-            ]),
-          },
-          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sinon.stub().resolves() },
-        },
-        log: {
-          info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub(),
-        },
-        s3Client: { send: sinon.stub().resolves({}) },
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        scrapeResultPaths: new Map(),
-        auditContext: { scrapeJobId: 'test-job-id' },
-      };
-
-      await mockHandler.processContentAndGenerateOpportunities(ctx);
-      expect(capturedArgs).to.include('https://example.com/organic');
-      expect(capturedArgs).to.include('https://example.com/included');
-      capturedArgs.forEach((u) => expect(u).to.not.include('www.'));
-    });
 
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
@@ -5213,6 +5236,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           auditContext: { scrapeJobId: 'test-job-id' },
         };
 
@@ -5310,6 +5334,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -5367,6 +5392,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -5814,6 +5840,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -5864,6 +5891,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -5920,6 +5948,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6226,6 +6255,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6281,6 +6311,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6336,6 +6367,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6393,6 +6425,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6449,6 +6482,7 @@ describe('Prerender Audit', () => {
             error: sandbox.stub(),
             debug: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6500,6 +6534,7 @@ describe('Prerender Audit', () => {
             error: sandbox.stub(),
             debug: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6543,6 +6578,7 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
           s3Client: { send: sandbox.stub().resolves({}) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -6576,6 +6612,7 @@ describe('Prerender Audit', () => {
           log: {
             info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
           },
+          scrapeResultPaths: new Map([['https://example.com/', {}]]),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -8232,9 +8269,9 @@ describe('Prerender Audit', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
     });
 
-    it('should skip saveMany when deployedAtEdgeUrls set is empty', async () => {
+    it('should skip saveMany when deployedAtEdgePathnames set is empty', async () => {
       // Domain-wide suggestion has edgeDeployed but no scraped URL returns isDeployedAtEdge=true,
-      // so deployedAtEdgeUrls is an empty Set — covers the false branch of the size>0 ternary
+      // so deployedAtEdgePathnames is an empty Set — covers the false branch of the size>0 ternary
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
@@ -8264,7 +8301,7 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      // deployedAtEdgeUrls is empty → ternary false branch → suggestionsToCover = []
+      // deployedAtEdgePathnames is empty → ternary false branch → suggestionsToCover = []
       expect(saveManyStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
     });
@@ -8381,6 +8418,30 @@ describe('Prerender Audit', () => {
       // Should not throw
       const result = await mockHandler.processContentAndGenerateOpportunities(context);
       expect(result.status).to.equal('complete');
+    });
+
+    it('should handle invalid suggestion URLs gracefully in coveredByDomainWide matching', async () => {
+      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      // Suggestion with an unparseable URL — triggers the catch branch in markDeployedUrlSuggestionsAsCovered
+      const invalidUrlSuggestion = buildSuggestionWithSetData('s-invalid', { url: 'not-a-valid-url' });
+
+      const saveManyStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([invalidUrlSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // The invalid URL won't match any deployed pathname, so it should NOT be marked
+      expect(saveManyStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions matched deployed URLs/));
     });
 
     it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
