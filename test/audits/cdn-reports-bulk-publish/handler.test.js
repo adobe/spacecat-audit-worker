@@ -18,11 +18,11 @@ use(sinonChai);
 
 describe('cdn-reports-bulk-publish handler', () => {
   let sandbox;
+  let clock;
   let bulkPublishStub;
   let runCdnReportsBulkPublish;
   let log;
 
-  // Build a fake site that reports the given enabled flag and llmo folder
   const makeSite = (id, llmoFolder) => ({
     getId: () => id,
     getConfig: () => ({ getLlmoDataFolder: () => llmoFolder }),
@@ -38,11 +38,16 @@ describe('cdn-reports-bulk-publish handler', () => {
           ),
         }),
       },
-      Site: {
-        all: sandbox.stub().resolves(sites),
-      },
+      Site: { all: sandbox.stub().resolves(sites) },
     },
   });
+
+  // Run the handler at a fixed Wednesday so only the current week's paths are emitted
+  // (Monday adds previous week, covered in its own test).
+  const runOnWednesday = async (sites, enabledIds) => {
+    clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
+    return runCdnReportsBulkPublish(undefined, makeContext(sites, enabledIds));
+  };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -59,58 +64,42 @@ describe('cdn-reports-bulk-publish handler', () => {
     ));
   });
 
-  afterEach(() => sandbox.restore());
-
-  it('builds paths for current week across all enabled sites with an LLMO folder', async () => {
-    // Wednesday — only current week expected
-    const clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
-
-    const sites = [
-      makeSite('site-1', 'acme-com'),
-      makeSite('site-2', 'beta-co'),
-      makeSite('site-3', 'gamma-io'),
-    ];
-    const context = makeContext(sites, ['site-1', 'site-2', 'site-3']);
-
-    const result = await runCdnReportsBulkPublish(undefined, context);
-
-    expect(bulkPublishStub).to.have.been.calledOnce;
-    const [reports, , opts] = bulkPublishStub.firstCall.args;
-    expect(opts).to.deep.equal({ pollTimeoutMs: 10 * 60_000 });
-
-    // 3 sites x 2 report types x 1 period = 6 reports
-    expect(reports).to.have.lengthOf(6);
-    expect(reports).to.deep.include({
-      outputLocation: 'acme-com/agentic-traffic',
-      filename: 'agentictraffic-w21-2026.xlsx',
-    });
-    expect(reports).to.deep.include({
-      outputLocation: 'acme-com/referral-traffic-cdn',
-      filename: 'referral-traffic-w21-2026.xlsx',
-    });
-
-    expect(result.auditResult).to.deep.equal({
-      sites: 3,
-      paths: 6,
-      periods: ['w21-2026'],
-    });
-    expect(result.fullAuditRef).to.equal('cdn-reports-bulk-publish/w21-2026');
-
-    clock.restore();
+  afterEach(() => {
+    if (clock) clock.restore();
+    sandbox.restore();
   });
 
-  it('includes previous week paths when run on a Monday', async () => {
-    // Monday — current + previous week expected
-    const clock = sandbox.useFakeTimers(new Date('2026-05-18T10:00:00Z'));
-
-    const sites = [makeSite('site-1', 'acme-com')];
-    const context = makeContext(sites, ['site-1']);
-
-    await runCdnReportsBulkPublish(undefined, context);
+  it('publishes agentic and referral reports for each enabled site', async () => {
+    await runOnWednesday(
+      [makeSite('site-1', 'acme-com'), makeSite('site-2', 'beta-co')],
+      ['site-1', 'site-2'],
+    );
 
     const [reports] = bulkPublishStub.firstCall.args;
-    // 1 site x 2 report types x 2 periods = 4 reports
-    expect(reports).to.have.lengthOf(4);
+    expect(reports).to.deep.include.members([
+      { outputLocation: 'acme-com/agentic-traffic', filename: 'agentictraffic-w21-2026.xlsx' },
+      { outputLocation: 'acme-com/referral-traffic-cdn', filename: 'referral-traffic-w21-2026.xlsx' },
+      { outputLocation: 'beta-co/agentic-traffic', filename: 'agentictraffic-w21-2026.xlsx' },
+      { outputLocation: 'beta-co/referral-traffic-cdn', filename: 'referral-traffic-w21-2026.xlsx' },
+    ]);
+  });
+
+  it('passes a 10-minute preview poll timeout to bulkPublishToAdminHlx', async () => {
+    await runOnWednesday([makeSite('site-1', 'acme-com')], ['site-1']);
+
+    const [, , opts] = bulkPublishStub.firstCall.args;
+    expect(opts).to.deep.equal({ pollTimeoutMs: 10 * 60_000 });
+  });
+
+  it('includes the previous week alongside the current week when run on a Monday', async () => {
+    clock = sandbox.useFakeTimers(new Date('2026-05-18T10:00:00Z')); // Monday
+
+    await runCdnReportsBulkPublish(
+      undefined,
+      makeContext([makeSite('site-1', 'acme-com')], ['site-1']),
+    );
+
+    const [reports] = bulkPublishStub.firstCall.args;
     const filenames = reports.map((r) => r.filename).sort();
     expect(filenames).to.deep.equal([
       'agentictraffic-w20-2026.xlsx', // previous week
@@ -118,27 +107,39 @@ describe('cdn-reports-bulk-publish handler', () => {
       'referral-traffic-w20-2026.xlsx',
       'referral-traffic-w21-2026.xlsx',
     ]);
-
-    clock.restore();
   });
 
-  it('filters out sites where cdn-logs-report is disabled or LLMO folder is empty', async () => {
-    const clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
+  it('skips sites for which cdn-logs-report is not enabled', async () => {
+    await runOnWednesday(
+      [makeSite('enabled-site', 'acme-com'), makeSite('disabled-site', 'beta-co')],
+      ['enabled-site'],
+    );
 
-    const sites = [
-      makeSite('site-1', 'acme-com'), // enabled, has folder -> kept
-      makeSite('site-2', 'beta-co'), // not enabled -> dropped
-      makeSite('site-3', ''), // enabled but no folder -> dropped
-    ];
-    const context = makeContext(sites, ['site-1', 'site-3']);
-
-    const result = await runCdnReportsBulkPublish(undefined, context);
-
-    expect(result.auditResult.sites).to.equal(1);
-    expect(result.auditResult.paths).to.equal(2);
     const [reports] = bulkPublishStub.firstCall.args;
     expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
+  });
 
-    clock.restore();
+  it('skips sites that do not have an LLMO data folder configured', async () => {
+    await runOnWednesday(
+      [makeSite('with-folder', 'acme-com'), makeSite('no-folder', '')],
+      ['with-folder', 'no-folder'],
+    );
+
+    const [reports] = bulkPublishStub.firstCall.args;
+    expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
+  });
+
+  it('returns site, path, and period counts in the audit result', async () => {
+    const result = await runOnWednesday(
+      [makeSite('site-1', 'acme-com'), makeSite('site-2', 'beta-co')],
+      ['site-1', 'site-2'],
+    );
+
+    expect(result.auditResult).to.deep.equal({
+      sites: 2,
+      paths: 4, // 2 sites x 2 report types x 1 period
+      periods: ['w21-2026'],
+    });
+    expect(result.fullAuditRef).to.equal('cdn-reports-bulk-publish/w21-2026');
   });
 });
