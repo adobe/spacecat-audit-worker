@@ -47,6 +47,56 @@ describe('Prerender behaviour — data integrity (Step 3)', () => {
   beforeEach(() => { sandbox = sinon.createSandbox(); });
   afterEach(() => { sandbox.restore(); });
 
+  it('when all submitted URLs fail scraping, status.json contains only those URLs — not phantom fallback entries', async () => {
+    // Regression: when scrapeResultPaths is empty (all scraper jobs had FAILED status),
+    // the old fallback re-fetched top-page URLs and wrote ~150 phantom 'error' entries
+    // to status.json for URLs that were never submitted to the scraper.
+    // The fix: skip the fallback; getScrapeJobStats.missingPages records the real failures.
+    const siteId = 'site-phantom';
+    const scrapeJobId = 'job-phantom';
+    const submittedUrl1 = 'https://example.com/page-a';
+    const submittedUrl2 = 'https://example.com/page-b';
+    // 10 top-page URLs that were NOT submitted to the scraper this run
+    const topPageUrls = Array.from({ length: 10 }, (_, i) => `https://example.com/top-${i}`);
+
+    const dataAccess = buildDataAccess(sandbox, {
+      // Top pages available — old fallback would have fetched these
+      topPages: [...topPageUrls, submittedUrl1, submittedUrl2],
+      // ScrapeUrl DB records the 2 URLs that were actually submitted (both FAILED)
+      scrapeUrls: [submittedUrl1, submittedUrl2],
+    });
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox, {
+        [statusKey(siteId)]: buildStatus(),
+        // No S3 HTML content for any URL — all scrape jobs failed
+      }),
+      dataAccess,
+      // scrapeResultPaths is empty: AuditBuilder only puts COMPLETE-status URLs here;
+      // when all jobs fail, this map is empty triggering the (now-removed) fallback
+      scrapeResultPaths: new Map(),
+      auditContext: { scrapeJobId },
+    });
+
+    await processContentAndGenerateOpportunities(ctx);
+
+    const written = captureStatusWrite(ctx.s3Client);
+    const writtenUrls = written?.pages?.map((p) => p.url) ?? [];
+
+    // Only the 2 submitted-but-failed URLs should appear (via missingPages from ScrapeUrl DB)
+    expect(writtenUrls).to.include(submittedUrl1);
+    expect(writtenUrls).to.include(submittedUrl2);
+
+    // No phantom entries for the 10 top-page URLs that were never submitted
+    for (const url of topPageUrls) {
+      expect(writtenUrls, `phantom entry for ${url}`).to.not.include(url);
+    }
+
+    // Total page count must be exactly 2 (the submitted URLs) plus any prior pages (0 here)
+    expect(written.pages).to.have.length(2);
+  });
+
   it('status.json merges current pages with prior pages not in the current scrape run', async () => {
     const siteId = 'site-merge';
     const scrapeJobId = 'job-merge';
