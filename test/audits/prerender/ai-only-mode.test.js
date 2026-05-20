@@ -89,6 +89,7 @@ describe('Prerender AI-Only Mode', () => {
         getId: sandbox.stub().returns('site-123'),
         getBaseURL: sandbox.stub().returns('https://example.com'),
         getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getRegion: sandbox.stub().returns(''),
       },
       dataAccess: mockDataAccess,
       env: {
@@ -825,60 +826,34 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
-  describe('LLMO config in SQS payload', () => {
-    it('should include empty LLMO arrays when site has no LLMO config', async () => {
-      // Default mock site has no getConfig method
+  describe('siteRegion in SQS payload', () => {
+    it('should include empty siteRegion when site has no region configured', async () => {
+      // Default mock site returns '' from getRegion
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.llmoCategories).to.deep.equal([]);
-      expect(message.data.llmoTopics).to.deep.equal([]);
-      expect(message.data.llmoRegions).to.deep.equal([]);
+      expect(message.data.siteRegion).to.equal('');
     });
 
-    it('should populate LLMO arrays from site config when available', async () => {
-      context.site.getConfig = sandbox.stub().returns({
-        getLlmoConfig: sandbox.stub().returns({
-          categories: {
-            cat1: { name: 'Technology', region: ['US', 'EU'] },
-            cat2: { name: 'Business', region: 'APAC' },
-          },
-          topics: {
-            t1: { name: 'SEO Basics' },
-          },
-          aiTopics: {
-            t2: { name: 'Advanced SEO' },
-          },
-        }),
-      });
+    it('should include siteRegion from site config when available', async () => {
+      context.site.getRegion = sandbox.stub().returns('US');
 
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.llmoCategories).to.include('Technology');
-      expect(message.data.llmoCategories).to.include('Business');
-      expect(message.data.llmoTopics).to.include('SEO Basics');
-      expect(message.data.llmoTopics).to.include('Advanced SEO');
-      expect(message.data.llmoRegions).to.include('US');
-      expect(message.data.llmoRegions).to.include('EU');
-      expect(message.data.llmoRegions).to.include('APAC');
+      expect(message.data.siteRegion).to.equal('US');
     });
 
-    it('should gracefully handle errors reading LLMO config and default to empty arrays', async () => {
-      context.site.getConfig = sandbox.stub().throws(new Error('Config not available'));
+    it('should default to empty string when site.getRegion returns null', async () => {
+      context.site.getRegion = sandbox.stub().returns(null);
 
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.llmoCategories).to.deep.equal([]);
-      expect(message.data.llmoTopics).to.deep.equal([]);
-      expect(message.data.llmoRegions).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to read LLMO config/),
-      );
+      expect(message.data.siteRegion).to.equal('');
     });
   });
 
