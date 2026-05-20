@@ -24,7 +24,7 @@ function buildReportsForSite(llmoFolder, periodIdentifier) {
   ];
 }
 
-async function runCdnReportsBulkPublish(url, context) {
+export async function runCdnReportsBulkPublish(url, context) {
   const { log, dataAccess } = context;
 
   const configuration = await dataAccess.Configuration.findLatest();
