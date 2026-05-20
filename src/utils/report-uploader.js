@@ -21,6 +21,10 @@ const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
 const XLSX_RETRY_MAX = 3;
 const XLSX_RETRY_DELAY_MS = 60_000;
 
+const BULK_POLL_INTERVAL_MS = 5_000;
+const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
+const BULK_POLL_MAX_ATTEMPTS = Math.ceil(BULK_POLL_TIMEOUT_MS / BULK_POLL_INTERVAL_MS);
+
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
@@ -290,7 +294,7 @@ export async function uploadAndPublishFile(
   }
 }
 
-async function runBulkJob(route, operation, paths, log) {
+async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
   const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
   const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
   const res = await fetchWithRetry(
@@ -306,10 +310,14 @@ async function runBulkJob(route, operation, paths, log) {
   }
   log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
 
-  // Poll until complete for 10 minutes
-  for (let i = 0; i < 120; i += 1) {
+  if (!wait) {
+    log.info(`%s: ${operation} job fire-and-forget, not polling for completion: ${jobUrl}`, AUDIT_NAME);
+    return;
+  }
+
+  for (let i = 0; i < BULK_POLL_MAX_ATTEMPTS; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    await sleep(5000);
+    await sleep(BULK_POLL_INTERVAL_MS);
     // eslint-disable-next-line no-await-in-loop
     const statusRes = await fetchWithRetry(
       jobUrl,
@@ -343,8 +351,8 @@ export async function bulkPublishToAdminHlx(reports, log) {
 
   try {
     await runBulkJob('preview', 'preview', paths, log);
-    await runBulkJob('live', 'publish', paths, log);
-    log.info(`%s: Bulk publish completed for ${paths.length} files`, AUDIT_NAME);
+    await runBulkJob('live', 'publish', paths, log, { wait: false });
+    log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
   } catch (error) {
     log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
     throw error;

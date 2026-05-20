@@ -21,7 +21,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -188,14 +188,14 @@ async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
  * the Current tab when the backend clears coveredByDomainWide on domain-wide rollback.
  * @param {Object} opportunity - The opportunity object
  * @param {Object} context - Audit context with dataAccess and log
- * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @param {Set<string>} deployedAtEdgePathnames - Pathnames confirmed deployed at edge in this audit
  * @param {string} domainWideSuggestionId - ID of the deployed domain-wide suggestion
  * @returns {Promise<void>}
  */
 async function markDeployedUrlSuggestionsAsCovered(
   opportunity,
   context,
-  deployedAtEdgeUrls,
+  deployedAtEdgePathnames,
   domainWideSuggestionId,
 ) {
   const { dataAccess, log, site } = context;
@@ -218,10 +218,10 @@ async function markDeployedUrlSuggestionsAsCovered(
     return;
   }
 
-  const suggestionsToCover = deployedAtEdgeUrls?.size > 0
+  const suggestionsToCover = deployedAtEdgePathnames?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
-      return deployedAtEdgeUrls.has(data?.url) && !data?.edgeDeployed;
+      return deployedAtEdgePathnames.has(toPathname(data?.url)) && !data?.edgeDeployed;
     })
     : [];
 
@@ -243,10 +243,10 @@ async function markDeployedUrlSuggestionsAsCovered(
  * restricting to URLs confirmed deployed at edge in the current audit run.
  * @param {Object|null} opportunity - The opportunity object (no-op if null)
  * @param {Object} context - Audit context with dataAccess and log
- * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @param {Set<string>} deployedAtEdgePathnames - Pathnames confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeUrls) {
+async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgePathnames) {
   const { log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
   const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
@@ -257,7 +257,7 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeU
   await markDeployedUrlSuggestionsAsCovered(
     opportunity,
     context,
-    deployedAtEdgeUrls,
+    deployedAtEdgePathnames,
     domainWideSuggestion.getId(),
   );
 }
@@ -1145,8 +1145,21 @@ export async function processOpportunityAndSuggestions(
 ) {
   const { log } = context;
 
-  const { auditResult, scrapedUrlsSet } = auditData;
+  const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
+
+  // Normalize scrapedUrlsSet to match by pathname so that domain shifts
+  // (e.g. www.example.com → example.com) don't prevent existing suggestions
+  // from being correctly marked as outdated. The set uses pathname-based
+  // lookups: both stored values and .has() arguments are normalized to pathnames.
+  const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
+    const pathnames = new Set(
+      [...rawScrapedUrlsSet].map(toPathname),
+    );
+    return {
+      has: (url) => pathnames.has(toPathname(url)),
+    };
+  })() : null;
 
   /* c8 ignore next 4 */
   if (urlsNeedingPrerender === 0) {
@@ -1188,14 +1201,15 @@ export async function processOpportunityAndSuggestions(
   }
 
   // Build key function that handles both individual and domain-wide suggestions
-  /* c8 ignore next 7 */
   const buildKey = (data) => {
     // Domain-wide suggestion has a special key field
     if (data.key) {
       return data.key;
     }
-    // Individual suggestions use URL-based key
-    return `${data.url}|${AUDIT_TYPE}`;
+    // Key on pathname only so that domain shifts (e.g. after page-citability migration
+    // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
+    // suggestions for the same page path.
+    return toPathname(data.url);
   };
 
   // Helper function to extract only the fields we want in suggestions
@@ -1753,14 +1767,19 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Include domain-wide URL so aggregate suggestion can be marked outdated when appropriate
-        const scrapedUrlsForNoOppty = new Set(scrapedUrlsSet);
-        scrapedUrlsForNoOppty.add(getDomainWideSuggestionUrl(site.getBaseURL()));
+        // Normalize scraped URLs to pathnames so domain shifts don't prevent
+        // outdating existing suggestions.
+        const scrapedPathnames = new Set(
+          [...scrapedUrlsSet].map(toPathname),
+        );
+        const scrapedUrlsForNoOppty = {
+          has: (url) => scrapedPathnames.has(toPathname(url)),
+        };
         await syncSuggestions({
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => suggestionData.url,
+          buildKey: (suggestionData) => toPathname(suggestionData.url),
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
@@ -1769,13 +1788,13 @@ export async function processContentAndGenerateOpportunities(context) {
     }
 
     // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
-    // Only mark suggestions for URLs confirmed deployed at edge in this audit run
-    const deployedAtEdgeUrls = new Set(
+    // Only mark suggestions for pathnames confirmed deployed at edge in this audit run
+    const deployedAtEdgePathnames = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
-        .map((r) => r.url),
+        .map((r) => toPathname(r.url)),
     );
-    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
+    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgePathnames);
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
