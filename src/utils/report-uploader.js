@@ -23,7 +23,6 @@ const XLSX_RETRY_DELAY_MS = 60_000;
 
 const BULK_POLL_INTERVAL_MS = 5_000;
 const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
-const BULK_POLL_MAX_ATTEMPTS = Math.ceil(BULK_POLL_TIMEOUT_MS / BULK_POLL_INTERVAL_MS);
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
@@ -294,7 +293,8 @@ export async function uploadAndPublishFile(
   }
 }
 
-async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
+async function runBulkJob(route, operation, paths, log, opts = {}) {
+  const { wait = true, pollTimeoutMs = BULK_POLL_TIMEOUT_MS } = opts;
   const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
   const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
   const res = await fetchWithRetry(
@@ -315,7 +315,8 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
     return;
   }
 
-  for (let i = 0; i < BULK_POLL_MAX_ATTEMPTS; i += 1) {
+  const maxAttempts = Math.ceil(pollTimeoutMs / BULK_POLL_INTERVAL_MS);
+  for (let i = 0; i < maxAttempts; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     await sleep(BULK_POLL_INTERVAL_MS);
     // eslint-disable-next-line no-await-in-loop
@@ -341,7 +342,7 @@ async function runBulkJob(route, operation, paths, log, { wait = true } = {}) {
  * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
  * @param {object} log - Logger
  */
-export async function bulkPublishToAdminHlx(reports, log) {
+export async function bulkPublishToAdminHlx(reports, log, { pollTimeoutMs } = {}) {
   if (!reports?.length) {
     return;
   }
@@ -350,7 +351,7 @@ export async function bulkPublishToAdminHlx(reports, log) {
   log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
 
   try {
-    await runBulkJob('preview', 'preview', paths, log);
+    await runBulkJob('preview', 'preview', paths, log, { pollTimeoutMs });
     await runBulkJob('live', 'publish', paths, log, { wait: false });
     log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
   } catch (error) {
