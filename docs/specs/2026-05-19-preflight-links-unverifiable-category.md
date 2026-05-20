@@ -107,7 +107,7 @@ Add a new opportunity entry:
   - `issue: "Links that could not be verified"`
   - `seoImpact: "Low"` (not broken; informational)
   - `seoRecommendation: "Review whether these links need to remain. They may require authentication or be on a private network."`
-  - `links: [...]` — entries with `urlTo`, `href`, `reason`, `reasonHuman`, `selectors` / `elementTargets`
+  - `links: [...]` — entries with `urlTo`, `href`, `reason`, `reasonHuman`, and the `elements` array (per the existing broken-link wire format — produced by `toElementTargets(selectors)` in `src/preflight/utils/dom-selector.js`).
 
 Example entry:
 
@@ -117,7 +117,7 @@ Example entry:
   "href": "https://author-.../uswire/en_us.html",
   "reason": "dns-failure",
   "reasonHuman": "DNS lookup failed — may require corporate network or authentication",
-  "elementTargets": [...]
+  "elements": [{ "selector": "div > p > a:nth-of-type(2)" }]
 }
 ```
 
@@ -221,13 +221,13 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 
 ### Task 2: Update `checkLinkStatus` to return categorized failure objects
 
-- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `reason`, `reasonHuman`, `urlTo`, `href`, and the existing element selectors.
+- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `reason`, `reasonHuman`, `urlTo`, `href`, and the spread of `toElementTargets(selectors)` (i.e. the `elements` array, matching the broken-link wire format).
 - [ ] Preserve the existing log line; consider lowering severity from `info` to `debug` for `unverifiable` since these are now expected.
 - [ ] Update tests to assert the new return shape on each error code.
 
 ### Task 3: Update `runLinksChecks` to bucket results
 
-- [ ] Split the result accumulators into `brokenExternalLinks`, `unverifiableExternalLinks`, `brokenInternalLinks`, and (optional) `unverifiableInternalLinks`. Internal-link unverifiability stays as broken per [non-goals](#non-goals); the bucket may be empty.
+- [ ] Split the result accumulators into `brokenExternalLinks`, `unverifiableExternalLinks`, and `brokenInternalLinks`. Per [non-goals](#non-goals), internal-link unverifiability stays as broken — no `unverifiableInternalLinks` bucket.
 - [ ] Update the return object signature.
 - [ ] Update tests to assert each bucket.
 
@@ -257,7 +257,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 2. **SAW implementation PR opens** — referencing this spec. Code change behind a feature flag if Task 5 determines one is needed.
 3. **MFE companion PR opens** in `aem-sites-optimizer-preflight-mfe` — adds render path for `unverifiable-external-links`.
 4. **MFE PR merges + deploys** to prod (or stage with verification).
-5. **SAW PR merges**. If feature-flagged, flag remains off in prod.
+5. **SAW PR merges**. If feature-flagged, flag remains off in prod. **If no feature flag was needed (Task 5)**, the SAW PR must not merge until step 4 (MFE deploy) is confirmed live — otherwise prod will emit a `check` type the MFE doesn't know how to render.
 6. **Verification on stage** — Lauren's example page (or equivalent staged repro): confirm the 14 corp-only domains now render as "unverifiable," not broken.
 7. **Enable in prod** (flip flag or roll deploy) once MFE is confirmed live.
 8. **Customer ack**: notify SITES-44776 reporter (Lauren) with link to test against; close the ticket once confirmed in their environment.
@@ -281,9 +281,7 @@ The fix is successful when:
 
 1. **MFE backward compatibility on unknown `check` types** — does the current MFE silently ignore, fall back to default render, or error? This determines whether a feature flag is needed (Task 5).
 2. **MFE-side owner** — who picks up the companion PR in `aem-sites-optimizer-preflight-mfe`?
-3. **Internal-link unverifiability** — keep as broken (per non-goals), or add the symmetric bucket so internal-link network errors also get the softer treatment? Lean: keep as broken because AEM author URLs we control should always resolve; an internal network failure IS a real problem.
-4. **Reason code coverage** — should `tls-error` be a distinct reason, or folded into `unreachable`? Depends on observed frequency in real preflight runs (Coralogix can answer).
-5. **Customer-facing copy** — the `reasonHuman` strings above are first-draft. Worth a content review pass before the MFE renders them.
+3. **Customer-facing copy** — the `reasonHuman` strings above are first-draft. Worth a content review pass before the MFE renders them.
 
 ---
 
