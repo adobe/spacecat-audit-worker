@@ -75,6 +75,7 @@ describe('cdn-reports-bulk-publish handler', () => {
       ['site-1', 'site-2'],
     );
 
+    expect(bulkPublishStub).to.have.been.calledOnce;
     const [reports] = bulkPublishStub.firstCall.args;
     expect(reports).to.deep.include.members([
       { outputLocation: 'acme-com/agentic-traffic', filename: 'agentictraffic-w21-2026.xlsx' },
@@ -84,11 +85,13 @@ describe('cdn-reports-bulk-publish handler', () => {
     ]);
   });
 
-  it('passes a 10-minute preview poll timeout to bulkPublishToAdminHlx', async () => {
+  it('configures bulk publish with a preview poll timeout longer than the per-site default', async () => {
     await runOnWednesday([makeSite('site-1', 'acme-com')], ['site-1']);
 
     const [, , opts] = bulkPublishStub.firstCall.args;
-    expect(opts).to.deep.equal({ pollTimeoutMs: 10 * 60_000 });
+    // Per-site default is 3 min; the consolidator needs more headroom for the
+    // bigger batch. Hard bound asserted in report-uploader tests.
+    expect(opts.pollTimeoutMs).to.be.greaterThan(3 * 60_000);
   });
 
   it('includes the previous week alongside the current week when run on a Monday', async () => {
@@ -129,7 +132,7 @@ describe('cdn-reports-bulk-publish handler', () => {
     expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
   });
 
-  it('returns site, path, and period counts in the audit result', async () => {
+  it('returns site, path, and period counts in the audit result on success', async () => {
     const result = await runOnWednesday(
       [makeSite('site-1', 'acme-com'), makeSite('site-2', 'beta-co')],
       ['site-1', 'site-2'],
@@ -139,7 +142,35 @@ describe('cdn-reports-bulk-publish handler', () => {
       sites: 2,
       paths: 4, // 2 sites x 2 report types x 1 period
       periods: ['w21-2026'],
+      success: true,
     });
     expect(result.fullAuditRef).to.equal('cdn-reports-bulk-publish/w21-2026');
+  });
+
+  it('captures bulk-publish failures in the audit result instead of throwing', async () => {
+    bulkPublishStub.rejects(new Error('preview timeout for job URL: ...'));
+
+    const result = await runOnWednesday(
+      [makeSite('site-1', 'acme-com')],
+      ['site-1'],
+    );
+
+    expect(result.auditResult.success).to.equal(false);
+    expect(result.auditResult.error).to.match(/preview timeout/);
+    expect(log.error).to.have.been.calledWith(sinon.match(/bulk publish failed/));
+  });
+
+  it('logs a warning and no-ops when no sites have cdn-logs-report enabled with a folder', async () => {
+    const result = await runOnWednesday(
+      [makeSite('disabled-site', 'acme-com')],
+      [], // no sites enabled
+    );
+
+    expect(result.auditResult.sites).to.equal(0);
+    expect(result.auditResult.paths).to.equal(0);
+    expect(result.auditResult.success).to.equal(true);
+    // bulkPublishToAdminHlx is still called with [] so the helper can no-op
+    // itself; we just want to make sure we logged the empty state.
+    expect(log.warn).to.have.been.calledWith(sinon.match(/no sites with cdn-logs-report enabled/));
   });
 });

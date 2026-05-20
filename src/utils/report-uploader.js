@@ -23,6 +23,9 @@ const XLSX_RETRY_DELAY_MS = 60_000;
 
 const BULK_POLL_INTERVAL_MS = 5_000;
 const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
+// Inline paths in INFO logs only when the list is small enough to stay
+// readable in Coralogix; bigger batches log just the count.
+const BULK_LOG_PATHS_THRESHOLD = 20;
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
@@ -308,7 +311,8 @@ async function runBulkJob(route, operation, paths, log, opts = {}) {
   if (!jobUrl) {
     throw new Error(`No job URL from ${operation}`);
   }
-  log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
+  const pathSummary = paths.length <= BULK_LOG_PATHS_THRESHOLD ? `: ${paths.join(', ')}` : '';
+  log.info(`%s: ${operation} job started for ${paths.length} paths${pathSummary}, job URL: ${jobUrl}`, AUDIT_NAME);
 
   if (!wait) {
     log.info(`%s: ${operation} job fire-and-forget, not polling for completion: ${jobUrl}`, AUDIT_NAME);
@@ -355,7 +359,8 @@ export async function bulkPublishToAdminHlx(reports, log, { pollTimeoutMs } = {}
     await runBulkJob('live', 'publish', paths, log, { wait: false });
     log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
   } catch (error) {
-    log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
+    const pathSummary = paths.length <= BULK_LOG_PATHS_THRESHOLD ? ` [${paths.join(', ')}]` : '';
+    log.error(`%s: Bulk publish failed for ${paths.length} paths${pathSummary}: ${error.message}`, AUDIT_NAME);
     throw error;
   }
 }
