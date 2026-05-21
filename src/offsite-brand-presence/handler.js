@@ -488,15 +488,17 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
     }
   }
 
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : ''}`);
+  const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
+  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
   return Promise.all(
     jobs.map(async ({ domain, datasetId, params }) => {
       try {
+        const start = Date.now();
         const result = spacecatOrgId
           ? await submitDrsJobDirect(params, spacecatOrgId, context)
           : await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id}`);
+        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
         return {
           domain, datasetId, status: 'success', response: result,
         };
