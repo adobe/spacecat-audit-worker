@@ -1,3 +1,10 @@
+## [1.449.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.0...v1.449.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* replace hyphen with 0 for akamai ttfb ([#2547](https://github.com/adobe/spacecat-audit-worker/issues/2547)) ([ce04830](https://github.com/adobe/spacecat-audit-worker/commit/ce04830f0ae5d2d47e8f12187b771ec02c59d344))
+
 # [1.449.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.3...v1.449.0) (2026-05-21)
 
 
