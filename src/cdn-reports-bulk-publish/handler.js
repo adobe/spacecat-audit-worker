@@ -72,10 +72,23 @@ export default async function cdnReportsBulkPublish(message, context) {
 
   log.info(`%s: bulk-publishing ${reports.length} paths across ${llmoFolders.length} sites for periods [${periods.join(', ')}]`, AUDIT_TYPE);
 
-  // Let errors propagate; the dispatcher converts them to 5xx so SQS surfaces
-  // the failure (and eventually routes to DLQ) instead of silently swallowing
-  // a safety-net failure.
-  await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
-
-  return ok({ sites: llmoFolders.length, paths: reports.length, periods });
+  // Catch and log instead of throwing: the audit-worker SQS queue has no DLQ,
+  // so a thrown error would have SQS redeliver this message indefinitely and
+  // re-fire a cross-site bulk publish each time. The error log is the operator
+  // signal -- alert on `Bulk publish failed` in Coralogix.
+  try {
+    await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
+    return ok({
+      sites: llmoFolders.length, paths: reports.length, periods, success: true,
+    });
+  } catch (error) {
+    log.error(`%s: bulk publish failed (${reports.length} paths, ${llmoFolders.length} sites): ${error.message}`, AUDIT_TYPE);
+    return ok({
+      sites: llmoFolders.length,
+      paths: reports.length,
+      periods,
+      success: false,
+      error: error.message,
+    });
+  }
 }

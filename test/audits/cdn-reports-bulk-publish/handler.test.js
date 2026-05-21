@@ -148,18 +148,26 @@ describe('cdn-reports-bulk-publish handler', () => {
       sites: 2,
       paths: 4, // 2 sites x 2 report types x 1 period
       periods: ['w21-2026'],
+      success: true,
     });
   });
 
-  it('propagates bulk-publish failures so SQS surfaces the failure', async () => {
-    clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
-
+  it('returns success=false with error message on bulk-publish failure (no DLQ; catch + log instead of throw)', async () => {
     bulkPublishStub.rejects(new Error('preview timeout for job URL: ...'));
 
-    await expect(handler(
-      {},
-      makeContext([makeSite('site-1', 'acme-com')], ['site-1']),
-    )).to.be.rejectedWith(/preview timeout/);
+    const result = await runOnWednesday(
+      [makeSite('site-1', 'acme-com')],
+      ['site-1'],
+    );
+
+    clock.restore();
+    clock = null;
+
+    expect(result.status).to.equal(200);
+    const body = await result.json();
+    expect(body.success).to.equal(false);
+    expect(body.error).to.match(/preview timeout/);
+    expect(log.error).to.have.been.calledWith(sinon.match(/bulk publish failed/));
   });
 
   it('returns 200 and no-ops when no sites have cdn-logs-report enabled with a folder', async () => {
