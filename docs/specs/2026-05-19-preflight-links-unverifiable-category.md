@@ -92,7 +92,7 @@ The gap is specifically: **network-level failure**, where the audit has no signa
 |---|---|---|---|
 | **OK** | 2xx, 3xx, 401, 403, 405, 429, 451 | not reported | unchanged |
 | **Broken** | 404, 410, 5xx (after HEAD + GET fallback) | reported via `brokenExternalLinks` / `brokenInternalLinks` | unchanged |
-| **Unverifiable** | Network error (`ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `EAI_AGAIN`, etc.) | reported via `brokenExternalLinks` w/ `status: 0` (post-#2476) | reported via NEW `unverifiableExternalLinks` w/ `reason` and `reasonHuman` |
+| **Unverifiable** | Network error (`ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `EAI_AGAIN`, etc.) | reported via `brokenExternalLinks` w/ `status: 0` (post-#2476) | reported via NEW `unverifiableExternalLinks` w/ `code` and `message` |
 
 ### Wire format change
 
@@ -101,33 +101,44 @@ The preflight audit envelope today contains opportunity entries keyed by `check`
 - `check: 'broken-internal-links'` — unchanged
 - `check: 'broken-external-links'` — `status: 0` entries move out of here
 
-Add a new opportunity entry:
+Add a new opportunity entry. **Matches the shape of the existing `broken-internal-links` / `broken-external-links` opportunities** (see `src/preflight/handler.js` for the assembly): `{ check, issue: [...] }` where `issue` is the array of per-link entries. The per-entry field names mirror what handler.js emits today for broken links (`url` not `urlTo`; per-link `issue` string; per-link `seoImpact` / `seoRecommendation` / `elements`).
 
 - `check: 'unverifiable-external-links'` — new
-  - `issue: "Links that could not be verified"`
-  - `seoImpact: "Low"` (not broken; informational)
-  - `seoRecommendation: "Review whether these links need to remain. They may require authentication or be on a private network."`
-  - `links: [...]` — entries with `urlTo`, `href`, `reason`, `reasonHuman`, and the `elements` array (per the existing broken-link wire format — produced by `toElementTargets(selectors)` in `src/preflight/utils/dom-selector.js`).
+- `issue: [...]` — array of per-link entries. Each entry carries:
+  - `url` — the unverifiable URL (handler.js performs the `urlTo` → `url` rename for broken links today; same here)
+  - `issue` — short per-link summary, e.g. `"Could not verify"` (parallel to the existing `"Status 404"` string for broken)
+  - `code` — machine-readable reason (`dns-failure`, `connection-refused`, `timeout`, `tls-error`, `unreachable`)
+  - `message` — human-readable explanation suitable for MFE display
+  - `seoImpact: "Low"` — not broken, informational
+  - `seoRecommendation` — short copy directing the author to review
+  - `elements` — per-link CSS selectors (per the existing broken-link wire format — produced by `toElementTargets(selectors)` in `src/preflight/utils/dom-selector.js`)
 
-Example entry:
+Example opportunity entry on the audit envelope:
 
 ```json
 {
-  "urlTo": "https://timesheet.wal-mart.com/gtaapp/etm/defaultHomePage/welcomePage.jsp",
-  "href": "https://author-.../uswire/en_us.html",
-  "reason": "dns-failure",
-  "reasonHuman": "DNS lookup failed — may require corporate network or authentication",
-  "elements": [{ "selector": "div > p > a:nth-of-type(2)" }]
+  "check": "unverifiable-external-links",
+  "issue": [
+    {
+      "url": "https://timesheet.wal-mart.com/gtaapp/etm/defaultHomePage/welcomePage.jsp",
+      "issue": "Could not verify",
+      "code": "dns-failure",
+      "message": "DNS lookup failed — may require corporate network or authentication",
+      "seoImpact": "Low",
+      "seoRecommendation": "Review whether this link needs to remain. It may require authentication or be on a private network.",
+      "elements": [{ "selector": "div > p > a:nth-of-type(2)" }]
+    }
+  ]
 }
 ```
 
 ### Reason taxonomy
 
-`classifyNetworkError(err)` maps Node error codes to reason values:
+`classifyNetworkError(err)` maps Node error codes to a `(code, message)` pair:
 
-| `err.code` | `reason` | `reasonHuman` |
+| `err.code` | `code` | `message` |
 |---|---|---|
-| `ENOTFOUND`, `EAI_AGAIN`, `ENOTRESOLVED` | `dns-failure` | "DNS lookup failed — may require corporate network or authentication" |
+| `ENOTFOUND`, `EAI_AGAIN` | `dns-failure` | "DNS lookup failed — may require corporate network or authentication" |
 | `ECONNREFUSED` | `connection-refused` | "Connection refused — may require corporate network or VPN" |
 | `ETIMEDOUT`, `ECONNRESET`, `UND_ERR_CONNECT_TIMEOUT` | `timeout` | "Request timed out — may require authentication or corporate network" |
 | `CERT_HAS_EXPIRED`, `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, etc. | `tls-error` | "TLS verification failed — server certificate may be misconfigured" |
@@ -169,7 +180,7 @@ Partial fix only — timeouts and connection-refused from corp firewalls would s
 - New render path for `check: 'unverifiable-external-links'` in the preflight audit panel.
   - Different visual treatment from "broken" — yellow / info color, not red.
   - Different copy — "Could not verify" not "Broken link."
-  - Per-entry rendering: show `urlTo` + `reasonHuman` (one line); preserve link-to-edit-context affordances same as broken links.
+  - Per-entry rendering: show `url` + `message` (one line); preserve link-to-edit-context affordances same as broken links.
   - Optional dismiss / acknowledge affordance per entry (nice to have, not blocking).
 - Graceful fallback for the new wire field on older MFE deploys (see [Backward compatibility](#backward-compatibility) below).
 
@@ -221,7 +232,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 
 ### Task 2: Update `checkLinkStatus` to return categorized failure objects
 
-- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `reason`, `reasonHuman`, `urlTo`, `href`, and the spread of `toElementTargets(selectors)` (i.e. the `elements` array, matching the broken-link wire format).
+- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `code`, `message`, `urlTo`, `href`, and the spread of `toElementTargets(selectors)` (i.e. the `elements` array, matching the broken-link wire format). Note: the function returns `urlTo` internally; `handler.js` performs the `urlTo` → `url` rename when assembling the opportunity entry, same as for broken links today.
 - [ ] Preserve the existing log line; consider lowering severity from `info` to `debug` for `unverifiable` since these are now expected.
 - [ ] Update tests to assert the new return shape on each error code.
 
@@ -241,7 +252,10 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 
 - [ ] Confirm MFE backward-compat behavior — see [Cross-repo coordination](#cross-repo-coordination-mfe-side).
 - [ ] If MFE handles unknown check types gracefully: skip flag.
-- [ ] If MFE errors on unknown check types: add `PREFLIGHT_LINKS_UNVERIFIABLE_ENABLED` env var; when false, fall back to existing post-#2476 behavior (status: 0 in `brokenExternalLinks`).
+- [ ] If MFE errors on unknown check types: add `PREFLIGHT_LINKS_UNVERIFIABLE_ENABLED` env var, and make `runLinksChecks` consult it BEFORE splitting the buckets:
+  - When the flag is **on**: split as Task 3 describes — `unverifiableExternalLinks` becomes its own bucket; `handler.js` emits the new `unverifiable-external-links` opportunity entry.
+  - When the flag is **off**: skip the bucket split entirely in `links-checks.js`. The `catch (finalErr)` block still calls `classifyNetworkError` for logging, but the returned object goes into `brokenExternalLinks` with `status: 0` and the existing `issue: "Status 0"` shape — restoring post-#2476 behavior exactly. `handler.js` doesn't emit the new opportunity entry because `unverifiableExternalLinks` is empty.
+- Rationale: the split happens at `links-checks.js`, before `handler.js` ever sees the buckets. Trying to merge them back in `handler.js` would be more invasive (and would still emit the new check type in the envelope even when flag-off, which the MFE may not handle). Gating at the producer is the cleaner fallback path.
 
 ### Task 6: Tests, lint, coverage
 
@@ -271,7 +285,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 The fix is successful when:
 
 - The Walmart example page reproduces with 0 entries in `brokenExternalLinks` (down from 14), and 14 entries in `unverifiableExternalLinks`.
-- Each unverifiable entry has a populated `reason` and `reasonHuman` that the author can read.
+- Each unverifiable entry has a populated `code` and `message` that the author can read.
 - The MFE renders the 14 as a clearly-distinct "could not verify" group, visually separable from any genuinely broken links elsewhere on the page.
 - Lauren acknowledges the new presentation as acceptable.
 
@@ -281,11 +295,11 @@ The fix is successful when:
 
 1. **MFE backward compatibility on unknown `check` types** — does the current MFE silently ignore, fall back to default render, or error? This determines whether a feature flag is needed (Task 5).
 2. **MFE-side owner** — who picks up the companion PR in `aem-sites-optimizer-preflight-mfe`?
-3. **Customer-facing copy** — the `reasonHuman` strings above are first-draft. Worth a content review pass before the MFE renders them.
+3. **Customer-facing copy** — the `message` strings above are first-draft. Worth a content review pass before the MFE renders them.
 
 ---
 
 ## Future Work
 
 - If multiple audits (headings, accessibility, etc.) adopt the "unverifiable" pattern, lift this from a per-audit spec into a platform-level architectural document in `mysticat-architecture/platform/`.
-- When the links audit migrates to the Mysticat blackboard, the data model needs to carry `category` and `reason` per link from day one. Reference this spec from whatever migration profile gets filed for the `links` audit.
+- When the links audit migrates to the Mysticat blackboard, the data model needs to carry `category`, `code`, and `message` per link from day one. Reference this spec from whatever migration profile gets filed for the `links` audit.
