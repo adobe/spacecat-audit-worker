@@ -25,7 +25,7 @@ const BULK_POLL_INTERVAL_MS = 5_000;
 const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
 // Inline paths in INFO logs only when the list is small enough to stay
 // readable in Coralogix; bigger batches log just the count.
-const BULK_LOG_PATHS_THRESHOLD = 20;
+const BULK_LOG_PATHS_THRESHOLD = 10;
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
