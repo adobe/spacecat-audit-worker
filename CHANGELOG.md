@@ -1,3 +1,10 @@
+## [1.447.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.1...v1.447.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **toc:** update opportunity description to mention heading-based suggestion generation (LLMO-5006) ([#2536](https://github.com/adobe/spacecat-audit-worker/issues/2536)) ([adb1052](https://github.com/adobe/spacecat-audit-worker/commit/adb10526f00e5fdfb75354b4e77166bf5099f452))
+
 ## [1.447.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.0...v1.447.1) (2026-05-20)
 
 
