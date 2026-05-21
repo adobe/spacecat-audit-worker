@@ -654,5 +654,39 @@ describe('Utils Report Uploader', () => {
         sinon.match(/Bulk publish failed/),
       );
     });
+
+    it('should honor the pollTimeoutMs option for the preview cap', async function pollTimeoutTest() {
+      this.timeout(5000);
+
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      // Status checks always return 'running' so the loop runs to the cap
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'running',
+          progress: { total: 1, processed: 0, failed: 0 },
+        }),
+      });
+
+      // Custom cap: 50_000ms / 5_000ms = 10 iterations
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+        { pollTimeoutMs: 50_000 },
+      )).to.be.rejectedWith(/^preview timeout for job URL:/);
+
+      expect(sleepStub.withArgs(5000).callCount).to.equal(10);
+      // 1 POST + 10 status GETs
+      expect(fetchStub.callCount).to.equal(11);
+    });
   });
 });
