@@ -17,8 +17,8 @@ import {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
-  handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { handleAiOnlyMode } from '../../../src/prerender/ai-only.js';
 
 use(sinonChai);
 
