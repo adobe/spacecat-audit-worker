@@ -72,10 +72,11 @@ export default async function cdnReportsBulkPublish(message, context) {
 
   log.info(`%s: bulk-publishing ${reports.length} paths across ${llmoFolders.length} sites for periods [${periods.join(', ')}]`, AUDIT_TYPE);
 
-  // Catch and log instead of throwing: the audit-worker SQS queue has no DLQ,
-  // so a thrown error would have SQS redeliver this message indefinitely and
-  // re-fire a cross-site bulk publish each time. The error log is the operator
-  // signal -- alert on `Bulk publish failed` in Coralogix.
+  // Catch and log instead of throwing: spacecat-audit-jobs has maxReceiveCount=1,
+  // so a thrown error sends the message to spacecat-dead-letter-queue, which is
+  // not actively monitored (see SKYSI-79147 thread, Apr 21 incident: 1.5k stuck
+  // DLQ messages). The Coralogix error log is the real operator signal --
+  // alert on `Bulk publish failed`.
   try {
     await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
     return ok({
