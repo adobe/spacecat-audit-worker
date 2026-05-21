@@ -165,3 +165,101 @@ describe('scrape-stats', () => {
     expect(ctx.log.warn).to.have.been.calledWithMatch(/Failed to fetch ScrapeUrl stats/);
   });
 });
+
+describe('buildAuditResult', () => {
+  let buildAuditResult;
+
+  before(async () => {
+    // buildAuditResult is a pure function — no esmock needed
+    ({ buildAuditResult } = await import('../../../src/prerender/scrape-stats.js'));
+  });
+
+  const scrapeStats = {
+    urlsSubmittedForScraping: 3,
+    scrapeForbiddenCount: 1,
+    missingPages: [{ url: 'https://example.com/missing', scrapingStatus: 'failed' }],
+    submittedUrlSet: new Set(['https://example.com/a']),
+  };
+  const botBlockResult = { scrapeForbidden: false, scrapeForbiddenSince: null };
+
+  it('computes urlsNeedingPrerender from comparisonResults', () => {
+    const comparisons = [
+      { url: 'https://example.com/a', needsPrerender: true, error: false },
+      { url: 'https://example.com/b', needsPrerender: false, error: false },
+    ];
+    const { auditResult, urlsNeedingPrerender } = buildAuditResult(comparisons, scrapeStats, botBlockResult);
+    expect(urlsNeedingPrerender).to.have.lengthOf(1);
+    expect(auditResult.urlsNeedingPrerender).to.equal(1);
+  });
+
+  it('computes successfulComparisons excluding error results', () => {
+    const comparisons = [
+      { url: 'https://example.com/a', needsPrerender: false, error: false },
+      { url: 'https://example.com/b', needsPrerender: false, error: true },
+    ];
+    const { successfulComparisons, auditResult } = buildAuditResult(comparisons, scrapeStats, botBlockResult);
+    expect(successfulComparisons).to.have.lengthOf(1);
+    expect(auditResult.urlsScrapedSuccessfully).to.equal(1);
+  });
+
+  it('removes hasScrapeMetadata and scrapeForbidden from cleanResults', () => {
+    const comparisons = [
+      {
+        url: 'https://example.com/a',
+        needsPrerender: false,
+        error: false,
+        hasScrapeMetadata: true,
+        scrapeForbidden: true,
+        contentGainRatio: 1.5,
+      },
+    ];
+    const { auditResult } = buildAuditResult(comparisons, scrapeStats, botBlockResult);
+    const result = auditResult.results[0];
+    expect(result).to.not.have.property('hasScrapeMetadata');
+    expect(result).to.not.have.property('scrapeForbidden');
+    expect(result.contentGainRatio).to.equal(1.5);
+  });
+
+  it('computes scrapingErrorRate as percentage of failed URLs', () => {
+    const comparisons = [
+      { url: 'https://example.com/a', needsPrerender: false, error: false },
+    ];
+    const stats = { urlsSubmittedForScraping: 4, scrapeForbiddenCount: 0, missingPages: [] };
+    // 1 successful out of 4 submitted → 3 failed → 75%
+    const { auditResult } = buildAuditResult(comparisons, stats, botBlockResult);
+    expect(auditResult.scrapingErrorRate).to.equal(75);
+  });
+
+  it('sets scrapingErrorRate to 0 when urlsSubmittedForScraping is 0', () => {
+    const stats = { urlsSubmittedForScraping: 0, scrapeForbiddenCount: 0, missingPages: [] };
+    const { auditResult } = buildAuditResult([], stats, botBlockResult);
+    expect(auditResult.scrapingErrorRate).to.equal(0);
+  });
+
+  it('excludes isDeployedAtEdge URLs from scrapedUrlsSet', () => {
+    const comparisons = [
+      { url: 'https://example.com/deployed', needsPrerender: false, error: false, isDeployedAtEdge: true },
+      { url: 'https://example.com/normal', needsPrerender: false, error: false, isDeployedAtEdge: false },
+    ];
+    const { scrapedUrlsSet } = buildAuditResult(comparisons, scrapeStats, botBlockResult);
+    expect(scrapedUrlsSet.has('https://example.com/deployed')).to.be.false;
+    expect(scrapedUrlsSet.has('https://example.com/normal')).to.be.true;
+  });
+
+  it('propagates scrapeForbidden and scrapeForbiddenSince from botBlockResult', () => {
+    const botBlock = { scrapeForbidden: true, scrapeForbiddenSince: '2025-01-01T00:00:00Z' };
+    const { auditResult } = buildAuditResult([], scrapeStats, botBlock);
+    expect(auditResult.scrapeForbidden).to.be.true;
+    expect(auditResult.scrapeForbiddenSince).to.equal('2025-01-01T00:00:00Z');
+  });
+
+  it('sets lastAuditSuccess to true', () => {
+    const { auditResult } = buildAuditResult([], scrapeStats, botBlockResult);
+    expect(auditResult.lastAuditSuccess).to.be.true;
+  });
+
+  it('includes missingPages from scrapeStats', () => {
+    const { auditResult } = buildAuditResult([], scrapeStats, botBlockResult);
+    expect(auditResult.missingPages).to.deep.equal(scrapeStats.missingPages);
+  });
+});

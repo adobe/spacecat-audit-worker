@@ -16,17 +16,17 @@ import { isStickyBotBlocked, detectBotBlock, buildBotBlockedResult } from './bot
 import { filterUrls } from './url-filter.js';
 import { fetchUrls } from './url-fetcher.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions } from '../utils/data-access.js';
 import { resolveMode } from './mode-resolver.js';
-import { getScrapeJobStats } from './scrape-stats.js';
+import { getScrapeJobStats, buildAuditResult } from './scrape-stats.js';
 import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
 import { writeToCitabilityRecords } from './citability-writer.js';
-import { compareHtmlContent } from './html-comparator.js';
+import { compareAllUrls } from './html-comparator.js';
 import {
   detectWrongEdgeDeployedStatus,
   createScrapeForbiddenOpportunity,
   processOpportunityAndSuggestions,
   markNewSuggestionsAsCovered,
+  clearOutdatedSuggestions,
 } from './opportunity-syncer.js';
 import { sendPrerenderGuidanceRequestToMystique } from './mystique-sender.js';
 import { MODE_AI_ONLY } from './utils/constants.js';
@@ -143,7 +143,7 @@ export async function submitForScraping(context) {
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, dataAccess, auditContext,
+    site, audit, log, dataAccess, auditContext,
   } = context;
 
   const { isAiOnly } = resolveMode(context);
@@ -160,7 +160,6 @@ export async function processContentAndGenerateOpportunities(context) {
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
   await detectWrongEdgeDeployedStatus(dataAccess, siteId, site.getBaseURL(), log);
 
-  // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
 
   if (isDomainBlocked) {
@@ -170,90 +169,37 @@ export async function processContentAndGenerateOpportunities(context) {
   log.info(`${LOG_PREFIX} Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   try {
-    let urlsToCheck = [];
-
-    // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
-    if (!isDomainBlocked) {
-      if (scrapeResultPaths?.size > 0) {
-        urlsToCheck = Array.from(context.scrapeResultPaths.keys());
-        log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
-      } else {
-        // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.
-        // getScrapeJobStats reads the ScrapeUrl DB and populates missingPages so status.json
-        // records the correct failed URLs. Running a top-page fallback here would write phantom
-        // 'error' entries for URLs that were never submitted to this scrape job.
-        log.warn(`${LOG_PREFIX} No COMPLETE scrape results for baseUrl=${site.getBaseURL()}, `
-          + `siteId=${siteId}, scrapeJobId=${auditContext?.scrapeJobId ?? 'unknown'}. `
-          + 'Skipping comparison; failed URLs recorded via ScrapeUrl DB.');
-      }
-    }
-
-    const comparisonResults = isDomainBlocked
-      ? []
-      : await Promise.all(urlsToCheck.map((url) => compareHtmlContent(url, context)));
+    const comparisonResults = await compareAllUrls(context, isDomainBlocked);
 
     // Phase 2c: write citability metrics to PageCitability entity.
     await writeToCitabilityRecords(comparisonResults, siteId, context);
-
-    const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
-    const successfulComparisons = comparisonResults.filter((result) => !result.error);
-
-    log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
     const { scrapeJobId } = auditContext || {};
     // getScrapeJobStats combines 403s from COMPLETE-status URLs (already in comparisonResults)
     // and FAILED-status URLs (absent from comparisonResults, fetched from ScrapeUrl table).
     // missingPages is reused by uploadStatusSummaryToS3 to avoid a redundant DB + S3 round-trip.
-    const urlCount = urlsToCheck.length;
-    const {
-      urlsSubmittedForScraping,
-      scrapeForbiddenCount,
-      missingPages,
-      submittedUrlSet,
-    } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlCount, context);
-
-    log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
-
-    const { scrapeForbidden, scrapeForbiddenSince } = await detectBotBlock(context, {
-      isDomainBlocked, urlsSubmittedForScraping, scrapeForbiddenCount,
-    });
-
-    // Remove internal tracking fields from results before storing
-    // eslint-disable-next-line
-    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
-
-    const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
-    // Scraping error rate: % of submitted URLs that failed (base = urlsSubmittedForScraping)
-    const failedCount = urlsSubmittedForScraping - successfulComparisons.length;
-    const scrapingErrorRate = urlsSubmittedForScraping > 0
-      ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
-      : 0;
-
-    // Exclude deployed URLs — don't mark their suggestions outdated regardless of needsPrerender.
-    // isDeployedAtEdge=true means prerender is already active at CDN level (via RCV, LLMO
-    // side-effect, or domain-wide deployment); no authoritative "resolved" judgment applies.
-    const scrapedUrlsSet = new Set(
-      successfulComparisons
-        .filter((r) => !r.isDeployedAtEdge)
-        .map((r) => r.url),
+    const scrapeStats = await getScrapeJobStats(
+      scrapeJobId,
+      comparisonResults,
+      comparisonResults.length,
+      context,
     );
 
-    const auditResult = {
-      totalUrlsChecked: comparisonResults.length,
-      urlsNeedingPrerender: urlsNeedingPrerender.length,
-      urlsScrapedSuccessfully: successfulComparisons.length,
-      urlsSubmittedForScraping,
-      urlsNotNeedingPrerender,
-      scrapingErrorRate,
-      results: cleanResults,
-      missingPages,
-      scrapeForbidden,
-      scrapeForbiddenSince,
-      scrapeForbiddenCount,
-      lastAuditSuccess: true,
-    };
+    log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
 
-    log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeForbiddenCount}, scrapingErrorRate=${scrapingErrorRate}%`);
+    const botBlockResult = await detectBotBlock(context, {
+      isDomainBlocked,
+      urlsSubmittedForScraping: scrapeStats.urlsSubmittedForScraping,
+      scrapeForbiddenCount: scrapeStats.scrapeForbiddenCount,
+    });
+
+    const {
+      auditResult, urlsNeedingPrerender, successfulComparisons, scrapedUrlsSet,
+    } = buildAuditResult(comparisonResults, scrapeStats, botBlockResult);
+
+    log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${comparisonResults.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
+
+    log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${scrapeStats.urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, scrapingErrorRate=${auditResult.scrapingErrorRate}%`);
 
     let opportunityWithSuggestions = null;
 
@@ -280,7 +226,7 @@ export async function processContentAndGenerateOpportunities(context) {
         context,
         auditRunCandidates,
       );
-    } else if (scrapeForbidden) {
+    } else if (botBlockResult.scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
       // This allows the UI to display proper messaging without suggestions
       await createScrapeForbiddenOpportunity(site.getBaseURL(), {
@@ -291,31 +237,8 @@ export async function processContentAndGenerateOpportunities(context) {
         scrapeJobId,
       }, context, isPaid);
     } else {
-      log.info(`${LOG_PREFIX} No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, isPaidLLMOCustomer=${isPaid}`);
-
-      const { Opportunity } = dataAccess;
-      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-      const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
-
-      if (existingOpportunity) {
-        // Normalize scraped URLs to pathnames so domain shifts don't prevent
-        // outdating existing suggestions.
-        const scrapedPathnames = new Set(
-          [...scrapedUrlsSet].map(toPathname),
-        );
-        const scrapedUrlsForNoOppty = {
-          has: (url) => scrapedPathnames.has(toPathname(url)),
-        };
-        await syncSuggestions({
-          opportunity: existingOpportunity,
-          newData: [],
-          context,
-          buildKey: (suggestionData) => toPathname(suggestionData.url),
-          mapNewSuggestion: () => ({}),
-          scrapedUrlsSet: scrapedUrlsForNoOppty,
-        });
-        opportunityWithSuggestions = existingOpportunity;
-      }
+      log.info(`${LOG_PREFIX} No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${botBlockResult.scrapeForbidden}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, isPaidLLMOCustomer=${isPaid}`);
+      opportunityWithSuggestions = await clearOutdatedSuggestions(siteId, scrapedUrlsSet, context);
     }
 
     // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
@@ -332,18 +255,16 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Audit completed in ${elapsedSeconds}s. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
-    const auditData = {
+    // Upload status summary to S3 (post-processing)
+    await uploadStatusSummaryToS3(site.getBaseURL(), {
       siteId,
       auditId: audit.getId(),
       auditedAt: new Date().toISOString(),
       auditType: AUDIT_TYPE,
       auditResult,
       scrapeJobId,
-      submittedUrlSet,
-    };
-
-    // Upload status summary to S3 (post-processing)
-    await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+      submittedUrlSet: scrapeStats.submittedUrlSet,
+    }, context);
 
     return {
       status: 'complete',

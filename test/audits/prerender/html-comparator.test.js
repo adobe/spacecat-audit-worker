@@ -373,4 +373,73 @@ describe('html-comparator', () => {
       );
     });
   });
+
+  describe('compareAllUrls', () => {
+    function buildCompareAllCtx(overrides = {}) {
+      return {
+        log: {
+          debug: sandbox.stub(),
+          warn: sandbox.stub(),
+          info: sandbox.stub(),
+        },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-123' },
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
+        },
+        ...overrides,
+      };
+    }
+
+    it('returns [] immediately when isDomainBlocked is true', async () => {
+      const ctx = buildCompareAllCtx({ scrapeResultPaths: new Map([['https://example.com/a', {}]]) });
+      const result = await mod.compareAllUrls(ctx, true);
+      expect(result).to.deep.equal([]);
+      expect(getObjectFromKeyStub).to.not.have.been.called;
+    });
+
+    it('returns [] and logs warn when scrapeResultPaths is empty', async () => {
+      const ctx = buildCompareAllCtx({ scrapeResultPaths: new Map() });
+      const result = await mod.compareAllUrls(ctx, false);
+      expect(result).to.deep.equal([]);
+      expect(ctx.log.warn).to.have.been.calledWithMatch(/No COMPLETE scrape results/);
+    });
+
+    it('returns [] and logs warn when scrapeResultPaths is undefined', async () => {
+      const ctx = buildCompareAllCtx({ scrapeResultPaths: undefined });
+      const result = await mod.compareAllUrls(ctx, false);
+      expect(result).to.deep.equal([]);
+      expect(ctx.log.warn).to.have.been.calledWithMatch(/No COMPLETE scrape results/);
+    });
+
+    it('calls compareHtmlContent for each URL and returns results', async () => {
+      getObjectFromKeyStub.resolves(null);
+      analyzeHtmlForPrerenderStub.resolves({
+        needsPrerender: false, contentGainRatio: 1.0, wordCountBefore: 10, wordCountAfter: 10,
+      });
+
+      const urls = ['https://example.com/a', 'https://example.com/b'];
+      const ctx = buildCompareAllCtx({
+        scrapeResultPaths: new Map(urls.map((u) => [u, {}])),
+      });
+
+      const results = await mod.compareAllUrls(ctx, false);
+
+      expect(results).to.have.lengthOf(2);
+      expect(results[0].url).to.equal('https://example.com/a');
+      expect(results[1].url).to.equal('https://example.com/b');
+      expect(ctx.log.info).to.have.been.calledWithMatch(/Found 2 URLs from scrape results/);
+    });
+
+    it('includes scrapeJobId=unknown in warn when auditContext is null', async () => {
+      const ctx = buildCompareAllCtx({
+        scrapeResultPaths: new Map(),
+        auditContext: null,
+      });
+      await mod.compareAllUrls(ctx, false);
+      expect(ctx.log.warn).to.have.been.calledWithMatch(/scrapeJobId=unknown/);
+    });
+  });
 });

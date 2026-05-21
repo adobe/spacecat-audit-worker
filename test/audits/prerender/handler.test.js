@@ -2017,103 +2017,8 @@ describe('Prerender Audit', () => {
       });
 
     describe('No Opportunity Found - Outdated Suggestions', () => {
-      // Note: Suggestion syncing is now handled by the well-tested syncSuggestions() utility function.
-      // These tests verify the behavior when no new prerender needs are found.
-
-      it('should call syncSuggestions with empty array when existing opportunity is found', async () => {
-        const mockOpportunity = {
-          getId: () => 'existing-opportunity-id',
-          getType: () => 'prerender',
-          getSuggestions: sandbox.stub().resolves([
-            {
-              getId: () => 'suggestion-1',
-              getStatus: () => 'NEW',
-              getData: () => ({ url: 'https://example.com/page1' }),
-            },
-          ]),
-        };
-
-        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-            getFullAuditRef: () => 'https://example.com',
-            getAuditedAt: () => '2024-01-01T00:00:00Z',
-            getInvocationId: () => 'invocation-123',
-          },
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
-            },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-            ScrapeUrl: {
-              allByScrapeJobId: sandbox.stub().resolves([
-                { getUrl: () => 'https://example.com/test' },
-                { getUrl: () => 'https://example.com/other1' },
-                { getUrl: () => 'https://example.com/other2' },
-              ]),
-            },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Body: { transformToString: () => Promise.resolve('') },
-            }),
-          },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(result.status).to.equal('complete');
-        expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
-        expect(result.auditResult.urlsSubmittedForScraping).to.equal(3);
-        expect(result.auditResult.urlsScrapedSuccessfully).to.be.a('number');
-        expect(result.auditResult.scrapingErrorRate).to.be.a('number');
-
-        expect(allBySiteIdAndStatusStub).to.have.been.calledWith('test-site-id', 'NEW');
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncCall = syncSuggestionsStub.firstCall.args[0];
-        expect(syncCall.opportunity).to.equal(mockOpportunity);
-        expect(syncCall.newData).to.deep.equal([]);
-        expect(syncCall.context).to.equal(context);
-        expect(syncCall.buildKey).to.be.a('function');
-        expect(syncCall.mapNewSuggestion).to.be.a('function');
-        expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
-
-        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
-        expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
-        expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
-        expect(syncCall.mapNewSuggestion()).to.deep.equal({});
-
-        expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
-        expect(result.auditResult).to.have.property('urlsScrapedSuccessfully');
-        expect(result.auditResult).to.have.property('scrapingErrorRate');
-
-        // Verify log message indicates no opportunity was found
-        const infoLogs = context.log.info.args.map(call => call[0]);
-        expect(infoLogs.some(msg => msg.includes('No opportunity found'))).to.be.true;
-      });
+      // Note: Suggestion syncing is now handled by the well-tested clearOutdatedSuggestions()
+      // function in opportunity-syncer.js. Tests for that behavior live in opportunity-syncer.test.js.
 
       it('should fallback to urlsToCheck.length when ScrapeUrl.allByScrapeJobId throws', async () => {
         const allBySiteIdAndStatusStub = sandbox.stub().resolves([]);
@@ -2308,63 +2213,6 @@ describe('Prerender Audit', () => {
         expect(statusBody.scrapeForbidden).to.be.false;
       });
 
-      it('should return error result and upload status.json when syncSuggestions throws', async () => {
-        const mockOpportunity = {
-          getId: () => 'existing-opportunity-id',
-          getType: () => 'prerender',
-        };
-        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
-        const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
-        const s3SendStub = sandbox.stub().callsFake((cmd) => (
-          cmd.input?.Key?.includes('status.json')
-            ? Promise.resolve({})
-            : Promise.resolve({ Body: { transformToString: () => Promise.resolve('') } })
-        ));
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-            getIsLive: () => true,
-          },
-          audit: {
-            getId: () => 'audit-id',
-            getFullAuditRef: () => 'https://example.com',
-            getAuditedAt: () => '2024-01-01T00:00:00Z',
-            getInvocationId: () => 'invocation-123',
-          },
-          dataAccess: {
-            Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/test' }]) },
-          },
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
-          s3Client: { send: s3SendStub },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(result.error).to.equal('Audit failed');
-        expect(result.totalUrlsChecked).to.equal(0);
-        expect(result.urlsNeedingPrerender).to.equal(0);
-        expect(context.log.error).to.have.been.called;
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand' && c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
-        expect(putCall).to.exist;
-        const statusBody = JSON.parse(putCall.args[0].input.Body);
-        expect(statusBody.lastAuditSuccess).to.be.false;
-        expect(statusBody.scrapeForbidden).to.be.false;
-      });
-
       it('should not call syncSuggestions when existing opportunity is not prerender type', async () => {
         const mockOpportunity = {
           getId: () => 'existing-opportunity-id',
@@ -2540,92 +2388,6 @@ describe('Prerender Audit', () => {
         expect(infoLogs.some((msg) => msg.includes('prerender_status_upload:'))).to.be.true;
       });
 
-      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async function () {
-        this.timeout(5000);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-          },
-        });
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
-          '../../../src/prerender/html-comparator.js': {
-            compareHtmlContent: sandbox.stub().resolves({
-              needsPrerender: true,
-              contentGainRatio: 2.0,
-              wordCountBefore: 100,
-              wordCountAfter: 200,
-              hasScrapeMetadata: true,
-              scrapeForbidden: false,
-              isDeployedAtEdge: true,
-              usedEarlyClientSideHtml: false,
-            }),
-          },
-        });
-
-        const deployedUrl = 'https://example.com/deployed-page';
-
-        const context = {
-          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
-          audit: {
-            getId: () => 'audit-id',
-            getFullAuditRef: () => 'https://example.com',
-            getAuditedAt: () => '2024-01-01T00:00:00Z',
-            getInvocationId: () => 'invocation-123',
-          },
-          dataAccess: {
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => deployedUrl }]) },
-            Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          s3Client: {
-            send: sandbox.stub().callsFake((command) => {
-              if (command.constructor.name === 'GetObjectCommand') {
-                const { Key } = command.input;
-                if (Key.endsWith('scrape.json')) {
-                  return Promise.resolve({
-                    ContentType: 'application/json',
-                    Body: {
-                      transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: true })),
-                    },
-                  });
-                }
-                return Promise.resolve({
-                  Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
-                });
-              }
-              return Promise.resolve({});
-            }),
-          },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-          scrapeResultPaths: new Map([[deployedUrl, '/tmp/test']]),
-        };
-
-        await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        expect(syncArgs.scrapedUrlsSet).to.have.property('has').that.is.a('function');
-        expect(syncArgs.scrapedUrlsSet.has(deployedUrl)).to.be.false;
-      });
     });
   });
 
@@ -4051,60 +3813,6 @@ describe('Prerender Audit', () => {
     });
 
     describe('Advanced Error Handling Tests', () => {
-      it('should trigger getObjectFromKey error handling', async function () {
-        this.timeout(5000);
-        // Test the catch block in getScrapedHtmlFromS3 by mocking getObjectFromKey to throw
-        const mockS3Utils = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/prerender/html-comparator.js': {
-            compareHtmlContent: sinon.stub().callsFake(async (url, ctx) => {
-              ctx.log.warn(`Prerender - Could not get scraped content for ${url}: S3 connection failed`);
-              return {
-                url, error: true, needsPrerender: false, hasScrapeMetadata: false,
-                scrapeForbidden: false, isDeployedAtEdge: false, usedEarlyClientSideHtml: false,
-              };
-            }),
-          },
-        });
-
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
-          ]),
-        };
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-          },
-          dataAccess: {
-            SiteTopPage: mockSiteTopPage,
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
-          s3Client: {},
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-        };
-
-        const result = await mockS3Utils.processContentAndGenerateOpportunities(context);
-
-        expect(result.status).to.equal('complete');
-        expect(context.log.warn).to.have.been.called;
-        // Verify the error handling was triggered
-        expect(context.log.warn.args.some(call => call[0].includes('Could not get scraped content'))).to.be.true;
-      });
-
       it('should handle missing S3 data gracefully when getScrapedHtmlFromS3 returns null', async () => {
         // This test verifies the path where getScrapedHtmlFromS3 returns null due to missing S3 data
         const getObjectFromKeyStub = sinon.stub();
@@ -6050,7 +5758,7 @@ describe('Prerender Audit', () => {
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/prerender/html-comparator.js': {
-          compareHtmlContent: sinon.stub().resolves({
+          compareAllUrls: sinon.stub().resolves([{
             url: 'https://example.com/page1',
             needsPrerender: false,
             contentGainRatio: 1.3,
@@ -6062,7 +5770,7 @@ describe('Prerender Audit', () => {
             scrapeForbidden: false,
             isDeployedAtEdge: false,
             usedEarlyClientSideHtml: false,
-          }),
+          }]),
         },
       });
 
@@ -6108,7 +5816,7 @@ describe('Prerender Audit', () => {
     it('should forward usedEarlyClientSideHtml from scrape.json metadata to auditResult.results', async () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/prerender/html-comparator.js': {
-          compareHtmlContent: sinon.stub().resolves({
+          compareAllUrls: sinon.stub().resolves([{
             url: 'https://example.com/page1',
             needsPrerender: false,
             contentGainRatio: 1.0,
@@ -6120,7 +5828,7 @@ describe('Prerender Audit', () => {
             scrapeForbidden: false,
             isDeployedAtEdge: false,
             usedEarlyClientSideHtml: true,
-          }),
+          }]),
         },
       });
 
@@ -6159,65 +5867,6 @@ describe('Prerender Audit', () => {
     });
   });
 
-
-  describe('scrapedUrlsSet behavior', () => {
-
-    it('should not augment scrapedUrlsSet with PageCitability records from other writes', async () => {
-      const syncSuggestionsStub = sinon.stub().resolves();
-      const mockOpportunity = {
-        getId: () => 'opp-id',
-        getType: sinon.stub().returns('prerender'),
-        getSuggestions: sinon.stub().resolves([]),
-      };
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-      });
-
-      // PageCitability writes should no longer affect prerender suggestion syncing.
-      const recentCitabilityRecord = {
-        getUrl: () => 'https://example.com/citability-page',
-        getUpdatedAt: () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-      };
-      const staleCitabilityRecord = {
-        getUrl: () => 'https://example.com/stale-page',
-        getUpdatedAt: () => new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-
-      const context = {
-        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
-        audit: { getId: () => 'audit-id' },
-        dataAccess: {
-          Opportunity: {
-            allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]),
-          },
-          PageCitability: {
-            allBySiteId: sinon.stub().resolves([recentCitabilityRecord, staleCitabilityRecord]),
-            create: sinon.stub().resolves({}),
-          },
-        },
-        log: {
-          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
-        },
-        s3Client: {
-          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
-        },
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        auditContext: { scrapeJobId: 'job-1' },
-        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
-      };
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(syncSuggestionsStub).to.have.been.called;
-      const syncCall = syncSuggestionsStub.firstCall.args[0];
-      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.false;
-      expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
-      expect(syncCall).to.not.have.property('stalenessDays');
-    });
-  });
 
   describe('PageCitability isolation', () => {
     it('does not treat recent PageCitability-only URLs as scraped by prerender', async () => {

@@ -517,4 +517,71 @@ describe('opportunity-syncer', () => {
       expect(domainWide.data.contentGainRatio).to.equal(0);
     });
   });
+
+  // ─── clearOutdatedSuggestions ─────────────────────────────────────────────
+
+  describe('clearOutdatedSuggestions', () => {
+    it('returns null when no NEW prerender opportunity exists', async () => {
+      const ctx = buildContext();
+      const result = await mod.clearOutdatedSuggestions('site-1', new Set(), ctx);
+      expect(result).to.be.null;
+      expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('returns null when opportunities list is empty', async () => {
+      const ctx = buildContext({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+        },
+      });
+      const result = await mod.clearOutdatedSuggestions('site-1', new Set(), ctx);
+      expect(result).to.be.null;
+    });
+
+    it('returns null when existing opportunities have a different type', async () => {
+      const otherOpp = { getId: () => 'other', getType: () => 'broken-backlinks' };
+      const ctx = buildContext({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([otherOpp]) },
+        },
+      });
+      const result = await mod.clearOutdatedSuggestions('site-1', new Set(), ctx);
+      expect(result).to.be.null;
+    });
+
+    it('calls syncSuggestions with empty newData when existing opportunity found', async () => {
+      const opp = buildOpportunity();
+      const ctx = buildContext({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([opp]) },
+        },
+      });
+
+      const result = await mod.clearOutdatedSuggestions('site-1', new Set(['https://example.com/page']), ctx);
+
+      expect(result).to.equal(opp);
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const args = syncSuggestionsStub.firstCall.args[0];
+      expect(args.opportunity).to.equal(opp);
+      expect(args.newData).to.deep.equal([]);
+      expect(args.buildKey({ url: 'https://example.com/page' })).to.equal('/page');
+      expect(args.mapNewSuggestion()).to.deep.equal({});
+    });
+
+    it('scrapedUrlsSet normalizes URLs by pathname for domain-shift matching', async () => {
+      const opp = buildOpportunity();
+      const ctx = buildContext({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([opp]) },
+        },
+      });
+
+      await mod.clearOutdatedSuggestions('site-1', new Set(['https://www.example.com/page']), ctx);
+
+      const args = syncSuggestionsStub.firstCall.args[0];
+      // Domain-shifted URL should still match via pathname normalization
+      expect(args.scrapedUrlsSet.has('https://example.com/page')).to.be.true;
+      expect(args.scrapedUrlsSet.has('https://example.com/other')).to.be.false;
+    });
+  });
 });

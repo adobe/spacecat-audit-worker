@@ -216,6 +216,44 @@ async function prepareDomainWideAggregateSuggestion(preRenderSuggestions, baseUr
 }
 
 /**
+ * Clears outdated suggestions when no URLs need prerendering (Branch C of the 3-way branch).
+ * Finds an existing NEW prerender opportunity and calls syncSuggestions with empty newData
+ * so suggestions for scraped URLs are marked OUTDATED.
+ *
+ * @param {string} siteId - Site ID
+ * @param {Set<string>} scrapedUrlsSet - Set of successfully-scraped URL strings
+ * @param {Object} context - Audit context with dataAccess and log
+ * @returns {Promise<Object|null>} The existing opportunity, or null if none found
+ */
+export async function clearOutdatedSuggestions(siteId, scrapedUrlsSet, context) {
+  const { log, dataAccess } = context;
+  const { Opportunity } = dataAccess;
+  const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+  const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+
+  if (!existingOpportunity) {
+    return null;
+  }
+
+  // Normalize scraped URLs to pathnames so domain shifts don't prevent outdating suggestions.
+  const scrapedPathnames = new Set([...scrapedUrlsSet].map(toPathname));
+  const scrapedUrlsForNoOppty = {
+    has: (url) => scrapedPathnames.has(toPathname(url)),
+  };
+  await syncSuggestions({
+    opportunity: existingOpportunity,
+    newData: [],
+    context,
+    buildKey: (suggestionData) => toPathname(suggestionData.url),
+    mapNewSuggestion: () => ({}),
+    scrapedUrlsSet: scrapedUrlsForNoOppty,
+  });
+
+  log.info(`${LOG_PREFIX} clearOutdatedSuggestions: synced with empty newData. siteId=${siteId}`);
+  return existingOpportunity;
+}
+
+/**
  * Creates a notification opportunity when scraping is forbidden.
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results

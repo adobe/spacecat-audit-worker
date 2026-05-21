@@ -125,3 +125,32 @@ export async function compareHtmlContent(url, context) {
     };
   }
 }
+
+/**
+ * Runs compareHtmlContent for every URL from scrapeResultPaths in parallel.
+ * Short-circuits to an empty array when the domain is known to be bot-blocked.
+ * @param {Object} context - Audit context (must contain scrapeResultPaths, site, auditContext, log)
+ * @param {boolean} isDomainBlocked - Whether the domain is known to be bot-blocked
+ * @returns {Promise<Array>} - Array of comparison results (one per URL)
+ */
+export async function compareAllUrls(context, isDomainBlocked) {
+  const {
+    log, scrapeResultPaths, site, auditContext,
+  } = context;
+
+  if (isDomainBlocked) {
+    return [];
+  }
+
+  let urlsToCheck = [];
+  if (scrapeResultPaths?.size > 0) {
+    urlsToCheck = Array.from(scrapeResultPaths.keys());
+    log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
+  } else {
+    log.warn(`${LOG_PREFIX} No COMPLETE scrape results for baseUrl=${site.getBaseURL()}, `
+      + `siteId=${site.getId()}, scrapeJobId=${auditContext?.scrapeJobId ?? 'unknown'}. `
+      + 'Skipping comparison; failed URLs recorded via ScrapeUrl DB.');
+  }
+
+  return Promise.all(urlsToCheck.map((url) => compareHtmlContent(url, context)));
+}

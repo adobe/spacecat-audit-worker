@@ -16,6 +16,67 @@ import { getS3Path } from './utils/utils.js';
 const LOG_PREFIX = 'Prerender -';
 
 /**
+ * Builds the auditResult object and derived collections from comparison results,
+ * scrape statistics, and bot-block detection output.
+ *
+ * @param {Array} comparisonResults - Per-URL results from compareAllUrls
+ * @param {Object} scrapeStats - Output of getScrapeJobStats
+ * @param {Object} botBlockResult - { scrapeForbidden, scrapeForbiddenSince } from detectBotBlock
+ * @returns {{
+ *   auditResult: Object,
+ *   urlsNeedingPrerender: Array,
+ *   successfulComparisons: Array,
+ *   scrapedUrlsSet: Set<string>,
+ * }}
+ */
+export function buildAuditResult(comparisonResults, scrapeStats, botBlockResult) {
+  const { urlsSubmittedForScraping, scrapeForbiddenCount, missingPages } = scrapeStats;
+  const { scrapeForbidden, scrapeForbiddenSince } = botBlockResult;
+
+  const urlsNeedingPrerender = comparisonResults.filter((r) => r.needsPrerender);
+  const successfulComparisons = comparisonResults.filter((r) => !r.error);
+
+  const cleanResults = comparisonResults.map(
+    // eslint-disable-next-line no-unused-vars
+    ({ hasScrapeMetadata, scrapeForbidden: sf, ...result }) => result,
+  );
+
+  const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
+  const failedCount = urlsSubmittedForScraping - successfulComparisons.length;
+  const scrapingErrorRate = urlsSubmittedForScraping > 0
+    ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
+    : 0;
+
+  // Exclude deployed URLs — don't mark their suggestions outdated regardless of needsPrerender.
+  // isDeployedAtEdge=true means prerender is already active at CDN level.
+  const scrapedUrlsSet = new Set(
+    successfulComparisons
+      .filter((r) => !r.isDeployedAtEdge)
+      .map((r) => r.url),
+  );
+
+  return {
+    auditResult: {
+      totalUrlsChecked: comparisonResults.length,
+      urlsNeedingPrerender: urlsNeedingPrerender.length,
+      urlsScrapedSuccessfully: successfulComparisons.length,
+      urlsSubmittedForScraping,
+      urlsNotNeedingPrerender,
+      scrapingErrorRate,
+      results: cleanResults,
+      missingPages,
+      scrapeForbidden,
+      scrapeForbiddenSince,
+      scrapeForbiddenCount,
+      lastAuditSuccess: true,
+    },
+    urlsNeedingPrerender,
+    successfulComparisons,
+    scrapedUrlsSet,
+  };
+}
+
+/**
  * Collects scrape job statistics by combining data from the ScrapeUrl DB and S3 scrape.json
  * files for FAILED-status URLs.
  *
