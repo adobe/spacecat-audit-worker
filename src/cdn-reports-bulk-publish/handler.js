@@ -28,13 +28,14 @@ export default async function cdnReportsBulkPublish(message, context) {
 
   const configuration = await dataAccess.Configuration.findLatest();
   const allSites = await dataAccess.Site.all();
-  // Folders must be a single safe path segment; anything with slashes / dots
-  // breaks admin.hlx.page bulk-preview and poisons the whole batch.
+  // Folders must be a single safe path segment without `--` (Helix uses `--`
+  // as the {branch}--{repo}--{owner} separator). Anything else breaks
+  // admin.hlx.page bulk-preview and poisons the whole batch.
   const VALID_FOLDER = /^[a-z0-9][a-z0-9_-]*$/i;
   const llmoFolders = allSites
     .filter((s) => configuration?.isHandlerEnabledForSite('cdn-logs-report', s))
     .map((s) => s.getConfig()?.getLlmoDataFolder())
-    .filter((f) => f && VALID_FOLDER.test(f));
+    .filter((f) => f && VALID_FOLDER.test(f) && !f.includes('--'));
 
   const now = new Date();
   const periods = [generateReportingPeriods(now, 0).periodIdentifier];
