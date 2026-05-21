@@ -374,22 +374,134 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 /* c8 ignore stop */
 
 /**
+ * Submits a DRS scrape job directly via HTTP, bypassing the DRS client.
+ * Used when spacecat_org_id must be included in the request body.
+ *
+ * @param {object} params - Scrape job parameters (datasetId, siteId, urls, daysBack)
+ * @param {string} spacecatOrgId - SpaceCat organization ID
+ * @param {object} context - Context with env and log
+ * @returns {Promise<object>} Job result with job_id
+ */
+async function submitDrsJobDirect(params, spacecatOrgId, context) {
+  const { env, log } = context;
+  const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
+
+  let baseUrl = drsApiUrl;
+  while (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+
+  const parameters = {
+    dataset_id: params.datasetId,
+    site_id: params.siteId,
+    urls: params.urls,
+  };
+  if (params.daysBack !== undefined) {
+    parameters.days_back = params.daysBack;
+  }
+
+  const body = {
+    provider_id: 'brightdata',
+    priority: 'HIGH',
+    parameters,
+    spacecat_org_id: spacecatOrgId,
+  };
+
+  log.info(`${LOG_PREFIX} Submitting direct DRS job with spacecat_org_id`, {
+    datasetId: params.datasetId,
+    siteId: params.siteId,
+    spacecatOrgId,
+  });
+
+  const start = Date.now();
+  const response = await fetch(`${baseUrl}/jobs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': drsApiKey,
+    },
+    body: JSON.stringify(body),
+  });
+  const elapsed = Date.now() - start;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DRS POST /jobs failed: ${response.status} - ${errorText} (${elapsed}ms)`);
+  }
+
+  log.info(`${LOG_PREFIX} Direct DRS POST /jobs responded in ${elapsed}ms`);
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+  return null;
+}
+
+/**
+ * Submits a single DRS job with one retry on failure.
+ *
+ * @param {{ domain: string, datasetId: string, params: object }} job
+ * @param {Function} submitFn - Async function that submits the job
+ * @param {object} log - Logger
+ * @returns {Promise<object>} Job result with status
+ */
+async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const start = Date.now();
+      // eslint-disable-next-line no-await-in-loop
+      const result = await submitFn(params);
+      log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
+      return {
+        domain, datasetId, status: 'success', response: result,
+      };
+    } catch (err) {
+      if (attempt === 0) {
+        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying: ${err.message}`);
+      } else {
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId} after retry: ${err.message}`);
+        return {
+          domain, datasetId, status: 'error', error: err.message,
+        };
+      }
+    }
+  }
+  /* c8 ignore next 4 */
+  return {
+    domain, datasetId, status: 'error', error: 'unexpected',
+  };
+}
+
+/**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
  * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
+ * When spacecatOrgId is provided, jobs are submitted directly via HTTP with
+ * spacecat_org_id in the request body instead of using the DRS client.
+ *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
+ * @param {string} [spacecatOrgId] - Optional SpaceCat org ID for direct DRS requests
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, siteId, context) {
+async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) {
   const { log } = context;
-  const drsClient = DrsClient.createFrom(context);
+  const drsClient = spacecatOrgId ? null : DrsClient.createFrom(context);
 
-  if (!drsClient.isConfigured()) {
+  if (!spacecatOrgId && !drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
     return [];
+  }
+
+  if (spacecatOrgId) {
+    const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = context.env;
+    if (!drsApiUrl || !drsApiKey) {
+      log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
+      return [];
+    }
   }
 
   const jobs = [];
@@ -415,24 +527,19 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
     }
   }
 
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs`);
+  const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
+  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
-  return Promise.all(
-    jobs.map(async ({ domain, datasetId, params }) => {
-      try {
-        const result = await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
-        return {
-          domain, datasetId, status: 'success', response: result,
-        };
-      } catch (err) {
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${err.message}`);
-        return {
-          domain, datasetId, status: 'error', error: err.message,
-        };
-      }
-    }),
-  );
+  const submitJob = spacecatOrgId
+    ? (params) => submitDrsJobDirect(params, spacecatOrgId, context)
+    : (params) => drsClient.submitScrapeJob(params);
+
+  const results = [];
+  for (const job of jobs) {
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await submitWithRetry(job, submitJob, log));
+  }
+  return results;
 }
 
 /**
@@ -485,7 +592,7 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
   const failed = drsResults.filter((r) => r.status === 'error');
   const lines = [
     `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response?.job_id}\``),
     ...(failed.length > 0 ? [
       `:x: *Failed (${failed.length}):*`,
       ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
@@ -513,7 +620,8 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  */
 export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditContext) {
   const { dataAccess, log } = context;
-  const { slackContext } = auditContext || {};
+  const { slackContext, messageData } = auditContext || {};
+  const spacecatOrgId = messageData?.spacecatOrgId;
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -573,7 +681,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
+  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context, spacecatOrgId);
 
   await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 
