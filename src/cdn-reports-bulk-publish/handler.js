@@ -28,10 +28,13 @@ export default async function cdnReportsBulkPublish(message, context) {
 
   const configuration = await dataAccess.Configuration.findLatest();
   const allSites = await dataAccess.Site.all();
+  // Folders must be a single safe path segment; anything with slashes / dots
+  // breaks admin.hlx.page bulk-preview and poisons the whole batch.
+  const VALID_FOLDER = /^[a-z0-9][a-z0-9-]*$/i;
   const llmoFolders = allSites
     .filter((s) => configuration?.isHandlerEnabledForSite('cdn-logs-report', s))
     .map((s) => s.getConfig()?.getLlmoDataFolder())
-    .filter(Boolean);
+    .filter((f) => f && VALID_FOLDER.test(f));
 
   const now = new Date();
   const periods = [generateReportingPeriods(now, 0).periodIdentifier];

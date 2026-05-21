@@ -122,6 +122,21 @@ describe('cdn-reports-bulk-publish handler', () => {
     expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
   });
 
+  it('skips sites whose LLMO data folder is not a safe single path segment', async () => {
+    await runOnWednesday(
+      [
+        makeSite('good', 'acme-com'),
+        makeSite('with-slash', 'dev/main--project-elmo-ui-demo-data'),
+        makeSite('with-dot', '..'),
+        makeSite('with-space', 'has space'),
+      ],
+      ['good', 'with-slash', 'with-dot', 'with-space'],
+    );
+
+    const [reports] = bulkPublishStub.firstCall.args;
+    expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
+  });
+
   it('skips sites that do not have an LLMO data folder configured', async () => {
     await runOnWednesday(
       [makeSite('with-folder', 'acme-com'), makeSite('no-folder', '')],
