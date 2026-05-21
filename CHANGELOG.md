@@ -1,3 +1,24 @@
+## [1.447.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.1...v1.447.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **toc:** update opportunity description to mention heading-based suggestion generation (LLMO-5006) ([#2536](https://github.com/adobe/spacecat-audit-worker/issues/2536)) ([adb1052](https://github.com/adobe/spacecat-audit-worker/commit/adb10526f00e5fdfb75354b4e77166bf5099f452))
+
+## [1.447.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.0...v1.447.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **prerender:** remove fallback that wrote phantom error entries to status.json ([#2538](https://github.com/adobe/spacecat-audit-worker/issues/2538)) ([505391d](https://github.com/adobe/spacecat-audit-worker/commit/505391dc5908297432b5137432fd850156297a14))
+
+# [1.447.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.446.0...v1.447.0) (2026-05-20)
+
+
+### Features
+
+* for offsite audits, read brand presence execution data from PostgREST (LLMO-4307) ([#2389](https://github.com/adobe/spacecat-audit-worker/issues/2389)) ([8e0cda8](https://github.com/adobe/spacecat-audit-worker/commit/8e0cda8db0983e4bf7f0c12170cd892cb8992531))
+
 # [1.446.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.445.6...v1.446.0) (2026-05-19)
 
 
