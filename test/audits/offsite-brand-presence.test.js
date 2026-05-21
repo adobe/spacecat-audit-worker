@@ -1253,6 +1253,24 @@ describe('Offsite Brand Presence Handler', () => {
       expect(url).to.equal('https://drs.api.example.com/jobs');
     });
 
+    it('should handle non-JSON response from direct DRS call', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => null },
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-text-resp' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('success');
+        expect(job.response).to.be.null;
+      }
+    });
+
     it('should use drsClient when spacecatOrgId is not provided', async () => {
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 

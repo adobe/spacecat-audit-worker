@@ -496,7 +496,7 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
         const result = spacecatOrgId
           ? await submitDrsJobDirect(params, spacecatOrgId, context)
           : await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
+        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id}`);
         return {
           domain, datasetId, status: 'success', response: result,
         };
@@ -560,7 +560,7 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
   const failed = drsResults.filter((r) => r.status === 'error');
   const lines = [
     `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response?.job_id}\``),
     ...(failed.length > 0 ? [
       `:x: *Failed (${failed.length}):*`,
       ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
