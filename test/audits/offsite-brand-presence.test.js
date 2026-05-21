@@ -1086,17 +1086,23 @@ describe('Offsite Brand Presence Handler', () => {
       );
     });
 
-    it('should handle DRS network error gracefully', async () => {
-      mockSubmitScrapeJob.rejects(new Error('DNS resolution failed'));
+    it('should retry once and succeed when first attempt fails', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(new Error('transient timeout'))
+        .onCall(1).resolves({ job_id: 'retry-ok' })
+        .onCall(2).resolves({ job_id: 'first-try-ok' })
+        .onCall(3).resolves({ job_id: 'first-try-ok' });
 
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.have.lengthOf(2);
-      expect(result.auditResult.drsJobs[0].status).to.equal('error');
-      expect(result.auditResult.drsJobs[0].error).to.equal('DNS resolution failed');
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/failed \(attempt 1\), retrying/),
+      );
     });
 
     it('should skip DRS when not configured', async () => {
@@ -1345,8 +1351,10 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should include a failed jobs section in the Slack message when some DRS jobs fail', async () => {
       mockSubmitScrapeJob
-        .onFirstCall().rejects(new Error('DRS timeout'))
-        .onSecondCall().resolves({ job_id: 'mock-job' });
+        .onCall(0).rejects(new Error('DRS timeout'))
+        .onCall(1).rejects(new Error('DRS timeout'))
+        .onCall(2).resolves({ job_id: 'mock-job' })
+        .onCall(3).resolves({ job_id: 'mock-job' });
 
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 

@@ -439,6 +439,41 @@ async function submitDrsJobDirect(params, spacecatOrgId, context) {
 }
 
 /**
+ * Submits a single DRS job with one retry on failure.
+ *
+ * @param {{ domain: string, datasetId: string, params: object }} job
+ * @param {Function} submitFn - Async function that submits the job
+ * @param {object} log - Logger
+ * @returns {Promise<object>} Job result with status
+ */
+async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const start = Date.now();
+      // eslint-disable-next-line no-await-in-loop
+      const result = await submitFn(params);
+      log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
+      return {
+        domain, datasetId, status: 'success', response: result,
+      };
+    } catch (err) {
+      if (attempt === 0) {
+        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying: ${err.message}`);
+      } else {
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId} after retry: ${err.message}`);
+        return {
+          domain, datasetId, status: 'error', error: err.message,
+        };
+      }
+    }
+  }
+  /* c8 ignore next 4 */
+  return {
+    domain, datasetId, status: 'error', error: 'unexpected',
+  };
+}
+
+/**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
  * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
@@ -495,25 +530,16 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
   log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
-  return Promise.all(
-    jobs.map(async ({ domain, datasetId, params }) => {
-      try {
-        const start = Date.now();
-        const result = spacecatOrgId
-          ? await submitDrsJobDirect(params, spacecatOrgId, context)
-          : await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
-        return {
-          domain, datasetId, status: 'success', response: result,
-        };
-      } catch (err) {
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${err.message}`);
-        return {
-          domain, datasetId, status: 'error', error: err.message,
-        };
-      }
-    }),
-  );
+  const submitJob = spacecatOrgId
+    ? (params) => submitDrsJobDirect(params, spacecatOrgId, context)
+    : (params) => drsClient.submitScrapeJob(params);
+
+  const results = [];
+  for (const job of jobs) {
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await submitWithRetry(job, submitJob, log));
+  }
+  return results;
 }
 
 /**
