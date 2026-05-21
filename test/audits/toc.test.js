@@ -1511,6 +1511,24 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData.description).to.include('table of contents');
     });
 
+    it('description mentions heading-based suggestion generation', async () => {
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
+      const opportunityData = createOpportunityDataForTOC();
+
+      expect(opportunityData.description).to.include('H1, H2');
+      expect(opportunityData.description).to.include('heading structure');
+      expect(opportunityData.description).to.include('accurate TOC suggestions');
+    });
+
+    it('description contains both accessibility context and heading guidance', async () => {
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
+      const opportunityData = createOpportunityDataForTOC();
+
+      expect(opportunityData.description).to.include('accessibility');
+      expect(opportunityData.description).to.include('generative engines');
+      expect(opportunityData.description).to.include('Suggestions are generated based on page heading');
+    });
+
     it('includes proper guidance steps for TOC', async () => {
       const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
