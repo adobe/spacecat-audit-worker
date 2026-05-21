@@ -1116,6 +1116,179 @@ describe('Offsite Brand Presence Handler', () => {
 
   });
 
+  describe('DRS Scraping with spacecatOrgId (direct HTTP)', () => {
+    let fetchStub;
+
+    beforeEach(() => {
+      fetchStub = sandbox.stub(global, 'fetch');
+    });
+
+    it('should bypass drsClient and send direct HTTP requests when spacecatOrgId is provided', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'direct-job-123' }),
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-abc-123' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(fetchStub).to.have.been.called;
+
+      const fetchCalls = fetchStub.getCalls();
+      for (const call of fetchCalls) {
+        expect(call.args[0]).to.equal('https://drs.api.example.com/jobs');
+        const options = call.args[1];
+        expect(options.method).to.equal('POST');
+        expect(options.headers['x-api-key']).to.equal('test-drs-key');
+        const body = JSON.parse(options.body);
+        expect(body.spacecat_org_id).to.equal('org-abc-123');
+        expect(body.provider_id).to.equal('brightdata');
+        expect(body.priority).to.equal('HIGH');
+        expect(body.parameters.site_id).to.equal(SITE_ID);
+      }
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('direct-job-123');
+    });
+
+    it('should include days_back in direct HTTP body for reddit_comments', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'direct-reddit-job' }),
+      });
+
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-reddit-test' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = fetchStub.getCalls().find((call) => {
+        const body = JSON.parse(call.args[1].body);
+        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_COMMENTS;
+      });
+      expect(commentsCall).to.exist;
+      const commentsBody = JSON.parse(commentsCall.args[1].body);
+      expect(commentsBody.parameters.days_back).to.equal(REDDIT_COMMENTS_DAYS_BACK);
+      expect(commentsBody.spacecat_org_id).to.equal('org-reddit-test');
+
+      const postsCall = fetchStub.getCalls().find((call) => {
+        const body = JSON.parse(call.args[1].body);
+        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_POSTS;
+      });
+      expect(postsCall).to.exist;
+      const postsBody = JSON.parse(postsCall.args[1].body);
+      expect(postsBody.parameters).to.not.have.property('days_back');
+    });
+
+    it('should handle direct HTTP error responses gracefully', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-fail-test' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('error');
+        expect(job.error).to.include('500');
+      }
+    });
+
+    it('should skip direct DRS when DRS_API_URL is missing', async () => {
+      delete env.DRS_API_URL;
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-no-url' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+      );
+    });
+
+    it('should skip direct DRS when DRS_API_KEY is missing', async () => {
+      delete env.DRS_API_KEY;
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-no-key' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+      );
+    });
+
+    it('should strip trailing slashes from DRS_API_URL in direct requests', async () => {
+      env.DRS_API_URL = 'https://drs.api.example.com///';
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'slash-job' }),
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-slash-test' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const url = fetchStub.firstCall.args[0];
+      expect(url).to.equal('https://drs.api.example.com/jobs');
+    });
+
+    it('should use drsClient when spacecatOrgId is not provided', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, { slackContext: {} });
+
+      expect(mockSubmitScrapeJob).to.have.been.called;
+      expect(fetchStub).to.not.have.been.called;
+    });
+
+    it('should send direct HTTP for all domain types when spacecatOrgId is provided', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'multi-domain-job' }),
+      });
+
+      const sources = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://en.wikipedia.org/wiki/Adobe;https://thirdparty.com/page';
+      stubBrandPresenceData([sources]);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-multi' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('success');
+      }
+
+      for (const call of fetchStub.getCalls()) {
+        const body = JSON.parse(call.args[1].body);
+        expect(body.spacecat_org_id).to.equal('org-multi');
+      }
+    });
+  });
+
   describe('Slack Notifications', () => {
     const SLACK_CHANNEL_ID = 'C-test-channel';
     const SLACK_THREAD_TS = '1700000000.123456';
