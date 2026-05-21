@@ -1,3 +1,10 @@
+## [1.448.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.2...v1.448.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* **ad-intent-mismatch:** loosen prefilter thresholds ([#2545](https://github.com/adobe/spacecat-audit-worker/issues/2545)) ([1751f89](https://github.com/adobe/spacecat-audit-worker/commit/1751f8941526573048f5c60266e14748dfe41d82))
+
 ## [1.448.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.1...v1.448.2) (2026-05-21)
 
 
