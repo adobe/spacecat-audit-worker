@@ -5,7 +5,7 @@ SELECT
   CAST(statusCode AS INTEGER) AS status,
   try(url_extract_host(referer)) AS referer,
   reqHost AS host,
-  CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
+  CAST(COALESCE(NULLIF(timeToFirstByte, '-'), '0') AS DOUBLE) AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
   COALESCE(reqHost, '') as x_forwarded_host,
@@ -43,6 +43,6 @@ GROUP BY
   statusCode,
   try(url_extract_host(referer)),
   reqHost,
-  CAST(timeToFirstByte AS DOUBLE),
+  CAST(COALESCE(NULLIF(timeToFirstByte, '-'), '0') AS DOUBLE),
   '{{serviceProvider}}',
   COALESCE(reqHost, '');
