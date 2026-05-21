@@ -10,17 +10,19 @@
  * governing permissions and limitations under the License.
  */
 import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('cdn-reports-bulk-publish handler', () => {
   let sandbox;
   let clock;
   let bulkPublishStub;
-  let runCdnReportsBulkPublish;
+  let handler;
   let log;
 
   const makeSite = (id, llmoFolder) => ({
@@ -46,7 +48,7 @@ describe('cdn-reports-bulk-publish handler', () => {
   // (Monday adds previous week, covered in its own test).
   const runOnWednesday = async (sites, enabledIds) => {
     clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
-    return runCdnReportsBulkPublish(undefined, makeContext(sites, enabledIds));
+    return handler({}, makeContext(sites, enabledIds));
   };
 
   beforeEach(async () => {
@@ -56,12 +58,13 @@ describe('cdn-reports-bulk-publish handler', () => {
       info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
     };
 
-    ({ runCdnReportsBulkPublish } = await esmock(
+    const mod = await esmock(
       '../../../src/cdn-reports-bulk-publish/handler.js',
       {
         '../../../src/utils/report-uploader.js': { bulkPublishToAdminHlx: bulkPublishStub },
       },
-    ));
+    );
+    handler = mod.default;
   });
 
   afterEach(() => {
@@ -97,10 +100,7 @@ describe('cdn-reports-bulk-publish handler', () => {
   it('includes the previous week alongside the current week when run on a Monday', async () => {
     clock = sandbox.useFakeTimers(new Date('2026-05-18T10:00:00Z')); // Monday
 
-    await runCdnReportsBulkPublish(
-      undefined,
-      makeContext([makeSite('site-1', 'acme-com')], ['site-1']),
-    );
+    await handler({}, makeContext([makeSite('site-1', 'acme-com')], ['site-1']));
 
     const [reports] = bulkPublishStub.firstCall.args;
     const filenames = reports.map((r) => r.filename).sort();
@@ -132,45 +132,49 @@ describe('cdn-reports-bulk-publish handler', () => {
     expect(reports.every((r) => r.outputLocation.startsWith('acme-com/'))).to.be.true;
   });
 
-  it('returns site, path, and period counts in the audit result on success', async () => {
+  it('returns 200 with site, path, and period counts on success', async () => {
     const result = await runOnWednesday(
       [makeSite('site-1', 'acme-com'), makeSite('site-2', 'beta-co')],
       ['site-1', 'site-2'],
     );
 
-    expect(result.auditResult).to.deep.equal({
+    // restore real timers so Response.json() can resolve
+    clock.restore();
+    clock = null;
+
+    expect(result.status).to.equal(200);
+    const body = await result.json();
+    expect(body).to.deep.equal({
       sites: 2,
       paths: 4, // 2 sites x 2 report types x 1 period
       periods: ['w21-2026'],
-      success: true,
     });
-    expect(result.fullAuditRef).to.equal('cdn-reports-bulk-publish/w21-2026');
   });
 
-  it('captures bulk-publish failures in the audit result instead of throwing', async () => {
+  it('propagates bulk-publish failures so SQS surfaces the failure', async () => {
+    clock = sandbox.useFakeTimers(new Date('2026-05-20T10:00:00Z'));
+
     bulkPublishStub.rejects(new Error('preview timeout for job URL: ...'));
 
-    const result = await runOnWednesday(
-      [makeSite('site-1', 'acme-com')],
-      ['site-1'],
-    );
-
-    expect(result.auditResult.success).to.equal(false);
-    expect(result.auditResult.error).to.match(/preview timeout/);
-    expect(log.error).to.have.been.calledWith(sinon.match(/bulk publish failed/));
+    await expect(handler(
+      {},
+      makeContext([makeSite('site-1', 'acme-com')], ['site-1']),
+    )).to.be.rejectedWith(/preview timeout/);
   });
 
-  it('logs a warning and no-ops when no sites have cdn-logs-report enabled with a folder', async () => {
+  it('returns 200 and no-ops when no sites have cdn-logs-report enabled with a folder', async () => {
     const result = await runOnWednesday(
       [makeSite('disabled-site', 'acme-com')],
       [], // no sites enabled
     );
 
-    expect(result.auditResult.sites).to.equal(0);
-    expect(result.auditResult.paths).to.equal(0);
-    expect(result.auditResult.success).to.equal(true);
-    // bulkPublishToAdminHlx is still called with [] so the helper can no-op
-    // itself; we just want to make sure we logged the empty state.
+    clock.restore();
+    clock = null;
+
+    expect(result.status).to.equal(200);
+    const body = await result.json();
+    expect(body).to.deep.equal({ sites: 0, paths: 0, periods: ['w21-2026'] });
+    expect(bulkPublishStub).to.not.have.been.called;
     expect(log.warn).to.have.been.calledWith(sinon.match(/no sites with cdn-logs-report enabled/));
   });
 });

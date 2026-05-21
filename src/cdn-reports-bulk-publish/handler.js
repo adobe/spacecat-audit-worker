@@ -16,17 +16,14 @@
  * the current ISO week (plus the previous week on Monday UTC), and submits one
  * consolidated bulk preview + publish to admin.hlx.page.
  *
- * Registered via AuditBuilder for SQS dispatch convenience, but the runner
- * ignores `url`, `site`, and `auditContext` -- it operates across all sites.
- * The persisted audit row is keyed against whichever site triggered the run
- * and is not semantically meaningful for that site.
+ * Registered as a plain HANDLERS entry (not via AuditBuilder) because:
+ * - it operates across all sites, so the per-site siteProvider / urlResolver /
+ *   isAuditEnabledForSite gates in RunnerAudit don't apply
+ * - persisting a per-site Audit row would be misleading (no real subject site)
  *
- * Bulk-publish errors are caught and recorded in the audit result; we
- * intentionally do not propagate them, to avoid SQS redelivering a 10-minute
- * cross-site run that already hammered admin.hlx.page.
+ * SQS message shape: { type: 'cdn-reports-bulk-publish' }. No siteId required.
  */
-import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/base-audit.js';
+import { ok } from '@adobe/spacecat-shared-http-utils';
 import { bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 
@@ -43,7 +40,7 @@ function buildReportsForSite(llmoFolder, periodIdentifier) {
   ];
 }
 
-export async function runCdnReportsBulkPublish(_url, context) {
+export default async function cdnReportsBulkPublish(message, context) {
   const { log, dataAccess } = context;
 
   const configuration = await dataAccess.Configuration.findLatest();
@@ -70,32 +67,15 @@ export async function runCdnReportsBulkPublish(_url, context) {
 
   if (llmoFolders.length === 0) {
     log.warn('%s: no sites with cdn-logs-report enabled and an LLMO data folder; nothing to publish', AUDIT_TYPE);
-  } else {
-    log.info(`%s: bulk-publishing ${reports.length} paths across ${llmoFolders.length} sites for periods [${periods.join(', ')}]`, AUDIT_TYPE);
+    return ok({ sites: 0, paths: 0, periods });
   }
 
-  const result = {
-    sites: llmoFolders.length,
-    paths: reports.length,
-    periods,
-  };
+  log.info(`%s: bulk-publishing ${reports.length} paths across ${llmoFolders.length} sites for periods [${periods.join(', ')}]`, AUDIT_TYPE);
 
-  try {
-    await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
-    result.success = true;
-  } catch (error) {
-    log.error(`%s: bulk publish failed: ${error.message}`, AUDIT_TYPE);
-    result.success = false;
-    result.error = error.message;
-  }
+  // Let errors propagate; the dispatcher converts them to 5xx so SQS surfaces
+  // the failure (and eventually routes to DLQ) instead of silently swallowing
+  // a safety-net failure.
+  await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
 
-  return {
-    auditResult: result,
-    fullAuditRef: `${AUDIT_TYPE}/${periods.join(',')}`,
-  };
+  return ok({ sites: llmoFolders.length, paths: reports.length, periods });
 }
-
-export default new AuditBuilder()
-  .withRunner(runCdnReportsBulkPublish)
-  .withUrlResolver(noopUrlResolver)
-  .build();
