@@ -9,28 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/**
- * Manual-only cross-site safety-net for the per-site cdn-logs-report bulk publish.
- *
- * Iterates every site with cdn-logs-report enabled, builds the report paths for
- * the current ISO week (plus the previous week on Monday UTC), and submits one
- * consolidated bulk preview + publish to admin.hlx.page.
- *
- * Registered as a plain HANDLERS entry (not via AuditBuilder) because:
- * - it operates across all sites, so the per-site siteProvider / urlResolver /
- *   isAuditEnabledForSite gates in RunnerAudit don't apply
- * - persisting a per-site Audit row would be misleading (no real subject site)
- *
- * SQS message shape: { type: 'cdn-reports-bulk-publish' }. No siteId required.
- */
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 
 const AUDIT_TYPE = 'cdn-reports-bulk-publish';
-// Longer than the per-site default (3 min) because admin.hlx.page preview
-// latency grows with the consolidated batch size. See SKYSI-79147 for the
-// 3-min per-site default.
 const POLL_TIMEOUT_MS = 10 * 60_000;
 
 function buildReportsForSite(llmoFolder, periodIdentifier) {
@@ -51,8 +34,6 @@ export default async function cdnReportsBulkPublish(message, context) {
     .filter(Boolean);
 
   const now = new Date();
-  // On Monday UTC the per-site audits are still publishing last week's reports,
-  // so include the previous week to catch stragglers.
   const periods = [generateReportingPeriods(now, 0).periodIdentifier];
   if (now.getUTCDay() === 1) {
     periods.push(generateReportingPeriods(now, -1).periodIdentifier);
@@ -66,17 +47,12 @@ export default async function cdnReportsBulkPublish(message, context) {
   }
 
   if (llmoFolders.length === 0) {
-    log.warn('%s: no sites with cdn-logs-report enabled and an LLMO data folder; nothing to publish', AUDIT_TYPE);
+    log.warn('%s: no enabled sites; nothing to publish', AUDIT_TYPE);
     return ok({ sites: 0, paths: 0, periods });
   }
 
   log.info(`%s: bulk-publishing ${reports.length} paths across ${llmoFolders.length} sites for periods [${periods.join(', ')}]`, AUDIT_TYPE);
 
-  // Catch and log instead of throwing: spacecat-audit-jobs has maxReceiveCount=1,
-  // so a thrown error sends the message to spacecat-dead-letter-queue, which is
-  // not actively monitored (see SKYSI-79147 thread, Apr 21 incident: 1.5k stuck
-  // DLQ messages). The Coralogix error log is the real operator signal --
-  // alert on `Bulk publish failed`.
   try {
     await bulkPublishToAdminHlx(reports, log, { pollTimeoutMs: POLL_TIMEOUT_MS });
     return ok({

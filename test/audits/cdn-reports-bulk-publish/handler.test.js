@@ -183,6 +183,6 @@ describe('cdn-reports-bulk-publish handler', () => {
     const body = await result.json();
     expect(body).to.deep.equal({ sites: 0, paths: 0, periods: ['w21-2026'] });
     expect(bulkPublishStub).to.not.have.been.called;
-    expect(log.warn).to.have.been.calledWith(sinon.match(/no sites with cdn-logs-report enabled/));
+    expect(log.warn).to.have.been.calledWith(sinon.match(/no enabled sites/));
   });
 });
