@@ -1,3 +1,10 @@
+# [1.448.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.2...v1.448.0) (2026-05-21)
+
+
+### Features
+
+* **cdn-reports-bulk-publish:** consolidator audit for bulk preview+publish ([#2534](https://github.com/adobe/spacecat-audit-worker/issues/2534)) ([c7bc41b](https://github.com/adobe/spacecat-audit-worker/commit/c7bc41bf0cbb1123eaf922041ca4b5516b486bf1))
+
 ## [1.447.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.1...v1.447.2) (2026-05-21)
 
 
