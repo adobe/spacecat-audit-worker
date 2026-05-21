@@ -129,8 +129,9 @@ describe('cdn-reports-bulk-publish handler', () => {
         makeSite('with-slash', 'dev/main--project-elmo-ui-demo-data'),
         makeSite('with-dot', '..'),
         makeSite('with-space', 'has space'),
+        makeSite('with-double-dash', 'samsung-com--sec'),
       ],
-      ['good', 'with-slash', 'with-dot', 'with-space'],
+      ['good', 'with-slash', 'with-dot', 'with-space', 'with-double-dash'],
     );
 
     const [reports] = bulkPublishStub.firstCall.args;
