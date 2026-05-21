@@ -1,3 +1,24 @@
+## [1.448.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.1...v1.448.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2542](https://github.com/adobe/spacecat-audit-worker/issues/2542)) ([9afb22f](https://github.com/adobe/spacecat-audit-worker/commit/9afb22f48e3831560ebdc1db57152d06818059b2))
+
+## [1.448.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.0...v1.448.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* **cdn-reports-bulk-publish:** reject folders containing '--' ([#2543](https://github.com/adobe/spacecat-audit-worker/issues/2543)) ([c75e8af](https://github.com/adobe/spacecat-audit-worker/commit/c75e8af3259ca8d71631782b9b66a89eb281a109))
+
+# [1.448.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.2...v1.448.0) (2026-05-21)
+
+
+### Features
+
+* **cdn-reports-bulk-publish:** consolidator audit for bulk preview+publish ([#2534](https://github.com/adobe/spacecat-audit-worker/issues/2534)) ([c7bc41b](https://github.com/adobe/spacecat-audit-worker/commit/c7bc41bf0cbb1123eaf922041ca4b5516b486bf1))
+
 ## [1.447.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.1...v1.447.2) (2026-05-21)
 
 

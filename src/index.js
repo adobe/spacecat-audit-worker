@@ -72,6 +72,7 @@ import triggerA11yCodefix from './accessibility/trigger-codefix-handler.js';
 import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import cdnReportsBulkPublish from './cdn-reports-bulk-publish/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
@@ -184,6 +185,7 @@ const HANDLERS = {
   preflight,
   'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
+  'cdn-reports-bulk-publish': cdnReportsBulkPublish,
   'analytics-report': analyticsReport,
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
