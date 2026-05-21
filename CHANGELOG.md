@@ -1,3 +1,10 @@
+# [1.449.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.3...v1.449.0) (2026-05-21)
+
+
+### Features
+
+* add spacecatOrgId as optional as optional parameter for slackbot command ([#2544](https://github.com/adobe/spacecat-audit-worker/issues/2544)) ([117ca57](https://github.com/adobe/spacecat-audit-worker/commit/117ca57aab00a99743d69d9c7b7fbfefe1912ee7))
+
 ## [1.448.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.2...v1.448.3) (2026-05-21)
 
 
