@@ -1,3 +1,31 @@
+## [1.449.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.0...v1.449.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* replace hyphen with 0 for akamai ttfb ([#2547](https://github.com/adobe/spacecat-audit-worker/issues/2547)) ([ce04830](https://github.com/adobe/spacecat-audit-worker/commit/ce04830f0ae5d2d47e8f12187b771ec02c59d344))
+
+# [1.449.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.3...v1.449.0) (2026-05-21)
+
+
+### Features
+
+* add spacecatOrgId as optional as optional parameter for slackbot command ([#2544](https://github.com/adobe/spacecat-audit-worker/issues/2544)) ([117ca57](https://github.com/adobe/spacecat-audit-worker/commit/117ca57aab00a99743d69d9c7b7fbfefe1912ee7))
+
+## [1.448.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.2...v1.448.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* **ad-intent-mismatch:** loosen prefilter thresholds ([#2545](https://github.com/adobe/spacecat-audit-worker/issues/2545)) ([1751f89](https://github.com/adobe/spacecat-audit-worker/commit/1751f8941526573048f5c60266e14748dfe41d82))
+
+## [1.448.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.1...v1.448.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2542](https://github.com/adobe/spacecat-audit-worker/issues/2542)) ([9afb22f](https://github.com/adobe/spacecat-audit-worker/commit/9afb22f48e3831560ebdc1db57152d06818059b2))
+
 ## [1.448.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.0...v1.448.1) (2026-05-21)
 
 
