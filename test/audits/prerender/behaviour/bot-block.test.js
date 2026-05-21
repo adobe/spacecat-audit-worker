@@ -138,10 +138,16 @@ describe('Prerender behaviour — bot-block', () => {
 
     beforeEach(async () => {
       detectBotBlockerStub = sandbox.stub();
+      // Chain mock: esmock bot-block.js with the stubbed external service,
+      // then pass that mocked module to handler.js so the full ratio+detection
+      // logic runs but no real HTTP call is made.
+      const botBlockModule = await esmock('../../../../src/prerender/bot-block.js', {
+        '@adobe/spacecat-shared-utils': { detectBotBlocker: detectBotBlockerStub },
+      });
       ({ processContentAndGenerateOpportunities } = await esmock(
         '../../../../src/prerender/handler.js',
         {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker: detectBotBlockerStub },
+          '../../../../src/prerender/bot-block.js': botBlockModule,
         },
       ));
     });

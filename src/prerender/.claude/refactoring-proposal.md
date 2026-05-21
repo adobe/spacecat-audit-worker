@@ -180,11 +180,13 @@ The three code paths (CSV / Slack / Normal) are collapsed into two pure function
 
 The bot-block check moves from an inline `if` to `isStickyBotBlocked(context, status)` — same logic, named and testable independently.
 
-### Step 3 (removes fallback, adds zero-results guard)
+### Step 3 (fallback removed ✅, zero-results guard still proposed)
 
-The untested `/* c8 ignore */` fallback that silently processes stale HTML is **replaced** with `stats.zeroResults`:
-- Before: zero scrapes → re-fetch all URLs → compare against old S3 HTML → upload status that looks like success
-- After: zero scrapes → `stats.zeroResults = true` → upload honest status with `scrapingErrorRate = 100%` → exit cleanly without touching suggestions
+**Done** (`505391dc` #2538): The untested `/* c8 ignore */` fallback that silently processed stale HTML has been removed. `scrapeResultPaths.size === 0` now logs a warning and skips comparison entirely — `getScrapeJobStats` already handles FAILED URLs via `ScrapeUrl` DB.
+
+**Still proposed**: A named `stats.zeroResults` guard that explicitly uploads an honest status with `scrapingErrorRate = 100%` and exits cleanly without touching suggestions:
+- Current: zero scrapes → warn + skip comparison → continue to suggestion branches (Branch C marks suggestions OUTDATED)
+- Proposed: zero scrapes → `stats.zeroResults = true` → upload honest status with `scrapingErrorRate = 100%` → exit cleanly without touching suggestions
 
 The `isDomainBlocked` check moves out of inline `if` into `earlyExitGuard`, which also handles the domain-blocked opportunity creation and status upload internally — step 3 just reads `guard.exit`.
 

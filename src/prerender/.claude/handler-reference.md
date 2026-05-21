@@ -51,11 +51,14 @@ prerender/scrapes/{scrapeJobId}/{segment}/scrape.json
 |----------|-------|---------|
 | `CONTENT_GAIN_THRESHOLD` | `1.1` | client/server word ratio ≥ 1.1 → `needsPrerender=true` |
 | `TOP_ORGANIC_URLS_LIMIT` | `200` | `getTopOrganicUrlsFromSeo` slices organics to this |
+| `TOP_AGENTIC_URLS_LIMIT` | `2000` | `getTopAgenticUrls` limit |
 | `DAILY_BATCH_SIZE` | `320` | normal-mode cap (organic + included + agentic) |
-| `BOT_BLOCK_WINDOW_DAYS` | `3` | sticky scrapeForbidden expires after this many days |
-| `BOT_BLOCK_CONFIDENCE_THRESHOLD` | `0.99` | reactive block requires confidence ≥ this |
-| `BOT_BLOCK_403_RATIO` | `0.5` | reactive block fires only when 403 ratio ≥ this |
-| `PAGE_CITABILITY_DEDUP_WINDOW_DAYS` | `7` | URLs processed within this window are excluded |
+| `MYSTIQUE_BATCH_SIZE` | `= DAILY_BATCH_SIZE = 320` | Mystique guidance batch cap; same value as `DAILY_BATCH_SIZE` |
+| `PRERENDER_RECENT_PROCESSING_TIME_DAYS` | `7` | PageCitability dedup window (URLs processed within this window excluded) |
+
+**Bot-block thresholds are hardcoded in handler.js (lines 83–84), not exported from constants.js:**
+- `DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000` (3-day sticky window in ms)
+- `STICKY_BOT_FORBIDDEN_RATIO = 0.5` (403 ratio threshold for reactive block)
 
 ---
 
@@ -77,7 +80,7 @@ Step 3: processContentAndGenerateOpportunities  → returns { status, auditResul
 |------|---------|-------|-----------------|-----------|
 | normal | no `urls` in auditContext | PageCitability 7-day | yes | DAILY_BATCH_SIZE=320 |
 | CSV | `auditContext.urls` present | none | no | no cap |
-| Slack | `auditContext.slack=true` | none | skips sticky bot-block | no cap |
+| Slack | `auditContext.slackContext?.channelId` truthy | none | reads status.json but skips sticky bot-block check | no cap |
 
 **`domainBlocked` flag** is set in `auditContext` when sticky bot-block fires; forwarded to step 3.
 
@@ -108,9 +111,9 @@ Step 3: processContentAndGenerateOpportunities  → returns { status, auditResul
 5. **`detectBotBlocker`** — only if 403 ratio ≥ 0.5; requires confidence ≥ 0.99 + known CDN for `scrapeForbidden=true`
    - Throws → warning logged, `scrapeForbidden=false`, audit continues
 6. **Branch routing:**
-   - **Branch A** (prerender URLs found + no domain block) → `convertToOpportunity` + `syncSuggestions`
-   - **Branch B** (prerender URLs found + `scrapeForbidden=true`) → `convertToOpportunity` with domain-wide suggestion + `syncSuggestions`
-   - **Branch C** (no prerender URLs) → mark existing NEW suggestions OUTDATED via `Suggestion.bulkUpdateStatus`
+   - **Branch A** (`urlsNeedingPrerender.length > 0`) → `processOpportunityAndSuggestions` (internally: `convertToOpportunity` + `syncSuggestions`) + `sendPrerenderGuidanceRequestToMystique`
+   - **Branch B** (`urlsNeedingPrerender.length === 0 && scrapeForbidden=true`) → `createScrapeForbiddenOpportunity` only; `syncSuggestions` is **NOT** called
+   - **Branch C** (`urlsNeedingPrerender.length === 0 && !scrapeForbidden`) → `syncSuggestions` with `newData=[]` (marks existing suggestions OUTDATED for scraped pathnames)
 7. **Write `status.json`** — merges current pages with prior pages not in current run
 
 ---
@@ -170,8 +173,7 @@ Step 3: processContentAndGenerateOpportunities  → returns { status, auditResul
 | `ScrapeUrl.allByScrapeJobId` | getScrapeJobStats stats counting |
 | `Opportunity.allBySiteIdAndStatus` | find existing opportunity |
 | `Opportunity.create` | create new opportunity (Branch A/B) |
-| `Suggestion.bulkUpdateStatus` | mark outdated suggestions (Branch C) |
-| `Suggestion.saveMany` | save new suggestions (Branch A/B) |
+| `Suggestion.saveMany` | save/update suggestions (Branch A/C — syncSuggestions calls this) |
 
 ---
 

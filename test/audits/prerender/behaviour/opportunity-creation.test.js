@@ -28,11 +28,11 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { processContentAndGenerateOpportunities } from '../../../../src/prerender/handler.js';
 import {
   processOpportunityAndSuggestions,
   createScrapeForbiddenOpportunity,
-  processContentAndGenerateOpportunities,
-} from '../../../../src/prerender/handler.js';
+} from '../../../../src/prerender/opportunity-syncer.js';
 import {
   buildContext,
   buildSite,

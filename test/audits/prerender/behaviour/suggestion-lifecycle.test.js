@@ -28,7 +28,7 @@ import sinonChai from 'sinon-chai';
 import { processContentAndGenerateOpportunities } from '../../../../src/prerender/handler.js';
 import {
   processOpportunityAndSuggestions,
-} from '../../../../src/prerender/handler.js';
+} from '../../../../src/prerender/opportunity-syncer.js';
 import {
   buildContext,
   buildSite,
@@ -101,6 +101,39 @@ describe('Prerender behaviour — suggestion lifecycle (Step 3)', () => {
     expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
     const [outdatedSuggestions] = ctx.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args;
     expect(outdatedSuggestions).to.deep.include(suggestion);
+  });
+
+  it('user-action status (SKIPPED) suggestion is NOT marked OUTDATED even when its URL was scraped', async () => {
+    // The audit worker must never overwrite user-set statuses (SKIPPED, APPROVED, FIXED,
+    // REJECTED, IN_PROGRESS). This is Branch C: URL scraped, no prerender needed,
+    // existing opportunity found — but the suggestion was dismissed by the user.
+    const siteId = 'site-skipped-protected';
+    const scrapeJobId = 'job-skipped';
+    const url = 'https://example.com/user-skipped-page';
+
+    const skippedSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-skipped',
+      status: 'SKIPPED',
+      data: { url },
+    });
+    const opportunity = buildOpportunity(sandbox, {
+      suggestions: [skippedSuggestion],
+    });
+
+    // URL is scraped this run (in scrapeResultPaths), HTML identical → no prerender → Branch C
+    const ctx = buildNoPreRenderCtx(siteId, scrapeJobId, url, {
+      dataAccess: {
+        opportunities: [opportunity],
+        scrapeUrls: [url],
+      },
+    });
+
+    await processContentAndGenerateOpportunities(ctx);
+
+    // bulkUpdateStatus must NOT be called with the SKIPPED suggestion
+    const bulkCalls = ctx.dataAccess.Suggestion.bulkUpdateStatus.getCalls();
+    const markedOutdated = bulkCalls.flatMap((c) => c.args[0]);
+    expect(markedOutdated).to.not.deep.include(skippedSuggestion);
   });
 
   it('edge-deployed URL excluded from scrapedUrlsSet → its suggestion NOT marked OUTDATED', async () => {

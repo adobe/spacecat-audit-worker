@@ -154,12 +154,14 @@ return ACTIVE_STATUSES.includes(status) || !!data?.edgeDeployed;
 URLs are marked OUTDATED only if ALL conditions met:
 
 ```
-- URL is in scrapedUrlsSet (was actually scraped)
+- suggestion's pathname (toPathname(data.url)) is in scrapedUrlsSet (was actually scraped)
 - data.edgeDeployed is falsy (no prerender needed for edge-deployed URLs)
 - data.coveredByDomainWide is null/falsy (no domain-wide suggestion covers it)
 - data.isDomainWide is not true (not the domain-wide suggestion itself)
 - URL is NOT in failed scrapes (error during scraping)
 ```
+
+**Note on `scrapedUrlsSet`**: This is a pathname-normalizing wrapper `{ has: url => pathnames.has(toPathname(url)) }`, not a plain `Set<string>`. This ensures a suggestion keyed on `www.example.com/page` is correctly marked OUTDATED even when the current run's URL is `example.com/page`. See [D-22](.claude/decision-log.md).
 
 **Rationale**: Prevent false OUTDATED marking that causes user confusion.
 

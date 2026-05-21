@@ -14,8 +14,33 @@
  * General utilities for the Prerender audit.
  */
 
-import { Entitlement } from '@adobe/spacecat-shared-data-access';
+import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+
+const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
+
+function sanitizeImportPath(importPath) {
+  return importPath
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[/._]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Transforms a URL into an S3 path for a given identifier and file type.
+ * The identifier can be either a scrape job id or a site id.
+ * @param {string} url - The URL to transform
+ * @param {string} id - The identifier (scrapeJobId or siteId)
+ * @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html')
+ * @returns {string} The S3 path to the file
+ */
+export function getS3Path(url, id, fileName) {
+  const rawImportPath = new URL(url).pathname;
+  const sanitizedImportPath = sanitizeImportPath(rawImportPath);
+  const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
+  return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
+}
 
 /**
  * Common non-HTML file extensions that should be filtered out

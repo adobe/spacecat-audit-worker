@@ -184,6 +184,89 @@ describe('Prerender syncSuggestions integration', () => {
     expect(addSuggestions).to.not.have.been.called;
   });
 
+  it('Case 4 — existing suggestion with a user-action status is NOT marked OUTDATED even when its URL was scraped', async () => {
+    // SKIPPED, APPROVED, FIXED, REJECTED, IN_PROGRESS are set by user actions (UI or api-service),
+    // never by the audit worker. The audit worker must never overwrite these statuses.
+    const userActionStatuses = ['SKIPPED', 'APPROVED', 'FIXED', 'REJECTED', 'IN_PROGRESS'];
+
+    for (const userStatus of userActionStatuses) {
+      const existing = makeSuggestion({
+        url: 'https://example.com/user-actioned-page',
+        contentGainRatio: 1.5,
+      }, userStatus);
+      opportunity.getSuggestions.resolves([existing]);
+
+      const scrapedUrlsSet = makeScrapedUrlsSet(['https://example.com/user-actioned-page']);
+
+      await syncSuggestions({
+        context,
+        opportunity,
+        newData: [],
+        buildKey,
+        mergeDataFunction,
+        mapNewSuggestion: (d) => ({ data: d }),
+        scrapedUrlsSet,
+        existingSuggestions: [existing],
+      });
+
+      expect(bulkUpdateStatus).to.not.have.been.called,
+        `expected status=${userStatus} suggestion to be preserved, not OUTDATED`;
+      expect(saveMany).to.not.have.been.called;
+      bulkUpdateStatus.resetHistory();
+      saveMany.resetHistory();
+    }
+  });
+
+  it('Case 4b — suggestion with data.edgeDeployed set is NOT marked OUTDATED even when its URL was scraped', async () => {
+    const existing = makeSuggestion({
+      url: 'https://example.com/edge-deployed-page',
+      contentGainRatio: 1.5,
+      edgeDeployed: 1777489106583,
+    });
+    opportunity.getSuggestions.resolves([existing]);
+
+    const scrapedUrlsSet = makeScrapedUrlsSet(['https://example.com/edge-deployed-page']);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d }),
+      scrapedUrlsSet,
+      existingSuggestions: [existing],
+    });
+
+    expect(bulkUpdateStatus).to.not.have.been.called;
+    expect(saveMany).to.not.have.been.called;
+  });
+
+  it('Case 4c — suggestion with data.coveredByDomainWide set is NOT marked OUTDATED even when its URL was scraped', async () => {
+    const existing = makeSuggestion({
+      url: 'https://example.com/covered-page',
+      contentGainRatio: 1.5,
+      coveredByDomainWide: 'domain-wide-suggestion-uuid',
+    });
+    opportunity.getSuggestions.resolves([existing]);
+
+    const scrapedUrlsSet = makeScrapedUrlsSet(['https://example.com/covered-page']);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d }),
+      scrapedUrlsSet,
+      existingSuggestions: [existing],
+    });
+
+    expect(bulkUpdateStatus).to.not.have.been.called;
+    expect(saveMany).to.not.have.been.called;
+  });
+
   it('Case 5 — new suggestion is created when no matching existing suggestion exists', async () => {
     opportunity.getSuggestions.resolves([]);
 

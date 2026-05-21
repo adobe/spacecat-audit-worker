@@ -20,12 +20,14 @@ import prerenderHandler, {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
+  writeToCitabilityRecords,
+} from '../../../src/prerender/handler.js';
+import {
   processOpportunityAndSuggestions,
   createScrapeForbiddenOpportunity,
-  uploadStatusSummaryToS3,
-  writeToCitabilityRecords,
-  getScrapeJobStats,
-} from '../../../src/prerender/handler.js';
+} from '../../../src/prerender/opportunity-syncer.js';
+import { getScrapeJobStats } from '../../../src/prerender/scrape-stats.js';
+import { uploadStatusSummaryToS3 } from '../../../src/prerender/status-writer.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
 import {
@@ -482,12 +484,13 @@ describe('Prerender Audit', () => {
 
       it('should warn when top agentic fetch throws and return empty URLs', async () => {
         const warn = sandbox.stub();
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        const urlFetcherModule = await esmock('../../../src/prerender/url-fetcher.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: async () => {
-              throw new Error('athena unavailable');
-            },
+            getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena unavailable'); },
           },
+        });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/url-fetcher.js': urlFetcherModule,
         });
 
         const result = await mockHandler.submitForScraping({
@@ -589,10 +592,11 @@ describe('Prerender Audit', () => {
         const getTopAgenticLiveUrlsFromAthena = sandbox.stub().resolves(
           Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 10 }, (_, i) => `https://example.com/p${i}`),
         );
+        const urlFetcherModule = await esmock('../../../src/prerender/url-fetcher.js', {
+          '../../../src/utils/agentic-urls.js': { getTopAgenticLiveUrlsFromAthena },
+        });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena,
-          },
+          '../../../src/prerender/url-fetcher.js': urlFetcherModule,
         });
         const context = {
           site: {
@@ -710,9 +714,6 @@ describe('Prerender Audit', () => {
       it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => [],
           },
@@ -749,9 +750,6 @@ describe('Prerender Audit', () => {
       it('returns domainBlocked when status.json has scrapeForbidden within 3d window', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
           },
@@ -796,9 +794,6 @@ describe('Prerender Audit', () => {
       it('still scrapes when status.json scrapeForbidden is outside 3d window', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: () => 'https://prefer.example',
@@ -842,9 +837,6 @@ describe('Prerender Audit', () => {
       it('still scrapes when status.json has scrapeForbidden but missing scrapeForbiddenSince', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: () => 'https://prefer.example',
@@ -887,9 +879,6 @@ describe('Prerender Audit', () => {
       it('still scrapes when status.json scrapeForbiddenSince is an invalid date', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: () => 'https://prefer.example',
@@ -931,9 +920,7 @@ describe('Prerender Audit', () => {
 
       it('Slack-triggered runs bypass sticky status.json and still submit URLs', async function () {
         this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
           },
@@ -960,16 +947,12 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
 
-        expect(detectBotBlocker).to.not.have.been.called;
         expect(result.urls.map((u) => u.url)).to.include('https://slack.example/page');
       });
 
       it('proceeds when status.json is missing (NoSuchKey)', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: () => 'https://prefer.example',
@@ -1002,14 +985,16 @@ describe('Prerender Audit', () => {
           getUrl: () => `https://example.com${path}`,
         });
 
-        const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
-          },
-        });
+        const makeHandlerWithAgentic = async (agenticUrls) => {
+          const urlFetcherModule = await esmock('../../../src/prerender/url-fetcher.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
+            },
+          });
+          return esmock('../../../src/prerender/handler.js', {
+            '../../../src/prerender/url-fetcher.js': urlFetcherModule,
+          });
+        };
 
         const makeContext = (pageCitabilityRecords = []) => ({
           site: {
@@ -1473,10 +1458,11 @@ describe('Prerender Audit', () => {
 
       it('should still fetch agentic URLs for scheduled (non-Slack) runs', async () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const urlFetcherModule = await esmock('../../../src/prerender/url-fetcher.js', {
+          '../../../src/utils/agentic-urls.js': { getTopAgenticLiveUrlsFromAthena: athenaStub },
+        });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: athenaStub,
-          },
+          '../../../src/prerender/url-fetcher.js': urlFetcherModule,
         });
 
         const context = {
@@ -1555,13 +1541,20 @@ describe('Prerender Audit', () => {
         const syncSuggestionsStub = sandbox.stub().resolves();
         const isPaidLLMOCustomerStub = sandbox.stub().resolves(false);
 
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
           '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
+          '../../../src/prerender/opportunity-data-mapper.js': {
+            createOpportunityData: sandbox.stub().returns({}),
+          },
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: isPaidLLMOCustomerStub,
             mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
@@ -1569,9 +1562,6 @@ describe('Prerender Audit', () => {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: sandbox.stub().returns('https://blocked.com'),
-          },
-          '../../../src/prerender/opportunity-data-mapper.js': {
-            createOpportunityData: sandbox.stub().returns({}),
           },
         });
 
@@ -1750,13 +1740,17 @@ describe('Prerender Audit', () => {
           getSuggestions: sinon.stub().resolves([]),
         };
 
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
           '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: sinon.stub().resolves(),
           },
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
         });
 
         const pageUrl = 'https://example.com/page1';
@@ -1815,12 +1809,6 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sinon.stub().resolves(mockOpportunity);
         const createScrapeForbiddenOpportunityStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: convertToOpportunityStub,
-          },
-        });
-
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
@@ -1843,15 +1831,23 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
         getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with 403 error
 
-        const mockHandlerWithS3 = await esmock('../../../src/prerender/handler.js', {
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
           '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
+        });
+
+        const mockHandlerWithS3 = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
           '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' }),
+          '../../../src/prerender/bot-block.js': {
+            isStickyBotBlocked: sandbox.stub().returns(false),
+            detectBotBlock: sandbox.stub().resolves({
+              scrapeForbidden: true,
+              scrapeForbiddenSince: new Date().toISOString(),
+            }),
           },
         });
 
@@ -1907,6 +1903,61 @@ describe('Prerender Audit', () => {
         // Verify that convertToOpportunity was called with correct parameters
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
       });
+
+      it('should warn when a non-NEW suggestion has edgeDeployed set (via detectWrongEdgeDeployedStatus)', async () => {
+        const skippedEdgeDeployedSuggestion = {
+          getId: sinon.stub().returns('skipped-edge-id'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
+          getStatus: sinon.stub().returns('SKIPPED'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([skippedEdgeDeployedSuggestion]),
+        };
+
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+            toPathname: sandbox.stub().callsFake((u) => new URL(u).pathname),
+            getS3Path: sandbox.stub().returns('test-path'),
+          },
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+            toPathname: sandbox.stub().callsFake((u) => { try { return new URL(u).pathname; } catch { return u; } }),
+            getS3Path: sandbox.stub().returns('test-path'),
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+            },
+            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([]) },
+          },
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'job-123' },
+          scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/test']]),
+        };
+
+        await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
+        );
+      });
     });
 
       it('should not set scrapeForbidden when detectBotBlocker throws', async function () {
@@ -1915,15 +1966,20 @@ describe('Prerender Audit', () => {
         const getObjectFromKeyStub = sandbox.stub();
         getObjectFromKeyStub.resolves(null);
 
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
           '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
           '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().rejects(new Error('probe timeout')),
+          '../../../src/prerender/bot-block.js': {
+            isStickyBotBlocked: sandbox.stub().returns(false),
+            detectBotBlock: sandbox.stub().resolves({ scrapeForbidden: false, scrapeForbiddenSince: undefined }),
           },
         });
 
@@ -1959,49 +2015,7 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.scrapeForbidden).to.be.false;
-        expect(log.warn).to.have.been.calledWithMatch(/detectBotBlocker failed after high 403 ratio/);
       });
-
-    describe('createScrapeForbiddenOpportunity', () => {
-      it('should create opportunity without suggestions when scraping is forbidden', async () => {
-        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: convertToOpportunityStub,
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            totalUrlsChecked: 5,
-            urlsNeedingPrerender: 0,
-            scrapeForbidden: true,
-            results: [],
-          },
-        };
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            error: sandbox.stub(),
-            warn: sandbox.stub(),
-            debug: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context, true);
-
-        expect(convertToOpportunityStub).to.have.been.calledOnce;
-        expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
-        expect(context.log.info).to.have.been.calledWith(
-          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id, isPaidLLMOCustomer=true'
-        );
-      });
-    });
 
     describe('No Opportunity Found - Outdated Suggestions', () => {
       // Note: Suggestion syncing is now handled by the well-tested syncSuggestions() utility function.
@@ -2535,13 +2549,17 @@ describe('Prerender Audit', () => {
           getSuggestions: sandbox.stub().resolves([]),
         };
 
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        const oppSyncerMock = await esmock('../../../src/prerender/opportunity-syncer.js', {
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
           '../../../src/common/opportunity.js': {
             convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
           },
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/opportunity-syncer.js': oppSyncerMock,
           '../../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sandbox.stub().resolves({
               needsPrerender: true,
@@ -2606,1776 +2624,6 @@ describe('Prerender Audit', () => {
         expect(syncArgs.scrapedUrlsSet.has(deployedUrl)).to.be.false;
       });
     });
-
-    describe('processOpportunityAndSuggestions', () => {
-      it('should skip processing when no URLs need prerender', async () => {
-        const auditData = {
-          auditResult: {
-            urlsNeedingPrerender: 0,
-          },
-        };
-
-        const logStub = sandbox.stub();
-        const context = {
-          log: { info: logStub, debug: logStub },
-        };
-
-        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
-
-        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
-      });
-
-      it('should skip processing when no URLs in results need prerender', async () => {
-        const auditData = {
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              { url: 'https://example.com/page1', needsPrerender: false },
-            ],
-          },
-        };
-
-        const logStub = sandbox.stub();
-        const context = {
-          log: { info: logStub, debug: logStub },
-        };
-
-        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
-
-        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
-      });
-
-      it('should attempt to process opportunities when URLs need prerender', async () => {
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 1.5,
-              },
-            ],
-          },
-        };
-
-        const logStub = sandbox.stub();
-        const context = {
-          log: { info: logStub, debug: logStub },
-        };
-
-        // This will fail due to missing mocks, but we test the early logging
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
-        } catch (error) {
-          // Expected to fail due to missing convertToOpportunity and syncSuggestions imports
-          // But we can verify the function attempts to process
-        }
-
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
-      });
-
-      it('should call processOpportunityAndSuggestions correctly with full mock setup', async () => {
-        // This test specifically targets lines 240-265 (opportunity creation and suggestion syncing)
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 2,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.1,
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 1.8,
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const logStub = sandbox.stub();
-        const context = {
-          log: { info: logStub, debug: logStub },
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves(mockOpportunity),
-            },
-            Suggestion: {
-              allByOpportunityId: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves({ getId: () => 'suggestion-1' }),
-              remove: sandbox.stub().resolves(),
-            },
-          },
-        };
-
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
-        } catch (error) {
-          // May still fail due to complex convertToOpportunity logic, but we should reach the opportunity creation
-          // The key is that we test the filtering and logging logic
-        }
-
-        // Verify that we logged the correct number of suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
-      });
-
-      it('should successfully execute opportunity creation flow and cover syncSuggestions', async () => {
-        // This test targets lines 248-265 (syncSuggestions execution)
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        // Mock all required dependencies for the full opportunity creation flow
-        const mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
-        const mockSyncSuggestions = sandbox.stub().resolves();
-
-        // Mock the dependencies - need to use dynamic import to mock ES modules
-        // Since we can't easily stub ES modules, we'll test the logic indirectly
-        // by testing what would happen if the dependencies were available
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                agenticTraffic: 500,
-                contentGainRatio: 2.1,
-              },
-            ],
-          },
-        };
-
-        const logStub = sandbox.stub();
-        const context = {
-          log: { info: logStub, debug: logStub },
-        };
-
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // Expected to fail due to missing dependencies, but tests the early logic
-          expect(error.message).to.match(/convertToOpportunity|destructure|opportunity|Opportunity/);
-        }
-
-        // Should have logged about generating suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
-      });
-
-      it('should create domain-wide aggregate suggestion with correct aggregate metrics', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 3,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 100,
-                wordCountAfter: 300,
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 200,
-                wordCountAfter: 400,
-              },
-              {
-                url: 'https://example.com/page3',
-                needsPrerender: true,
-                contentGainRatio: 1.0,
-                wordCountBefore: 150,
-                wordCountAfter: 150,
-              },
-            ],
-          },
-        };
-
-        const createdSuggestions = [];
-        const logStub = {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-        };
-
-        const context = {
-          log: logStub,
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves(mockOpportunity),
-            },
-            Suggestion: {
-              allByOpportunityId: sandbox.stub().resolves([]),
-              create: sandbox.stub().callsFake((suggestionData) => {
-                createdSuggestions.push(suggestionData);
-                return Promise.resolve({ getId: () => `suggestion-${createdSuggestions.length}` });
-              }),
-              remove: sandbox.stub().resolves(),
-            },
-          },
-        };
-
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // May fail due to complex dependencies, but we can check created suggestions
-        }
-
-        // Find the domain-wide aggregate suggestion
-        const domainWideSuggestion = createdSuggestions.find(
-          (s) => s.data.isDomainWide === true,
-        );
-
-        if (domainWideSuggestion) {
-          // Verify domain-wide aggregate suggestion properties
-          expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
-          expect(domainWideSuggestion.data.isDomainWide).to.be.true;
-          expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
-          expect(domainWideSuggestion.data.allowedRegexPatterns).to.have.lengthOf(1);
-          expect(domainWideSuggestion.data.allowedRegexPatterns[0]).to.equal('/*');
-          expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
-          expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
-
-          // Verify aggregated (summed) metrics
-          // Total contentGainRatio: 3.0 + 2.0 + 1.0 = 6.0
-          expect(domainWideSuggestion.data.contentGainRatio).to.equal(6.0);
-
-          // Total wordCountBefore: 100 + 200 + 150 = 450
-          expect(domainWideSuggestion.data.wordCountBefore).to.equal(450);
-
-          // Total wordCountAfter: 300 + 400 + 150 = 850
-          expect(domainWideSuggestion.data.wordCountAfter).to.equal(850);
-
-          // Verify metadata
-          expect(domainWideSuggestion.data.auditedUrlCount).to.equal(3);
-          expect(domainWideSuggestion.data.auditedUrls).to.have.length(3);
-          expect(domainWideSuggestion.data.description).to.include('entire domain');
-          expect(domainWideSuggestion.data.note).to.include('ALL URLs in the domain');
-          expect(domainWideSuggestion.data.note).to.include('total aggregated values');
-
-          // Verify UI display annotations with "+" suffix for baseline values
-          expect(domainWideSuggestion.data).to.have.property('displayAnnotations');
-          expect(domainWideSuggestion.data.displayAnnotations.contentGainRatio).to.equal('1×+');
-          expect(domainWideSuggestion.data.displayAnnotations.aiReadableContent).to.include('%+');
-          expect(domainWideSuggestion.data.displayAnnotations.wordCountBefore).to.equal('100+');
-          expect(domainWideSuggestion.data.displayAnnotations.wordCountAfter).to.equal('150+');
-
-          // Verify calculated AI-readable percentage (sum of individual percentages)
-          // URL1: (100/300)*100 = 33%, URL2: (200/400)*100 = 50%, URL3: (150/150)*100 = 100%
-          // Total: 33 + 50 + 100 = 183
-          expect(domainWideSuggestion.data).to.have.property('aiReadablePercent');
-          expect(domainWideSuggestion.data.aiReadablePercent).to.be.a('number');
-          expect(domainWideSuggestion.data.aiReadablePercent).to.equal(183);
-
-          // Verify high rank for appearing first
-          expect(domainWideSuggestion.rank).to.equal(999999);
-        }
-      });
-
-      it('should create domain-wide aggregate suggestion even with single URL', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 5.0,
-                wordCountBefore: 100,
-                wordCountAfter: 500,
-              },
-            ],
-          },
-        };
-
-        const createdSuggestions = [];
-        const logStub = {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-        };
-
-        const context = {
-          log: logStub,
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves(mockOpportunity),
-            },
-            Suggestion: {
-              allByOpportunityId: sandbox.stub().resolves([]),
-              create: sandbox.stub().callsFake((suggestionData) => {
-                createdSuggestions.push(suggestionData);
-                return Promise.resolve({ getId: () => `suggestion-${createdSuggestions.length}` });
-              }),
-              remove: sandbox.stub().resolves(),
-            },
-          },
-        };
-
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // May fail due to complex dependencies
-        }
-
-        // Find the domain-wide aggregate suggestion
-        const domainWideSuggestion = createdSuggestions.find(
-          (s) => s.data.isDomainWide === true,
-        );
-
-        if (domainWideSuggestion) {
-          // Should create domain-wide suggestion even with single URL
-          expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
-          expect(domainWideSuggestion.data.auditedUrlCount).to.equal(1);
-          expect(domainWideSuggestion.data.contentGainRatio).to.equal(5.0);
-        }
-      });
-
-      it('should use constant key for domain-wide aggregate suggestion to ensure uniqueness', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const logStub = {
-          debug: sandbox.stub(),
-          info: sandbox.stub(),
-          warn: sandbox.stub(),
-        };
-
-        const context = {
-          log: logStub,
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves(mockOpportunity),
-            },
-            Suggestion: {
-              allByOpportunityId: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves({ getId: () => 'test-suggestion' }),
-              remove: sandbox.stub().resolves(),
-            },
-          },
-        };
-
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // May fail due to dependencies
-        }
-
-        // Verify logging mentions domain-wide suggestion sync
-        const logCalls = logStub.info.getCalls().map((call) => call.args[0]);
-        const domainWideSuggestionLog = logCalls.find((msg) => msg.includes('domain-wide aggregate suggestion'));
-
-        if (domainWideSuggestionLog) {
-          expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('Regex');
-        }
-      });
-
-      it('should include citabilityScore in individual suggestion data', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.5,
-                wordCountBefore: 120,
-                wordCountAfter: 300,
-                citabilityScore: 0.82,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW',
-                FIXED: 'FIXED',
-                PENDING_VALIDATION: 'PENDING_VALIDATION',
-                SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-
-        // The individual suggestion (first item in newData) should carry citabilityScore
-        const individualSuggestion = syncArgs.newData.find(
-          (s) => s.url === 'https://example.com/page1',
-        );
-        expect(individualSuggestion).to.exist;
-        expect(individualSuggestion.citabilityScore).to.equal(0.82);
-
-        // mapNewSuggestion should also include citabilityScore via mapSuggestionData
-        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
-        expect(mappedData.data.citabilityScore).to.equal(0.82);
-      });
-
-      it('should set citabilityScore to null when not present in audit result', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 1.8,
-                wordCountBefore: 80,
-                wordCountAfter: 160,
-                // citabilityScore deliberately omitted
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW',
-                FIXED: 'FIXED',
-                PENDING_VALIDATION: 'PENDING_VALIDATION',
-                SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-
-        const individualSuggestion = syncArgs.newData.find(
-          (s) => s.url === 'https://example.com/page2',
-        );
-        expect(individualSuggestion).to.exist;
-
-        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
-        expect(mappedData.data.citabilityScore).to.be.null;
-      });
-
-      it('should build suggestion key from pathname so domain shifts do not create duplicates', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://www.example.com/some/page',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://www.example.com',
-          auditData,
-          context,
-        );
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const { buildKey } = syncSuggestionsStub.firstCall.args[0];
-
-        // Both domain variants of the same page must produce the same key
-        expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
-        expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
-
-        // Domain-wide suggestions (with a `key` field) pass through unchanged
-        expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
-      });
-
-      it('should normalize scrapedUrlsSet to pathname so domain-shifted suggestions are correctly outdated', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        // scrapedUrlsSet uses the new preferred domain (example.com)
-        const scrapedUrlsSet = new Set([
-          'https://example.com/some/page',
-          'https://example.com/other/page',
-        ]);
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          scrapedUrlsSet,
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/some/page',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const { scrapedUrlsSet: normalizedSet } = syncSuggestionsStub.firstCall.args[0];
-
-        // Old-domain suggestion URLs must match the pathname-normalized set
-        expect(normalizedSet.has('https://www.example.com/some/page')).to.be.true;
-        expect(normalizedSet.has('https://example.com/some/page')).to.be.true;
-        // Unscraped paths must not match
-        expect(normalizedSet.has('https://example.com/unscraped/page')).to.be.false;
-        // Non-URL values (e.g. domain-wide keys) pass through as-is
-        expect(normalizedSet.has('not-a-url')).to.be.false;
-      });
-
-      it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'NEW',
-          getData: () => ({
-            isDomainWide: true,
-            pathPattern: '/*',
-            edgeDeployed: 1769607504287,
-            allowedRegexPatterns: ['/existing-pattern/'],
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const logStub = {
-          info: sinon.stub(),
-          debug: sinon.stub(),
-          warn: sinon.stub(),
-        };
-
-        const context = {
-          log: logStub,
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        // Verify that no domain-wide suggestion is included in newData
-        // The existing one will be preserved by the OUTDATED filter in data-access.js
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-
-        // No domain-wide suggestion should be in newData
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.be.undefined;
-
-        // Only individual suggestions should be in newData
-        expect(syncArgs.newData.length).to.equal(1);
-        expect(syncArgs.newData[0].url).to.equal('https://example.com/page1');
-
-        // Verify log message about skipping creation
-        const logCalls = logStub.info.getCalls().map((c) => c.args[0]);
-        const skipLog = logCalls.find((msg) => msg && msg.includes('Skipping domain-wide suggestion creation'));
-        expect(skipLog).to.exist;
-      });
-
-      it('should preserve existing domain-wide suggestion when it has FIXED status', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'FIXED',
-          getData: () => ({
-            isDomainWide: true,
-            pathPattern: '/*',
-            allowedRegexPatterns: ['/fixed-pattern/'],
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.be.undefined;
-      });
-
-      it('should preserve existing domain-wide suggestion when it has only edgeDeployed flag', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'OUTDATED',
-          getData: () => ({
-            isDomainWide: true,
-            pathPattern: '/*',
-            edgeDeployed: 1769607504287,
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.be.undefined;
-      });
-
-      it('should create new domain-wide suggestion when existing one is OUTDATED without deployed flags', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'OUTDATED',
-          getData: () => ({
-            isDomainWide: true,
-            pathPattern: '/*',
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
-      });
-
-      it('should not detect domain-wide suggestion by pathPattern alone (requires isDomainWide flag)', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'NEW',
-          getData: () => ({
-            pathPattern: '/*',
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-      });
-
-      it('should create new domain-wide suggestion when no existing suggestions', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
-      });
-
-      it('should handle suggestion with null data gracefully', async () => {
-        // This test covers line 46: if (!data) return false
-        const suggestionWithNullData = {
-          getId: () => 'null-data-suggestion',
-          getStatus: () => 'NEW',
-          getData: () => null,
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([suggestionWithNullData]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        // Should create new domain-wide since null data is not domain-wide
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-      });
-
-      it('should not detect domain-wide suggestion by key field alone (requires isDomainWide flag)', async () => {
-        const existingDomainWideSuggestion = {
-          getId: () => 'existing-domain-wide-id',
-          getStatus: () => 'NEW',
-          getData: () => ({
-            key: 'domain-wide-aggregate|prerender',
-            allowedRegexPatterns: ['/some-pattern/'],
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        // Without isDomainWide flag, a new domain-wide suggestion is created
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-      });
-
-      it('should create new domain-wide suggestion when only non-domain-wide suggestions exist', async () => {
-        // This test covers the case where isDomainWideSuggestionData returns false
-        const regularSuggestion = {
-          getId: () => 'regular-suggestion-id',
-          getStatus: () => 'NEW',
-          getData: () => ({
-            url: 'https://example.com/some-page',
-            contentGainRatio: 1.5,
-          }),
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([regularSuggestion]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        // Should create new domain-wide since existing suggestion is not domain-wide
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
-      });
-
-      it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
-        // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          auditResult: {
-            urlsNeedingPrerender: 2,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.5,
-                wordCountBefore: 100,
-                wordCountAfter: 250,
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 150,
-                wordCountAfter: 450,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        // Verify syncSuggestions was called once with combined data
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-        // Get the single call with both individual and domain-wide suggestions
-        const syncCall = syncSuggestionsStub.getCall(0);
-        expect(syncCall).to.exist;
-
-        // Extract functions and data
-        const { mapNewSuggestion, mergeDataFunction, newData } = syncCall.args[0];
-
-        // Test mapNewSuggestion function execution for domain-wide suggestion
-        // Domain-wide suggestion should be the last item in newData
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-        const mappedSuggestion = mapNewSuggestion(domainWideSuggestion);
-
-        expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
-        expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
-        expect(mappedSuggestion).to.have.property('rank', 0); // All suggestions have rank 0 (sorting handled in UI)
-        expect(mappedSuggestion).to.have.property('data');
-        expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
-
-        // Test mergeDataFunction execution for domain-wide suggestion
-        const existingData = { oldField: 'preserved' };
-        const newDataItem = { key: 'domain-wide-aggregate|prerender', data: { newField: 'value' } };
-        const mergedData = mergeDataFunction(existingData, newDataItem);
-
-        expect(mergedData).to.deep.equal({ newField: 'value' });
-
-        // Test mapNewSuggestion for individual suggestions
-        const individualSuggestion = newData.find((item) => !item.key);
-        expect(individualSuggestion).to.exist;
-        const mappedIndividual = mapNewSuggestion(individualSuggestion);
-        expect(mappedIndividual).to.have.property('rank', 0);
-      });
-
-      it('should store raw numeric values (totals) for domain-wide suggestions', async () => {
-        // Test to verify raw total/summed numeric values are stored (formatting is done in UI)
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 2,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 2000000, // 2M
-                wordCountAfter: 4000000, // 4M
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 3000000, // 3M
-                wordCountAfter: 6000000, // 6M
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
-
-        // Verify syncSuggestions was called once with combined data
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-        // Get the single call with both individual and domain-wide suggestions
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-
-        // Find the domain-wide suggestion in the combined data
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-
-        // Verify raw total/summed values are stored (UI will format with M+ suffix)
-        // Total wordCountBefore: 2000000 + 3000000 = 5000000 (5M)
-        // Total wordCountAfter: 4000000 + 6000000 = 10000000 (10M)
-        // Total contentGainRatio: 2.0 + 3.0 = 5.0
-        expect(domainWideSuggestion.data.wordCountBefore).to.equal(5000000);
-        expect(domainWideSuggestion.data.wordCountAfter).to.equal(10000000);
-        expect(domainWideSuggestion.data.contentGainRatio).to.equal(5.0);
-      });
-
-      it('should handle zero values as raw numbers (UI handles N/A display)', async () => {
-        // Test to verify zero values are stored as raw numbers (UI will display as "N/A")
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 0, // Zero value
-                wordCountBefore: 0, // Zero value
-                wordCountAfter: 0, // Zero value
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
-
-        // Verify syncSuggestions was called once
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-        // Get the single call and find domain-wide suggestion
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-
-        // Verify raw zero values are stored (UI will format as "N/A")
-        expect(domainWideSuggestion.data.contentGainRatio).to.equal(0);
-        expect(domainWideSuggestion.data.wordCountBefore).to.equal(0);
-        expect(domainWideSuggestion.data.wordCountAfter).to.equal(0);
-        // agenticTraffic is calculated in the UI from fresh CDN logs data
-      });
-
-      it('should create domain-wide suggestion without agenticTraffic (handled in UI)', async () => {
-        // agenticTraffic aggregation is now handled in the UI from fresh CDN logs
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 3,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 150,
-                wordCountAfter: 450,
-              },
-              {
-                url: 'https://example.com/page3/',  // With trailing slash
-                needsPrerender: true,
-                contentGainRatio: 1.5,
-                wordCountBefore: 200,
-                wordCountAfter: 300,
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        // Verify syncSuggestions was called once
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-        // Get the call and find domain-wide suggestion
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-
-        // Verify domain-wide suggestion exists (agenticTraffic is calculated in UI)
-        expect(domainWideSuggestion.data.contentGainRatio).to.exist;
-        expect(domainWideSuggestion.data.wordCountBefore).to.exist;
-        expect(domainWideSuggestion.data.wordCountAfter).to.exist;
-      });
-
-      it('should create suggestions even with mixed valid/invalid URLs', async () => {
-        // Test that suggestions are created regardless of URL validity
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 2,
-            results: [
-              {
-                url: 'not-a-valid-url',  // Invalid URL
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 150,
-                wordCountAfter: 450,
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-        );
-
-        // Verify suggestions were created despite invalid URL
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.data.contentGainRatio).to.exist;
-      });
-
-      it('should handle zero totalWordCountAfter when calculating aiReadablePercent', async () => {
-        // Test to cover edge case when total word count after is zero
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 0,
-                wordCountBefore: 0,
-                wordCountAfter: 0,  // Zero after count - should result in 0 percent
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-          new Map(),
-        );
-
-        // Get domain-wide suggestion
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-
-        // aiReadablePercent should be 0 when wordCountAfter is 0
-        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(0);
-      });
-
-      it('should correctly sum aiReadablePercent from individual suggestions with mixed zero/non-zero values', async () => {
-        // Test to cover the new totalAiReadablePercent calculation logic (lines 456-466)
-        // This test ensures both branches of the ternary operator are covered
-        // Including undefined/null values to ensure || 0 fallback is covered
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'test-audit-id',
-          auditResult: {
-            urlsNeedingPrerender: 5,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 500, // 100/500 = 20%
-              },
-              {
-                url: 'https://example.com/page2',
-                needsPrerender: true,
-                contentGainRatio: 3.0,
-                wordCountBefore: 400,
-                wordCountAfter: 800, // 400/800 = 50%
-              },
-              {
-                url: 'https://example.com/page3',
-                needsPrerender: true,
-                contentGainRatio: 1.5,
-                wordCountBefore: 300,
-                wordCountAfter: 300, // 300/300 = 100%
-              },
-              {
-                url: 'https://example.com/page4',
-                needsPrerender: true,
-                contentGainRatio: 0,
-                wordCountBefore: 0,
-                wordCountAfter: 0, // 0/0 = 0% (triggers else branch)
-              },
-              {
-                url: 'https://example.com/page5',
-                needsPrerender: true,
-                contentGainRatio: 1.0,
-                // wordCountBefore: undefined - tests || 0 fallback
-                // wordCountAfter: undefined - tests || 0 fallback
-              },
-            ],
-          },
-        };
-
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sandbox.stub().resolves([]),
-        };
-
-        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-        const syncSuggestionsStub = sandbox.stub().resolves();
-        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
-        });
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions(
-          'https://example.com',
-          auditData,
-          context,
-          new Map(),
-        );
-
-        // Get domain-wide suggestion
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
-        const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-
-        // Verify aiReadablePercent is sum of individual percentages
-        // page1: 20%, page2: 50%, page3: 100%, page4: 0%, page5: 0% = total 170%
-        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(170);
-
-        // Also verify word count totals (including undefined handling)
-        expect(domainWideSuggestion.data.wordCountBefore).to.equal(800); // 100+400+300+0+0
-        expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300+0+0
-        expect(domainWideSuggestion.data.contentGainRatio).to.equal(7.5); // 2+3+1.5+0+1
-      });
-
-      it('should warn when a non-NEW suggestion has edgeDeployed set (via detectWrongEdgeDeployedStatus)', async () => {
-        // detectWrongEdgeDeployedStatus runs at the start of processContentAndGenerateOpportunities.
-        // Any non-NEW suggestion with edgeDeployed means the status was changed after edge
-        // deployment, which should not happen.
-        const skippedEdgeDeployedSuggestion = {
-          getId: sinon.stub().returns('skipped-edge-id'),
-          getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
-          getStatus: sinon.stub().returns('SKIPPED'),
-        };
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getType: () => 'prerender',
-          getSuggestions: sandbox.stub().resolves([skippedEdgeDeployedSuggestion]),
-        };
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: sandbox.stub().resolves(),
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sandbox.stub().resolves(true),
-          },
-        });
-
-        const context = {
-          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
-          audit: { getId: () => 'audit-id' },
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
-            },
-            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([]) },
-          },
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
-          s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'job-123' },
-          scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/test']]),
-        };
-
-        await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
-        );
-      });
-    });
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
@@ -4435,19 +2683,14 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should return the raw Athena URL when it is already absolute but invalid', async function () {
       this.timeout(5000);
-      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
-        urls: urlGroups.flat(),
-        filteredCount: 0,
-      }));
 
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+      const urlFetcherModule = await esmock('../../../src/prerender/url-fetcher.js', {
         '../../../src/utils/agentic-urls.js': {
           getTopAgenticLiveUrlsFromAthena: sinon.stub().resolves(['http://[invalid']),
         },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: sinon.stub().resolves(false),
-          mergeAndGetUniqueHtmlUrls: mergeAndGetUniqueHtmlUrlsStub,
-        },
+      });
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/url-fetcher.js': urlFetcherModule,
       });
 
       const ctx = {
@@ -4472,7 +2715,6 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
@@ -5962,153 +4204,6 @@ describe('Prerender Audit', () => {
         expect(context.log.debug.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
       });
 
-      it('should trigger opportunity and suggestion creation flow', async () => {
-        // Test the full opportunity creation and suggestion sync flow including S3 key generation
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                agenticTraffic: 500,
-                contentGainRatio: 2.1,
-                wordCountBefore: 100,
-                wordCountAfter: 210,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(context.log.info).to.have.been.called;
-        // Verify that syncSuggestions was called once with combined data
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        // Verify that suggestion syncing was logged
-        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
-
-        // Get the single call with combined data
-        const individualSyncCall = syncSuggestionsStub.getCall(0);
-        expect(individualSyncCall.args[0]).to.have.property('mapNewSuggestion');
-        const mappedSuggestion = individualSyncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
-        expect(mappedSuggestion.data).to.have.property('originalHtmlKey');
-        expect(mappedSuggestion.data).to.have.property('prerenderedHtmlKey');
-        expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
-        expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
-        expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
-
-        // Test mergeDataFunction for individual suggestions
-        const mergeDataFn = individualSyncCall.args[0].mergeDataFunction;
-        const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
-        const newDataItem = {
-          url: 'https://example.com/page1',
-          contentGainRatio: 2.5,
-          wordCountBefore: 100,
-          wordCountAfter: 250,
-          needsPrerender: true, // Should be filtered out
-        };
-        const mergedData = mergeDataFn(existingData, newDataItem);
-        expect(mergedData).to.have.property('customField', 'preserved'); // Existing field preserved
-        expect(mergedData).to.have.property('url', 'https://example.com/page1');
-        expect(mergedData).to.not.have.property('agenticTraffic');
-        expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
-
-        // Find domain-wide aggregate suggestion in combined data
-        const domainWideSuggestion = individualSyncCall.args[0].newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion).to.have.property('key', 'domain-wide-aggregate|prerender');
-        expect(domainWideSuggestion.data).to.have.property('isDomainWide', true);
-        expect(domainWideSuggestion.data).to.have.property('allowedRegexPatterns');
-        expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
-        expect(domainWideSuggestion.data.url).to.include('All Domain URLs');
-      });
-
-      it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site-id',
-          scrapeJobId: 'scrape-job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://example.com/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.1,
-                wordCountBefore: 100,
-                wordCountAfter: 210,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        const syncCall = syncSuggestionsStub.getCall(0);
-        const mappedSuggestion = syncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
-
-        expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
-        expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
-        // scrapeJobId must be persisted so downstream callers always use the correct job's artifacts
-        expect(mappedSuggestion.data.scrapeJobId).to.equal('scrape-job-123');
-      });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
         // This test specifically targets the PRERENDER update logic in opportunity.js
@@ -7533,251 +5628,6 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('domain-wide suggestion preservation', () => {
-    let sandbox;
-
-    beforeEach(() => {
-      sandbox = sinon.createSandbox();
-    });
-
-    afterEach(() => {
-      sandbox.restore();
-    });
-
-    it('should skip domain-wide suggestion creation when a preservable one exists', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'NEW',
-        getId: () => 'existing-domain-wide-id',
-        getData: () => ({ isDomainWide: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [
-            {
-              url: 'https://example.com/page1',
-              needsPrerender: true,
-              contentGainRatio: 2.5,
-              wordCountBefore: 100,
-              wordCountAfter: 250,
-            },
-          ],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
-      );
-
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
-      const domainWide = newData.find((item) => item.key);
-      expect(domainWide).to.not.exist;
-    });
-
-    it('should preserve domain-wide suggestion when edgeDeployed is true even with non-active status', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'APPROVED',
-        getId: () => 'approved-domain-wide-id',
-        getData: () => ({ isDomainWide: true, edgeDeployed: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [{
-            url: 'https://example.com/page1',
-            needsPrerender: true,
-            contentGainRatio: 2.5,
-            wordCountBefore: 100,
-            wordCountAfter: 250,
-          }],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
-      );
-    });
-
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'OUTDATED',
-        getId: () => 'outdated-domain-wide-id',
-        getData: () => ({ isDomainWide: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [{
-            url: 'https://example.com/page1',
-            needsPrerender: true,
-            contentGainRatio: 2.5,
-            wordCountBefore: 100,
-            wordCountAfter: 250,
-          }],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
-      const domainWide = newData.find((item) => item.key);
-      expect(domainWide).to.exist;
-    });
-
-    it('should include suggestionId in auditRunCandidates from saved suggestions', async () => {
-      const savedSuggestion = {
-        getStatus: () => 'NEW',
-        getId: () => 'saved-suggestion-id',
-        getData: () => ({ url: 'https://example.com/page1' }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([savedSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        scrapeJobId: 'job-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [{
-            url: 'https://example.com/page1',
-            needsPrerender: true,
-            contentGainRatio: 2.5,
-            wordCountBefore: 100,
-            wordCountAfter: 250,
-          }],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
-        },
-      };
-
-      const result = await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(result).to.not.be.null;
-      const { auditRunCandidates } = result;
-      expect(auditRunCandidates).to.be.an('array').with.lengthOf(1);
-      expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
-      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
-    });
-  });
 
   describe('getScrapeJobStats', () => {
     let sandbox;
@@ -7851,7 +5701,7 @@ describe('Prerender Audit', () => {
       const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
       const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
 
-      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/scrape-stats.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
       });
 
@@ -7886,7 +5736,7 @@ describe('Prerender Audit', () => {
       const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
       const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
 
-      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/scrape-stats.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
       });
 
@@ -7909,7 +5759,7 @@ describe('Prerender Audit', () => {
       const errorMetadata = { error: { statusCode: 500, message: 'Server Error' } };
       const getObjectFromKeyStub = sandbox.stub().resolves(errorMetadata);
 
-      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/scrape-stats.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
       });
 
@@ -7940,7 +5790,7 @@ describe('Prerender Audit', () => {
       // getObjectFromKey returns null — scrape.json not readable
       const getObjectFromKeyStub = sandbox.stub().resolves(null);
 
-      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/scrape-stats.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
       });
 
@@ -8018,10 +5868,15 @@ describe('Prerender Audit', () => {
         return Promise.resolve(null); // HTML files
       });
 
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+      const scrapeStatsModule = await esmock('../../../src/prerender/scrape-stats.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-        '@adobe/spacecat-shared-utils': {
-          detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+      });
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/scrape-stats.js': scrapeStatsModule,
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        '../../../src/prerender/bot-block.js': {
+          isStickyBotBlocked: sandbox.stub().returns(false),
+          detectBotBlock: sandbox.stub().resolves({ scrapeForbidden: false, scrapeForbiddenSince: undefined }),
         },
       });
 
@@ -8049,616 +5904,9 @@ describe('Prerender Audit', () => {
       expect(result.auditResult.scrapeForbidden).to.be.false;
     });
 
-    it('should set scrapeForbidden=true when all URLs (including missing) are 403', async () => {
-      // Neither URL has complete HTML — both are only in ScrapeUrl DB with 403 scrape.json
-      // scrapeResultPaths is empty (no complete scrapes)
-      const forbiddenUrl1 = 'https://example.com/page1';
-      const forbiddenUrl2 = 'https://example.com/page2';
-
-      const allScrapeUrls = [
-        { getUrl: () => forbiddenUrl1 },
-        { getUrl: () => forbiddenUrl2 },
-      ];
-
-      const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
-      const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
-
-      const mockConvertToOpportunity = sandbox.stub().resolves({ getId: () => 'opp-1', getSuggestions: sandbox.stub().resolves([]) });
-      const mockHandlerWithOppty = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-        '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
-        '@adobe/spacecat-shared-utils': {
-          detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' }),
-        },
-      });
-
-      const context = {
-        site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
-        audit: { getId: () => 'audit-id', getFullAuditRef: () => 'ref', getAuditedAt: () => '2025-01-01T00:00:00Z', getInvocationId: () => 'inv-1' },
-        log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
-        s3Client: { send: sandbox.stub().resolves({}) },
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        auditContext: { scrapeJobId: 'job-1' },
-        scrapeResultPaths: new Map([[forbiddenUrl1, '/tmp/p1']]),
-        dataAccess: {
-          ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) },
-          Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-        },
-      };
-
-      const result = await mockHandlerWithOppty.processContentAndGenerateOpportunities(context);
-
-      expect(result.status).to.equal('complete');
-      expect(result.auditResult.scrapeForbiddenCount).to.equal(2);
-      expect(result.auditResult.scrapeForbidden).to.be.true;
-    });
   });
 
-  describe('skipNewSuggestionsWhenDomainDeployed / markDeployedUrlSuggestionsAsCovered', () => {
-    // HTML pair that produces contentGainRatio > CONTENT_GAIN_THRESHOLD (1.1) so prerender is detected
-    const serverHtml = '<html><body><p>Short</p></body></html>';
-    const clientHtml = '<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>';
 
-    const buildContext = (sandbox, overrides = {}) => ({
-      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
-      audit: { getId: () => 'audit-1', getFullAuditRef: () => 'ref', getAuditedAt: () => '2025-01-01T00:00:00.000Z', getInvocationId: () => 'inv-1' },
-      log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
-      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-      auditContext: { scrapeJobId: 'job-1' },
-      scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/p1']]),
-      s3Client: {
-        send: sandbox.stub().callsFake((command) => {
-          if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
-          const key = command.input?.Key || '';
-          if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(serverHtml) } });
-          if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(clientHtml) } });
-          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: true })) } });
-          return Promise.reject(new Error('Not found'));
-        }),
-      },
-      ...overrides,
-    });
-
-    const buildMockHandler = (sandbox, opportunitySuggestions, extraMocks = {}) => {
-      const mockOpportunity = {
-        getId: () => 'opp-1',
-        getAuditId: () => 'audit-1',
-        getSuggestions: sandbox.stub().resolves(opportunitySuggestions),
-      };
-      return esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': { convertToOpportunity: sandbox.stub().resolves(mockOpportunity) },
-        '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
-        '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: sandbox.stub().resolves(false), mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]) },
-        ...extraMocks,
-      });
-    };
-
-    const buildSuggestionWithSetData = (id, data) => {
-      let currentData = { ...data };
-      return {
-        getId: () => id,
-        getData: () => currentData,
-        setData: (newData) => { currentData = newData; },
-      };
-    };
-
-    it('should set coveredByDomainWide on NEW suggestions when domain is fully deployed at edge', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion1 = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
-      const newSuggestion2 = buildSuggestionWithSetData('s2', { url: 'https://example.com/page1' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
-      expect(saveManyStub).to.have.been.calledOnce;
-      expect(newSuggestion1.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(newSuggestion2.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking 2 NEW suggestions as coveredByDomainWide/));
-    });
-
-    it('should skip saveMany when no NEW suggestions exist', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
-      expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions found/));
-    });
-
-    it('should only set coveredByDomainWide on the deployed-URL suggestion, preserving the non-deployed one', async () => {
-      // Mixed case: one suggestion URL matches the deployed-at-edge URL from this audit run,
-      // one does not. Only the matching suggestion should have coveredByDomainWide set.
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const deployedSuggestion = buildSuggestionWithSetData('s-deployed', { url: 'https://example.com/page1' });
-      const nonDeployedSuggestion = buildSuggestionWithSetData('s-not-deployed', { url: 'https://example.com/other-page' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([deployedSuggestion, nonDeployedSuggestion]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      // Only the deployed suggestion should have coveredByDomainWide set
-      expect(deployedSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(nonDeployedSuggestion.getData().coveredByDomainWide).to.be.undefined;
-      expect(saveManyStub).to.have.been.calledOnceWith([deployedSuggestion]);
-    });
-
-    it('should not set coveredByDomainWide on a suggestion that already has edgeDeployed set', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      // This suggestion's URL matches the deployed set but it already has edgeDeployed — should be excluded
-      const alreadyDeployedSuggestion = buildSuggestionWithSetData('s-already-deployed', { url: 'https://example.com/page1', edgeDeployed: 1234567890 });
-      // This suggestion matches and has no edgeDeployed — should be covered
-      const normalSuggestion = buildSuggestionWithSetData('s-normal', { url: 'https://example.com/page1' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([alreadyDeployedSuggestion, normalSuggestion]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(alreadyDeployedSuggestion.getData().coveredByDomainWide).to.be.undefined;
-      expect(normalSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(saveManyStub).to.have.been.calledOnceWith([normalSuggestion]);
-    });
-
-    it('should skip saveMany when NEW suggestions exist but none match deployed URLs', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      // Suggestion URL does not match the scraped URL ('https://example.com/page1')
-      const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://other.com/page' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
-      expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
-    });
-
-    it('should skip saveMany when deployedAtEdgePathnames set is empty', async () => {
-      // Domain-wide suggestion has edgeDeployed but no scraped URL returns isDeployedAtEdge=true,
-      // so deployedAtEdgePathnames is an empty Set — covers the false branch of the size>0 ternary
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
-
-      const s3ClientNoEdge = {
-        send: sandbox.stub().callsFake((command) => {
-          if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
-          const key = command.input?.Key || '';
-          if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p></body></html>') } });
-          if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>') } });
-          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: false })) } });
-          return Promise.reject(new Error('Not found'));
-        }),
-      };
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        s3Client: s3ClientNoEdge,
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      // deployedAtEdgePathnames is empty → ternary false branch → suggestionsToCover = []
-      expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
-    });
-
-    it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
-      const nonDeployedSuggestion = { getStatus: () => 'NEW', getId: () => 'non-deployed-id', getData: () => ({ isDomainWide: true }) };
-
-      const saveManyStub = sandbox.stub().resolves();
-      const mockHandler = await buildMockHandler(sandbox, [nonDeployedSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
-    });
-
-    it('should set coveredByDomainWide when edgeDeployed suggestion is not the first domain-wide in the list', async () => {
-      // Simulate the production scenario: multiple domain-wide suggestions (OUTDATED ones first,
-      // the deployed one last). A naive find() on the first match would return OUTDATED without
-      // edgeDeployed and incorrectly return false.
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
-      const deployedDomainWide = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
-
-      // OUTDATED suggestions appear before the deployed one — this is the real-world order
-      const mockHandler = await buildMockHandler(
-        sandbox,
-        [outdatedDomainWide1, outdatedDomainWide2, deployedDomainWide],
-      );
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
-      expect(newSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(saveManyStub).to.have.been.calledOnceWith([newSuggestion]);
-    });
-
-    it('should return false when all domain-wide suggestions lack edgeDeployed', async () => {
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
-      const newDomainWideNoEdge = { getStatus: () => 'NEW', getId: () => 'no-edge-id', getData: () => ({ isDomainWide: true }) };
-
-      const saveManyStub = sandbox.stub().resolves();
-      const mockHandler = await buildMockHandler(
-        sandbox,
-        [outdatedDomainWide1, outdatedDomainWide2, newDomainWideNoEdge],
-      );
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
-      expect(saveManyStub).to.not.have.been.called;
-    });
-
-    it('should return false when only OUTDATED domain-wide suggestions have edgeDeployed', async () => {
-      // An OUTDATED domain-wide suggestion with edgeDeployed should NOT count —
-      // only active (non-OUTDATED) suggestions are considered.
-      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getId: () => 'outdated-with-edge-id', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newNoEdge = { getStatus: () => 'NEW', getId: () => 'new-no-edge-id', getData: () => ({ isDomainWide: true }) };
-
-      const saveManyStub = sandbox.stub().resolves();
-      const mockHandler = await buildMockHandler(sandbox, [outdatedWithEdge, newNoEdge]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
-      expect(saveManyStub).to.not.have.been.called;
-    });
-
-    it('should skip when SuggestionDA methods are missing', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: {}, // methods intentionally absent
-        },
-      });
-
-      // Should not throw
-      const result = await mockHandler.processContentAndGenerateOpportunities(context);
-      expect(result.status).to.equal('complete');
-    });
-
-    it('should handle invalid suggestion URLs gracefully in coveredByDomainWide matching', async () => {
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      // Suggestion with an unparseable URL — triggers the catch branch in markDeployedUrlSuggestionsAsCovered
-      const invalidUrlSuggestion = buildSuggestionWithSetData('s-invalid', { url: 'not-a-valid-url' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([invalidUrlSuggestion]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      // The invalid URL won't match any deployed pathname, so it should NOT be marked
-      expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions matched deployed URLs/));
-    });
-
-    it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
-      // Covers the || '' branches on lines 98-99 and 126
-      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      // scrapeResultPaths has 'https://example.com/page1' — suggestion URL must match
-      const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
-
-      const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
-      const context = buildContext(sandbox, {
-        // getBaseURL and getId return '' — triggers the || '' fallback on lines 98-99 and 126
-        site: { getId: () => '', getBaseURL: () => '' },
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
-        },
-      });
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(newSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
-      expect(saveManyStub).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
-    });
-  });
-
-  describe('domain-wide suggestion preservation', () => {
-    let sandbox;
-
-    beforeEach(() => {
-      sandbox = sinon.createSandbox();
-    });
-
-    afterEach(() => {
-      sandbox.restore();
-    });
-
-    it('should skip domain-wide suggestion creation when a preservable one exists', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'NEW',
-        getId: () => 'existing-domain-wide-id',
-        getData: () => ({ isDomainWide: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [
-            {
-              url: 'https://example.com/page1',
-              needsPrerender: true,
-              contentGainRatio: 2.5,
-              wordCountBefore: 100,
-              wordCountAfter: 250,
-            },
-          ],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
-      );
-
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
-      const domainWide = newData.find((item) => item.key);
-      expect(domainWide).to.not.exist;
-    });
-
-    it('should preserve domain-wide suggestion when edgeDeployed is true even with non-active status', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'APPROVED',
-        getId: () => 'approved-domain-wide-id',
-        getData: () => ({ isDomainWide: true, edgeDeployed: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [{
-            url: 'https://example.com/page1',
-            needsPrerender: true,
-            contentGainRatio: 2.5,
-            wordCountBefore: 100,
-            wordCountAfter: 250,
-          }],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
-      );
-    });
-
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
-      const existingDomainWideSuggestion = {
-        getStatus: () => 'OUTDATED',
-        getId: () => 'outdated-domain-wide-id',
-        getData: () => ({ isDomainWide: true }),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'test-opp-id',
-        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
-      };
-
-      const syncSuggestionsStub = sandbox.stub().resolves();
-      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [{
-            url: 'https://example.com/page1',
-            needsPrerender: true,
-            contentGainRatio: 2.5,
-            wordCountBefore: 100,
-            wordCountAfter: 250,
-          }],
-        },
-      };
-
-      const context = {
-        log: {
-          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
-        },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
-      const domainWide = newData.find((item) => item.key);
-      expect(domainWide).to.exist;
-    });
-  });
 
   describe('getScrapeJobStats integration coverage', () => {
     let sandbox;
@@ -9250,52 +6498,6 @@ describe('Prerender Audit', () => {
   });
 
   describe('scrapedUrlsSet behavior', () => {
-    it('should not pass stalenessDays to syncSuggestions in processOpportunityAndSuggestions', async () => {
-      const syncSuggestionsStub = sinon.stub().resolves();
-      const mockOpportunity = {
-        getId: () => 'opp-id',
-        getSuggestions: sinon.stub().resolves([]),
-      };
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/common/opportunity.js': {
-          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-        },
-        '../../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: sinon.stub().resolves(false),
-          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
-          verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
-        },
-      });
-
-      const auditData = {
-        siteId: 'test-site',
-        auditId: 'audit-123',
-        scrapeJobId: 'job-123',
-        scrapedUrlsSet: new Set(['https://example.com/page1']),
-        auditResult: {
-          urlsNeedingPrerender: 1,
-          results: [
-            { url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0 },
-          ],
-        },
-      };
-
-      const context = {
-        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-        dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } } },
-        site: { getId: () => 'test-site-id' },
-      };
-
-      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-      expect(syncSuggestionsStub).to.have.been.called;
-      const syncCall = syncSuggestionsStub.firstCall.args[0];
-      expect(syncCall).to.not.have.property('stalenessDays');
-    });
 
     it('should not augment scrapedUrlsSet with PageCitability records from other writes', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();

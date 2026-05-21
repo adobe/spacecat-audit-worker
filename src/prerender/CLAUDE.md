@@ -59,7 +59,7 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 ### Step 3: processContentAndGenerateOpportunities (Deferred via SQS)
 - **Entry point**: AuditBuilder step 3 (if auditContext.next === "processContentAndGenerateOpportunities")
 - **Primary input**: `context.scrapeResultPaths` — a `Map<url, pathInfo>` populated automatically by AuditBuilder via `scrapeClient.getScrapeResultPaths(scrapeJobId)` before this step fires.
-- **Fallback when scrapeResultPaths is empty**: Re-fetches organic + agentic + included URLs and runs `compareHtmlContent` using HTML already on S3 from a **previous** scrape run. Fires when current scrape returned zero successful results. Not covered by tests (`/* c8 ignore */`) and silently processes stale HTML — known observability gap.
+- **When scrapeResultPaths is empty**: All submitted URLs had `FAILED` status in the scraper. A warning (`"No COMPLETE scrape results"`) is logged and URL comparison is skipped (`urlsToCheck` stays empty). `getScrapeJobStats` handles these FAILED URLs via the `ScrapeUrl` DB and populates `missingPages`, so `status.json` records the correct failed URLs without phantom error entries. See [D-21](.claude/decision-log.md).
 - **Operations** (actual execution order):
   1. **`detectWrongEdgeDeployedStatus`** (diagnostic): Warns if any non-NEW suggestions have `edgeDeployed` set — runs unconditionally at step entry, even when no prerender URLs are found
   2. **`isPaidLLMOCustomer`** check: read once, used in all subsequent logs
@@ -68,12 +68,12 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
   5. **`writeToCitabilityRecords`**: Writes ALL comparison fields to PageCitability (citabilityScore, contentRatio, wordDifference, botWords, normalWords, isDeployedAtEdge) in batches of 10. Only non-error results written.
   6. **`getScrapeJobStats`**: Computes urlsSubmittedForScraping + scrapeForbiddenCount + missingPages + submittedUrlSet. Returns `submittedUrlSet` (Set of URLs from ScrapeUrl DB) used later by uploadStatusSummaryToS3 to assign scrapeJobId per page.
   7. **Bot-block reactive check**: `ratio403 = scrapeForbiddenCount / urlsSubmittedForScraping`. If `ratio403 ≥ 0.5` → call `detectBotBlocker()` → check `isKnownBotBlockerResult()` (confidence ≥ 0.99 AND type in `KNOWN_BOT_BLOCKER_TYPES`). If confirmed → `scrapeForbidden=true`, `scrapeForbiddenSince=now`.
-  8. **`scrapedUrlsSet` construction**: `successfulComparisons.filter(r => !r.isDeployedAtEdge)` — edge-deployed URLs are excluded from OUTDATED eligibility even when successfully scraped.
+  8. **`scrapedUrlsSet` construction**: Built from pathnames of successful comparisons that are NOT edge-deployed. Implemented as a wrapper object `{ has: (url) => pathnames.has(toPathname(url)) }` (not a plain `Set`) so domain-shifted suggestions (`www.example.com/page` vs `example.com/page`) are still matched and marked OUTDATED correctly.
   9. **Three-way opportunity branch**:
      - **Branch A** (`urlsNeedingPrerender.length > 0`): Call `processOpportunityAndSuggestions` (find/create opportunity, domain-wide aggregate, syncSuggestions), then send to Mystique
      - **Branch B** (`scrapeForbidden=true`, no URLs needing prerender): Call `createScrapeForbiddenOpportunity` — dummy opportunity with no suggestions so UI can display blocked state
-     - **Branch C** (no URLs, not blocked): Look for existing NEW opportunity. If found, call `syncSuggestions` with `newData=[]` and `scrapedUrlsSet` augmented with the domain-wide URL — this marks all currently-found suggestions OUTDATED
-  10. **`markNewSuggestionsAsCovered`**: Find domain-wide suggestion with `edgeDeployed` set → mark NEW suggestions for edge-deployed URLs as `coveredByDomainWide`
+     - **Branch C** (no URLs, not blocked): Look for existing NEW opportunity. If found, call `syncSuggestions` with `newData=[]` and `scrapedUrlsSet` augmented with the domain-wide pathname — this marks all currently-found suggestions OUTDATED
+  10. **`markNewSuggestionsAsCovered`**: Find domain-wide suggestion with `edgeDeployed` set → mark NEW suggestions for edge-deployed URLs as `coveredByDomainWide`. Matching uses `deployedAtEdgePathnames` (a `Set` of pathnames) so domain-shifted suggestions are covered correctly.
   11. **`uploadStatusSummaryToS3`**: Reads existing status.json, merges current pages with prior pages (URLs not in current run are preserved), computes aggregate metrics from merged page set, writes to S3
   12. **Error path**: On any uncaught exception → uploads `lastAuditSuccess=false` status.json before returning error result (D-12)
 
@@ -128,7 +128,7 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 - **Link**: Created/updated during step 3 (processContentAndGenerateOpportunities)
 - **Statuses**: NEW, APPROVED, FIXED, OUTDATED
 - **Lifecycle**: One per site (domain-wide aggregate for prerender audit)
-- **Protection**: OUTDATED only if URL in scrapedUrlsSet AND not edgeDeployed AND not coveredByDomainWide AND not isDomainWide
+- **Protection**: OUTDATED only if suggestion's pathname is in scrapedUrlsSet AND not edgeDeployed AND not coveredByDomainWide AND not isDomainWide
 
 ### Suggestion (Domain-Wide Aggregate)
 - **Type**: `prerender`
@@ -250,6 +250,7 @@ These invariants ensure data consistency across the audit system:
 8. **Bot-block thresholds**: 403 ratio ≥ 0.5 AND confidence ≥ 0.99 (both required; neither is negotiable) — calibrated from 311K failure analysis
 9. **isAllDomainDeployedAtEdge must skip OUTDATED suggestions**: Production had 14 OUTDATED domain-wide suggestions before the 1 active NEW one; `find()` without OUTDATED filter returned the wrong suggestion → `edgeDeployed` was undefined → function returned false incorrectly
 10. **Don't send FIXED or edgeDeployed suggestions to Mystique**: UI never displays AI summaries for deployed/fixed suggestions; sending them generates summaries that are never surfaced
+11. **Suggestion keys are pathname-based**: `buildKey` produces `pathname|prerender` (e.g. `/products|prerender`), not full URL. `scrapedUrlsSet.has()` and `deployedAtEdgePathnames` also normalize via `toPathname`. Never revert to full-URL keying — this was the root cause of 10,657 duplicate suggestions across 100 paying customers after the page-citability migration changed `getPreferredBaseUrl()` to return a different domain. See [D-22](.claude/decision-log.md).
 
 ---
 
@@ -258,7 +259,7 @@ These invariants ensure data consistency across the audit system:
 ## Testing Strategy & Entry Points
 
 ### Behavioral Contract Tests
-These 10 test cases verify observable behavior. Any change to the system must keep all 10 green:
+These 21 test cases verify observable behavior. Any change to the system must keep all 21 green:
 
 1. **Bot-block detection**: ratio403 ≥ 0.5 + confidence ≥ 0.99 → sets scrapeForbidden
 2. **Sticky bot-block**: scrapeForbiddenSince within 3-day window → skips scraping, S3 PUT with scrapeForbidden=true
@@ -268,14 +269,22 @@ These 10 test cases verify observable behavior. Any change to the system must ke
 6. **scrapedUrlsSet exclusion**: isDeployedAtEdge URLs excluded → prevents false-positive OUTDATED
 7. **Daily batch dedup**: URLs processed in last 7 days skipped
 8. **scrapeJobId 3-level fallback**: Order preserved (data → path extract → null)
-9. **AI-only mode batch sizing**: MODE_AI_ONLY=true uses MYSTIQUE_BATCH_SIZE not DAILY_BATCH_SIZE
+9. **AI-only mode batch sizing**: MODE_AI_ONLY=true uses MYSTIQUE_BATCH_SIZE (= DAILY_BATCH_SIZE = 320)
 10. **getScrapeJobStats() counting**: COMPLETE-status + FAILED-status + S3 scrape.json reads
+11. **Empty scrapeResultPaths warning**: `scrapeResultPaths.size === 0` → logs `"No COMPLETE scrape results"` warning, skips comparison, returns `status: complete`
+12. **Pathname-keyed suggestions (no domain-shift duplicates)**: `buildKey` on `www.adobe.com/test` and `adobe.com/test` produces the same key `/test|prerender` — `syncSuggestions` updates in place, no duplicate created
+13. **Branch B (scrapeForbidden opportunity)**: `scrapeForbidden=true` + no prerender URLs → `createScrapeForbiddenOpportunity` called, `syncSuggestions` NOT called
+14. **markDeployedUrlSuggestionsAsCovered**: domain-wide suggestion with `status === NEW` AND `edgeDeployed` set → per-URL NEW suggestions matching `deployedAtEdgePathnames` get `coveredByDomainWide` set; OUTDATED/FIXED domain-wide suggestions do NOT trigger coverage (D-04)
+15. **D-12 error path**: uncaught exception in step 3 → `uploadStatusSummaryToS3` still called with `lastAuditSuccess=false` in `auditResult`
+16. **User-action status protection (syncSuggestions)**: suggestions with SKIPPED, APPROVED, FIXED, REJECTED, or IN_PROGRESS status are NEVER marked OUTDATED by the audit worker — these are user-set statuses (Case 4 in sync-suggestions.test.js)
+17. **data-flag OUTDATED protection**: suggestions with `data.edgeDeployed` or `data.coveredByDomainWide` set are NOT marked OUTDATED even when their URL was scraped (Case 4b/4c in sync-suggestions.test.js)
+18. **Branch C with no existing opportunity**: when `urlsNeedingPrerender=0` and no NEW prerender opportunity exists, `syncSuggestions` is NOT called and audit completes normally
+19. **Slack mode skips agentic fetch**: Slack-triggered runs call `getTopOrganicUrlsFromSeo` + `getIncludedURLs` only — `getTopAgenticUrls` is NEVER called
+20. **Mystique SQS not sent for Branch B/C**: `scrapeForbidden=true` (Branch B) or no prerender URLs (Branch C) → `sendPrerenderGuidanceRequestToMystique` NOT called, SQS message NOT sent
+21. **guidance-handler skips OUTDATED suggestions**: when Mystique response arrives, OUTDATED suggestions are excluded from the URL→suggestion map before any `aiSummary`/`valuable` updates
 
-### Test Taxonomy
-- **Unit**: Single function with stubs (fastest, most esmock churn)
-- **Module contract**: Extracted module + handler stub (medium coupling)
-- **Integration**: 2-3 modules + real data structures (validates handoffs)
-- **E2E**: Full 3-step audit + mock ScrapeClient + mock Mystique (slowest, highest confidence)
+**Full test structure, helper reference, and rules for where to add new tests:**
+→ [`test/audits/prerender/CLAUDE.md`](../../../test/audits/prerender/CLAUDE.md)
 
 ---
 

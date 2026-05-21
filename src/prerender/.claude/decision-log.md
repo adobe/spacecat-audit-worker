@@ -28,9 +28,9 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 
 **Why**: Mystique constructs S3 paths for markdown files using `{scrapeJobId}/{path}/markdown-diff.md`. The actual artifacts on S3 were written under the scrapeJobId active when the suggestion was created. Using the current run's scrapeJobId caused `NoSuchKey` errors in Mystique for every site where the suggestion predated the current run.
 
-**Additional failure mode** (#2320): In fallback mode (all scrape results returned 404), the code was stamping the current run's scrapeJobId on ALL suggestions including ones from previous batches, overwriting their correct IDs and breaking their S3 lookups with `scrapingStatus: error`.
+**Additional failure mode** (#2320): In the old step-3 fallback (re-fetching top-page URLs when `scrapeResultPaths` was empty), the code was stamping the current run's scrapeJobId on ALL suggestions including ones from previous batches, overwriting their correct IDs and breaking their S3 lookups with `scrapingStatus: error`. That fallback was subsequently removed in D-21.
 
-**Commits**: `93435341` (#2300) — persist scrapeJobId per suggestion; `872baa49` (#2320) — fix fallback mode overwriting previous IDs
+**Commits**: `93435341` (#2300) — persist scrapeJobId per suggestion; `872baa49` (#2320) — fix fallback mode overwriting previous IDs; `505391dc` (#2538, D-21) — fallback removed entirely
 
 ---
 
@@ -46,13 +46,13 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 
 ---
 
-## D-04 · isAllDomainDeployedAtEdge must filter out OUTDATED suggestions
+## D-04 · getDomainWideSuggestionDeployedAtEdge must only match NEW suggestions
 
-**Decision**: When checking if a domain-wide suggestion is actively deployed at edge, the lookup must filter out OUTDATED-status suggestions.
+**Decision**: When checking if a domain-wide suggestion is actively deployed at edge, the lookup must restrict to `status === NEW` suggestions only.
 
-**Why**: Production data for wkkellogg.com had 14 OUTDATED domain-wide suggestions (from prior audit runs) before the 1 active NEW suggestion with `edgeDeployed` set. `Array.find()` returned the first match — an OUTDATED suggestion — whose `edgeDeployed` was undefined, causing `isAllDomainDeployedAtEdge` to return false. NEW suggestions were never moved to covered state despite the domain being deployed.
+**Why**: Production data for wkkellogg.com had 14 OUTDATED domain-wide suggestions (from prior audit runs) before the 1 active NEW suggestion with `edgeDeployed` set. `Array.find()` returned the first match — an OUTDATED suggestion — whose `edgeDeployed` was undefined, causing the function to return `null`. NEW suggestions were never moved to covered state despite the domain being deployed.
 
-**Rule**: Only active (non-OUTDATED) domain-wide suggestions are authoritative for edge deployment state.
+**Rule**: Only `status === NEW` domain-wide suggestions are authoritative for edge deployment state. The function is `getDomainWideSuggestionDeployedAtEdge` (previously named `isAllDomainDeployedAtEdge` — the old name is preserved only as a log label at line 253).
 
 **Commit**: `12fdd13f` (#2196)
 
@@ -98,11 +98,11 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 
 **Decision**: Every `guidance:prerender` SQS message must include `suggestionId`.
 
-**Why**: Mystique parses the payload via Pydantic union types. `PrerenderSuggestionMessageData` requires `suggestion_id: str`. If absent, Pydantic validation fails and the message is dropped. Production data for micron.com showed 8 of 13 suggestions missing `suggestionId` due to URL mismatch (www.micron.com vs micron.com) in the `urlToSuggestionId` map lookup — exact string match silently returned `undefined`.
+**Why**: Mystique parses the payload via Pydantic union types. `PrerenderSuggestionMessageData` requires `suggestion_id: str`. If absent, Pydantic validation fails and the message is dropped. Production data for micron.com showed 8 of 13 suggestions missing `suggestionId` due to URL mismatch (www.micron.com vs micron.com) — exact string match silently returned `undefined`.
 
-**Rule**: Always normalize URLs to the site's `preferredBase` domain before building the suggestion ID map.
+**Current approach** (supersedes original fix): The `urlToSuggestionId` map is gone. In normal audit runs, `suggestionId = s.url` (the URL string, not a DB UUID) — `guidance-handler.js` matches Mystique responses back by pathname via `suggestionsByPathname` (see D-22). In ai-only runs, `suggestionId = s.getId()` (the DB UUID, because candidates are pre-existing DB suggestions). Both paths set `suggestionId` before sending to Mystique.
 
-**Commit**: `001b563a` (#2373)
+**Commit**: `001b563a` (#2373) — original fix; D-22 (`f0281666`) — supersedes URL-normalization approach with pathname keying
 
 ---
 
@@ -160,11 +160,13 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 
 ---
 
-## D-14 · SQS 256 KB limit → MYSTIQUE_BATCH_SIZE = 100
+## D-14 · SQS 256 KB limit → MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE = 320
 
-**Decision**: Mystique guidance messages are sent in chunks of `MYSTIQUE_BATCH_SIZE = 100` suggestions per SQS message (not all suggestions in one message).
+**Decision**: Mystique guidance messages are capped at `MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE = 320` suggestions per SQS message (`constants.js` line 22: `export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE`). Only the first batch is sent; a TODO exists to send all batches once Mystique multi-batch handling is deployed.
 
-**Why**: Production incident at lenscrafters.com: the site had 1,700+ historical suggestions; sending all active suggestions in one SQS message exceeded AWS's hard 262,144-byte limit. The entire Mystique batch was silently dropped. At ~600 bytes per suggestion entry, batches of 100 ≈ 60 KB comfortably stay under the limit.
+**Why**: Production incident at lenscrafters.com: the site had 1,700+ historical suggestions; sending all active suggestions in one SQS message exceeded AWS's hard 262,144-byte limit. The entire Mystique batch was silently dropped. The batch size was initially set to 100 at ~600 bytes per entry (≈ 60 KB), then raised to match `DAILY_BATCH_SIZE = 320` since that is the maximum number of URLs submitted per run — under normal steady-state conditions the `.slice(0, MYSTIQUE_BATCH_SIZE)` is a no-op.
+
+**Note**: Truncation only bites in edge cases where accumulated DB suggestions exceed 320 (e.g. CSV runs + historical carryover). The TODO comment at `handler.js:689` tracks multi-batch delivery.
 
 **Secondary fix in same PR**: `effectiveScrapeJobId` must now be resolved per suggestion (see D-02). If neither `data.scrapeJobId` nor `data.originalHtmlKey` can yield a job ID, the suggestion is **skipped** with a warn log (previously fell back to the audit-level job ID, producing wrong S3 keys silently).
 
@@ -231,3 +233,35 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 **Why**: The wrapper maintains separation of concerns between (1) the shared package's generic analysis API and (2) the prerender-specific transformation of results (field name mapping, threshold application). It also keeps the shared package mockable in isolation during testing without coupling test setup to the shared package's internals.
 
 **Commit**: `66d0cf41` (#1501)
+
+---
+
+## D-21 · Step 3 top-page fallback removed — `getScrapeJobStats` supersedes it
+
+**Decision**: When `scrapeResultPaths` is empty (all submitted URLs had `FAILED` scraper status), the old fallback that re-fetched ~153 top-page URLs and ran `compareHtmlContent` on them was removed. A warning is logged and comparison is skipped entirely.
+
+**Why**: `getScrapeResultPaths` only returns `COMPLETE`-status URLs. When every submitted URL fails, `scrapeResultPaths.size === 0` triggered the fallback, which then called `compareHtmlContent` against S3 paths keyed by the **current** `scrapeJobId`. Since the scraper never wrote those files, every URL resolved as an error and was written to `status.json` — creating phantom error entries for URLs that were never part of this scrape job. `getScrapeJobStats` already reads `FAILED`-status URLs from the `ScrapeUrl` DB and populates `missingPages`, so the fallback was both redundant and harmful.
+
+**Additional problem the fallback caused**: The `isSlackTriggered` guard (D-16) was the only thing preventing the fallback from running during Slack-triggered audits — a silent coupling with no invariant protection.
+
+**Commit**: `505391dc` (#2538)
+
+---
+
+## D-22 · Suggestions keyed on pathname to prevent duplicates after domain shift
+
+**Decision**: `buildKey` in `processOpportunityAndSuggestions` produces `pathname|prerender` (e.g. `/products|prerender`) instead of the full URL. `scrapedUrlsSet` is a pathname-normalizing wrapper (`{ has: url => pathnames.has(toPathname(url)) }`) rather than a plain `Set<string>`. `deployedAtEdgePathnames` stores pathnames. `guidance-handler.js` indexes `suggestionsByPathname` instead of `suggestionsByUrl`.
+
+**Why**: After the page-citability migration, `getPreferredBaseUrl()` began resolving to a different domain for some sites (e.g. `www.adobe.com` → `adobe.com`). The same page path then produced two distinct full-URL keys:
+- existing suggestion key: `https://www.adobe.com/test|prerender`
+- new audit run key: `https://adobe.com/test|prerender`
+
+`syncSuggestions` treated these as distinct entries and created a new suggestion rather than updating the existing one. Observed impact: **10,657 duplicate pairs across 100 paying customers**. Additionally, trailing-slash variants (`/products/` vs `/products`) caused the same problem — stripped as part of `toPathname`.
+
+**`toPathname` rules**: extracts `URL.pathname`, strips trailing slash on non-root paths (`/products/` → `/products`), preserves `/` for root, falls back to raw string on parse failure.
+
+**Existing duplicates**: This fix prevents new duplicates only. The 10,657 pre-existing pairs require a one-time cleanup script (per the PR description; script not yet applied as of commit `f0281666`).
+
+**Guidance handler**: `suggestionsByPathname` ensures Mystique AI summaries attach to the correct suggestion even when Mystique's response URL uses the new domain but the stored suggestion still carries the old domain.
+
+**Commit**: `f0281666` (#2397)
