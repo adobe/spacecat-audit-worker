@@ -1,3 +1,10 @@
+## [1.448.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.448.0...v1.448.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* **cdn-reports-bulk-publish:** reject folders containing '--' ([#2543](https://github.com/adobe/spacecat-audit-worker/issues/2543)) ([c75e8af](https://github.com/adobe/spacecat-audit-worker/commit/c75e8af3259ca8d71631782b9b66a89eb281a109))
+
 # [1.448.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.447.2...v1.448.0) (2026-05-21)
 
 
