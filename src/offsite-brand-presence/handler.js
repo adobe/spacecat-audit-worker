@@ -413,6 +413,7 @@ async function submitDrsJobDirect(params, spacecatOrgId, context) {
     spacecatOrgId,
   });
 
+  const start = Date.now();
   const response = await fetch(`${baseUrl}/jobs`, {
     method: 'POST',
     headers: {
@@ -421,11 +422,14 @@ async function submitDrsJobDirect(params, spacecatOrgId, context) {
     },
     body: JSON.stringify(body),
   });
+  const elapsed = Date.now() - start;
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`DRS POST /jobs failed: ${response.status} - ${errorText}`);
+    throw new Error(`DRS POST /jobs failed: ${response.status} - ${errorText} (${elapsed}ms)`);
   }
+
+  log.info(`${LOG_PREFIX} Direct DRS POST /jobs responded in ${elapsed}ms`);
 
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
