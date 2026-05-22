@@ -126,6 +126,12 @@ describe('Offsite Brand Presence Handler', () => {
 
   // ----- Helpers -----
 
+  function drsError(status, text) {
+    const err = new Error(`DRS POST /jobs failed: ${status} - ${text}`);
+    err.status = status;
+    return err;
+  }
+
   function makeBrandPresenceData(sources) {
     return {
       data: sources.map((s) => {
@@ -1071,7 +1077,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should handle DRS API returning error response', async () => {
-      mockSubmitScrapeJob.rejects(new Error('DRS POST /jobs failed: 503 - Service Unavailable'));
+      mockSubmitScrapeJob.rejects(drsError(503, 'Service Unavailable'));
 
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1086,9 +1092,9 @@ describe('Offsite Brand Presence Handler', () => {
       );
     });
 
-    it('should retry once and succeed when first attempt fails', async () => {
+    it('should retry once and succeed when first attempt fails with retriable error', async () => {
       mockSubmitScrapeJob
-        .onCall(0).rejects(new Error('transient timeout'))
+        .onCall(0).rejects(new TypeError('fetch failed'))
         .onCall(1).resolves({ job_id: 'retry-ok' })
         .onCall(2).resolves({ job_id: 'first-try-ok' })
         .onCall(3).resolves({ job_id: 'first-try-ok' });
@@ -1101,7 +1107,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/failed \(attempt 1\), retrying/),
+        sinon.match(/failed \(attempt 1\), retrying in 500ms/),
       );
     });
 
@@ -1122,194 +1128,119 @@ describe('Offsite Brand Presence Handler', () => {
 
   });
 
-  describe('DRS Scraping with spacecatOrgId (direct HTTP)', () => {
-    let fetchStub;
-
-    beforeEach(() => {
-      fetchStub = sandbox.stub(global, 'fetch');
-    });
-
-    it('should bypass drsClient and send direct HTTP requests when spacecatOrgId is provided', async () => {
-      fetchStub.resolves({
-        ok: true,
-        headers: { get: () => 'application/json' },
-        json: async () => ({ job_id: 'direct-job-123' }),
-      });
-
+  describe('DRS Scraping with spacecatOrgId', () => {
+    it('should pass spacecatOrgId through to submitScrapeJob when present in messageData', async () => {
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       const auditContext = { messageData: { spacecatOrgId: 'org-abc-123' } };
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
-      expect(mockSubmitScrapeJob).to.not.have.been.called;
-      expect(fetchStub).to.have.been.called;
-
-      const fetchCalls = fetchStub.getCalls();
-      for (const call of fetchCalls) {
-        expect(call.args[0]).to.equal('https://drs.api.example.com/jobs');
-        const options = call.args[1];
-        expect(options.method).to.equal('POST');
-        expect(options.headers['x-api-key']).to.equal('test-drs-key');
-        const body = JSON.parse(options.body);
-        expect(body.spacecat_org_id).to.equal('org-abc-123');
-        expect(body.provider_id).to.equal('brightdata');
-        expect(body.priority).to.equal('HIGH');
-        expect(body.parameters.site_id).to.equal(SITE_ID);
-      }
-
       expect(result.auditResult.drsJobs).to.have.lengthOf(2);
-      expect(result.auditResult.drsJobs[0].status).to.equal('success');
-      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('direct-job-123');
-    });
-
-    it('should include days_back in direct HTTP body for reddit_comments', async () => {
-      fetchStub.resolves({
-        ok: true,
-        headers: { get: () => 'application/json' },
-        json: async () => ({ job_id: 'direct-reddit-job' }),
-      });
-
-      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
-
-      const auditContext = { messageData: { spacecatOrgId: 'org-reddit-test' } };
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      const commentsCall = fetchStub.getCalls().find((call) => {
-        const body = JSON.parse(call.args[1].body);
-        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_COMMENTS;
-      });
-      expect(commentsCall).to.exist;
-      const commentsBody = JSON.parse(commentsCall.args[1].body);
-      expect(commentsBody.parameters.days_back).to.equal(REDDIT_COMMENTS_DAYS_BACK);
-      expect(commentsBody.spacecat_org_id).to.equal('org-reddit-test');
-
-      const postsCall = fetchStub.getCalls().find((call) => {
-        const body = JSON.parse(call.args[1].body);
-        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_POSTS;
-      });
-      expect(postsCall).to.exist;
-      const postsBody = JSON.parse(postsCall.args[1].body);
-      expect(postsBody.parameters).to.not.have.property('days_back');
-    });
-
-    it('should handle direct HTTP error responses gracefully', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 500,
-        text: async () => 'Internal Server Error',
-      });
-
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-
-      const auditContext = { messageData: { spacecatOrgId: 'org-fail-test' } };
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
-      for (const job of result.auditResult.drsJobs) {
-        expect(job.status).to.equal('error');
-        expect(job.error).to.include('500');
+      for (const call of mockSubmitScrapeJob.getCalls()) {
+        expect(call.args[0].spacecatOrgId).to.equal('org-abc-123');
       }
     });
 
-    it('should skip direct DRS when DRS_API_URL is missing', async () => {
-      delete env.DRS_API_URL;
-
+    it('should not include spacecatOrgId in submitScrapeJob params when absent', async () => {
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
-      const auditContext = { messageData: { spacecatOrgId: 'org-no-url' } };
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.drsJobs).to.deep.equal([]);
-      expect(fetchStub).to.not.have.been.called;
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
-      );
-    });
-
-    it('should skip direct DRS when DRS_API_KEY is missing', async () => {
-      delete env.DRS_API_KEY;
-
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-
-      const auditContext = { messageData: { spacecatOrgId: 'org-no-key' } };
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      expect(result.auditResult.drsJobs).to.deep.equal([]);
-      expect(fetchStub).to.not.have.been.called;
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
-      );
-    });
-
-    it('should strip trailing slashes from DRS_API_URL in direct requests', async () => {
-      env.DRS_API_URL = 'https://drs.api.example.com///';
-      fetchStub.resolves({
-        ok: true,
-        headers: { get: () => 'application/json' },
-        json: async () => ({ job_id: 'slash-job' }),
-      });
-
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-
-      const auditContext = { messageData: { spacecatOrgId: 'org-slash-test' } };
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      const url = fetchStub.firstCall.args[0];
-      expect(url).to.equal('https://drs.api.example.com/jobs');
-    });
-
-    it('should handle non-JSON response from direct DRS call', async () => {
-      fetchStub.resolves({
-        ok: true,
-        headers: { get: () => null },
-      });
-
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-
-      const auditContext = { messageData: { spacecatOrgId: 'org-text-resp' } };
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
-      for (const job of result.auditResult.drsJobs) {
-        expect(job.status).to.equal('success');
-        expect(job.response).to.be.null;
+      for (const call of mockSubmitScrapeJob.getCalls()) {
+        expect(call.args[0]).to.not.have.property('spacecatOrgId');
       }
     });
 
-    it('should use drsClient when spacecatOrgId is not provided', async () => {
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, { slackContext: {} });
-
-      expect(mockSubmitScrapeJob).to.have.been.called;
-      expect(fetchStub).to.not.have.been.called;
-    });
-
-    it('should send direct HTTP for all domain types when spacecatOrgId is provided', async () => {
-      fetchStub.resolves({
-        ok: true,
-        headers: { get: () => 'application/json' },
-        json: async () => ({ job_id: 'multi-domain-job' }),
-      });
-
+    it('should pass spacecatOrgId for all domain types', async () => {
       const sources = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://en.wikipedia.org/wiki/Adobe;https://thirdparty.com/page';
       stubBrandPresenceData([sources]);
 
       const auditContext = { messageData: { spacecatOrgId: 'org-multi' } };
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
-      expect(mockSubmitScrapeJob).to.not.have.been.called;
-
       expect(result.auditResult.drsJobs).to.have.lengthOf(6);
-      for (const job of result.auditResult.drsJobs) {
-        expect(job.status).to.equal('success');
+      for (const call of mockSubmitScrapeJob.getCalls()) {
+        expect(call.args[0].spacecatOrgId).to.equal('org-multi');
       }
+    });
+  });
 
-      for (const call of fetchStub.getCalls()) {
-        const body = JSON.parse(call.args[1].body);
-        expect(body.spacecat_org_id).to.equal('org-multi');
+  describe('Selective Retry', () => {
+    it('should retry on 502 and succeed on second attempt', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(drsError(502, 'Bad Gateway'))
+        .onCall(1).resolves({ job_id: 'retry-ok' })
+        .onCall(2).resolves({ job_id: 'ok' })
+        .onCall(3).resolves({ job_id: 'ok' });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
+      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+    });
+
+    it('should not retry on 400 and fail immediately', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(drsError(400, 'Bad Request'))
+        .onCall(1).resolves({ job_id: 'ok' })
+        .onCall(2).resolves({ job_id: 'ok' });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs[0].status).to.equal('error');
+      expect(result.auditResult.drsJobs[0].error).to.include('400');
+      expect(result.auditResult.drsJobs[1].status).to.equal('success');
+      expect(log.warn).to.not.have.been.calledWith(sinon.match(/retrying/));
+    });
+
+    it('should retry on network error (TypeError) and succeed', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(new TypeError('fetch failed'))
+        .onCall(1).resolves({ job_id: 'net-retry-ok' })
+        .onCall(2).resolves({ job_id: 'ok' })
+        .onCall(3).resolves({ job_id: 'ok' });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('net-retry-ok');
+      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+    });
+
+    it('should record error when both attempts fail with 503', async () => {
+      mockSubmitScrapeJob.rejects(drsError(503, 'Service Unavailable'));
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('error');
+        expect(job.error).to.include('503');
       }
+      expect(log.error).to.have.been.calledWith(sinon.match(/DRS job failed.*after retry/));
+    });
+
+    it('should not retry on 422 and fail immediately', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(drsError(422, 'Unprocessable Entity'))
+        .onCall(1).resolves({ job_id: 'ok' })
+        .onCall(2).resolves({ job_id: 'ok' });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs[0].status).to.equal('error');
+      expect(result.auditResult.drsJobs[0].error).to.include('422');
+      expect(log.warn).to.not.have.been.calledWith(sinon.match(/retrying/));
     });
   });
 
@@ -1351,10 +1282,8 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should include a failed jobs section in the Slack message when some DRS jobs fail', async () => {
       mockSubmitScrapeJob
-        .onCall(0).rejects(new Error('DRS timeout'))
-        .onCall(1).rejects(new Error('DRS timeout'))
-        .onCall(2).resolves({ job_id: 'mock-job' })
-        .onCall(3).resolves({ job_id: 'mock-job' });
+        .onCall(0).rejects(drsError(400, 'Bad Request'))
+        .onCall(1).resolves({ job_id: 'mock-job' });
 
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1364,7 +1293,7 @@ describe('Offsite Brand Presence Handler', () => {
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include(':x:');
       expect(callText).to.include('Failed (1)');
-      expect(callText).to.include('DRS timeout');
+      expect(callText).to.include('400');
       expect(callText).to.include('youtube.com');
       expect(callText).to.include('mock-job');
     });
