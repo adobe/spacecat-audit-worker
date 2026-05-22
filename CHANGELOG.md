@@ -1,3 +1,10 @@
+# [1.450.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.3...v1.450.0) (2026-05-22)
+
+
+### Features
+
+* **paid-keyword-optimizer:** pass resolvedPageHeading and pageTopics through to opportunity.data ([#2551](https://github.com/adobe/spacecat-audit-worker/issues/2551)) ([8b91b52](https://github.com/adobe/spacecat-audit-worker/commit/8b91b52eaa98d6287fac4034a1c600477328122a))
+
 ## [1.449.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.2...v1.449.3) (2026-05-22)
 
 
