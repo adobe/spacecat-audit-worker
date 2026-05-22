@@ -216,7 +216,7 @@ describe('LLM Error Pages Handler', function () {
         consolidateErrorsByUrl: (errors) => errors,
         sortErrorsByTrafficVolume: (errors) => errors,
         toPathOnly: (url) => url,
-        SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Hits', 'TTFB', 'Country', 'URL', 'Product', 'Category', 'Suggested', 'Rationale', 'Confidence'],
+        SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Hits', 'TTFB', 'Country', 'URL', 'Category', 'Product', 'Suggested', 'Rationale', 'Confidence'],
       },
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: mockCreateLLMOSharepointClient,
@@ -557,7 +557,7 @@ describe('LLM Error Pages Handler', function () {
           consolidateErrorsByUrl: (errors) => errors,
           sortErrorsByTrafficVolume: (errors) => errors,
           toPathOnly: (url) => url,
-          SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
+          SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Category', 'Product', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
         },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: mockCreateLLMOSharepointClient,
