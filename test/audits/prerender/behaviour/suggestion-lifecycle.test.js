@@ -449,6 +449,74 @@ describe('Prerender behaviour — suggestion lifecycle (Step 3)', () => {
     expect(markedOutdated).to.deep.include(noPreRenderSuggestion);
   });
 
+  it('OUTDATED domain-wide suggestion with edgeDeployed set → preserved in-place (shouldPreserveDomainWideSuggestion returns true)', async () => {
+    // ACTIVE_STATUSES does not include OUTDATED, but !!data.edgeDeployed=true satisfies the
+    // second condition → shouldPreserveDomainWideSuggestion returns true.
+    //
+    // "Preserved" means the existing domain-wide is excluded from allSuggestions entirely:
+    // domainWideSuggestion stays null → NOT passed to syncSuggestions as new data.
+    // Effect: setData is NOT called (left untouched), addSuggestions is NOT called with a
+    // new domain-wide candidate, and bulkUpdateStatus is NOT called for the domain-wide.
+    const siteId = 'site-outdated-dw-edge';
+    const scrapeJobId = 'job-outdated-dw-edge';
+    const url = 'https://example.com/page-1';
+
+    const existingDomainWide = buildSuggestion(sandbox, {
+      id: 'sug-dw-outdated-edge',
+      status: 'OUTDATED',
+      data: {
+        url: 'https://example.com/* (All Domain URLs)',
+        isDomainWide: true,
+        edgeDeployed: new Date().toISOString(), // truthy → shouldPreserve returns true
+        wordCountBefore: 100,
+        wordCountAfter: 200,
+      },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      siteId,
+      suggestions: [existingDomainWide],
+    });
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox),
+      dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
+    });
+
+    await processOpportunityAndSuggestions('https://example.com', {
+      siteId,
+      id: 'audit-id',
+      auditId: 'audit-id',
+      auditResult: {
+        urlsNeedingPrerender: 1,
+        results: [{
+          url,
+          needsPrerender: true,
+          contentGainRatio: 8.0,
+          wordCountBefore: 10,
+          wordCountAfter: 80,
+          citabilityScore: 1,
+          isDeployedAtEdge: false,
+        }],
+      },
+      scrapeJobId,
+      scrapedUrlsSet: new Set([url]),
+    }, ctx, false);
+
+    // Preserved = left untouched: setData must NOT be called on the existing domain-wide
+    expect(existingDomainWide.setData).to.not.have.been.called;
+
+    // No new domain-wide suggestion added via addSuggestions (no duplication)
+    const domainWideAdded = opportunity.addSuggestions.called
+      ? opportunity.addSuggestions.args.flat(2).filter((s) => s?.data?.isDomainWide)
+      : [];
+    expect(domainWideAdded).to.have.length(0);
+
+    // Handler logs the preservation decision
+    expect(ctx.log.info).to.have.been.calledWithMatch(/existing one will be preserved/);
+  });
+
   it('detectWrongEdgeDeployedStatus runs unconditionally even when isDomainBlocked=true', async () => {
     // This diagnostic function fires before the domainBlocked short-circuit so
     // invariant violations are always surfaced regardless of scrape state.

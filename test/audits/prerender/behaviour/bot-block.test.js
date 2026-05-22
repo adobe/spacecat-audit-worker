@@ -235,5 +235,44 @@ describe('Prerender behaviour — bot-block', () => {
       const written = captureStatusWrite(ctx.s3Client);
       expect(written).to.have.property('scrapeForbidden', false);
     });
+
+    it('ratio=0.5 exactly (2 of 4 URLs are 403) → rate gate passes, detectBotBlocker called, block written', async () => {
+      const siteId = 'site-ratio-boundary';
+      const scrapeJobId = 'job-ratio-boundary';
+      detectBotBlockerStub.resolves({ crawlable: false, confidence: 0.99, type: 'cloudflare' });
+      const urls = Array.from({ length: 4 }, (_, i) => `https://example.com/page-${i}`);
+      const s3Map = {
+        ...buildUrlS3Content(scrapeJobId, urls[0], { scrapeJson: { error: { statusCode: 403 } } }),
+        ...buildUrlS3Content(scrapeJobId, urls[1], { scrapeJson: { error: { statusCode: 403 } } }),
+        ...buildUrlS3Content(scrapeJobId, urls[2]),
+        ...buildUrlS3Content(scrapeJobId, urls[3]),
+      };
+      const ctx = buildContext(sandbox, {
+        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+        s3Client: buildS3Client(sandbox, s3Map),
+        dataAccess: buildDataAccess(sandbox, { scrapeUrls: urls }),
+        scrapeResultPaths: new Map(urls.map((u) => [u, {}])),
+        auditContext: { scrapeJobId },
+      });
+
+      await processContentAndGenerateOpportunities(ctx);
+
+      expect(detectBotBlockerStub).to.have.been.calledOnce;
+      const written = captureStatusWrite(ctx.s3Client);
+      expect(written).to.have.property('scrapeForbidden', true);
+    });
+
+    it('ratio≥0.5 + confidence≥0.99 but CDN type unknown → isKnownBotBlockerResult=false, block NOT written', async () => {
+      const siteId = 'site-unknown-cdn';
+      // 'fingerprintjs' is not in KNOWN_BOT_BLOCKER_TYPES → isKnownBotBlockerResult returns false
+      detectBotBlockerStub.resolves({ crawlable: false, confidence: 0.99, type: 'fingerprintjs' });
+
+      const ctx = buildReactiveCtx(siteId);
+      await processContentAndGenerateOpportunities(ctx);
+
+      expect(detectBotBlockerStub).to.have.been.calledOnce;
+      const written = captureStatusWrite(ctx.s3Client);
+      expect(written).to.have.property('scrapeForbidden', false);
+    });
   });
 });

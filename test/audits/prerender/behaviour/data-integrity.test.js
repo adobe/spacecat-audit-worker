@@ -37,6 +37,7 @@ import {
   buildStatus,
   captureStatusWrite,
   scrapeKeys,
+  HTML_SAME,
 } from './helpers.js';
 
 use(sinonChai);
@@ -181,6 +182,37 @@ describe('Prerender behaviour — data integrity (Step 3)', () => {
     expect(written).to.have.property('urlsSubmittedForScraping').that.is.a('number');
   });
 
+  it('scrape.json absent from S3 → comparison still runs, isDeployedAtEdge defaults to false', async () => {
+    // When scrape.json is missing (NoSuchKey), compareHtmlContent falls back gracefully:
+    // isDeployedAtEdge defaults to false (URL stays in scrapedUrlsSet), and the comparison
+    // still runs against the HTML files — the URL must appear in status.json pages.
+    const siteId = 'site-no-scrape-json';
+    const scrapeJobId = 'job-no-scrape-json';
+    const url = 'https://example.com/page-1';
+    const keys = scrapeKeys(scrapeJobId, url);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox, {
+        [statusKey(siteId)]: buildStatus(),
+        [keys.serverHtml]: HTML_SAME,
+        [keys.clientHtml]: HTML_SAME,
+        // keys.scrapeJson intentionally absent → NoSuchKey
+      }),
+      dataAccess: buildDataAccess(sandbox, { scrapeUrls: [url] }),
+      scrapeResultPaths: new Map([[url, {}]]),
+      auditContext: { scrapeJobId },
+    });
+
+    const result = await processContentAndGenerateOpportunities(ctx);
+
+    expect(result).to.have.property('status', 'complete');
+    const written = captureStatusWrite(ctx.s3Client);
+    const page = written?.pages?.find((p) => p.url === url);
+    expect(page, 'URL must appear in status.json pages even without scrape.json').to.not.be.undefined;
+    expect(page.isDeployedAtEdge).to.equal(false);
+  });
+
   it('S3 path contract: handler reads HTML from canonical scrapeJobId + sanitized-pathname keys', async () => {
     // Verifies the key construction: prerender/scrapes/{scrapeJobId}/{sanitizedPath}/{file}
     // Uses a URL with path segments that exercise the sanitization rules (dots, underscores, slashes)
@@ -253,6 +285,37 @@ describe('Prerender behaviour — PageCitability writes (Step 3)', () => {
     const [createArgs] = ctx.dataAccess.PageCitability.create.firstCall.args;
     expect(createArgs).to.have.property('url', 'https://example.com/ok');
     expect(createArgs).to.have.property('siteId', siteId);
+  });
+
+  it('writeToCitabilityRecords: 11 successful URLs are all written (WRITE_BATCH_SIZE=10 → two batches)', async () => {
+    // WRITE_BATCH_SIZE=10; 11 URLs means two Promise.all batches (10 + 1).
+    // All 11 creates must complete; the log entry must report 11/11.
+    const siteId = 'site-batch-11';
+
+    const dataAccess = buildDataAccess(sandbox);
+    dataAccess.PageCitability.allBySiteId = sandbox.stub().resolves([]);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+    });
+
+    const comparisonResults = Array.from({ length: 11 }, (_, i) => ({
+      url: `https://example.com/page-${i}`,
+      error: false,
+      needsPrerender: false,
+      citabilityScore: 0.9,
+      contentGainRatio: 1.0,
+      wordDifference: 0,
+      wordCountBefore: 50,
+      wordCountAfter: 50,
+      isDeployedAtEdge: false,
+    }));
+
+    await writeToCitabilityRecords(comparisonResults, siteId, ctx);
+
+    expect(ctx.dataAccess.PageCitability.create).to.have.callCount(11);
+    expect(ctx.log.info).to.have.been.calledWithMatch(/11\/11/);
   });
 
   it('errored URLs are NOT written to PageCitability', async () => {

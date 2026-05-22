@@ -104,6 +104,91 @@ describe('Prerender behaviour — error resilience (Step 3)', () => {
     expect(written).to.have.property('urlsSubmittedForScraping').that.is.a('number');
   });
 
+  it('S3 PutObject failure on status.json upload → log.error called, audit still returns complete', async () => {
+    // uploadStatusSummaryToS3 catches PutObject errors internally and does not re-throw.
+    // The Lambda must still return { status: 'complete' } so SQS does not retry.
+    const siteId = 'site-s3-put-fails';
+    const scrapeJobId = 'job-put-fails';
+    const url = 'https://example.com/page-1';
+
+    const keyMap = {
+      [statusKey(siteId)]: buildStatus(),
+      ...buildUrlS3Content(scrapeJobId, url),
+    };
+    const s3Client = {
+      send: sandbox.stub().callsFake((cmd) => {
+        if (cmd.constructor.name === 'PutObjectCommand') {
+          return Promise.reject(new Error('S3 bucket write permission denied'));
+        }
+        if (cmd.constructor.name === 'GetObjectCommand') {
+          const { Key } = cmd.input;
+          if (Object.hasOwn(keyMap, Key)) {
+            const value = keyMap[Key];
+            const isString = typeof value === 'string';
+            const body = isString ? value : JSON.stringify(value);
+            return Promise.resolve({
+              Body: { transformToString: () => Promise.resolve(body) },
+              ...(isString ? {} : { ContentType: 'application/json' }),
+            });
+          }
+          const err = new Error('NoSuchKey'); err.name = 'NoSuchKey';
+          return Promise.reject(err);
+        }
+        return Promise.reject(new Error(`Unexpected: ${cmd.constructor.name}`));
+      }),
+    };
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      s3Client,
+      dataAccess: buildDataAccess(sandbox, { scrapeUrls: [url] }),
+      scrapeResultPaths: new Map([[url, {}]]),
+      auditContext: { scrapeJobId },
+    });
+
+    const result = await processContentAndGenerateOpportunities(ctx);
+
+    // Audit must complete even though S3 write failed
+    expect(result).to.have.property('status', 'complete');
+    // The error is logged (not swallowed silently)
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Failed to upload status summary to S3/);
+  });
+
+  it('uncaught exception in step 3 outer try → D-12 catch writes lastAuditSuccess=false to status.json', async () => {
+    // detectWrongEdgeDeployedStatus (before outer try) = call 0 on allBySiteIdAndStatus → resolves []
+    // Branch C's allBySiteIdAndStatus (inside outer try) = call 1 → rejects → triggers D-12 outer catch
+    // D-12 outer catch: logs "Audit failed", calls uploadStatusSummaryToS3 with lastAuditSuccess=false
+    const siteId = 'site-d12-catch';
+    const scrapeJobId = 'job-d12';
+    const url = 'https://example.com/page-1';
+
+    const dataAccess = buildDataAccess(sandbox, { scrapeUrls: [url] });
+    dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub()
+      .resolves([])                                              // call 0: detectWrongEdgeDeployedStatus
+      .onCall(1).rejects(new Error('DB connection lost'));       // call 1: Branch C inside outer try
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      s3Client: buildS3Client(sandbox, {
+        [statusKey(siteId)]: buildStatus(),
+        ...buildUrlS3Content(scrapeJobId, url), // identical HTML → no prerender → Branch C
+      }),
+      dataAccess,
+      scrapeResultPaths: new Map([[url, {}]]),
+      auditContext: { scrapeJobId },
+    });
+
+    const result = await processContentAndGenerateOpportunities(ctx);
+
+    // D-12: outer catch must log the failure
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Audit failed/);
+    // D-12: error status.json is written with lastAuditSuccess=false
+    const written = captureStatusWrite(ctx.s3Client);
+    expect(written).to.have.property('lastAuditSuccess', false);
+    // The result signals failure, not a successful completion
+    expect(result).to.have.property('error');
+  });
+
   it('Opportunity.create rejects (Branch A) → handler catches error, logs it, does not crash Lambda', async () => {
     // When prerender URLs ARE found (Branch A: needsPrerender=true) but Opportunity.create
     // rejects, convertToOpportunity catches the error internally. The Lambda must not

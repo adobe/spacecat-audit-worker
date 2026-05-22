@@ -32,7 +32,10 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { processContentAndGenerateOpportunities } from '../../../../src/prerender/handler.js';
+import {
+  processContentAndGenerateOpportunities,
+  handleAiOnlyMode,
+} from '../../../../src/prerender/handler.js';
 import {
   buildContext,
   buildSite,
@@ -155,6 +158,104 @@ describe('Prerender behaviour — Mystique round-trip (outbound)', () => {
 
     // No SQS send — Branch C does not dispatch to Mystique
     expect(ctx.sqs.sendMessage).to.not.have.been.called;
+  });
+});
+
+// ─── OUTBOUND: ai-only filtering ─────────────────────────────────────────────
+
+describe('Prerender behaviour — Mystique outbound (ai-only filtering)', () => {
+  let sandbox;
+
+  beforeEach(() => { sandbox = sinon.createSandbox(); });
+  afterEach(() => { sandbox.restore(); });
+
+  it('ai-only: FIXED suggestion excluded from Mystique SQS message', async () => {
+    // In ai-only mode, sendPrerenderGuidanceRequestToMystique derives candidates from DB
+    // suggestions and skips any with status=FIXED (D-07). The NEW suggestion must still appear.
+    const siteId = 'site-ai-fixed';
+    const oppId = 'opp-ai-fixed';
+    const scrapeJobId = 'job-ai-fixed';
+    const fixedUrl = 'https://example.com/fixed-page';
+    const newUrl = 'https://example.com/new-page';
+
+    const fixedSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-fixed',
+      status: 'FIXED',
+      data: { url: fixedUrl, scrapeJobId },
+    });
+    const newSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-new',
+      status: 'NEW',
+      data: { url: newUrl, scrapeJobId },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId,
+      siteId,
+      suggestions: [fixedSuggestion, newSuggestion],
+    });
+
+    const dataAccess = buildDataAccess(sandbox, { opportunities: [opportunity] });
+    // handleAiOnlyMode uses findById when opportunityId is provided in data
+    dataAccess.Opportunity.findById = sandbox.stub().resolves(opportunity);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+      data: { opportunityId: oppId, scrapeJobId },
+    });
+
+    await handleAiOnlyMode(ctx);
+
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const [, message] = ctx.sqs.sendMessage.firstCall.args;
+    const suggestionUrls = message.data.suggestions.map((s) => s.url);
+    expect(suggestionUrls).to.not.include(fixedUrl);
+    expect(suggestionUrls).to.include(newUrl);
+  });
+
+  it('ai-only: edgeDeployed suggestion excluded from Mystique SQS message', async () => {
+    // In ai-only mode, suggestions with data.edgeDeployed set are skipped (D-07).
+    // The plain NEW suggestion without edgeDeployed must still be sent.
+    const siteId = 'site-ai-edge';
+    const oppId = 'opp-ai-edge';
+    const scrapeJobId = 'job-ai-edge';
+    const edgeUrl = 'https://example.com/edge-page';
+    const newUrl = 'https://example.com/new-page';
+
+    const edgeSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-edge',
+      status: 'NEW',
+      data: { url: edgeUrl, scrapeJobId, edgeDeployed: new Date().toISOString() },
+    });
+    const newSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-new',
+      status: 'NEW',
+      data: { url: newUrl, scrapeJobId },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId,
+      siteId,
+      suggestions: [edgeSuggestion, newSuggestion],
+    });
+
+    const dataAccess = buildDataAccess(sandbox, { opportunities: [opportunity] });
+    dataAccess.Opportunity.findById = sandbox.stub().resolves(opportunity);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+      data: { opportunityId: oppId, scrapeJobId },
+    });
+
+    await handleAiOnlyMode(ctx);
+
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const [, message] = ctx.sqs.sendMessage.firstCall.args;
+    const suggestionUrls = message.data.suggestions.map((s) => s.url);
+    expect(suggestionUrls).to.not.include(edgeUrl);
+    expect(suggestionUrls).to.include(newUrl);
   });
 });
 
