@@ -256,6 +256,8 @@ These invariants ensure data consistency across the audit system:
 
 ## Testing Strategy & Entry Points
 
+→ See [test/audits/prerender/behaviour/README.md](../../test/audits/prerender/behaviour/README.md) for the full test index (86 tests, 12 files).
+
 ### Behavioral Contract Tests
 These 10 test cases verify observable behavior. Any change to the system must keep all 10 green:
 
