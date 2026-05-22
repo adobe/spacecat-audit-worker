@@ -30,7 +30,6 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 | [api-service-deploy-rollback.md](.claude/api-service-deploy-rollback.md) | `POST /suggestions/edge-deploy` and `POST /suggestions/edge-rollback` routes, what fields they write/clear on Suggestion.data, access control, geo-experiment mode |
 | [decision-log.md](.claude/decision-log.md) | WHY non-obvious invariants exist; full evolution of design decisions with commit refs; supersession history |
 | [coding-guidelines.md](.claude/coding-guidelines.md) | PR checklist: invariant rules, KISS/DRY/YAGNI/SOLID, TDD for refactoring, N+1 prevention, locked-contract checklist, log levels, coverage, doc update rules |
-| [refactoring-proposal.md](.claude/refactoring-proposal.md) | Proposed restructuring of handler.js: step 2 three-path cleanup, step 3 fallback replacement with getScrapeJobStats, module extraction plan, TDD entry points |
 | [handler-reference.md](.claude/handler-reference.md) | **Test writing reference** — S3 key format + examples, all constants, step execution order, error handling table (caught vs propagated), stubs needed per step, helpers quick-reference. Read this before writing behavioural tests instead of re-reading handler.js. |
 
 ---
