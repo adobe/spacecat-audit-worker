@@ -214,6 +214,93 @@ describe('Prerender behaviour — Mystique outbound (ai-only filtering)', () => 
     expect(suggestionUrls).to.include(newUrl);
   });
 
+  it('ai-only: suggestion with originalHtmlKey but no scrapeJobId → scrapeJobId derived from S3 path (fallback path 2)', async () => {
+    // D-02 fallback chain: data.scrapeJobId → extract from data.originalHtmlKey path[2] → null
+    // Path 2: scrapeJobId absent on data, but originalHtmlKey = 'prerender/scrapes/{jobId}/...'
+    // → effectiveScrapeJobId derived as parts[2], log.debug emitted, suggestion included in SQS.
+    const siteId = 'site-ai-fallback-path2';
+    const oppId = 'opp-ai-fallback-path2';
+    const derivedJobId = 'derived-job-from-html-key';
+    const url = 'https://example.com/needs-ai';
+
+    const suggestion = buildSuggestion(sandbox, {
+      id: 'sug-fallback',
+      status: 'NEW',
+      data: {
+        url,
+        // no scrapeJobId — forces fallback to originalHtmlKey extraction
+        originalHtmlKey: `prerender/scrapes/${derivedJobId}/needs-ai/server-side.html`,
+      },
+    });
+
+    const opportunity = buildOpportunity(sandbox, { id: oppId, siteId, suggestions: [suggestion] });
+    const dataAccess = buildDataAccess(sandbox, { opportunities: [opportunity] });
+    dataAccess.Opportunity.findById = sandbox.stub().resolves(opportunity);
+
+    // Provide an audit-level scrapeJobId so handleAiOnlyMode doesn't fail on the status.json check
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+      data: { opportunityId: oppId, scrapeJobId: 'audit-level-job' },
+    });
+
+    await handleAiOnlyMode(ctx);
+
+    // Suggestion must be included in SQS despite missing data.scrapeJobId
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const [, message] = ctx.sqs.sendMessage.firstCall.args;
+    const suggestionUrls = message.data.suggestions.map((s) => s.url);
+    expect(suggestionUrls).to.include(url);
+
+    // The derivation must be logged at debug level
+    expect(ctx.log.debug).to.have.been.calledWithMatch(/derived from originalHtmlKey/);
+  });
+
+  it('ai-only: suggestion with neither scrapeJobId nor originalHtmlKey → skipped with warn (fallback path 3)', async () => {
+    // D-02 fallback chain: when both data.scrapeJobId and data.originalHtmlKey are absent,
+    // the suggestion is skipped and log.warn emitted. Other valid suggestions still go to Mystique.
+    const siteId = 'site-ai-fallback-path3';
+    const oppId = 'opp-ai-fallback-path3';
+    const scrapeJobId = 'job-path3';
+    const skippedUrl = 'https://example.com/no-job-id';
+    const validUrl = 'https://example.com/valid';
+
+    const skippedSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-no-job',
+      status: 'NEW',
+      data: { url: skippedUrl /* no scrapeJobId, no originalHtmlKey */ },
+    });
+    const validSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-valid',
+      status: 'NEW',
+      data: { url: validUrl, scrapeJobId },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId, siteId, suggestions: [skippedSuggestion, validSuggestion],
+    });
+    const dataAccess = buildDataAccess(sandbox, { opportunities: [opportunity] });
+    dataAccess.Opportunity.findById = sandbox.stub().resolves(opportunity);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+      data: { opportunityId: oppId, scrapeJobId },
+    });
+
+    await handleAiOnlyMode(ctx);
+
+    // Valid suggestion still sent; skipped suggestion absent
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const [, message] = ctx.sqs.sendMessage.firstCall.args;
+    const suggestionUrls = message.data.suggestions.map((s) => s.url);
+    expect(suggestionUrls).to.include(validUrl);
+    expect(suggestionUrls).to.not.include(skippedUrl);
+
+    // The skip must be observable via warn log
+    expect(ctx.log.warn).to.have.been.calledWithMatch(/no scrapeJobId and no originalHtmlKey/);
+  });
+
   it('ai-only: edgeDeployed suggestion excluded from Mystique SQS message', async () => {
     // In ai-only mode, suggestions with data.edgeDeployed set are skipped (D-07).
     // The plain NEW suggestion without edgeDeployed must still be sent.

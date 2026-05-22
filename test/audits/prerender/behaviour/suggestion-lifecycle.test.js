@@ -623,4 +623,60 @@ describe('Prerender behaviour — coveredByDomainWide marking (Step 3)', () => {
     );
     expect(coveredSaveCall, 'saveMany must be called with the covered suggestion').to.not.be.undefined;
   });
+
+  it('D-04: OUTDATED domain-wide with edgeDeployed → getDomainWideSuggestionDeployedAtEdge returns null, allByOpportunityIdAndStatus NOT called', async () => {
+    // getDomainWideSuggestionDeployedAtEdge only finds status===NEW domain-wide suggestions.
+    // When the only domain-wide has status=OUTDATED (even with edgeDeployed set),
+    // it returns null → markNewSuggestionsAsCovered returns early without querying the DB.
+    // This is the fix for the wkkellogg.com production bug where an OUTDATED domain-wide
+    // incorrectly triggered markDeployedUrlSuggestionsAsCovered.
+    const siteId = 'site-d04-outdated';
+    const scrapeJobId = 'job-d04';
+    const prerenderUrl = 'https://example.com/needs-prerender';
+    const deployedUrl = 'https://example.com/deployed-page';
+
+    // OUTDATED domain-wide with edgeDeployed — must NOT trigger markDeployedUrlSuggestionsAsCovered
+    const outdatedDomainWide = buildSuggestion(sandbox, {
+      id: 'sug-dw-outdated-d04',
+      status: 'OUTDATED',
+      data: {
+        url: 'https://example.com/* (All Domain URLs)',
+        isDomainWide: true,
+        edgeDeployed: new Date().toISOString(),
+      },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      siteId,
+      suggestions: [outdatedDomainWide],
+    });
+
+    const dataAccess = buildDataAccess(sandbox, {
+      opportunities: [opportunity],
+      scrapeUrls: [prerenderUrl, deployedUrl],
+    });
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox, {
+        [statusKey(siteId)]: buildStatus(),
+        ...buildUrlS3Content(scrapeJobId, prerenderUrl, {
+          serverHtml: HTML_SERVER_SPARSE,
+          clientHtml: HTML_CLIENT_NEEDS_PRERENDER,
+        }),
+        ...buildUrlS3Content(scrapeJobId, deployedUrl, {
+          scrapeJson: { isDeployedAtEdge: true },
+        }),
+      }),
+      dataAccess,
+      scrapeResultPaths: new Map([[prerenderUrl, {}], [deployedUrl, {}]]),
+      auditContext: { scrapeJobId },
+    });
+
+    await processContentAndGenerateOpportunities(ctx);
+
+    // getDomainWideSuggestionDeployedAtEdge filtered out the OUTDATED domain-wide →
+    // markDeployedUrlSuggestionsAsCovered was never reached → no DB query for NEW suggestions
+    expect(dataAccess.Suggestion.allByOpportunityIdAndStatus).to.not.have.been.called;
+  });
 });
