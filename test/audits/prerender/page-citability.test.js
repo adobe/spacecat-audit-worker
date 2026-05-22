@@ -18,7 +18,7 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
-describe('citability-writer', () => {
+describe('page-citability', () => {
   let sandbox;
   let toPathnameStub;
   let allBySiteIdStub;
@@ -29,7 +29,7 @@ describe('citability-writer', () => {
     sandbox = sinon.createSandbox();
     toPathnameStub = sandbox.stub();
 
-    mod = await esmock('../../../src/prerender/citability-writer.js', {
+    mod = await esmock('../../../src/prerender/page-citability.js', {
       '../../../src/prerender/utils/utils.js': { toPathname: toPathnameStub },
     });
   });

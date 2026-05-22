@@ -8,8 +8,8 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 
 **Naming**: The internal code name is `prerender`. The user-facing opportunity name shown in the UI is **"Recover content visibility"** (abbreviated **RCV**). The three terms — `prerender`, `Recover content visibility`, and `RCV` — are used interchangeably across code, docs, Jira tickets, and team conversations.
 
-**Handler Location**: `src/prerender/handler.js` (1,875 lines, 8 exported functions)  
-**Folder**: `src/prerender/` (7 files, 2,415 lines total)
+**Handler Location**: `src/prerender/handler.js` (237 lines, 3 exported step functions)  
+**Folder**: `src/prerender/` (15 source files + `utils/` subfolder)
 
 ---
 
@@ -30,7 +30,6 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 | [api-service-deploy-rollback.md](.claude/api-service-deploy-rollback.md) | `POST /suggestions/edge-deploy` and `POST /suggestions/edge-rollback` routes, what fields they write/clear on Suggestion.data, access control, geo-experiment mode |
 | [decision-log.md](.claude/decision-log.md) | WHY non-obvious invariants exist; full evolution of design decisions with commit refs; supersession history |
 | [coding-guidelines.md](.claude/coding-guidelines.md) | PR checklist: invariant rules, KISS/DRY/YAGNI/SOLID, TDD for refactoring, N+1 prevention, locked-contract checklist, log levels, coverage, doc update rules |
-| [refactoring-proposal.md](.claude/refactoring-proposal.md) | Proposed restructuring of handler.js: step 2 three-path cleanup, step 3 fallback replacement with getScrapeJobStats, module extraction plan, TDD entry points |
 | [handler-reference.md](.claude/handler-reference.md) | **Test writing reference** — S3 key format + examples, all constants, step execution order, error handling table (caught vs propagated), stubs needed per step, helpers quick-reference. Read this before writing behavioural tests instead of re-reading handler.js. |
 
 ---
@@ -348,14 +347,36 @@ This is a diagnostic-only function — it logs but does not modify any data. It 
 
 ```
 src/prerender/
-├── handler.js (1,875 lines, 3-step StepAudit)
-├── utils/
-│   ├── utils.js (shared utilities, normalizePathname here)
-│   ├── bot-block-detector.js
-│   └── suggestion-filtering.js
-├── test/
-│   ├── handler.test.js (335 test cases)
-│   ├── ... (audit-specific tests)
+├── handler.js               — 3-step StepAudit entry points (importTopPages, submitForScraping,
+│                              processContentAndGenerateOpportunities); ~237 lines, orchestration only
+│
+├── mode-resolver.js         — resolveMode(context) → { isAiOnly, isCsv, isSlack, isNormal }
+├── ai-only.js               — handleAiOnlyMode; fetchLatestScrapeJobId
+├── bot-block.js             — isStickyBotBlocked (step 2), detectBotBlock (step 3), buildBotBlockedResult
+│
+├── url-fetcher.js           — fetchUrls: CSV / Slack / Normal URL sourcing
+├── url-filter.js            — filterUrls: recency dedup + edge-deployed filter + DAILY_BATCH_SIZE cap
+│
+├── html-comparator.js       — compareAllUrls / compareHtmlContent: S3 download + analyzeHtmlForPrerender
+├── scrape-stats.js          — getScrapeJobStats, buildAuditResult
+├── page-citability.js       — getRecentlyProcessedPathnames (read) + writeToCitabilityRecords (write)
+│
+├── opportunity-syncer.js    — processOpportunityAndSuggestions, routeOpportunityBranch,
+│                              clearOutdatedSuggestions, markNewSuggestionsAsCovered,
+│                              createScrapeForbiddenOpportunity, detectWrongEdgeDeployedStatus
+├── opportunity-data-mapper.js — createOpportunityData (audit-agnostic pattern, shared across audits)
+├── mystique-sender.js       — sendPrerenderGuidanceRequestToMystique
+│
+├── status-writer.js         — readSiteStatusJson, uploadStatusSummaryToS3
+├── log-metrics.js           — logSubmitMetrics (step 2), logStep3Metrics (step 3)
+├── guidance-handler.js      — inbound Mystique response handler (aiSummary + valuable updates)
+│
+└── utils/
+    ├── utils.js             — toPathname, getS3Path, isPaidLLMOCustomer, shared helpers
+    ├── html-analyzer.js     — analyzeHtmlForPrerender (word counting, content gain ratio)
+    ├── bot-block-detector.js
+    ├── suggestion-filtering.js
+    └── constants.js
 ```
 
 ---

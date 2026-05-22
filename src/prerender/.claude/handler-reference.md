@@ -56,7 +56,7 @@ prerender/scrapes/{scrapeJobId}/{segment}/scrape.json
 | `MYSTIQUE_BATCH_SIZE` | `= DAILY_BATCH_SIZE = 320` | Mystique guidance batch cap; same value as `DAILY_BATCH_SIZE` |
 | `PRERENDER_RECENT_PROCESSING_TIME_DAYS` | `7` | PageCitability dedup window (URLs processed within this window excluded) |
 
-**Bot-block thresholds are hardcoded in handler.js (lines 83–84), not exported from constants.js:**
+**Bot-block thresholds are in `bot-block.js`, not exported from constants.js:**
 - `DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000` (3-day sticky window in ms)
 - `STICKY_BOT_FORBIDDEN_RATIO = 0.5` (403 ratio threshold for reactive block)
 
@@ -99,22 +99,23 @@ Step 3: processContentAndGenerateOpportunities  → returns { status, auditResul
 
 ## Step 3 — Execution Order
 
-1. **`detectWrongEdgeDeployedStatus`** — unconditional, runs even when `isDomainBlocked=true`
-2. **`isDomainBlocked` check** — if true → set `scrapeForbidden=true`, skip HTML comparison, jump to status write
-3. **HTML comparison loop** — for each URL in `scrapeResultPaths`:
-   - Read `server-side.html` + `client-side.html` from S3
+1. **`detectWrongEdgeDeployedStatus`** (`opportunity-syncer.js`) — unconditional diagnostic, runs even when `isDomainBlocked=true`
+2. **`compareAllUrls`** (`html-comparator.js`) — for each URL in `scrapeResultPaths`:
+   - `isDomainBlocked=true` short-circuits here → returns `[]`, no S3 reads
+   - Read `server-side.html` + `client-side.html` + `scrape.json` from S3
    - Missing HTML → error result for that URL (not a crash)
    - Ratio ≥ 1.1 → `needsPrerender=true`; `scrape.json.isDeployedAtEdge=true` → excluded from `scrapedUrlsSet`
-4. **`getScrapeJobStats`** — counts 403s from COMPLETE + FAILED-status URLs via `ScrapeUrl` DB + S3 scrape.json
+3. **`writeToCitabilityRecords`** (`page-citability.js`) — writes all non-error comparison results to PageCitability in batches of 10
+4. **`getScrapeJobStats`** (`scrape-stats.js`) — counts 403s from COMPLETE + FAILED-status URLs via `ScrapeUrl` DB + S3 scrape.json
    - `ScrapeUrl` missing from `dataAccess` → fallback: `urlsSubmittedForScraping = urlsToCheck.length`
    - `allByScrapeJobId` rejects → same fallback (error caught internally)
-5. **`detectBotBlocker`** — only if 403 ratio ≥ 0.5; requires confidence ≥ 0.99 + known CDN for `scrapeForbidden=true`
+5. **`detectBotBlock`** (`bot-block.js`) — only if 403 ratio ≥ 0.5; requires confidence ≥ 0.99 + known CDN for `scrapeForbidden=true`
    - Throws → warning logged, `scrapeForbidden=false`, audit continues
-6. **Branch routing:**
+6. **Branch routing** (`routeOpportunityBranch` in `opportunity-syncer.js`):
    - **Branch A** (`urlsNeedingPrerender.length > 0`) → `processOpportunityAndSuggestions` (internally: `convertToOpportunity` + `syncSuggestions`) + `sendPrerenderGuidanceRequestToMystique`
    - **Branch B** (`urlsNeedingPrerender.length === 0 && scrapeForbidden=true`) → `createScrapeForbiddenOpportunity` only; `syncSuggestions` is **NOT** called
    - **Branch C** (`urlsNeedingPrerender.length === 0 && !scrapeForbidden`) → `syncSuggestions` with `newData=[]` (marks existing suggestions OUTDATED for scraped pathnames)
-7. **Write `status.json`** — merges current pages with prior pages not in current run
+7. **Write `status.json`** (`uploadStatusSummaryToS3` in `status-writer.js`) — merges current pages with prior pages not in current run
 
 ---
 

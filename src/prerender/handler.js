@@ -20,7 +20,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { resolveMode } from './mode-resolver.js';
 import { getScrapeJobStats, buildAuditResult } from './scrape-stats.js';
 import { isPaidLLMOCustomer } from './utils/utils.js';
-import { writeToCitabilityRecords } from './citability-writer.js';
+import { writeToCitabilityRecords } from './page-citability.js';
 import { compareAllUrls } from './html-comparator.js';
 import {
   detectWrongEdgeDeployedStatus,

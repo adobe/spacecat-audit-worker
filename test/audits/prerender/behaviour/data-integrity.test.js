@@ -26,7 +26,7 @@ import sinonChai from 'sinon-chai';
 import {
   processContentAndGenerateOpportunities,
 } from '../../../../src/prerender/handler.js';
-import { writeToCitabilityRecords } from '../../../../src/prerender/citability-writer.js';
+import { writeToCitabilityRecords } from '../../../../src/prerender/page-citability.js';
 import {
   buildContext,
   buildSite,

@@ -10,49 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { subDays } from 'date-fns';
 import { mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
-import {
-  DAILY_BATCH_SIZE,
-  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
-} from './utils/constants.js';
-
-const LOG_PREFIX = 'Prerender -';
-
-/**
- * Returns pathnames from PageCitability records updated within the configured recent window.
- * @param {Object} context
- * @param {string} siteId
- * @returns {Promise<Set<string>>}
- */
-async function getRecentlyProcessedPathnames(context, siteId) {
-  const { dataAccess, log } = context;
-  try {
-    const { PageCitability } = dataAccess;
-    if (!PageCitability?.allByIndexKeys) {
-      return new Set();
-    }
-    const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
-    const records = await PageCitability.allByIndexKeys(
-      { siteId },
-      { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
-    );
-    return new Set(
-      records
-        .map((r) => {
-          try {
-            return new URL(r.getUrl()).pathname;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean),
-    );
-  } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
-    return new Set();
-  }
-}
+import { DAILY_BATCH_SIZE } from './utils/constants.js';
+import { getRecentlyProcessedPathnames } from './page-citability.js';
 
 /**
  * Returns a Set of URL pathnames that are already deployed at the CDN edge.

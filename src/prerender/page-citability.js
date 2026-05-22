@@ -10,9 +10,48 @@
  * governing permissions and limitations under the License.
  */
 
+import { subDays } from 'date-fns';
 import { toPathname } from './utils/utils.js';
+import { PRERENDER_RECENT_PROCESSING_TIME_DAYS } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
+
+/**
+ * Returns pathnames from PageCitability records updated within the configured recent window.
+ * Used by url-filter to skip recently-scraped URLs from the next batch.
+ *
+ * @param {Object} context - Audit context (dataAccess, log)
+ * @param {string} siteId
+ * @returns {Promise<Set<string>>}
+ */
+export async function getRecentlyProcessedPathnames(context, siteId) {
+  const { dataAccess, log } = context;
+  try {
+    const { PageCitability } = dataAccess;
+    if (!PageCitability?.allByIndexKeys) {
+      return new Set();
+    }
+    const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
+    const records = await PageCitability.allByIndexKeys(
+      { siteId },
+      { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
+    );
+    return new Set(
+      records
+        .map((r) => {
+          try {
+            return new URL(r.getUrl()).pathname;
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean),
+    );
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
+    return new Set();
+  }
+}
 
 /**
  * Writes citability metrics to the PageCitability entity for all successfully scraped URLs.
