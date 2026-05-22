@@ -449,6 +449,62 @@ describe('Prerender behaviour — suggestion lifecycle (Step 3)', () => {
     expect(markedOutdated).to.deep.include(noPreRenderSuggestion);
   });
 
+  it('scrapedUrlsSet pathname normalization: www-subdomain suggestion marked OUTDATED when apex-domain URL scraped', async () => {
+    // processOpportunityAndSuggestions normalizes scrapedUrlsSet to pathnames so that domain
+    // shifts (e.g. www.example.com → example.com) do not prevent existing suggestions from
+    // being marked OUTDATED. Without normalization, /page-1 on two different subdomains
+    // would appear as different keys and the suggestion would be left untouched.
+    const siteId = 'site-domain-shift';
+    const scrapeJobId = 'job-domain-shift';
+    const prerenderUrl = 'https://example.com/needs-prerender'; // triggers Branch A (ratio > 1.1)
+    const wwwUrl = 'https://www.example.com/page-1';           // existing suggestion URL (www)
+    const apexUrl = 'https://example.com/page-1';              // scraped URL (apex) — same pathname
+
+    const wwwSuggestion = buildSuggestion(sandbox, {
+      id: 'sug-www',
+      status: 'NEW',
+      data: { url: wwwUrl },
+    });
+
+    const opportunity = buildOpportunity(sandbox, {
+      siteId,
+      suggestions: [wwwSuggestion],
+    });
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox),
+      dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
+    });
+
+    await processOpportunityAndSuggestions('https://example.com', {
+      siteId,
+      id: 'audit-id',
+      auditId: 'audit-id',
+      auditResult: {
+        urlsNeedingPrerender: 1,
+        results: [{
+          url: prerenderUrl,
+          needsPrerender: true,
+          contentGainRatio: 8.0,
+          wordCountBefore: 10,
+          wordCountAfter: 80,
+          citabilityScore: 1,
+          isDeployedAtEdge: false,
+        }],
+      },
+      scrapeJobId,
+      // apex URL in scrapedUrlsSet; suggestion has www URL — same /page-1 pathname
+      scrapedUrlsSet: new Set([apexUrl]),
+    }, ctx, false);
+
+    // Pathname normalization ensures the www suggestion is recognized as scraped
+    // and therefore marked OUTDATED (it no longer needs prerender)
+    const bulkCalls = ctx.dataAccess.Suggestion.bulkUpdateStatus.getCalls();
+    const markedOutdated = bulkCalls.flatMap((c) => c.args[0]);
+    expect(markedOutdated).to.deep.include(wwwSuggestion);
+  });
+
   it('OUTDATED domain-wide suggestion with edgeDeployed set → preserved in-place (shouldPreserveDomainWideSuggestion returns true)', async () => {
     // ACTIVE_STATUSES does not include OUTDATED, but !!data.edgeDeployed=true satisfies the
     // second condition → shouldPreserveDomainWideSuggestion returns true.

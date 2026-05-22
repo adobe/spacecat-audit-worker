@@ -213,6 +213,39 @@ describe('Prerender behaviour — data integrity (Step 3)', () => {
     expect(page.isDeployedAtEdge).to.equal(false);
   });
 
+  it('scrapeForbiddenSince from prior status.json is preserved when the current audit has no bot-block', async () => {
+    // auditResult.scrapeForbiddenSince is only set when reactive detection fires.
+    // In a clean audit (no 403s), it is undefined → the ?? falls through to the existing
+    // value from status.json (line 1476 of handler.js).
+    // If this preservation were missing, the sticky 3-day bot-block window would expire
+    // after a single clean audit instead of lasting the full 3 days.
+    const siteId = 'site-since-preserve';
+    const scrapeJobId = 'job-since-preserve';
+    const url = 'https://example.com/page-1';
+    const priorSince = '2025-06-01T00:00:00.000Z';
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      s3Client: buildS3Client(sandbox, {
+        // Prior status.json carries a scrapeForbiddenSince from a previous block
+        [statusKey(siteId)]: buildStatus({
+          scrapeForbidden: false,  // block already cleared, but timestamp still present
+          scrapeForbiddenSince: priorSince,
+        }),
+        ...buildUrlS3Content(scrapeJobId, url),
+      }),
+      dataAccess: buildDataAccess(sandbox, { scrapeUrls: [url] }),
+      scrapeResultPaths: new Map([[url, {}]]),
+      auditContext: { scrapeJobId },
+    });
+
+    await processContentAndGenerateOpportunities(ctx);
+
+    const written = captureStatusWrite(ctx.s3Client);
+    // scrapeForbiddenSince must not be wiped by a clean audit
+    expect(written).to.have.property('scrapeForbiddenSince', priorSince);
+  });
+
   it('S3 path contract: handler reads HTML from canonical scrapeJobId + sanitized-pathname keys', async () => {
     // Verifies the key construction: prerender/scrapes/{scrapeJobId}/{sanitizedPath}/{file}
     // Uses a URL with path segments that exercise the sanitization rules (dots, underscores, slashes)
@@ -339,5 +372,59 @@ describe('Prerender behaviour — PageCitability writes (Step 3)', () => {
     );
 
     expect(ctx.dataAccess.PageCitability.create).to.not.have.been.called;
+  });
+
+  it('URL already in PageCitability → existing record updated via save(), not create()', async () => {
+    // writeToCitabilityRecords checks allBySiteId first; when a record exists for the URL
+    // it calls setters + existing.save() instead of PageCitability.create().
+    // This update path is triggered when the same URL appears in a subsequent audit run
+    // (the 7-day dedup window has expired so it was re-queued, but the DB row still exists).
+    const siteId = 'site-citability-update';
+    const url = 'https://example.com/already-exists';
+
+    const existingRecord = {
+      getUrl: () => url,
+      setCitabilityScore: sandbox.stub(),
+      setContentRatio: sandbox.stub(),
+      setWordDifference: sandbox.stub(),
+      setBotWords: sandbox.stub(),
+      setNormalWords: sandbox.stub(),
+      setIsDeployedAtEdge: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const dataAccess = buildDataAccess(sandbox);
+    dataAccess.PageCitability.allBySiteId = sandbox.stub().resolves([existingRecord]);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
+      dataAccess,
+    });
+
+    await writeToCitabilityRecords(
+      [{
+        url,
+        error: false,
+        needsPrerender: false,
+        citabilityScore: 0.85,
+        contentGainRatio: 1.2,
+        wordDifference: 10,
+        wordCountBefore: 40,
+        wordCountAfter: 50,
+        isDeployedAtEdge: false,
+      }],
+      siteId,
+      ctx,
+    );
+
+    // Existing record must be updated (not re-created)
+    expect(existingRecord.save).to.have.been.calledOnce;
+    expect(ctx.dataAccess.PageCitability.create).to.not.have.been.called;
+
+    // All metric fields must be pushed to the existing record
+    expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.85);
+    expect(existingRecord.setContentRatio).to.have.been.calledWith(1.2);
+    expect(existingRecord.setBotWords).to.have.been.calledWith(40);
+    expect(existingRecord.setNormalWords).to.have.been.calledWith(50);
   });
 });
