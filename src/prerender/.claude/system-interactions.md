@@ -325,7 +325,7 @@ await Suggestion.removeByIds(ids);                 // removal
   "siteId": "...",
   "suggestions": [
     {
-      "suggestionId": "uuid",          // REQUIRED — Pydantic validates this
+      "suggestionId": "uuid",          // sent for context; no longer required by Mystique (D-08 superseded)
       "url": "https://...",
       "scrapeJobId": "...",            // per-suggestion, not current run's ID
       "wordCountBefore": 181,
@@ -339,9 +339,9 @@ await Suggestion.removeByIds(ids);                 // removal
 **Batch limit**: `MYSTIQUE_BATCH_SIZE=100` suggestions per SQS message. D-14 explains why:
 lenscrafters.com had 1,700+ suggestions — a single message exceeded AWS's 256 KB SQS limit.
 
-**`suggestionId` requirement**: D-08 — Mystique's Pydantic model requires `suggestion_id: str`.
-If absent, the entire message is dropped silently. Always build the `urlToSuggestionId` map
-using `preferredBase`-normalized URLs to avoid www/non-www mismatch.
+**`suggestionId`**: D-08 (superseded) — Mystique no longer validates this as required. The field is
+still sent (`s.url` in normal runs, `s.getId()` in ai-only runs) but Mystique ignores it.
+Guidance-handler.js matches responses back by pathname via `suggestionsByPathname` (D-22).
 
 **`scrapeJobId` per suggestion**: Uses `data.scrapeJobId` from when the suggestion was first
 created (not the current run's job ID). Mystique builds S3 paths using this ID — using the

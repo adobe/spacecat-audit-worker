@@ -92,7 +92,7 @@ The prerender audit is a **3-step StepAudit** that analyzes whether Edge Deliver
 - **Used in**: step 3 (processContentAndGenerateOpportunities)
 - **Outbound queue**: SQS `guidance:prerender` — audit sends candidates list; non-blocking
 - **Batch interface**: `MYSTIQUE_BATCH_SIZE` (config value, constraint-based, not DAILY_BATCH_SIZE)
-- **Payload**: URLs + context for `ai-summary` generation; **must include `suggestionId`** — Mystique parses it via Pydantic and fails validation if absent
+- **Payload**: URLs + context for `ai-summary` generation; `suggestionId` is included but no longer validated as required by Mystique (see D-08)
 - **Response delivery (inbound)**: Mystique writes AI summaries to S3, then sends an SQS message back to the audit worker with `{ siteId, data: { presignedUrl, opportunityId } }`. The handler (`guidance-handler.js`) downloads the payload from the presigned URL — the AI summaries are NOT in the SQS body.
 - **Presigned URL safety**: `fetchAnalysisFromPresignedUrl` enforces: SSRF guard (S3 allowlist, HTTPS only), 10 MB DoS cap on response body, and query-string scrub before any CloudWatch logging so `X-Amz-Signature` never leaks
 - **S3 key construction**: Mystique uses `scrapeJobId` from when the suggestion was first created to build markdown S3 paths — always pass per-suggestion scrapeJobId, never the current run's ID
