@@ -13,6 +13,7 @@
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { toPathname } from './utils/utils.js';
+import { logStatusUpload } from './log-metrics.js';
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -146,9 +147,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ContentType: 'application/json',
     }));
 
-    const { pages: _, ...logSummary } = statusSummary;
-    const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
-    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
+    logStatusUpload(log, { statusKey, statusSummary });
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
   }

@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { readSiteStatusJson, uploadStatusSummaryToS3 } from './status-writer.js';
 import { isStickyBotBlocked, detectBotBlock, buildBotBlockedResult } from './bot-block.js';
 import { filterUrls } from './url-filter.js';
+import { logSubmitMetrics, logStep3Metrics } from './log-metrics.js';
 import { fetchUrls } from './url-fetcher.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { resolveMode } from './mode-resolver.js';
@@ -88,39 +89,12 @@ export async function submitForScraping(context) {
   }
 
   const rawUrls = await fetchUrls(context, mode);
-  const {
-    csvUrls, topPagesUrls, agenticUrls, includedURLs,
-  } = rawUrls;
+  const filterResult = await filterUrls(context, mode, rawUrls, siteStatus);
 
-  const { urls: finalUrls, filteredCount, metrics } = await filterUrls(
-    context,
-    mode,
-    rawUrls,
-    siteStatus,
-  );
-
-  log.info([
-    `${LOG_PREFIX} prerender_submit_scraping_metrics:`,
-    `submittedUrls=${finalUrls.length}`,
-    `csvUrls=${csvUrls.length}`,
-    `agenticUrls=${agenticUrls.length}`,
-    `topPagesUrls=${topPagesUrls.length}`,
-    `includedURLs=${includedURLs.length}`,
-    `filteredOutUrls=${filteredCount}`,
-    ...(!mode.isCsv ? [
-      `currentAgentic=${metrics.currentAgentic}`,
-      `currentOrganic=${metrics.currentOrganic}`,
-      `currentIncludedUrls=${metrics.currentIncludedUrls}`,
-      `isFirstRunOfCycle=${metrics.isFirstRunOfCycle}`,
-      `agenticNewThisCycle=${metrics.agenticNewThisCycle}`,
-      `edgeDeployedUrls=${metrics.edgeDeployedCount}`,
-    ] : []),
-    `baseUrl=${site.getBaseURL()}`,
-    `siteId=${siteId}`,
-  ].join(', '));
+  logSubmitMetrics(context, mode, rawUrls, filterResult);
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: filterResult.urls.map((url) => ({ url })),
     siteId,
     processingType: AUDIT_TYPE,
     maxScrapeAge: 0,
@@ -158,11 +132,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
   const isPaid = await isPaidLLMOCustomer(context);
 
-  if (isDomainBlocked) {
-    log.info(`${LOG_PREFIX} Domain is bot-blocked, treating as fully forbidden scrape. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-  }
-
-  log.info(`${LOG_PREFIX} Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
+  log.info(`${LOG_PREFIX} Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}, isDomainBlocked=${isDomainBlocked}`);
 
   try {
     const comparisonResults = await compareAllUrls(context, isDomainBlocked);
@@ -181,8 +151,6 @@ export async function processContentAndGenerateOpportunities(context) {
       context,
     );
 
-    log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
-
     const botBlockResult = await detectBotBlock(context, {
       isDomainBlocked,
       urlsSubmittedForScraping: scrapeStats.urlsSubmittedForScraping,
@@ -193,9 +161,14 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult, urlsNeedingPrerender, successfulComparisons, scrapedUrlsSet,
     } = buildAuditResult(comparisonResults, scrapeStats, botBlockResult);
 
-    log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${comparisonResults.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
-
-    log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${scrapeStats.urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, scrapingErrorRate=${auditResult.scrapingErrorRate}%`);
+    logStep3Metrics(context, {
+      scrapeStats,
+      comparisonResults,
+      auditResult,
+      urlsNeedingPrerender,
+      successfulComparisons,
+      isPaid,
+    });
 
     await routeOpportunityBranch(context, {
       urlsNeedingPrerender,

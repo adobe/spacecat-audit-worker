@@ -16,6 +16,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { sendPrerenderGuidanceRequestToMystique } from './mystique-sender.js';
 import { getS3Path, toPathname } from './utils/utils.js';
+import { logSuggestionsSyncMetrics } from './log-metrics.js';
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -400,13 +401,13 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  log.info(`${LOG_PREFIX}
-    prerender_suggestions_sync_metrics:
-    siteId=${auditData.siteId},
-    baseUrl=${auditUrl},
-    isPaidLLMOCustomer=${isPaid},
-    suggestions=${preRenderSuggestions.length},
-    totalSuggestions=${allSuggestions.length},`);
+  logSuggestionsSyncMetrics(log, {
+    siteId: auditData.siteId,
+    baseUrl: auditUrl,
+    isPaid,
+    suggestionsCount: preRenderSuggestions.length,
+    totalCount: allSuggestions.length,
+  });
 
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {

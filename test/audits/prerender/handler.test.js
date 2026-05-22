@@ -1586,7 +1586,7 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result).to.be.an('object');
-        expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
+        expect(log.info).to.have.been.calledWithMatch(/isDomainBlocked=true/);
         // createScrapeForbiddenOpportunity was called (not syncSuggestions)
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(syncSuggestionsStub).to.not.have.been.called;
