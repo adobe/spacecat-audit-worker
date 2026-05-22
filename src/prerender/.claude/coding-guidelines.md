@@ -75,7 +75,7 @@ Stop and coordinate with UI and api-service teams before merging if your change 
 - [ ] S3 path format (`sanitizeImportPath` regex) → breaks historical artifact lookups
 - [ ] `shouldPreserveDomainWideSuggestion` logic → changes which domain-wide suggestions survive audit runs
 - [ ] `processingType: 'prerender'` in `createScrapeJob` call → must match `PrerenderHandler.accepts()` in scraper
-- [ ] Mystique SQS payload shape → must include `suggestionId`; Pydantic validates it on the other end
+- [ ] Mystique SQS payload shape → `suggestionId` is sent but no longer required by Mystique (D-08 superseded); verify any new fields match Mystique's current Pydantic model
 
 For any of these: open a coordination issue, get sign-off, then merge.
 

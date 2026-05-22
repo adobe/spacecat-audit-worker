@@ -94,15 +94,15 @@ Read this when you need to understand WHY the code looks a specific way, or befo
 
 ---
 
-## D-08 · suggestionId is required in Mystique SQS payload
+## D-08 · suggestionId in Mystique SQS payload (superseded)
 
-**Decision**: Every `guidance:prerender` SQS message must include `suggestionId`.
+**Status**: Superseded — Mystique no longer validates `suggestion_id` as a required field.
 
-**Why**: Mystique parses the payload via Pydantic union types. `PrerenderSuggestionMessageData` requires `suggestion_id: str`. If absent, Pydantic validation fails and the message is dropped. Production data for micron.com showed 8 of 13 suggestions missing `suggestionId` due to URL mismatch (www.micron.com vs micron.com) in the `urlToSuggestionId` map lookup — exact string match silently returned `undefined`.
+**Original decision**: Every `guidance:prerender` SQS message must include `suggestionId`. Mystique's `PrerenderSuggestionMessageData` Pydantic model required `suggestion_id: str`; if absent, the message was dropped silently. Production data for micron.com showed 8 of 13 suggestions dropped due to URL mismatch building the `urlToSuggestionId` map.
 
-**Rule**: Always normalize URLs to the site's `preferredBase` domain before building the suggestion ID map.
+**Current state**: The field is still sent (normal runs: `suggestionId = s.url`; ai-only runs: `suggestionId = s.getId()`), but Mystique no longer fails validation if it is absent. Guidance-handler.js matches Mystique responses back to suggestions by pathname via `suggestionsByPathname` (D-22), not by `suggestionId`.
 
-**Commit**: `001b563a` (#2373)
+**Commit**: `001b563a` (#2373) — original fix; D-22 (`f0281666`) — supersedes with pathname keying
 
 ---
 
