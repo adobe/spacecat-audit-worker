@@ -290,7 +290,7 @@ function buildSuggestionKey(data) {
   return data.key ? data.key : toPathname(data.url);
 }
 
-function buildSuggestionData(suggestion, scrapeJobId) {
+function mapSuggestionData(suggestion, scrapeJobId) {
   return {
     url: suggestion.url,
     contentGainRatio: suggestion.contentGainRatio,
@@ -386,7 +386,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
       rank: 0,
-      data: suggestion.key ? suggestion.data : buildSuggestionData(suggestion, scrapeJobId),
+      data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion, scrapeJobId),
     }),
     scrapedUrlsSet,
     mergeDataFunction: (existingData, newDataItem) => {
@@ -394,7 +394,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
         return { ...newDataItem.data };
       }
       /* c8 ignore next 5 */
-      return { ...existingData, ...buildSuggestionData(newDataItem, scrapeJobId) };
+      return { ...existingData, ...mapSuggestionData(newDataItem, scrapeJobId) };
     },
   });
 
