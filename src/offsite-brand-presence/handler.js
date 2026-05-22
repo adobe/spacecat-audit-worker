@@ -384,7 +384,9 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
  * @returns {boolean}
  */
 function isRetriable(err) {
-  if (err instanceof TypeError) return true;
+  if (err instanceof TypeError) {
+    return true;
+  }
   return typeof err.status === 'number' && RETRIABLE_STATUSES.has(err.status);
 }
 
