@@ -140,7 +140,8 @@ Example opportunity entry on the audit envelope:
 |---|---|---|
 | `ENOTFOUND`, `EAI_AGAIN` | `dns-failure` | "DNS lookup failed — may require corporate network or authentication" |
 | `ECONNREFUSED` | `connection-refused` | "Connection refused — may require corporate network or VPN" |
-| `ETIMEDOUT`, `ECONNRESET`, `UND_ERR_CONNECT_TIMEOUT` | `timeout` | "Request timed out — may require authentication or corporate network" |
+| `ECONNRESET` | `connection-reset` | "Connection reset by remote server — may require authentication or corporate network" |
+| `ETIMEDOUT`, `UND_ERR_CONNECT_TIMEOUT` | `timeout` | "Request timed out — may require authentication or corporate network" |
 | `CERT_HAS_EXPIRED`, `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, etc. | `tls-error` | "TLS verification failed — server certificate may be misconfigured" |
 | anything else | `unreachable` | "Could not reach the URL — server may be temporarily unavailable" |
 
@@ -245,7 +246,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 ### Task 4: Emit the new opportunity entry in the handler
 
 - [ ] In `src/preflight/handler.js`, where the audit envelope is assembled, add a new opportunity object for `unverifiable-external-links` populated from `unverifiableExternalLinks`.
-- [ ] Match the existing opportunity-object shape (`check`, `issue`, `seoImpact`, `seoRecommendation`, `links` / opportunities array).
+- [ ] Match the existing opportunity-object shape: `{ check, issue: [...] }` with per-link entries containing `url`, `seoImpact`, `seoRecommendation`, `elements`.
 - [ ] Update tests to assert the new opportunity appears in the envelope when unverifiable links are present, and is absent (or empty) when none are.
 
 ### Task 5: Feature flag (conditional on MFE backward compat)
@@ -254,14 +255,14 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 - [ ] If MFE handles unknown check types gracefully: skip flag.
 - [ ] If MFE errors on unknown check types: add `PREFLIGHT_LINKS_UNVERIFIABLE_ENABLED` env var, and make `runLinksChecks` consult it BEFORE splitting the buckets:
   - When the flag is **on**: split as Task 3 describes — `unverifiableExternalLinks` becomes its own bucket; `handler.js` emits the new `unverifiable-external-links` opportunity entry.
-  - When the flag is **off**: skip the bucket split entirely in `links-checks.js`. The `catch (finalErr)` block still calls `classifyNetworkError` for logging, but the returned object goes into `brokenExternalLinks` with `status: 0` and the existing `issue: "Status 0"` shape — restoring post-#2476 behavior exactly. `handler.js` doesn't emit the new opportunity entry because `unverifiableExternalLinks` is empty.
+  - When the flag is **off**: skip the bucket split entirely in `links-checks.js`. The `catch (finalErr)` block in `checkLinkStatus` still calls `classifyNetworkError` for logging, but the returned object stays at the existing post-#2476 shape — `{ urlTo, href, status: 0, ...elements }` (no `issue` field on the return). The `issue: "Status 0"` string is assembled downstream in `links.js`; flag-off doesn't touch that path. The returned object goes into `brokenExternalLinks`. `handler.js` doesn't emit the new opportunity entry because `unverifiableExternalLinks` is empty. This restores post-#2476 behavior exactly.
 - Rationale: the split happens at `links-checks.js`, before `handler.js` ever sees the buckets. Trying to merge them back in `handler.js` would be more invasive (and would still emit the new check type in the envelope even when flag-off, which the MFE may not handle). Gating at the producer is the cleaner fallback path.
 
 ### Task 6: Tests, lint, coverage
 
 - [ ] `npm test` passes with 100% coverage maintained.
 - [ ] `npm run lint` passes.
-- [ ] All Walmart-domain test cases from the existing `scripts/test-links-checks-dns.js` debug script demonstrate the new categorization (DNS failure → `unverifiable`).
+- [ ] Unit tests in `test/preflight/links-checks.test.js` cover the Walmart-domain cases that motivated this spec: every `err.code` value in the [reason taxonomy](#reason-taxonomy) table — `ENOTFOUND`, `EAI_AGAIN`, `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `UND_ERR_CONNECT_TIMEOUT`, plus at least one TLS cert error — produces the expected `(code, message)` and routes the link to `unverifiableExternalLinks`. Use `nock` to simulate each error.
 
 ---
 
