@@ -11,7 +11,7 @@
  */
 
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
+import { analyzeHtmlForPrerender } from './utils/html-analyzer.js';
 import { getS3Path } from './utils/utils.js';
 import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 

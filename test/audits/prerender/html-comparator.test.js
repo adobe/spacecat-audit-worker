@@ -33,7 +33,7 @@ describe('html-comparator', () => {
 
     mod = await esmock('../../../src/prerender/html-comparator.js', {
       '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-      '../../../src/prerender/utils/html-comparator.js': {
+      '../../../src/prerender/utils/html-analyzer.js': {
         analyzeHtmlForPrerender: analyzeHtmlForPrerenderStub,
       },
       '../../../src/prerender/utils/utils.js': { getS3Path: getS3PathStub },

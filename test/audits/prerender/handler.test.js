@@ -27,7 +27,7 @@ import {
 } from '../../../src/prerender/opportunity-syncer.js';
 import { getScrapeJobStats } from '../../../src/prerender/scrape-stats.js';
 import { uploadStatusSummaryToS3 } from '../../../src/prerender/status-writer.js';
-import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
+import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-analyzer.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
 import {
   TOP_AGENTIC_URLS_LIMIT,
@@ -419,12 +419,6 @@ describe('Prerender Audit', () => {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
           },
-          '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
-            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
-            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
-            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          },
         });
         const mockSiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
         const context = {
@@ -623,25 +617,6 @@ describe('Prerender Audit', () => {
           '@adobe/spacecat-shared-athena-client': {
             // No agentic URLs for this test
             AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
-          },
-          '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({
-              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            }),
-            getS3Config: async () => ({
-              databaseName: 'db',
-              tableName: 'tbl',
-              getAthenaTempLocation: () => 's3://tmp/',
-            }),
-            weeklyBreakdownQueries: {
-              createAgenticReportQuery: async () => 'SELECT 1',
-              createTopUrlsQueryWithLimit: async () => 'SELECT 2',
-            },
-            loadLatestAgenticSheet: async () => ({
-              weekId: 'w45-2025',
-              baseUrl: 'https://example.com',
-              rows: [],
-            }),
           },
         });
 
@@ -2402,17 +2377,6 @@ describe('Prerender Audit', () => {
             return [];
           } }) },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
@@ -2498,24 +2462,6 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT top' },
-          // Fallback sheet with a default-path entry
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [{ url: '/inc', number_of_hits: 5 }],
-          }),
-          buildSheetHitsMap: (rows) => new Map([[rows[0]?.url || '/inc', rows[0]?.number_of_hits || 0]]),
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
@@ -2556,24 +2502,6 @@ describe('Prerender Audit', () => {
           // Return empty for specific-URLs query to trigger sheet fallback
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
-          // Provide sheet rows and a simple aggregator that maps '/inc' -> 12
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [{ url: '/inc', number_of_hits: 12 }],
-          }),
-          buildSheetHitsMap: (rows) => new Map([['/inc', 12]]),
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
@@ -2612,20 +2540,6 @@ describe('Prerender Audit', () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
-          },
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -2666,19 +2580,6 @@ describe('Prerender Audit', () => {
             { url: '/x', number_of_hits: 2 },
           ]) }) },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-          },
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async (_c, _b, key) => {
             if (key.endsWith('server-side.html')) return serverHtml;
@@ -2718,19 +2619,6 @@ describe('Prerender Audit', () => {
             { url: '/x', number_of_hits: 1 },
           ]) }) },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-          },
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
@@ -2765,27 +2653,6 @@ describe('Prerender Audit', () => {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            periodIdentifier: 'w45-2025',
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
-          },
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [],
-          }),
-          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
-        },
       });
 
       const ctx = {
@@ -2811,27 +2678,6 @@ describe('Prerender Audit', () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            periodIdentifier: 'w45-2025',
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
-          },
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [],
-          }),
-          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
         },
       });
 
@@ -2865,25 +2711,6 @@ describe('Prerender Audit', () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            periodIdentifier: 'w45-2025',
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            aggregatedLocation: 'agg/',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-          },
-          loadLatestAgenticSheet: async () => {
-            throw new Error('Sheet load failed');
-          },
-          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
         },
       });
 
@@ -2923,26 +2750,6 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
-          },
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [],
-          }),
-          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
-        },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
@@ -2967,176 +2774,6 @@ describe('Prerender Audit', () => {
 
   });
 
-  describe('Shared utils loadLatestAgenticSheet', () => {
-    it('falls back to s3Config.siteName when getLlmoDataFolder returns falsy', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/cdn-logs-report/utils/report-utils.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
-          }),
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          downloadExistingCdnSheet: async (_weekId, outputLocation) => {
-            // outputLocation should use siteName from s3Config, not getLlmoDataFolder
-            if (!outputLocation.startsWith('acme-customer/')) throw new Error(`unexpected: ${outputLocation}`);
-            return [];
-          },
-        },
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractSiteKeyFromBaseURL: () => 'acme_com',
-          getS3Config: () => ({ siteName: 'acme-customer', bucket: 'bucket', getAthenaTempLocation: () => '' }),
-        },
-      });
-
-      const site = {
-        getBaseURL: () => 'https://acme.com',
-        // getLlmoDataFolder returns null -> falls back to s3Config.siteName
-        getConfig: () => ({ getLlmoDataFolder: () => null }),
-      };
-      const ctx = { log: { info: () => {} } };
-      const result = await shared.loadLatestAgenticSheet(site, ctx);
-      expect(result.rows).to.deep.equal([]);
-    });
-
-    it('returns latest week and calls downloadExistingCdnSheet with correct params', async () => {
-      const called = { weekId: null, outputLocation: null };
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/cdn-logs-report/utils/report-utils.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
-          }),
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          downloadExistingCdnSheet: async (weekId, outputLocation) => {
-            called.weekId = weekId;
-            called.outputLocation = outputLocation;
-            return [{ url: '/x', number_of_hits: 1 }];
-          },
-        },
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractSiteKeyFromBaseURL: () => 'acme_com',
-        },
-      });
-
-      const site = {
-        getBaseURL: () => 'https://acme.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
-      };
-      const ctx = { log: { info: () => {} } };
-      const result = await shared.loadLatestAgenticSheet(site, ctx);
-      expect(result.weekId).to.equal('w45-2025');
-      expect(called.weekId).to.equal('w45-2025');
-      expect(called.outputLocation).to.equal('acme/agentic-traffic');
-      expect(result.rows).to.have.length(1);
-      expect(result.baseUrl).to.equal('https://acme.com');
-    });
-  });
-
-  describe('Shared utils coverage', () => {
-    it('buildSheetHitsMap covers default path and numeric coercion', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {});
-      const rows = [{}, { url: '', number_of_hits: undefined }, { url: '/a', number_of_hits: '3' }];
-      const map = shared.buildSheetHitsMap(rows);
-      expect(map.get('/')).to.equal(0); // two defaulted entries sum to 0
-      expect(map.get('/a')).to.equal(3);
-    });
-
-    it('loadLatestAgenticSheet covers baseUrl fallback when getBaseURL is missing', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/cdn-logs-report/utils/report-utils.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
-          }),
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          downloadExistingCdnSheet: async () => [{ url: '/x', number_of_hits: 1 }],
-        },
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractSiteKeyFromBaseURL: () => 'acme_com',
-          getS3Config: () => ({ siteName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
-        },
-      });
-      const site = {
-        // getBaseURL intentionally omitted to trigger fallback to ''
-        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
-      };
-      const ctx = { log: { info: () => {} } };
-      const result = await shared.loadLatestAgenticSheet(site, ctx);
-      expect(result.baseUrl).to.equal('');
-    });
-
-    it('loadLatestAgenticSheet logs zero loaded rows when sheet result is undefined', async () => {
-      const info = sinon.stub();
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/cdn-logs-report/utils/report-utils.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
-          }),
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          downloadExistingCdnSheet: async () => undefined,
-        },
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractSiteKeyFromBaseURL: () => 'acme_com',
-          getS3Config: () => ({ siteName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
-        },
-      });
-      const site = {
-        getBaseURL: () => 'https://acme.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
-      };
-
-      const result = await shared.loadLatestAgenticSheet(site, { log: { info } });
-      expect(result.rows).to.equal(undefined);
-      expect(info.lastCall.args[0]).to.include('loaded 0 row(s)');
-    });
-  });
-  describe('Shared utils coverage', () => {
-    it('should return S3 config shape and temp location function', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/utils/cdn-utils.js': {
-          // Avoid depending on env; just return a deterministic bucket
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractSiteKeyFromBaseURL: () => 'adobe_com',
-        },
-      });
-      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
-      expect(cfg).to.be.an('object');
-      expect(cfg).to.have.property('databaseName');
-      expect(cfg).to.have.property('tableName');
-      expect(cfg).to.have.property('getAthenaTempLocation');
-      expect(cfg.getAthenaTempLocation()).to.be.a('string');
-      expect(cfg.getAthenaTempLocation()).to.include('/temp/athena-results/');
-    });
-
-    it('should compute siteName correctly when site key starts with www', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {});
-      const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, {});
-      expect(cfg.siteName).to.equal('adobe');
-      expect(cfg.databaseName).to.equal('cdn_logs_adobe_com');
-      expect(cfg.tableName).to.equal('aggregated_logs_adobe_com_consolidated');
-    });
-  });
   describe('Edge Cases and Error Handling', () => {
     describe('HTML Content Processing', () => {
       it('should throw error for missing server-side HTML', async () => {
@@ -3877,7 +3514,7 @@ describe('Prerender Audit', () => {
               .onFirstCall().resolves('<html><body>Valid content</body></html>')
               .onSecondCall().resolves('<html><body>Valid content too</body></html>'),
           },
-          '../../../src/prerender/utils/html-comparator.js': {
+          '../../../src/prerender/utils/html-analyzer.js': {
             analyzeHtmlForPrerender: sinon.stub().throws(new Error('Mocked analysis error')),
           },
         });
@@ -4009,7 +3646,7 @@ describe('Prerender Audit', () => {
 
       it('should throw when calculateStats fails', async () => {
         // Mock the HTML analysis to throw an error during processing
-        const mockAnalyze = await esmock('../../../src/prerender/utils/html-comparator.js', {
+        const mockAnalyze = await esmock('../../../src/prerender/utils/html-analyzer.js', {
           '@adobe/spacecat-shared-html-analyzer': {
             calculateStats: sinon.stub().throws(new Error('Stats calculation failed')),
           },
@@ -4372,7 +4009,7 @@ describe('Prerender Audit', () => {
         // Mock analyzeHtmlForPrerender to throw an error
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-          '../../../src/prerender/utils/html-comparator.js': {
+          '../../../src/prerender/utils/html-analyzer.js': {
             analyzeHtmlForPrerender: sandbox.stub().throws(new Error('Analysis failed')),
           },
         });
@@ -4407,7 +4044,7 @@ describe('Prerender Audit', () => {
 
         const htmlComparatorMock = await esmock('../../../src/prerender/html-comparator.js', {
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-          '../../../src/prerender/utils/html-comparator.js': {
+          '../../../src/prerender/utils/html-analyzer.js': {
             analyzeHtmlForPrerender: sinon.stub().resolves({
               needsPrerender: false, contentGainRatio: 1.0, wordCountBefore: 0, wordCountAfter: 0,
             }),
