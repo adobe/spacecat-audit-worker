@@ -1,6 +1,6 @@
 # Prerender Behaviour Tests — Index
 
-86 tests across 12 files. No esmock except `mystique-round-trip.test.js` (guidance-handler inbound).
+87 tests across 13 files. No esmock except `mystique-round-trip.test.js` (guidance-handler inbound).
 All tests use helpers from `helpers.js`; read that file before adding new tests.
 
 Run the full suite:
@@ -22,6 +22,7 @@ npm run test:spec -- test/audits/prerender/behaviour/
 | [mode-routing.test.js](#mode-routingtestjs) | 1 2 | CSV / Slack / normal mode dispatch |
 | [mystique-round-trip.test.js](#mystique-round-triptestjs) | 3 | SQS outbound (Branch A/B/C) + ai-only filtering + inbound guidance-handler |
 | [opportunity-creation.test.js](#opportunity-creationtestjs) | 3 | Branch A/B/C opportunity + suggestion data shape |
+| [realistic-scenarios.test.js](#realistic-scenariostestjs) | 3 | **High-importance** compound scenarios: multiple invariants in a single run |
 | [scrape-error-safety.test.js](#scrape-error-safetytestjs) | 3 | errored URLs excluded from scrapedUrlsSet / OUTDATED |
 | [suggestion-lifecycle.test.js](#suggestion-lifecycletestjs) | 3 | OUTDATED, merge, preservation, coveredByDomainWide, D-04 |
 | [url-selection.test.js](#url-selectiontestjs) | 2 | PageCitability dedup, edge-deployed exclusion, CSV filtering |
@@ -249,6 +250,20 @@ npm run test:spec -- test/audits/prerender/behaviour/
 | non-HTML URLs (jpg, pdf, mp3) are filtered out before submission | mergeAndGetUniqueHtmlUrls non-HTML filter |
 | URLs with the same pathname (one with trailing slash) are deduplicated | Trailing-slash dedup |
 | CSV mode rebases URLs to overrideBaseURL when set in site fetch config | overrideBaseURL rebasing |
+
+---
+
+## realistic-scenarios.test.js
+
+**Describe**: `Prerender behaviour — realistic compound scenarios`
+
+**Purpose**: High-importance tests that exercise multiple invariants simultaneously in a single audit run. Individual invariants are tested in isolation in the other files; these tests verify the invariants still hold when they occur together — which is the only way to catch bugs where two correct-in-isolation pieces compose incorrectly.
+
+**When to add here**: When a scenario involves ≥ 2 interacting invariants (e.g. error-exclusion AND suggestion-split happening in the same call). Do not add single-invariant tests here.
+
+| Test | Contract |
+|------|----------|
+| 20 submitted / 2 failed / 18 processed: all 20 in status.json, 10 need prerender → 5 existing suggestions updated + 5 new suggestions created | error exclusion + status.json accounting + saveMany/addSuggestions split all hold simultaneously |
 
 ---
 
