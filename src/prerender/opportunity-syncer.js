@@ -278,6 +278,47 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
   );
 }
 
+function normalizeScrapedUrlsSet(raw) {
+  if (!raw) {
+    return null;
+  }
+  const pathnames = new Set([...raw].map(toPathname));
+  return { has: (url) => pathnames.has(toPathname(url)) };
+}
+
+function buildSuggestionKey(data) {
+  return data.key ? data.key : toPathname(data.url);
+}
+
+function buildSuggestionData(suggestion, scrapeJobId) {
+  return {
+    url: suggestion.url,
+    contentGainRatio: suggestion.contentGainRatio,
+    wordCountBefore: suggestion.wordCountBefore,
+    wordCountAfter: suggestion.wordCountAfter,
+    citabilityScore: suggestion.citabilityScore ?? null,
+    scrapeJobId,
+    originalHtmlKey: getS3Path(suggestion.url, scrapeJobId, 'server-side.html'),
+    prerenderedHtmlKey: getS3Path(suggestion.url, scrapeJobId, 'client-side.html'),
+  };
+}
+
+function buildAuditRunCandidates(suggestions, scrapeJobId) {
+  return suggestions.reduce((acc, s) => {
+    try {
+      acc.push({
+        suggestionId: s.url,
+        url: s.url,
+        originalHtmlMarkdownKey: getS3Path(s.url, scrapeJobId, 'server-side-html.md'),
+        markdownDiffKey: getS3Path(s.url, scrapeJobId, 'markdown-diff.md'),
+      });
+    } catch {
+      // skip malformed URLs — getS3Path throws if new URL(url) fails
+    }
+    return acc;
+  }, []);
+}
+
 /**
  * Processes opportunities and suggestions for prerender audit results.
  * Persists suggestions so they can later be enriched with AI guidance from Mystique.
@@ -288,25 +329,12 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  * @param {boolean} isPaid - Whether the customer is a paid LLMO customer
  * @returns {Promise<Object>} The created/updated opportunity entity
  */
-export async function processOpportunityAndSuggestions(
-  auditUrl,
-  auditData,
-  context,
-  isPaid,
-) {
+export async function processOpportunityAndSuggestions(auditUrl, auditData, context, isPaid) {
   const { log } = context;
-
-  const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
+  const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet, scrapeJobId } = auditData;
   const { urlsNeedingPrerender } = auditResult;
 
-  const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
-    const pathnames = new Set(
-      [...rawScrapedUrlsSet].map(toPathname),
-    );
-    return {
-      has: (url) => pathnames.has(toPathname(url)),
-    };
-  })() : null;
+  const scrapedUrlsSet = normalizeScrapedUrlsSet(rawScrapedUrlsSet);
 
   /* c8 ignore next 4 */
   if (urlsNeedingPrerender === 0) {
@@ -314,8 +342,7 @@ export async function processOpportunityAndSuggestions(
     return null;
   }
 
-  const preRenderSuggestions = auditResult.results
-    .filter((result) => result.needsPrerender);
+  const preRenderSuggestions = auditResult.results.filter((result) => result.needsPrerender);
 
   /* c8 ignore next 4 */
   if (preRenderSuggestions.length === 0) {
@@ -335,7 +362,6 @@ export async function processOpportunityAndSuggestions(
   );
 
   const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
-
   let domainWideSuggestion = null;
   if (existingPreservable) {
     log.info(`${LOG_PREFIX} Skipping domain-wide suggestion creation - existing one will be preserved. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
@@ -347,32 +373,6 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
-  const buildKey = (data) => {
-    if (data.key) {
-      return data.key;
-    }
-    return toPathname(data.url);
-  };
-
-  const mapSuggestionData = (suggestion) => ({
-    url: suggestion.url,
-    contentGainRatio: suggestion.contentGainRatio,
-    wordCountBefore: suggestion.wordCountBefore,
-    wordCountAfter: suggestion.wordCountAfter,
-    citabilityScore: suggestion.citabilityScore ?? null,
-    scrapeJobId: auditData.scrapeJobId,
-    originalHtmlKey: getS3Path(
-      suggestion.url,
-      auditData.scrapeJobId,
-      'server-side.html',
-    ),
-    prerenderedHtmlKey: getS3Path(
-      suggestion.url,
-      auditData.scrapeJobId,
-      'client-side.html',
-    ),
-  });
-
   const allSuggestions = domainWideSuggestion
     ? [...preRenderSuggestions, domainWideSuggestion]
     : [...preRenderSuggestions];
@@ -381,12 +381,12 @@ export async function processOpportunityAndSuggestions(
     opportunity,
     newData: allSuggestions,
     context,
-    buildKey,
+    buildKey: buildSuggestionKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
       rank: 0,
-      data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
+      data: suggestion.key ? suggestion.data : buildSuggestionData(suggestion, scrapeJobId),
     }),
     scrapedUrlsSet,
     mergeDataFunction: (existingData, newDataItem) => {
@@ -394,10 +394,7 @@ export async function processOpportunityAndSuggestions(
         return { ...newDataItem.data };
       }
       /* c8 ignore next 5 */
-      return {
-        ...existingData,
-        ...mapSuggestionData(newDataItem),
-      };
+      return { ...existingData, ...buildSuggestionData(newDataItem, scrapeJobId) };
     },
   });
 
@@ -409,20 +406,7 @@ export async function processOpportunityAndSuggestions(
     totalCount: allSuggestions.length,
   });
 
-  const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
-    try {
-      acc.push({
-        suggestionId: s.url,
-        url: s.url,
-        originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
-        markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
-      });
-    } catch {
-      // skip malformed URLs — getS3Path throws if new URL(url) fails
-    }
-    return acc;
-  }, []);
-
+  const auditRunCandidates = buildAuditRunCandidates(preRenderSuggestions, scrapeJobId);
   return { opportunity, auditRunCandidates };
 }
 
