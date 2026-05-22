@@ -585,3 +585,166 @@ describe('opportunity-syncer', () => {
     });
   });
 });
+
+describe('routeOpportunityBranch', () => {
+  let sandbox;
+  let convertToOpportunityStub;
+  let syncSuggestionsStub;
+  let sendMystiqueStub;
+  let mod;
+
+  before(async () => {
+    convertToOpportunityStub = sinon.stub();
+    syncSuggestionsStub = sinon.stub();
+    sendMystiqueStub = sinon.stub();
+    mod = await esmock('../../../src/prerender/opportunity-syncer.js', {
+      '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+      '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+      '../../../src/prerender/mystique-sender.js': {
+        sendPrerenderGuidanceRequestToMystique: sendMystiqueStub,
+      },
+    });
+  });
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    convertToOpportunityStub.reset();
+    syncSuggestionsStub.reset();
+    syncSuggestionsStub.resolves();
+    sendMystiqueStub.reset();
+    sendMystiqueStub.resolves();
+  });
+
+  afterEach(() => { sandbox.restore(); });
+
+  function makeCtx(oppList = []) {
+    return {
+      site: { getBaseURL: () => 'https://example.com', getId: () => 'site-1' },
+      audit: { getId: () => 'audit-id' },
+      log: {
+        info: sinon.stub(), warn: sinon.stub(),
+        debug: sinon.stub(), error: sinon.stub(),
+      },
+      dataAccess: {
+        Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves(oppList) },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          saveMany: sinon.stub().resolves(),
+        },
+      },
+    };
+  }
+
+  function makeOpp(suggestions = []) {
+    return {
+      getId: () => 'opp-1',
+      getType: () => 'prerender',
+      getSuggestions: sinon.stub().resolves(suggestions),
+    };
+  }
+
+  function baseOpts(overrides = {}) {
+    return {
+      urlsNeedingPrerender: [],
+      botBlockResult: { scrapeForbidden: false, scrapeForbiddenSince: null },
+      auditResult: { results: [], urlsNeedingPrerender: 0 },
+      scrapeJobId: 'job-1',
+      scrapedUrlsSet: null,
+      successfulComparisons: [],
+      scrapeForbiddenCount: 0,
+      isPaid: false,
+      ...overrides,
+    };
+  }
+
+  // ─── Branch A ──────────────────────────────────────────────────────────────
+
+  it('Branch A: calls processOpportunityAndSuggestions and queues Mystique when URLs need prerender', async () => {
+    const opp = makeOpp();
+    convertToOpportunityStub.resolves(opp);
+    const ctx = makeCtx();
+    const preRenderUrl = {
+      url: 'https://example.com/page',
+      needsPrerender: true,
+      contentGainRatio: 2,
+      wordCountBefore: 10,
+      wordCountAfter: 20,
+    };
+
+    await mod.routeOpportunityBranch(ctx, baseOpts({
+      urlsNeedingPrerender: [preRenderUrl],
+      auditResult: { results: [preRenderUrl], urlsNeedingPrerender: 1 },
+    }));
+
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    expect(sendMystiqueStub).to.have.been.calledOnce;
+    expect(sendMystiqueStub.firstCall.args[0]).to.equal('https://example.com');
+  });
+
+  // ─── Branch B ──────────────────────────────────────────────────────────────
+
+  it('Branch B: calls createScrapeForbiddenOpportunity, never queues Mystique', async () => {
+    convertToOpportunityStub.resolves({});
+    const ctx = makeCtx();
+
+    await mod.routeOpportunityBranch(ctx, baseOpts({
+      botBlockResult: { scrapeForbidden: true, scrapeForbiddenSince: '2025-01-01T00:00:00Z' },
+    }));
+
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    expect(sendMystiqueStub).to.not.have.been.called;
+  });
+
+  // ─── Branch C ──────────────────────────────────────────────────────────────
+
+  it('Branch C: logs "No opportunity found" and calls clearOutdatedSuggestions when opp exists', async () => {
+    const opp = makeOpp();
+    const ctx = makeCtx([opp]);
+
+    await mod.routeOpportunityBranch(ctx, baseOpts({ scrapedUrlsSet: new Set() }));
+
+    expect(ctx.log.info).to.have.been.calledWithMatch(/No opportunity found/);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    expect(sendMystiqueStub).to.not.have.been.called;
+  });
+
+  it('Branch C: syncSuggestions not called when no existing opportunity', async () => {
+    const ctx = makeCtx([]);
+
+    await mod.routeOpportunityBranch(ctx, baseOpts({ scrapedUrlsSet: new Set() }));
+
+    expect(syncSuggestionsStub).to.not.have.been.called;
+  });
+
+  // ─── deployedAtEdgePathnames ────────────────────────────────────────────────
+
+  it('passes only isDeployedAtEdge=true pathnames to markNewSuggestionsAsCovered', async () => {
+    const domainWide = {
+      getId: sinon.stub().returns('dw-1'),
+      getStatus: sinon.stub().returns('NEW'),
+      getData: sinon.stub().returns({ isDomainWide: true, edgeDeployed: true }),
+      setData: sinon.stub(),
+    };
+    const opp = makeOpp([domainWide]);
+    const ctx = makeCtx([opp]);
+    const perUrl = {
+      getId: sinon.stub().returns('s-1'),
+      getStatus: sinon.stub().returns('NEW'),
+      getData: sinon.stub().returns({ url: 'https://example.com/deployed' }),
+      setData: sinon.stub(),
+    };
+    ctx.dataAccess.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([perUrl]);
+
+    await mod.routeOpportunityBranch(ctx, baseOpts({
+      scrapedUrlsSet: new Set(),
+      successfulComparisons: [
+        { url: 'https://example.com/deployed', isDeployedAtEdge: true },
+        { url: 'https://example.com/normal', isDeployedAtEdge: false },
+      ],
+    }));
+
+    // /deployed matched → coveredByDomainWide set; /normal did not
+    expect(perUrl.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'dw-1' }));
+    expect(ctx.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+  });
+});

@@ -18,17 +18,13 @@ import { fetchUrls } from './url-fetcher.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { resolveMode } from './mode-resolver.js';
 import { getScrapeJobStats, buildAuditResult } from './scrape-stats.js';
-import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
+import { isPaidLLMOCustomer } from './utils/utils.js';
 import { writeToCitabilityRecords } from './citability-writer.js';
 import { compareAllUrls } from './html-comparator.js';
 import {
   detectWrongEdgeDeployedStatus,
-  createScrapeForbiddenOpportunity,
-  processOpportunityAndSuggestions,
-  markNewSuggestionsAsCovered,
-  clearOutdatedSuggestions,
+  routeOpportunityBranch,
 } from './opportunity-syncer.js';
-import { sendPrerenderGuidanceRequestToMystique } from './mystique-sender.js';
 import { MODE_AI_ONLY } from './utils/constants.js';
 import { handleAiOnlyMode } from './ai-only.js';
 
@@ -201,54 +197,16 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${scrapeStats.urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, scrapingErrorRate=${auditResult.scrapingErrorRate}%`);
 
-    let opportunityWithSuggestions = null;
-
-    /* c8 ignore next 16 - Opportunity processing branch, covered by integration tests */
-    if (urlsNeedingPrerender.length > 0) {
-      const { opportunity, auditRunCandidates } = await processOpportunityAndSuggestions(
-        site.getBaseURL(),
-        {
-          siteId,
-          id: audit.getId(),
-          auditId: audit.getId(),
-          auditResult,
-          scrapeJobId,
-          scrapedUrlsSet,
-        },
-        context,
-        isPaid,
-      );
-      opportunityWithSuggestions = opportunity;
-      await sendPrerenderGuidanceRequestToMystique(
-        site.getBaseURL(),
-        { siteId, auditId: audit.getId(), scrapeJobId },
-        opportunity,
-        context,
-        auditRunCandidates,
-      );
-    } else if (botBlockResult.scrapeForbidden) {
-      // Create a dummy opportunity when scraping is forbidden (403)
-      // This allows the UI to display proper messaging without suggestions
-      await createScrapeForbiddenOpportunity(site.getBaseURL(), {
-        siteId,
-        id: audit.getId(),
-        auditId: audit.getId(),
-        auditResult,
-        scrapeJobId,
-      }, context, isPaid);
-    } else {
-      log.info(`${LOG_PREFIX} No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${botBlockResult.scrapeForbidden}, scrapeForbiddenCount=${scrapeStats.scrapeForbiddenCount}, isPaidLLMOCustomer=${isPaid}`);
-      opportunityWithSuggestions = await clearOutdatedSuggestions(siteId, scrapedUrlsSet, context);
-    }
-
-    // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
-    // Only mark suggestions for pathnames confirmed deployed at edge in this audit run
-    const deployedAtEdgePathnames = new Set(
-      successfulComparisons
-        .filter((r) => r.isDeployedAtEdge)
-        .map((r) => toPathname(r.url)),
-    );
-    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgePathnames);
+    await routeOpportunityBranch(context, {
+      urlsNeedingPrerender,
+      botBlockResult,
+      auditResult,
+      scrapeJobId,
+      scrapedUrlsSet,
+      successfulComparisons,
+      scrapeForbiddenCount: scrapeStats.scrapeForbiddenCount,
+      isPaid,
+    });
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);

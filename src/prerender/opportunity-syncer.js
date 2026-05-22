@@ -14,6 +14,7 @@ import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { sendPrerenderGuidanceRequestToMystique } from './mystique-sender.js';
 import { getS3Path, toPathname } from './utils/utils.js';
 
 const LOG_PREFIX = 'Prerender -';
@@ -422,4 +423,87 @@ export async function processOpportunityAndSuggestions(
   }, []);
 
   return { opportunity, auditRunCandidates };
+}
+
+/**
+ * Routes to the correct opportunity branch and marks edge-deployed suggestions.
+ *
+ * Branch A (urlsNeedingPrerender > 0): create/update opportunity + queue Mystique
+ * Branch B (scrapeForbidden=true):     create dummy scrapeForbidden opportunity
+ * Branch C (neither):                  clear outdated suggestions from any existing opportunity
+ *
+ * Calls markNewSuggestionsAsCovered after the branch to handle domain-wide edge deployment.
+ *
+ * @param {Object} context - Audit context (site, audit, log, dataAccess, ...)
+ * @param {Object} opts
+ * @param {Array}   opts.urlsNeedingPrerender   - Comparison results where needsPrerender=true
+ * @param {Object}  opts.botBlockResult         - { scrapeForbidden, scrapeForbiddenSince }
+ * @param {Object}  opts.auditResult            - Full audit result from buildAuditResult
+ * @param {string}  opts.scrapeJobId            - Scrape job ID for this run
+ * @param {Object}  opts.scrapedUrlsSet         - Pathname-normalised set from buildAuditResult
+ * @param {Array}   opts.successfulComparisons  - Non-error comparison results
+ * @param {number}  opts.scrapeForbiddenCount   - 403 count (used only for Branch C log)
+ * @param {boolean} opts.isPaid                 - Whether the customer is a paid LLMO customer
+ */
+export async function routeOpportunityBranch(context, {
+  urlsNeedingPrerender,
+  botBlockResult,
+  auditResult,
+  scrapeJobId,
+  scrapedUrlsSet,
+  successfulComparisons,
+  scrapeForbiddenCount,
+  isPaid,
+}) {
+  const { site, audit, log } = context;
+  const baseUrl = site.getBaseURL();
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  let opportunityWithSuggestions = null;
+
+  if (urlsNeedingPrerender.length > 0) {
+    const { opportunity, auditRunCandidates } = await processOpportunityAndSuggestions(
+      baseUrl,
+      {
+        siteId,
+        id: auditId,
+        auditId,
+        auditResult,
+        scrapeJobId,
+        scrapedUrlsSet,
+      },
+      context,
+      isPaid,
+    );
+    opportunityWithSuggestions = opportunity;
+    await sendPrerenderGuidanceRequestToMystique(
+      baseUrl,
+      { siteId, auditId, scrapeJobId },
+      opportunity,
+      context,
+      auditRunCandidates,
+    );
+  } else if (botBlockResult.scrapeForbidden) {
+    await createScrapeForbiddenOpportunity(
+      baseUrl,
+      {
+        siteId,
+        id: auditId,
+        auditId,
+        auditResult,
+        scrapeJobId,
+      },
+      context,
+      isPaid,
+    );
+  } else {
+    log.info(`${LOG_PREFIX} No opportunity found. baseUrl=${baseUrl}, siteId=${siteId}, scrapeForbidden=${botBlockResult.scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, isPaidLLMOCustomer=${isPaid}`);
+    opportunityWithSuggestions = await clearOutdatedSuggestions(siteId, scrapedUrlsSet, context);
+  }
+
+  const deployedAtEdgePathnames = new Set(
+    successfulComparisons.filter((r) => r.isDeployedAtEdge).map((r) => toPathname(r.url)),
+  );
+  await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgePathnames);
 }
