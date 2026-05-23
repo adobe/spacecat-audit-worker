@@ -19,6 +19,13 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 // Max concurrent HTTP calls to prevent Lambda timeout (15 min)
 const MAX_CONCURRENT_CHECKS = 5;
 
+// Bounded auto-retry for ERROR suggestions. ERROR is set by downstream workers
+// (e.g. CWV codefix) when a transient run fails. Without a cap, a re-audit
+// would re-dispatch every Sunday forever for permanently-failing pages; with a
+// cap, we recover everything that was waiting on a deployed code-side fix
+// within MAX_ERROR_RETRIES weekly audits and then stop pinging the rest.
+export const MAX_ERROR_RETRIES = 3;
+
 export const SUMMIT_PLG_HANDLER = 'summit-plg';
 
 /**
@@ -334,6 +341,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * This function encapsulates the default behavior for status transitions:
  * - REJECTED suggestions remain REJECTED
  * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
+ * - ERROR suggestions auto-retry up to MAX_ERROR_RETRIES times, then stay ERROR.
+ *   This recovers suggestions that errored due to a transient/codefix-side bug
+ *   once the underlying fix has shipped, without permanently re-dispatching
+ *   suggestions for pages that can't be patched.
  * - Other statuses remain unchanged
  *
  * @param {Object} existing - The existing suggestion object.
@@ -358,6 +369,23 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
     return (requiresValidation && !isTBYB)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
+  }
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.ERROR) {
+    const existingData = existing.getData();
+    const retryCount = Number.isInteger(existingData.errorRetryCount)
+      ? existingData.errorRetryCount
+      : 0;
+    if (retryCount >= MAX_ERROR_RETRIES) {
+      log.debug(`ERROR suggestion at retry cap (${retryCount}/${MAX_ERROR_RETRIES}). Preserving ERROR status.`);
+      return null;
+    }
+    // syncSuggestions already wrote the merged data via setData() before
+    // calling this function — re-read it and add the bumped counter so the
+    // merged fields are preserved.
+    existing.setData({ ...existingData, errorRetryCount: retryCount + 1 });
+    log.info(`ERROR suggestion auto-retry ${retryCount + 1}/${MAX_ERROR_RETRIES}. Transitioning to NEW.`);
+    return SuggestionDataAccess.STATUSES.NEW;
   }
 
   return null; // Keep existing status
