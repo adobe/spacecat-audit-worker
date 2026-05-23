@@ -1023,14 +1023,13 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
-    it('should transition ERROR suggestion to NEW on first retry and bump errorRetryCount to 1', async () => {
+    it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
       const suggestionsData = [{ key: '1', title: 'old title' }];
-      const setDataStub = sinon.stub();
       const existingSuggestions = [{
         id: '1',
         data: suggestionsData[0],
         getData: sinon.stub().returns(suggestionsData[0]),
-        setData: setDataStub,
+        setData: sinon.stub(),
         save: sinon.stub().resolves(),
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
         setStatus: sinon.stub(),
@@ -1051,151 +1050,11 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      // First setData call is the shallow merge by syncSuggestions; second is
-      // the bumped errorRetryCount written from defaultMergeStatusFunction.
-      const finalData = setDataStub.lastCall.args[0];
-      expect(finalData.errorRetryCount).to.equal(1);
       expect(mockLogger.info).to.have.been.calledWith(
-        sinon.match(/ERROR suggestion auto-retry 1\/3/),
+        'ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.',
       );
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
         .calledOnceWith([existingSuggestions[0]]);
-    });
-
-    it('should bump errorRetryCount from existing value when retrying ERROR suggestion', async () => {
-      const existingData = { key: '1', title: 'old title', errorRetryCount: 2 };
-      const setDataStub = sinon.stub();
-      const existingSuggestions = [{
-        id: '1',
-        data: existingData,
-        getData: sinon.stub().returns(existingData),
-        setData: setDataStub,
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [{ key: '1', title: 'new title' }];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      expect(existingSuggestions[0].setStatus).to.have.been
-        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      const finalData = setDataStub.lastCall.args[0];
-      expect(finalData.errorRetryCount).to.equal(3);
-      expect(mockLogger.info).to.have.been.calledWith(
-        sinon.match(/ERROR suggestion auto-retry 3\/3/),
-      );
-    });
-
-    it('should keep ERROR status once errorRetryCount has reached MAX_ERROR_RETRIES', async () => {
-      const existingData = { key: '1', title: 'old title', errorRetryCount: 3 };
-      const setDataStub = sinon.stub();
-      const existingSuggestions = [{
-        id: '1',
-        data: existingData,
-        getData: sinon.stub().returns(existingData),
-        setData: setDataStub,
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [{ key: '1', title: 'new title' }];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // No status transition; defaultMergeStatusFunction returned null
-      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      // Only the syncSuggestions shallow-merge setData call; no bumped-counter call
-      expect(setDataStub).to.have.been.calledOnce;
-      expect(setDataStub.lastCall.args[0].errorRetryCount).to.equal(3);
-      expect(mockLogger.debug).to.have.been.calledWith(
-        sinon.match(/ERROR suggestion at retry cap \(3\/3\)/),
-      );
-    });
-
-    it('should keep ERROR status when errorRetryCount exceeds MAX_ERROR_RETRIES (defensive)', async () => {
-      const existingData = { key: '1', title: 'old title', errorRetryCount: 99 };
-      const setDataStub = sinon.stub();
-      const existingSuggestions = [{
-        id: '1',
-        data: existingData,
-        getData: sinon.stub().returns(existingData),
-        setData: setDataStub,
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [{ key: '1', title: 'new title' }];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      expect(mockLogger.debug).to.have.been.calledWith(
-        sinon.match(/ERROR suggestion at retry cap \(99\/3\)/),
-      );
-    });
-
-    it('should treat non-integer errorRetryCount as zero when retrying ERROR suggestion', async () => {
-      // Defensive: handles legacy rows with no field or with garbage values.
-      const existingData = { key: '1', title: 'old title', errorRetryCount: 'oops' };
-      const setDataStub = sinon.stub();
-      const existingSuggestions = [{
-        id: '1',
-        data: existingData,
-        getData: sinon.stub().returns(existingData),
-        setData: setDataStub,
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [{ key: '1', title: 'new title' }];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      expect(existingSuggestions[0].setStatus).to.have.been
-        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      const finalData = setDataStub.lastCall.args[0];
-      expect(finalData.errorRetryCount).to.equal(1);
     });
 
     it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
