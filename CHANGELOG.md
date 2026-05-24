@@ -1,3 +1,10 @@
+## [1.450.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.0...v1.450.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* bug fixes on terminal ERROR status and NEW suggestions with guidance text were never dispatched ([#2554](https://github.com/adobe/spacecat-audit-worker/issues/2554)) ([1c02f5a](https://github.com/adobe/spacecat-audit-worker/commit/1c02f5a4d1c3adc0fe27894b1a19d748b48a70b5))
+
 # [1.450.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.3...v1.450.0) (2026-05-22)
 
 
