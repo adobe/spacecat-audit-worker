@@ -12,7 +12,7 @@
 import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
-import { runLinksChecks } from './links-checks.js';
+import { runLinksChecks, filterExcludedElements } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { normalizeExcludedElementClasses } from '../internal-links/config.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
@@ -211,6 +211,7 @@ export default async function links(context, auditContext) {
   scrapedObjects.forEach(({ data }) => {
     const { finalUrl, scrapeResult: { rawBody } } = data;
     const $ = cheerioLoad(rawBody);
+    filterExcludedElements($, excludedElementClasses);
     const auditUrl = stripTrailingSlash(finalUrl);
     const audit = linksAuditMap.get(auditUrl);
     const insecureLinks = $('a').map((i, anchor) => {

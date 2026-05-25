@@ -26,7 +26,7 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
 
   const previewUrl = 'https://example.com/page1';
 
-  const buildAuditContext = () => ({
+  const buildAuditContext = (rawBody = '<html><body></body></html>') => ({
     previewBaseURL: 'https://example.com',
     previewUrls: [previewUrl],
     step: 'identify',
@@ -39,7 +39,7 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
     scrapedObjects: [{
       data: {
         finalUrl: previewUrl,
-        scrapeResult: { rawBody: '<html><body></body></html>' },
+        scrapeResult: { rawBody },
       },
     }],
     urls: [previewUrl],
@@ -147,5 +147,60 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
 
     const passedOptions = runLinksChecksStub.firstCall.args[3];
     expect(passedOptions.excludedElementClasses).to.deep.equal([]);
+  });
+
+  // ── Insecure-link scan respects the same excludedElementClasses ───────────
+  describe('insecure-link scan filtering', () => {
+    it('skips http:// anchors inside an excluded subtree', async () => {
+      const html = `
+        <html><body>
+          <div class="cmp-feature-apps">
+            <a href="http://timesheet.wal-mart.com/etm">excluded insecure</a>
+          </div>
+          <main>
+            <a href="http://public.example.com/article">kept insecure</a>
+            <a href="https://secure.example.com/ok">secure</a>
+          </main>
+        </body></html>
+      `;
+      const context = buildContext({
+        getHandlers: () => ({
+          preflight: { config: { excludedElementClasses: ['cmp-feature-apps'] } },
+        }),
+      });
+      const auditCtx = buildAuditContext(html);
+
+      await linksRunner(context, auditCtx);
+
+      const auditPage = auditCtx.audits.get(previewUrl);
+      const badLinks = auditPage.audits[0].opportunities.find((o) => o.check === 'bad-links');
+
+      expect(badLinks).to.exist;
+      const urls = badLinks.issue.map((i) => i.url);
+      expect(urls).to.deep.equal(['http://public.example.com/article']);
+    });
+
+    it('flags all http:// anchors when no classes are configured', async () => {
+      const html = `
+        <html><body>
+          <div class="cmp-feature-apps">
+            <a href="http://internal.example.com/x">internal</a>
+          </div>
+          <a href="http://public.example.com/y">public</a>
+        </body></html>
+      `;
+      const context = buildContext({ getHandlers: () => ({}) });
+      const auditCtx = buildAuditContext(html);
+
+      await linksRunner(context, auditCtx);
+
+      const auditPage = auditCtx.audits.get(previewUrl);
+      const badLinks = auditPage.audits[0].opportunities.find((o) => o.check === 'bad-links');
+      const urls = badLinks.issue.map((i) => i.url).sort();
+      expect(urls).to.deep.equal([
+        'http://internal.example.com/x',
+        'http://public.example.com/y',
+      ]);
+    });
   });
 });

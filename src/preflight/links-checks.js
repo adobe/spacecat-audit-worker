@@ -24,7 +24,7 @@ import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
  * @param {CheerioAPI} $ - cheerio document (mutated)
  * @param {string[]} excludedElementClasses - normalized class tokens (no leading ".")
  */
-function filterExcludedElements($, excludedElementClasses) {
+export function filterExcludedElements($, excludedElementClasses) {
   if (!excludedElementClasses?.length) {
     return;
   }
