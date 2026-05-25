@@ -48,7 +48,52 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
-const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
+const getDomainWideSuggestionUrl = (baseUrl) => {
+  try {
+    const { pathname } = new URL(baseUrl);
+    const label = pathname === '/' ? 'All Domain URLs' : 'All Subpath URLs';
+    return `${baseUrl}/* (${label})`;
+  } catch {
+    return `${baseUrl}/* (All Domain URLs)`;
+  }
+};
+
+/**
+ * Returns the glob path pattern for the site's scope.
+ * Root sites (pathname '/') → '/*'
+ * Subpath sites (pathname '/kings') → '/kings/*'
+ * @param {string} baseUrl
+ * @returns {string}
+ */
+function getSitePathPattern(baseUrl) {
+  try {
+    const { pathname } = new URL(baseUrl);
+    const normalized = pathname === '/' ? '' : pathname.replace(/\/+$/, '');
+    return normalized ? `${normalized}/*` : '/*';
+  } catch {
+    return '/*';
+  }
+}
+
+/**
+ * Returns true when the given URL falls within the site's base path.
+ * Used to filter top-page URLs for subpath sites where SEO/GSC data may
+ * span the whole domain rather than just the registered subpath.
+ * @param {string} url
+ * @param {string} baseUrl
+ * @returns {boolean}
+ */
+function isUrlUnderSiteBase(url, baseUrl) {
+  try {
+    const { pathname: basePath } = new URL(baseUrl);
+    if (basePath === '/') return true;
+    const { pathname: urlPath } = new URL(url);
+    const normalized = basePath.replace(/\/+$/, '');
+    return urlPath === normalized || urlPath.startsWith(`${normalized}/`);
+  } catch {
+    return true;
+  }
+}
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
@@ -296,7 +341,10 @@ async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT)
     const { SiteTopPage } = dataAccess || {};
     if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, limit);
+      topPagesUrls = (topPages || [])
+        .map((p) => p.getUrl())
+        .filter((url) => isUrlUnderSiteBase(url, site.getBaseURL()))
+        .slice(0, limit);
     }
   } catch (error) {
     log.warn(`${LOG_PREFIX} Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
@@ -693,7 +741,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
     await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
-      url: baseUrl,
+      url: baseUrl, //todo:dhavkuma
       siteId,
       auditId,
       deliveryType,
@@ -1062,7 +1110,7 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  */
 async function prepareDomainWideAggregateSuggestion(
   preRenderSuggestions,
-  baseUrl,
+  baseUrl,//todo:dhavkuma
   context,
 ) {
   const { log } = context;
@@ -1100,11 +1148,11 @@ async function prepareDomainWideAggregateSuggestion(
     0,
   );
 
-  // Create domain-wide path pattern(s) for allowList
-  // The allowList in metaconfig expects glob patterns (e.g., "/*")
-  const allowedRegexPatterns = ['/*'];
+  // Derive path pattern from the site's base URL so subpath sites (e.g. nba.com/kings)
+  // only deploy the CDN prerender rule for their own path prefix, not the whole domain.
+  const pathPattern = getSitePathPattern(baseUrl);
+  const allowedRegexPatterns = [pathPattern];
 
-  // This applies to ALL URLs in the domain
   // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
     url: getDomainWideSuggestionUrl(baseUrl),
@@ -1115,7 +1163,7 @@ async function prepareDomainWideAggregateSuggestion(
     // Domain-wide configuration metadata
     isDomainWide: true,
     allowedRegexPatterns,
-    pathPattern: '/*',
+    pathPattern,
   };
 
   log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
@@ -1462,7 +1510,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     ).length;
 
     const statusSummary = {
-      baseUrl: auditUrl,
+      baseUrl: auditUrl,//todo:dhavkuma
       siteId,
       auditType: AUDIT_TYPE,
       scrapeJobId: scrapeJobId || existingStatus.scrapeJobId || null,
@@ -1676,7 +1724,7 @@ export async function processContentAndGenerateOpportunities(context) {
       const ratio403 = scrapeForbiddenCount / urlsSubmittedForScraping;
       if (ratio403 >= STICKY_BOT_FORBIDDEN_RATIO) {
         try {
-          const botBlocker = await detectBotBlocker({ baseUrl: site.getBaseURL(), log });
+          const botBlocker = await detectBotBlocker({ baseUrl: site.getBaseURL(), log });//todo:dhavkuma
           if (isKnownBotBlockerResult(botBlocker)) {
             scrapeForbidden = true;
             scrapeForbiddenSince = new Date().toISOString();
