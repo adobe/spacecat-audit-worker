@@ -103,6 +103,11 @@ export async function scrapePages(context) {
       screenshotTypes: [],
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
+    // Opt out of the CONTENT_SCRAPER dispatcher's site-config header auto-load.
+    // Preflight is a fast, generic URL probe and should not inherit per-site
+    // request headers (e.g. Accept-Language) that may alter response content
+    // for the audit it is performing.
+    customHeaders: null,
   };
 }
 

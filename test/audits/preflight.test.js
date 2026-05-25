@@ -537,6 +537,8 @@ describe('Preflight Audit', () => {
           enableAuthentication: true,
           screenshotTypes: [],
         },
+        // Preflight opts out of the dispatcher's site-config header auto-load.
+        customHeaders: null,
       });
     });
     it('returns the correct object for valid input for authentication disabled', async () => {
@@ -569,6 +571,7 @@ describe('Preflight Audit', () => {
           enableAuthentication,
           screenshotTypes: [],
         },
+        customHeaders: null,
       });
     });
 
