@@ -56,6 +56,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
+  { pattern: '%com.anthropic.claude%', displayName: 'Claude Clients' },
+  { pattern: '%claude/%', displayName: 'Claude Clients' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
   // Amazon
@@ -106,6 +108,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
+    { pattern: '%com.anthropic.claude%', result: 'Media fetchers' },
+    { pattern: '%claude/%', result: 'Media fetchers' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
