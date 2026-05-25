@@ -1,3 +1,10 @@
+## [1.450.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.1...v1.450.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **wikipedia:** handle branded TLDs in extractBrandFromUrl ([#2557](https://github.com/adobe/spacecat-audit-worker/issues/2557)) ([2279b9b](https://github.com/adobe/spacecat-audit-worker/commit/2279b9baae4439d3acd1fab5729b4d1a5972e3ee))
+
 ## [1.450.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.0...v1.450.1) (2026-05-24)
 
 
