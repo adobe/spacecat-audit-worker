@@ -14,6 +14,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
+import { normalizeExcludedElementClasses } from '../internal-links/config.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_LINKS = 'links';
@@ -89,8 +90,13 @@ export default async function links(context, auditContext) {
   const linksStartTime = Date.now();
   const linksStartTimestamp = new Date().toISOString();
   const auditUrls = urls.map((url) => stripTrailingSlash(url));
+  const preflightHandlerConfig = site.getConfig?.()?.getHandlers?.()?.preflight?.config;
+  const excludedElementClasses = normalizeExcludedElementClasses(
+    preflightHandlerConfig?.excludedElementClasses,
+  );
   const { auditResult } = await runLinksChecks(auditUrls, scrapedObjects, context, {
     pageAuthToken,
+    excludedElementClasses,
   });
 
   const brokenInternalLinksByPage = new Map();
