@@ -14,8 +14,76 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import {
+  matchesExcludedDomain,
+  matchesExcludedPattern,
+  normalizeHrefDomains,
+  normalizeHrefPatterns,
+  compileHrefPatterns,
+} from '../../src/preflight/links-checks.js';
 
 use(sinonChai);
+
+describe('preflight/links-checks - helpers (direct)', () => {
+  describe('matchesExcludedDomain', () => {
+    it('returns false for an unparseable href (defensive)', () => {
+      expect(matchesExcludedDomain('not a url', ['wal-mart.com'])).to.equal(false);
+    });
+    it('returns false when no domains configured', () => {
+      expect(matchesExcludedDomain('https://wal-mart.com/x', [])).to.equal(false);
+      expect(matchesExcludedDomain('https://wal-mart.com/x', undefined)).to.equal(false);
+    });
+  });
+
+  describe('matchesExcludedPattern', () => {
+    it('returns false when no patterns configured', () => {
+      expect(matchesExcludedPattern('https://x.com/y', [])).to.equal(false);
+      expect(matchesExcludedPattern('https://x.com/y', undefined)).to.equal(false);
+    });
+  });
+
+  describe('normalizeHrefDomains', () => {
+    it('accepts array input, lowercases, dedupes, strips protocol and path', () => {
+      expect(normalizeHrefDomains(['Wal-Mart.com', 'https://wal-mart.com/owa', 'walmart.net']))
+        .to.deep.equal(['wal-mart.com', 'walmart.net']);
+    });
+    it('accepts comma-separated string input', () => {
+      expect(normalizeHrefDomains('foo.com, BAR.com, foo.com'))
+        .to.deep.equal(['foo.com', 'bar.com']);
+    });
+    it('returns [] for non-string non-array input', () => {
+      expect(normalizeHrefDomains(undefined)).to.deep.equal([]);
+      expect(normalizeHrefDomains(123)).to.deep.equal([]);
+    });
+    it('filters out non-string array entries and empties', () => {
+      expect(normalizeHrefDomains(['a.com', 123, null, '', '  '])).to.deep.equal(['a.com']);
+    });
+  });
+
+  describe('normalizeHrefPatterns', () => {
+    it('accepts array input, trims, drops empties', () => {
+      expect(normalizeHrefPatterns(['^a', '  ', 'b$'])).to.deep.equal(['^a', 'b$']);
+    });
+    it('accepts a single string as a one-element array', () => {
+      expect(normalizeHrefPatterns('^a')).to.deep.equal(['^a']);
+    });
+    it('returns [] for non-string non-array input', () => {
+      expect(normalizeHrefPatterns(undefined)).to.deep.equal([]);
+      expect(normalizeHrefPatterns({})).to.deep.equal([]);
+    });
+    it('filters out non-string array entries', () => {
+      expect(normalizeHrefPatterns(['a', 123, null])).to.deep.equal(['a']);
+    });
+  });
+
+  describe('compileHrefPatterns', () => {
+    it('returns [] when nothing to compile', () => {
+      const log = { warn: () => {} };
+      expect(compileHrefPatterns([], log)).to.deep.equal([]);
+      expect(compileHrefPatterns(undefined, log)).to.deep.equal([]);
+    });
+  });
+});
 
 describe('preflight/links-checks - runLinksChecks', () => {
   let sandbox;
@@ -702,6 +770,189 @@ describe('preflight/links-checks - runLinksChecks', () => {
         'https://b.example.com/y',
         'https://c.example.com/z',
       ]);
+    });
+  });
+
+  // ── excludedHrefDomains ────────────────────────────────────────────────────
+
+  describe('excludedHrefDomains', () => {
+    it('skips anchors whose hostname is exactly an excluded domain', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <a href="https://wal-mart.com/about">root</a>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefDomains: ['wal-mart.com'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+    });
+
+    it('suffix-matches subdomains of an excluded domain', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <a href="https://timesheet.wal-mart.com/etm">sub</a>
+        <a href="https://outlook.wal-mart.com/owa">sub2</a>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefDomains: ['wal-mart.com'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+    });
+
+    it('does NOT match adversarial lookalike hostnames', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      // wal-mart.com must NOT match evilwal-mart.com or wal-mart.com.evil.io
+      const html = `
+        <a href="https://evilwal-mart.com/phish">phish</a>
+        <a href="https://wal-mart.com.evil.io/oops">trick</a>
+        <a href="https://timesheet.wal-mart.com/etm">legit-skip</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefDomains: ['wal-mart.com'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls).to.deep.equal([
+        'https://evilwal-mart.com/phish',
+        'https://wal-mart.com.evil.io/oops',
+      ]);
+    });
+
+    it('handles multiple excluded domains', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <a href="https://timesheet.wal-mart.com/etm">a</a>
+        <a href="https://workforce.us-walmart.prod.polaris.walmart.com/x">b</a>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefDomains: ['wal-mart.com', 'walmart.com'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+    });
+
+    it('is a no-op when not configured', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = '<a href="https://timesheet.wal-mart.com/etm">x</a>';
+
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://timesheet.wal-mart.com/etm']);
+    });
+  });
+
+  // ── excludedHrefPatterns ───────────────────────────────────────────────────
+
+  describe('excludedHrefPatterns', () => {
+    it('skips anchors whose href matches a regex pattern', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <a href="https://internal.example.com/tools/x">internal</a>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefPatterns: ['^https?://internal\\.'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+    });
+
+    it('drops invalid regexes with a warn but keeps valid ones working', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <a href="https://internal.example.com/x">match</a>
+        <a href="https://public.example.com/y">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedHrefPatterns: ['[unclosed', '^https?://internal\\.'] },
+      );
+
+      // Bad pattern dropped with a warn — audit not crashed
+      expect(context.log.warn).to.have.been.calledWithMatch(/invalid excludedHrefPattern/);
+      // Valid pattern still applied
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/y']);
+    });
+
+    it('is a no-op when not configured', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = '<a href="https://internal.example.com/x">x</a>';
+
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://internal.example.com/x']);
+    });
+  });
+
+  // ── combined filters compose ───────────────────────────────────────────────
+
+  describe('all three filters compose', () => {
+    it('skips anchors matching any of element-class / domain / pattern', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="cmp-feature-apps">
+          <a href="https://anything.com/inside-excluded-subtree">x1</a>
+        </div>
+        <a href="https://timesheet.wal-mart.com/etm">x2</a>
+        <a href="https://internal.example.com/tools">x3</a>
+        <a href="https://public.example.com/article">survives</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        {
+          excludedElementClasses: ['cmp-feature-apps'],
+          excludedHrefDomains: ['wal-mart.com'],
+          excludedHrefPatterns: ['^https?://internal\\.'],
+        },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
     });
   });
 });

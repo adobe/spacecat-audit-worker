@@ -202,5 +202,113 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
         'http://public.example.com/y',
       ]);
     });
+
+    it('skips http:// anchors whose hostname matches excludedHrefDomains', async () => {
+      const html = `
+        <html><body>
+          <a href="http://timesheet.wal-mart.com/etm">corp insecure</a>
+          <a href="http://public.example.com/y">public insecure</a>
+        </body></html>
+      `;
+      const context = buildContext({
+        getHandlers: () => ({
+          preflight: { config: { excludedHrefDomains: ['wal-mart.com'] } },
+        }),
+      });
+      const auditCtx = buildAuditContext(html);
+
+      await linksRunner(context, auditCtx);
+
+      const auditPage = auditCtx.audits.get(previewUrl);
+      const badLinks = auditPage.audits[0].opportunities.find((o) => o.check === 'bad-links');
+      const urls = badLinks.issue.map((i) => i.url);
+      expect(urls).to.deep.equal(['http://public.example.com/y']);
+    });
+
+    it('skips http:// anchors matching excludedHrefPatterns', async () => {
+      const html = `
+        <html><body>
+          <a href="http://internal.example.com/x">internal insecure</a>
+          <a href="http://public.example.com/y">public insecure</a>
+        </body></html>
+      `;
+      const context = buildContext({
+        getHandlers: () => ({
+          preflight: { config: { excludedHrefPatterns: ['^https?://internal\\.'] } },
+        }),
+      });
+      const auditCtx = buildAuditContext(html);
+
+      await linksRunner(context, auditCtx);
+
+      const auditPage = auditCtx.audits.get(previewUrl);
+      const badLinks = auditPage.audits[0].opportunities.find((o) => o.check === 'bad-links');
+      const urls = badLinks.issue.map((i) => i.url);
+      expect(urls).to.deep.equal(['http://public.example.com/y']);
+    });
+
+    it('normalizes loose customer input for excludedHrefDomains', async () => {
+      const html = `
+        <html><body>
+          <a href="http://timesheet.wal-mart.com/etm">corp</a>
+          <a href="http://public.example.com/y">public</a>
+        </body></html>
+      `;
+      // Customer config has accidental "https://", trailing slash, uppercase,
+      // dupes — should still cleanly match.
+      const context = buildContext({
+        getHandlers: () => ({
+          preflight: {
+            config: {
+              excludedHrefDomains: ['HTTPS://Wal-Mart.COM/', 'wal-mart.com'],
+            },
+          },
+        }),
+      });
+      const auditCtx = buildAuditContext(html);
+
+      await linksRunner(context, auditCtx);
+
+      const auditPage = auditCtx.audits.get(previewUrl);
+      const badLinks = auditPage.audits[0].opportunities.find((o) => o.check === 'bad-links');
+      const urls = badLinks.issue.map((i) => i.url);
+      expect(urls).to.deep.equal(['http://public.example.com/y']);
+    });
+  });
+
+  // ── Plumbing for the new href knobs ────────────────────────────────────────
+
+  describe('href-domain / href-pattern plumbing', () => {
+    it('passes empty arrays when neither field is set', async () => {
+      const context = buildContext({ getHandlers: () => ({}) });
+
+      await linksRunner(context, buildAuditContext());
+
+      const passedOptions = runLinksChecksStub.firstCall.args[3];
+      expect(passedOptions.excludedHrefDomains).to.deep.equal([]);
+      expect(passedOptions.excludedHrefPatterns).to.deep.equal([]);
+    });
+
+    it('passes normalized domains and trimmed patterns from site config', async () => {
+      const context = buildContext({
+        getHandlers: () => ({
+          preflight: {
+            config: {
+              excludedHrefDomains: ['HTTPS://Wal-Mart.COM/', '  walmart.net  ', ''],
+              excludedHrefPatterns: ['^https?://internal\\.', '  ', '\\.prod\\.'],
+            },
+          },
+        }),
+      });
+
+      await linksRunner(context, buildAuditContext());
+
+      const passedOptions = runLinksChecksStub.firstCall.args[3];
+      expect(passedOptions.excludedHrefDomains).to.deep.equal(['wal-mart.com', 'walmart.net']);
+      expect(passedOptions.excludedHrefPatterns).to.deep.equal([
+        '^https?://internal\\.',
+        '\\.prod\\.',
+      ]);
+    });
   });
 });
