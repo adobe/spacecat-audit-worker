@@ -1,3 +1,31 @@
+## [1.450.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.3...v1.450.4) (2026-05-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2555](https://github.com/adobe/spacecat-audit-worker/issues/2555)) ([84b2426](https://github.com/adobe/spacecat-audit-worker/commit/84b242659efff49739208a9b1b436668c5b7f839))
+
+## [1.450.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.2...v1.450.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* bucket Claude desktop/iOS clients into "Claude Clients" ([#2556](https://github.com/adobe/spacecat-audit-worker/issues/2556)) ([f818e5a](https://github.com/adobe/spacecat-audit-worker/commit/f818e5abc3a86704e75a6f8dfbe6309d07fb0dae))
+
+## [1.450.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.1...v1.450.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **wikipedia:** handle branded TLDs in extractBrandFromUrl ([#2557](https://github.com/adobe/spacecat-audit-worker/issues/2557)) ([2279b9b](https://github.com/adobe/spacecat-audit-worker/commit/2279b9baae4439d3acd1fab5729b4d1a5972e3ee))
+
+## [1.450.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.0...v1.450.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* bug fixes on terminal ERROR status and NEW suggestions with guidance text were never dispatched ([#2554](https://github.com/adobe/spacecat-audit-worker/issues/2554)) ([1c02f5a](https://github.com/adobe/spacecat-audit-worker/commit/1c02f5a4d1c3adc0fe27894b1a19d748b48a70b5))
+
 # [1.450.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.449.3...v1.450.0) (2026-05-22)
 
 

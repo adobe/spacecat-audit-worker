@@ -47,62 +47,43 @@ const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
 
 /**
- * Checks if a specific suggestion should receive auto-suggest from Mystique
+ * Checks if a specific suggestion should receive auto-suggest from Mystique.
  *
  * CWV suggestion structure:
  * {
- *   opportunityId: string,
  *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR' | 'REJECTED',
- *   ...
  *   data: {
  *     type: 'url' | 'group',
- *     url?: string,              // Present for type: 'url'
- *     pattern?: string,          // Present for type: 'group'
+ *     url?: string,                  // Present for type: 'url'
+ *     pattern?: string,              // Present for type: 'group'
  *     metrics: [{...}],
- *     issues?: [                 // Auto-suggest guidance stored here
- *       {
- *         type: 'lcp' | 'cls' | 'inp',
- *         value: string,         // Markdown text with guidance
- *         patchContent: string   // Git diff patch
- *       }
+ *     isCodeChangeAvailable?: boolean, // Set by autofix-worker when a patch lands
+ *     issues?: [                     // Auto-suggest guidance stored here
+ *       { type: 'lcp' | 'cls' | 'inp', value: string, patchContent?: string }
  *     ]
- *   },
- *   ...
+ *   }
  * }
  *
- * Filters out suggestions that:
- * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR, REJECTED)
- * - Already have guidance (data.issues with non-empty values)
+ * Dispatches when the suggestion is NEW and no code patch has been produced yet
+ * (`data.isCodeChangeAvailable !== true`). We deliberately ignore
+ * `issues[*].value` here — text guidance being present is not proof that a code
+ * patch ran successfully, and `mergeCwvData` preserves that field across every
+ * re-audit, which used to silently block retries forever.
+ *
+ * Group filtering and "page is all-green" filtering happen in `processAutoSuggest`.
  *
  * @param {Object} suggestion - Suggestion object
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
 export function shouldSendAutoSuggestForSuggestion(suggestion) {
-  const status = suggestion.getStatus();
-
-  // Only send for NEW suggestions
-  if (status !== 'NEW') {
+  if (suggestion.getStatus() !== 'NEW') {
     return false;
   }
-
-  const data = suggestion.getData();
-  const issues = data?.issues || [];
-
-  // If no issues at all, send for auto-suggest
-  if (issues.length === 0) {
-    return true;
+  const data = suggestion.getData() || {};
+  if (data.isCodeChangeAvailable === true) {
+    return false;
   }
-
-  // Send for auto-suggest if any issue is NEW (or lacks an explicit status — legacy data)
-  // AND has empty guidance. Issues whose status has moved past NEW (APPROVED, OUTDATED,
-  // FIXED, SKIPPED, REJECTED, IN_PROGRESS, ERROR) don't need regeneration — customer
-  // intent is already recorded, and OUTDATED issues are no longer actionable.
-  return issues.some((issue) => {
-    if (issue.status && issue.status !== 'NEW') {
-      return false;
-    }
-    return !issue.value || !issue.value.trim();
-  });
+  return true;
 }
 
 /**
