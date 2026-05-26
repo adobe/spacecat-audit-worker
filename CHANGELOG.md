@@ -1,3 +1,38 @@
+# [1.452.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.451.1...v1.452.0) (2026-05-26)
+
+
+### Features
+
+* refactor to send spacecatOrgId to submitScrapeJob ([#2552](https://github.com/adobe/spacecat-audit-worker/issues/2552)) ([9cfcd62](https://github.com/adobe/spacecat-audit-worker/commit/9cfcd621771e95ce937237fd16253d34501f9cfb))
+
+## [1.451.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.451.0...v1.451.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.11.0 ([#2561](https://github.com/adobe/spacecat-audit-worker/issues/2561)) ([24401d1](https://github.com/adobe/spacecat-audit-worker/commit/24401d1a45507a1bf91720973fd39c051936f738))
+
+# [1.451.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.4...v1.451.0) (2026-05-26)
+
+
+### Features
+
+* **offsite-brand-presence:** extend reddit comments scraping parameters (LLMO-4464) ([#2562](https://github.com/adobe/spacecat-audit-worker/issues/2562)) ([df2f0b7](https://github.com/adobe/spacecat-audit-worker/commit/df2f0b7dd89ec757791194ace91470f5dd7d4be0))
+
+## [1.450.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.3...v1.450.4) (2026-05-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2555](https://github.com/adobe/spacecat-audit-worker/issues/2555)) ([84b2426](https://github.com/adobe/spacecat-audit-worker/commit/84b242659efff49739208a9b1b436668c5b7f839))
+
+## [1.450.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.2...v1.450.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* bucket Claude desktop/iOS clients into "Claude Clients" ([#2556](https://github.com/adobe/spacecat-audit-worker/issues/2556)) ([f818e5a](https://github.com/adobe/spacecat-audit-worker/commit/f818e5abc3a86704e75a6f8dfbe6309d07fb0dae))
+
 ## [1.450.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.1...v1.450.2) (2026-05-25)
 
 
