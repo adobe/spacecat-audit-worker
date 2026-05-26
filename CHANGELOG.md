@@ -1,3 +1,10 @@
+## [1.450.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.2...v1.450.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* bucket Claude desktop/iOS clients into "Claude Clients" ([#2556](https://github.com/adobe/spacecat-audit-worker/issues/2556)) ([f818e5a](https://github.com/adobe/spacecat-audit-worker/commit/f818e5abc3a86704e75a6f8dfbe6309d07fb0dae))
+
 ## [1.450.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.1...v1.450.2) (2026-05-25)
 
 
