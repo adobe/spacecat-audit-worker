@@ -19,7 +19,6 @@ import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
 const {
   DRS_URLS_LIMIT,
-  REDDIT_COMMENTS_DAYS_BACK,
 } = handlerConstants;
 
 use(sinonChai);
@@ -1045,7 +1044,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
-    it('should include daysBack for reddit_comments', async () => {
+    it('should not attach reddit_comments params by default (DRS client applies defaults)', async () => {
       stubBrandPresenceData(['https://reddit.com/r/adobe/']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
@@ -1054,13 +1053,136 @@ describe('Offsite Brand Presence Handler', () => {
         (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
       );
       expect(commentsCall).to.exist;
-      expect(commentsCall.args[0].daysBack).to.equal(REDDIT_COMMENTS_DAYS_BACK);
+      expect(commentsCall.args[0]).to.not.have.property('daysBack');
+      expect(commentsCall.args[0]).to.not.have.property('commentLimit');
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
+      expect(commentsCall.args[0]).to.not.have.property('loadAllReplies');
 
       const postsCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_POSTS,
       );
       expect(postsCall).to.exist;
       expect(postsCall.args[0]).to.not.have.property('daysBack');
+      expect(postsCall.args[0]).to.not.have.property('commentLimit');
+      expect(postsCall.args[0]).to.not.have.property('sortBy');
+      expect(postsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('forwards messageData reddit params to submitScrapeJob for reddit_comments only', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: '300',
+          redditSortBy: 'Top',
+          redditDaysBack: '7',
+          redditLoadAllReplies: 'true',
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall).to.exist;
+      expect(commentsCall.args[0]).to.include({
+        commentLimit: 300,
+        sortBy: 'Top',
+        daysBack: 7,
+        loadAllReplies: true,
+      });
+
+      const postsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_POSTS,
+      );
+      expect(postsCall).to.exist;
+      expect(postsCall.args[0]).to.not.have.property('commentLimit');
+      expect(postsCall.args[0]).to.not.have.property('sortBy');
+      expect(postsCall.args[0]).to.not.have.property('daysBack');
+      expect(postsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('normalizes redditSortBy "QA" to "Q&A" before forwarding', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditSortBy: 'QA' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0].sortBy).to.equal('Q&A');
+    });
+
+    it('forwards redditLoadAllReplies=false explicitly when provided as string "false"', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditLoadAllReplies: 'false' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.have.property('loadAllReplies', false);
+    });
+
+    it('forwards reddit params delivered as native types (numbers and booleans)', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: 250,
+          redditDaysBack: 14,
+          redditLoadAllReplies: true,
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.include({
+        commentLimit: 250,
+        daysBack: 14,
+        loadAllReplies: true,
+      });
+    });
+
+    it('drops invalid reddit param values (non-numeric, blank, unknown booleans)', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: 'lots',
+          redditDaysBack: '',
+          redditSortBy: '',
+          redditLoadAllReplies: 'maybe',
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.not.have.property('commentLimit');
+      expect(commentsCall.args[0]).to.not.have.property('daysBack');
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
+      expect(commentsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('drops non-empty redditSortBy values that are not in the allowlist', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditSortBy: 'Hot' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
     });
 
     it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {

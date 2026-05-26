@@ -56,7 +56,6 @@ export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const USER_AGENT = 'Offsite Audits - Spacecat/1.0';
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topics', 'Category'].join(',');
-export const REDDIT_COMMENTS_DAYS_BACK = 30;
 export const RETRIABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 export const RETRY_DELAY_MS = 500;
 export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
