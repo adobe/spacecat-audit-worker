@@ -853,6 +853,116 @@ describe('guidance-broken-links-remediation handler', () => {
     });
   });
 
+  it('should strip tracking params from suggested URLs before storing', async () => {
+    const messageWithTrackingParams = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: ['https://foo.com/fixed?utm_source=email&utm_medium=cpc&fbclid=abc123'],
+          aiRationale: 'Tracking params should be stripped',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithTrackingParams, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Tracking params should be stripped',
+    });
+  });
+
+  it('should deduplicate suggested URLs after stripping tracking params', async () => {
+    const messageWithDuplicates = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: [
+            'https://foo.com/fixed?utm_source=email',
+            'https://foo.com/fixed?utm_medium=cpc',
+            'https://foo.com/fixed',
+          ],
+          aiRationale: 'Duplicates after strip should be removed',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithDuplicates, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Duplicates after strip should be removed',
+    });
+  });
+
   it('should respect overrideBaseURL when validating suggestions', async () => {
     const messageWithOverride = {
       ...mockMessage,
@@ -905,5 +1015,157 @@ describe('guidance-broken-links-remediation handler', () => {
       urlsSuggested: ['https://qualcomm.com/fixed'],
       aiRationale: 'This URL works',
     });
+  });
+
+  it('should pass through invalid URLs unchanged when stripping tracking params', async () => {
+    const messageWithInvalidUrl = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: ['not-a-valid-url', 'https://foo.com/fixed'],
+          aiRationale: 'Some rationale',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithInvalidUrl, mockContext);
+    expect(response.status).to.equal(200);
+    // invalid URL is filtered out by filterBrokenSuggestedUrls; only the valid one survives
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Some rationale',
+    });
+  });
+
+  it('should drop entity-replacement suggestions and fall back to parent path', async () => {
+    const entityMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['https://foo.com/contact/jane-doe'],
+          aiRationale: 'Similar contact page',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/contact/john-smith',
+          url_from: 'https://example.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // Entity replacement is dropped; parent path /contact/ responds 200
+    nock('https://foo.com').get('/contact/').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(entityMessage, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      url_to: 'https://foo.com/contact/john-smith',
+      urlsSuggested: ['https://foo.com/contact/'],
+    }));
+  });
+
+  it('should use parent path fallback when no suggestions pass filtering', async () => {
+    const noSuggestionMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: [],
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/products/old-product',
+          url_from: 'https://example.com/page',
+          urlsSuggested: [],
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // Parent path /products/ responds 200
+    nock('https://foo.com').get('/products/').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(noSuggestionMessage, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      url_to: 'https://foo.com/products/old-product',
+      urlsSuggested: ['https://foo.com/products/'],
+    }));
   });
 });

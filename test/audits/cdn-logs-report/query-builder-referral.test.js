@@ -21,7 +21,7 @@ use(sinonChai);
 describe('CDN Logs Query Builder (Referral)', () => {
   const sandbox = sinon.createSandbox();
 
-  const { createReferralReportQuery } = weeklyBreakdownQueries;
+  const { createReferralReportQuery, createReferralDailyReportQuery } = weeklyBreakdownQueries;
   const options = {
     periods: {
       weeks: [
@@ -83,5 +83,39 @@ describe('CDN Logs Query Builder (Referral)', () => {
 
     const query = await createReferralReportQuery(options);
     expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
+  });
+
+  it('creates referral daily report query with single-day partition filter', async () => {
+    const query = await createReferralDailyReportQuery({
+      trafficDate: new Date('2026-03-31T00:00:00.000Z'),
+      databaseName: 'cdn_logs_database',
+      tableName: 'aggregated_referral_logs',
+      site: {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
+      },
+    });
+
+    expect(query).to.include("(year = '2026' AND month = '03' AND day = '31')");
+    expect(query).to.include('host');
+    expect(query).to.include('COUNT(*) AS pageviews');
+    expect(query).to.include('aggregated_referral_logs');
+  });
+
+  it('creates referral daily report query with site filters', async () => {
+    const query = await createReferralDailyReportQuery({
+      trafficDate: new Date('2026-03-31T00:00:00.000Z'),
+      databaseName: 'cdn_logs_database',
+      tableName: 'aggregated_referral_logs',
+      site: {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [{ value: ['staging'], key: 'host', type: 'exclude' }],
+        }),
+      },
+    });
+
+    expect(query).to.include("(year = '2026' AND month = '03' AND day = '31')");
+    expect(query).to.include('staging');
   });
 });

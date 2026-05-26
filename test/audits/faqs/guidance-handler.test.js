@@ -79,11 +79,8 @@ describe('FAQs guidance handler', () => {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
     convertToOpportunityStub = sinon.stub();
-    fetchStub = sinon.stub().resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves(mockFaqData),
-    });
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub().resolves(mockFaqData);
     getObjectKeysUsingPrefixStub = sinon.stub();
     getObjectFromKeyStub = sinon.stub();
     createLLMOSharepointClientStub = sinon.stub().resolves({ client: 'mock' });
@@ -114,8 +111,8 @@ describe('FAQs guidance handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
       exceljs: {
         Workbook: class {
@@ -208,7 +205,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'unknown-site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -220,41 +217,35 @@ describe('FAQs guidance handler', () => {
   });
 
   it('should return badRequest when fetch fails', async () => {
-    fetchStub.resolves({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
-    });
+    fetchStub.rejects(new Error("[FAQ] analysis fetch failed: 404 Not Found"));
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Failed to fetch FAQ data: 404 Not Found/));
+    // fetchAnalysisFromPresignedUrl throws on non-ok; the FAQ catch logs "Error processing FAQ guidance: …"
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Error processing FAQ guidance.*analysis fetch failed: 404 Not Found/));
   });
 
   it('should return noContent when no FAQs are found', async () => {
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         opportunity_id: 'oppty-123',
         url: 'https://adobe.com',
         suggestions: [],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -285,16 +276,13 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(dataWithUnsuitableSuggestions),
-    });
+    fetchStub.resolves(dataWithUnsuitableSuggestions);
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -309,7 +297,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -332,7 +320,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -373,7 +361,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -399,7 +387,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -422,7 +410,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -469,7 +457,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -492,7 +480,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -510,7 +498,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -540,7 +528,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -568,7 +556,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -611,7 +599,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -653,7 +641,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -665,8 +653,6 @@ describe('FAQs guidance handler', () => {
 
   it('should handle generic suggestions with missing URL and topic', async () => {
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             faqs: [
@@ -680,14 +666,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const result = await handler({
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -730,8 +715,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original',
@@ -749,14 +732,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -794,8 +776,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original',
@@ -813,14 +793,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -876,8 +855,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original-a',
@@ -919,14 +896,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -946,7 +922,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -963,7 +939,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1011,16 +987,13 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(mixedQualityData),
-    });
+    fetchStub.resolves(mixedQualityData);
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1059,16 +1032,13 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(faqData),
-    });
+    fetchStub.resolves(faqData);
 
     const message = {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        presignedUrl: 'https://s3.example.com/faqs.json?signature=xyz',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json?signature=xyz',
       },
     };
 
@@ -1098,7 +1068,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1128,7 +1098,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1158,7 +1128,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1188,7 +1158,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1216,7 +1186,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1245,7 +1215,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1262,8 +1232,6 @@ describe('FAQs guidance handler', () => {
   it('should set shouldOptimize to false when FAQ has topic only (no URL)', async () => {
     // Mock FAQ data with no URL (topic only)
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             topic: 'general-topic',
@@ -1279,14 +1247,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1309,7 +1276,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1335,7 +1302,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1357,7 +1324,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1386,7 +1353,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1404,8 +1371,6 @@ describe('FAQs guidance handler', () => {
   it('should set shouldOptimize to false when URL is not in sources', async () => {
     // Mock FAQ data where the suggestion URL is NOT in the sources
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1424,14 +1389,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1458,8 +1422,6 @@ describe('FAQs guidance handler', () => {
     getObjectFromKeyStub.resolves(mockScrapeData);
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1478,14 +1440,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1513,8 +1474,6 @@ describe('FAQs guidance handler', () => {
     getObjectFromKeyStub.resolves(mockScrapeData);
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1533,14 +1492,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1557,8 +1515,6 @@ describe('FAQs guidance handler', () => {
   it('should handle empty sources array', async () => {
     // Mock FAQ data with empty sources array
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1574,14 +1530,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1645,8 +1600,8 @@ describe('FAQs guidance handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
       '../../../src/faqs/utils.js': {
         getJsonFaqSuggestion: getJsonFaqSuggestionStub,
@@ -1668,8 +1623,6 @@ describe('FAQs guidance handler', () => {
     });
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1684,14 +1637,13 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1702,5 +1654,77 @@ describe('FAQs guidance handler', () => {
     
     // Should set shouldOptimize to false because sources are undefined
     expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should pass a mergeDataFunction that preserves edge-deployed suggestions unchanged', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const mergeDataFn = syncCall.args[0].mergeDataFunction;
+    expect(mergeDataFn).to.be.a('function');
+
+    // When edgeDeployed is true, return existing data unchanged (shouldOptimize must not be overwritten)
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      edgeDeployed: true,
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.edgeDeployed).to.equal(true);
+    expect(result.shouldOptimize).to.equal(true);
+    expect(result.selector).to.equal('main');
+  });
+
+  it('should pass a mergeDataFunction that merges normally when edgeDeployed is not set', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+    // When edgeDeployed is not set, new data should overwrite existing
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.shouldOptimize).to.equal(false);
+    expect(result.selector).to.equal('body');
   });
 });

@@ -14,55 +14,25 @@ import {
   getLastNumberOfWeeks, llmoConfig, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
   compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
+import {
+  isBrandalfEnabled,
+  resolveOrganizationIdForSite,
+} from '../utils/brandalf-utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
+import { findActiveBrandForSite } from '../utils/brand-resolver.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
+const REFERRAL_TRAFFIC_DAILY_AUDIT = 'llmo-referral-traffic-daily';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-
-/**
- * Checks whether the brandalf feature flag is enabled for an organization
- * by calling the SpaceCat API feature-flags endpoint.
- *
- * @param {string} organizationId - SpaceCat org UUID
- * @param {object} env - Environment variables (needs SPACECAT_API_BASE_URL, SPACECAT_API_KEY)
- * @param {object} log - Logger
- * @returns {Promise<boolean>} true if brandalf is enabled, false otherwise
- */
-async function isBrandalfEnabled(organizationId, env, log) {
-  const { SPACECAT_API_BASE_URL: apiBase, SPACECAT_API_KEY: apiKey } = env;
-  if (!apiBase || !apiKey) {
-    log.warn('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured; cannot check brandalf flag');
-    return false;
-  }
-
-  try {
-    const url = `${apiBase}/organizations/${encodeURIComponent(organizationId)}/feature-flags?product=LLMO`;
-    const response = await fetch(url, {
-      headers: { 'x-api-key': apiKey },
-    });
-
-    if (!response.ok) {
-      log.warn(`Failed to fetch feature flags for org ${organizationId}: ${response.status}`);
-      return false;
-    }
-
-    const flags = await response.json();
-    return Array.isArray(flags) && flags.some(
-      (f) => f.flagName === 'brandalf' && f.flagValue === true,
-    );
-  } catch (error) {
-    log.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
-    return false;
-  }
-}
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
@@ -273,10 +243,25 @@ export async function triggerCdnLogsReport(context, site) {
     auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
+      refreshAgenticDailyExport: true,
     },
   });
 
   log.info('Successfully triggered cdn-logs-report audit');
+}
+
+async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const siteId = site.getSiteId();
+  log.info('Triggering geo-brand-presence-trigger-refresh for site: %s', siteId);
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: 'geo-brand-presence-trigger-refresh',
+    siteId,
+    auditContext: { configVersion },
+  });
+  log.info('Successfully triggered geo-brand-presence-trigger-refresh');
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
@@ -299,6 +284,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-error-pages',
       'summarization',
       REFERRAL_TRAFFIC_AUDIT,
+      REFERRAL_TRAFFIC_DAILY_AUDIT,
       'readability',
       'wikipedia-analysis',
     ];
@@ -331,41 +317,21 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   let brandId;
   let organizationId;
   if (isFirstTimeOnboarding) {
-    const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
+    const orgId = await resolveOrganizationIdForSite({
+      site,
+      fallbackOrganizationId: auditContext.imsOrgId,
+      log,
+    });
     if (orgId) {
       const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {
         organizationId = orgId;
-        try {
-          const { postgrestClient } = context.dataAccess?.services || {};
-          if (postgrestClient?.from) {
-            // Prefer the brand whose baseSiteId (site_id column) matches this
-            // site — this is the primary brand created during onboarding with
-            // the correct base URL.  Fall back to brand_sites join if no
-            // baseSiteId match exists (backward compat for brands created
-            // before baseSiteId was set during onboarding).
-            const { data: brands } = await postgrestClient
-              .from('brands')
-              .select('id, site_id, brand_sites(site_id)')
-              .eq('organization_id', organizationId)
-              .eq('status', 'active');
-
-            const baseSiteMatch = brands?.find((b) => b.site_id === siteId);
-            const brandSiteMatch = !baseSiteMatch && brands?.find(
-              (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
-            );
-            const match = baseSiteMatch || brandSiteMatch;
-            if (match) {
-              brandId = match.id;
-              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${baseSiteMatch ? 'baseSiteId' : 'brand_sites'})`);
-            } else {
-              log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
-            }
-          } else {
-            log.warn('postgrestClient not available; cannot resolve brand for v2 BP schedule');
-          }
-        } catch (error) {
-          log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
+        const brand = await findActiveBrandForSite(context, { orgId, siteId });
+        if (brand) {
+          brandId = brand.brandId;
+          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+        } else {
+          log.warn(`No brand resolved for site ${siteId} in org ${organizationId} for v2 BP schedule`);
         }
       }
     }
@@ -486,8 +452,19 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run');
+  if (hasBrandPresenceChanges) {
+    const drsClient = DrsClient.createFrom(context);
+    if (drsClient.isConfigured()) {
+      await drsClient.triggerBrandDetection(siteId);
+      triggeredSteps.push('drs-brand-detection');
+    } else {
+      log.warn('DRS not configured; skipping brand detection trigger');
+    }
+  }
+
+  if (needsBrandPresenceRefresh) {
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-trigger-refresh');
   }
 
   if (triggeredSteps.length > 0) {

@@ -79,12 +79,13 @@ export function transformToCommerceConfig(storeViewConfig) {
 }
 
 /**
- * Returns the storeViewCode from a commerce config for grouping purposes.
- * @param {Object} commerceConfig - The { url, headers } commerce config
- * @returns {string} The storeViewCode, or '_default' if unavailable
+ * Returns the storeViewUrl from a commerce config for grouping purposes.
+ * One enrichment request is sent per storeViewUrl group.
+ * @param {Object} commerceConfig - The commerce config containing storeViewUrl
+ * @returns {string} The storeViewUrl, or '_default' if unavailable
  */
 export function configGroupKey(commerceConfig) {
-  return commerceConfig?.headers?.['Magento-Store-View-Code'] || '_default';
+  return commerceConfig?.storeViewUrl || '_default';
 }
 
 /**

@@ -12,6 +12,11 @@ Resources:
       Environment:
         Variables:
           VAULT_SECRETS_DISABLED: 'false'
+          POSTGREST_USE_SAM_TEMPLATE: 'false'
+          POSTGREST_LOG_EFFECTIVE_URL: 'false'
+          POSTGREST_URL: !Ref POSTGREST_URL
+          POSTGREST_SCHEMA: !Ref POSTGREST_SCHEMA
+          POSTGREST_API_KEY: !Ref POSTGREST_API_KEY
           AWS_XRAY_CONTEXT_MISSING: IGNORE_ERROR
           AWS_ACCESS_KEY_ID: !Ref AWS_ACCESS_KEY_ID
           AWS_SECRET_ACCESS_KEY: !Ref AWS_SECRET_ACCESS_KEY
@@ -167,3 +172,12 @@ Parameters:
   S3_MYSTIQUE_BUCKET_NAME:
     Type: String
     Description: S3 Mystique Bucket Name
+  POSTGREST_URL:
+    Type: String
+    Description: PostgREST URL
+  POSTGREST_SCHEMA:
+    Type: String
+    Description: PostgREST Schema Name
+  POSTGREST_API_KEY:
+    Type: String
+    Description: PostgREST API Key

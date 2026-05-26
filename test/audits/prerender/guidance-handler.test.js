@@ -30,21 +30,15 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let handler;
   let mockIsPaidLLMOCustomer;
 
-  // Helper to mock successful fetch response
+  // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(data),
-    });
+    fetchStub.resolves(data);
   };
 
-  // Helper to mock failed fetch response
+  // Helper to mock failed fetch response (mirrors fetchAnalysisFromPresignedUrl's
+  // rejection shape on non-ok response).
   const mockFetchFailure = (statusCode = 500, statusText = 'Internal Server Error') => {
-    fetchStub.resolves({
-      ok: false,
-      status: statusCode,
-      statusText,
-    });
+    fetchStub.rejects(new Error(`Prerender - analysis fetch failed: ${statusCode} ${statusText}`));
   };
 
   beforeEach(async () => {
@@ -119,17 +113,19 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
-    // Mock global fetch for presigned URL downloads
-    // Using sinon.stub(global, 'fetch') properly saves and restores the original
-    fetchStub = sinon.stub(global, 'fetch');
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
-    // Import handler with mocked isPaidLLMOCustomer
+    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+      },
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
     });
 
@@ -191,8 +187,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(result).to.exist;
       expect(result.status).to.equal(200);
 
-      // Verify fetch was called with presigned URL
-      expect(fetchStub).to.have.been.calledWith(presignedUrl);
+      // Verify fetch helper was called with presigned URL (and options object).
+      expect(fetchStub).to.have.been.calledWith(presignedUrl, sinon.match.object);
 
       expect(Site.findById).to.have.been.calledWith('site-123');
       expect(Opportunity.findById).to.have.been.calledWith('opportunity-123');
@@ -325,11 +321,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // Should log the fetch error
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to download from presigned URL: 404 Not Found/),
-      );
-      // Should also log the catch block error with opportunityId
+      // The new fetch helper throws `analysis fetch failed: 404 Not Found`; that
+      // bubbles into the outer catch which logs the opportunityId-tagged message.
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
@@ -970,6 +963,49 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         valuable: true,
       });
       expect(Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
+    it('should fall back to raw URL when suggestion URL is not parseable', async () => {
+      // Use an invalid URL that will cause new URL() to throw
+      const invalidUrlSuggestion = {
+        getId: sinon.stub().returns('suggestion-invalid'),
+        getData: sinon.stub().returns({
+          url: 'not-a-valid-url',
+          isDomainWide: false,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([invalidUrlSuggestion]);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'not-a-valid-url',
+            aiSummary: 'Summary for invalid URL',
+            valuable: true,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // The invalid URL should still match via the catch fallback (raw string comparison)
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(invalidUrlSuggestion.setData).to.have.been.calledOnce;
+      const setDataArg = invalidUrlSuggestion.setData.firstCall.args[0];
+      expect(setDataArg.aiSummary).to.equal('Summary for invalid URL');
     });
 
     it('should skip suggestions that do not match existing URLs', async () => {

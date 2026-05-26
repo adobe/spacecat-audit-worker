@@ -15,6 +15,19 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
+import {
+  isExcludedReadabilityText,
+  isEligibleTextElement,
+  isEligibleParagraphText,
+  stripNonContent,
+  collapseWhitespace,
+  analyzeTextReadability,
+} from '../../../src/readability/shared/analysis-utils.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from '../../../src/readability/shared/embed-content-utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -440,6 +453,68 @@ describe('Readability Analysis Utils', () => {
       });
     });
 
+    it('should exclude navigation-like elements and collapse padding for minimum length', async () => {
+      const poorNavText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const spacedLabel = `Safeguard${'   '.repeat(80)}My${'   '.repeat(80)}Identity`;
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <nav><p>${poorNavText}</p></nav>
+          <li role="listitem"><p class="navHdr">${spacedLabel}</p></li>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
+    it('should exclude elements with role menuitem (navigation)', async () => {
+      const longText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p role="menuitem">${longText}</p>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should handle errors in analyzeTextReadability gracefully', async () => {
       const text = makeLongText('Some text content for testing error handling in readability analysis functions.');
       const html = createHtmlWithParagraph(text);
@@ -632,6 +707,89 @@ describe('Readability Analysis Utils', () => {
       expect(mockIsSupportedLanguage).to.have.been.called;
     });
 
+    it('excludes paragraphs whose class matches nav chrome substring heuristics', async () => {
+      const body = makeLongText('Editorial copy that would be analyzed if the element were not filtered by class.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="region-sidebar-primary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
+    it('does not exclude paragraphs with compound review/rating class names', async () => {
+      const body = makeLongText('This editorial paragraph reviews product sustainability impact for readers.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="product-review-text">${body}</p>
+          <p class="customer-rating-summary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result.length).to.equal(2);
+    });
+
+    it('excludes paragraphs where link text is most of the element text', async () => {
+      const filler = 'Lead in sentence text that is not inside any anchor tag at all. ';
+      const linkInner = Array.from({ length: 40 }, () => 'Linkedphrase ').join('');
+      const trailing = ' End tail words outside anchor.';
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p>${filler}<a href="https://example.com/list">${linkInner}</a>${trailing}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
     it('should categorize issues as Important for poor readability with medium traffic', async () => {
       const text = makeLongText('This is a moderately complex sentence with some difficult vocabulary for readers to understand.');
       const html = createHtmlWithParagraph(text);
@@ -807,6 +965,28 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
+    it('should skip long text with no whitespace (second elementsToProcess filter)', async () => {
+      // Passes getMeaningfulElementsForReadability (length >= MIN_TEXT_LENGTH) but fails
+      // /\s/.test in the follow-up filter, covering the early return in analysis-utils.js.
+      const noWhitespaceBlock = 'x'.repeat(150);
+      const html = `<!DOCTYPE html><html><body><p>${noWhitespaceBlock}</p></body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should skip elements with excessive whitespace (table/grid content)', async () => {
       // Simulates text extracted from table layouts with lots of padding
       const paddedText = 'Feature                                          Our sustainability impact                                                                                                                                                                Feature                                          ';
@@ -833,6 +1013,47 @@ describe('Readability Analysis Utils', () => {
 
       expect(result).to.be.an('array');
       expect(result.length).to.equal(0);
+    });
+
+    it('should skip embedded social carousel captions (AEM / Instagram)', async () => {
+      const longSocialCaption = `"🏔️👀 Ordino hits different! Here are some of the top places you can’t miss in spring:
+• Ordino Old Town
+• Coll d’Ordino
+Save it for your next mountain escape!
+#nature #ordino #history #andorraworld #andorraELEVATESyou"`;
+      const authoredBody = makeLongText(
+        'This is authored marketing copy about visiting Andorra in the spring season with clear sentences.',
+      );
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <div class="cards-carousel-rrss">
+              <div class="card-carousel__card-description">
+                <p>${longSocialCaption}</p>
+              </div>
+            </div>
+            <p>${authoredBody}</p>
+          </body>
+        </html>
+      `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://visitandorra.com/en/',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(1);
+      expect(result[0].textContent).to.include('authored marketing copy');
     });
 
     it('should log debug message with detected languages', async () => {
@@ -1208,6 +1429,542 @@ describe('Readability Analysis Utils', () => {
         });
       });
     });
+  });
+
+  describe('normalizeReadabilityText (direct module import)', () => {
+    it('handles null, undefined, and non-string values', async () => {
+      const { normalizeReadabilityText } = await import('../../../src/readability/shared/analysis-utils.js');
+      expect(normalizeReadabilityText(null)).to.equal('');
+      expect(normalizeReadabilityText(undefined)).to.equal('');
+      expect(normalizeReadabilityText(123)).to.equal('');
+    });
+  });
+
+  describe('isLikelyNavigationElement (direct module import)', () => {
+    it('returns true when a descendant matches navHdr / nav-hdr paragraph selectors', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="region">
+          <p class="navHdr">Shop categories</p>
+          <p id="sibling">Other marketing copy in the same container as the nav header row.</p>
+        </div>
+      `);
+      const region = $('#region').get(0);
+      expect(isLikelyNavigationElement($, region)).to.equal(true);
+    });
+
+    it('returns true when element is inside a navigation landmark', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <nav>
+          <p id="in-nav">Paragraph copy that lives under a nav landmark for site menus.</p>
+        </nav>
+      `);
+      expect(isLikelyNavigationElement($, $('#in-nav').get(0))).to.equal(true);
+    });
+
+    it('returns true when an ancestor id matches navigation class/id heuristics', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="primary-nav">
+          <p id="leaf">Body-looking paragraph nested under a bar whose id signals main navigation.</p>
+        </div>
+      `);
+      expect(isLikelyNavigationElement($, $('#leaf').get(0))).to.equal(true);
+    });
+  });
+});
+
+describe('embed-content-utils (unit)', () => {
+  describe('removeEmbeddedSocialElements', () => {
+    it('removes known social embed selectors and leaves unrelated content', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <blockquote class="instagram-media"><p id="gone">Caption</p></blockquote>
+          <p id="stay">Authored body text that must remain in the document after removal.</p>
+        </div>
+      `);
+      removeEmbeddedSocialElements($);
+      expect($('#gone').length).to.equal(0);
+      expect($('#stay').length).to.equal(1);
+    });
+  });
+
+  describe('isEmbeddedSocialContentElement', () => {
+    it('returns true when element is inside a known social ancestor', () => {
+      const $ = cheerioLoad(`
+        <blockquote class="twitter-tweet">
+          <p id="t">Caption text inside a twitter oEmbed block.</p>
+        </blockquote>
+      `);
+      const el = $('#t').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element itself is a social outbound link with view-on CTA', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <a id="lnk" href="https://www.instagram.com/p/ABC/">View on Instagram</a>
+        </div>
+      `);
+      const el = $('#lnk').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element contains view-on CTA and a social outbound descendant link', () => {
+      const $ = cheerioLoad(`
+        <p id="cap">
+          <a href="https://www.instagram.com/p/XYZ/">View on Instagram</a>
+          Continuing caption text that accompanies the social embed on the page.
+        </p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#cap').get(0))).to.equal(true);
+    });
+
+    it('returns false for normal authored content', () => {
+      const $ = cheerioLoad(`
+        <p id="t">Standard authored paragraph without any social media references.</p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#t').get(0))).to.equal(false);
+    });
+  });
+});
+
+describe('isExcludedReadabilityText', () => {
+  describe('citation patterns — should be excluded', () => {
+    it('should exclude DOI citation lines', () => {
+      expect(isExcludedReadabilityText(
+        'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.',
+      )).to.equal(true);
+    });
+
+    it('should exclude journal lines with year + semicolon + doi', () => {
+      expect(isExcludedReadabilityText(
+        'Smith J. Some study title. Journal of Medicine. 2021; doi:10.1001/jama.2021.12345.',
+      )).to.equal(true);
+    });
+
+    it('should exclude journal lines with year + semicolon + URL', () => {
+      expect(isExcludedReadabilityText(
+        'Physical Activity Guidelines. 2nd ed. 2018; https://health.gov/our-work/physical-activity.',
+      )).to.equal(true);
+    });
+
+    it('should exclude web citations with "Accessed" + date', () => {
+      expect(isExcludedReadabilityText(
+        'Physical Activity Guidelines for Americans. https://health.gov/our-work. Accessed June 15, 2022.',
+      )).to.equal(true);
+    });
+
+    it('should exclude web citations with "Retrieved" + date', () => {
+      expect(isExcludedReadabilityText(
+        'World Health Organization. Obesity and overweight. Retrieved March 1, 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude URL-then-accessed pattern', () => {
+      expect(isExcludedReadabilityText(
+        'See https://example.org/study-findings. Accessed November 10, 2023.',
+      )).to.equal(true);
+    });
+
+    it('should exclude German retrieval line (abgerufen am)', () => {
+      expect(isExcludedReadabilityText(
+        'WHO. Fact sheet. https://who.int/news. Abgerufen am 15.06.2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude French retrieval line (Consulté le)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapport sur la nutrition. https://who.int/fr. Consulté le 10 mars 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Spanish retrieval line (Consultado el)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Informe sobre obesidad. https://who.int/es. Consultado el 12 abril 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian retrieval line (Consultato il)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapporto. https://who.int/it. Consultato il 5 maggio 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Dutch retrieval line (Geraadpleegd op)', () => {
+      expect(isExcludedReadabilityText(
+        'RIVM. Richtlijn. https://rivm.nl. Geraadpleegd op 03-04-2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Getty-style image credit in plain text', () => {
+      expect(isExcludedReadabilityText(
+        'Paras Griffin / Contributor via Getty Images, Kevin C. Cox / Staff via Getty Images, and Erika Goldring / Contributor via Getty Images.',
+      )).to.equal(true);
+    });
+
+    it('should exclude explicit photo credit intro line (hasCreditIntro branch)', () => {
+      expect(isExcludedReadabilityText(
+        'Photo credit: Jane Doe / Reuters — all rights reserved by the original photographers.',
+      )).to.equal(true);
+    });
+
+    it('should exclude photo credit line with two slashes + via + agency token', () => {
+      expect(isExcludedReadabilityText(
+        'John Smith / Staff / Reuters via AP Images, filed from London bureau offices on assignment.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian feminine retrieval line (consultata il)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Pagina informativa sulla nutrizione. https://who.int/it. Consultata il 5 maggio 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude French all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapport sur la santé. https://who.int/fr/news. Consulté le 01/04/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Spanish all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Informe de salud pública. https://who.int/es. Consultado el 12/04/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapporto sulla salute. https://who.int/it. Consultato il 05/05/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude German slash-separated date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'WHO. Informationsblatt Ernährung. https://who.int/de. Abgerufen am 15/06/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude slash-free photo credit line with credit intro and agency token', () => {
+      expect(isExcludedReadabilityText(
+        'Photo credit: Jane Smith, Senior Photographer at Reuters, captured at the press conference.',
+      )).to.equal(true);
+    });
+  });
+
+  describe('normal body copy — should not be excluded', () => {
+    it('should not exclude a hard-to-read normal paragraph', () => {
+      expect(isExcludedReadabilityText(
+        'The epistemological ramifications of the aforementioned poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a paragraph that mentions a single URL', () => {
+      expect(isExcludedReadabilityText(
+        'For more information visit https://example.com to learn about our products and services.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude text with "et al." in a sentence without DOI', () => {
+      expect(isExcludedReadabilityText(
+        'Smith et al. found that regular exercise significantly reduces cardiovascular risk factors in adults.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a sentence that contains a year and semicolon for other reasons', () => {
+      expect(isExcludedReadabilityText(
+        'In 2018; the company launched its flagship product; revenue doubled within twelve months.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude prose that mentions "via" without agency credit pattern', () => {
+      expect(isExcludedReadabilityText(
+        'Many travelers reach the summit via the northern route, which offers better views during summer months and clearer trail markers for first-time visitors.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a journalism byline with slashes and "via" but no agency token', () => {
+      // Slash-heavy bylines like "Name / Role / Outlet via wire" are legitimate editorial
+      // copy; without an agency token the pattern intentionally does not exclude them.
+      expect(isExcludedReadabilityText(
+        'John Smith / Senior Reporter / The Times via wire services, filed from London bureau offices.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude body prose where "retrieved" precedes a date mid-sentence', () => {
+      expect(isExcludedReadabilityText(
+        'The data was retrieved March 1, 2024 from our internal database for further analysis and processing.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude body prose where a URL is followed by more text after the year+semicolon', () => {
+      expect(isExcludedReadabilityText(
+        'The platform launched in 2022; https://results.example.com/ published the first results.',
+      )).to.equal(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should return false for null', () => {
+      expect(isExcludedReadabilityText(null)).to.equal(false);
+    });
+
+    it('should return false for non-string value', () => {
+      expect(isExcludedReadabilityText(123)).to.equal(false);
+    });
+
+    it('should return false for empty string', () => {
+      expect(isExcludedReadabilityText('')).to.equal(false);
+    });
+
+    it('should return false for whitespace-only string', () => {
+      expect(isExcludedReadabilityText('   ')).to.equal(false);
+    });
+  });
+});
+
+describe('analyzeTextReadability', () => {
+  it('returns null for excluded citation text without calling getSupportedLanguage (defense in depth)', async () => {
+    const mockLog = { error: sinon.stub(), debug: sinon.stub() };
+    const getSupportedLanguage = sinon.stub();
+    const detectedLanguages = new Set();
+    const excludedCitation = 'Whelton PK, et al. 2017 ACC/AHA guideline for high blood pressure in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+
+    const result = await analyzeTextReadability(
+      excludedCitation,
+      'p',
+      'https://example.com/page',
+      0,
+      detectedLanguages,
+      getSupportedLanguage,
+      mockLog,
+      '2025-01-01T00:00:00.000Z',
+    );
+
+    expect(result).to.equal(null);
+    expect(getSupportedLanguage).to.not.have.been.called;
+    expect(detectedLanguages.size).to.equal(0);
+  });
+});
+
+describe('collapseWhitespace', () => {
+  it('normalizes runs of whitespace for length checks', () => {
+    expect(collapseWhitespace('  hello   \n\t  world  ')).to.equal(' hello world ');
+  });
+});
+
+describe('stripNonContent', () => {
+  it('should remove figcaption elements', () => {
+    const $ = cheerioLoad('<html><body><figure><img src="x.jpg"><figcaption>Photo credit: Getty Images</figcaption></figure><p>Body text.</p></body></html>');
+    stripNonContent($);
+    expect($('figcaption').length).to.equal(0);
+    expect($('p').length).to.equal(1);
+  });
+
+  it('should remove header, footer, style, script, noscript elements', () => {
+    const $ = cheerioLoad('<html><body><header>Nav</header><footer>Footer</footer><style>body{}</style><script>var x=1;</script><noscript>Enable JS</noscript><p>Content</p></body></html>');
+    stripNonContent($);
+    expect($('header').length).to.equal(0);
+    expect($('footer').length).to.equal(0);
+    expect($('style').length).to.equal(0);
+    expect($('script').length).to.equal(0);
+    expect($('noscript').length).to.equal(0);
+    expect($('p').length).to.equal(1);
+  });
+});
+
+describe('analyzePageContent — citation and figcaption exclusions (integration)', () => {
+  let analyzePageContent;
+  let mockLog;
+  let mockRs;
+  let mockFranc;
+  let mockIsSupportedLanguage;
+  let mockGetLanguageName;
+  let mockCalculateReadabilityScore;
+
+  beforeEach(async () => {
+    mockLog = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+    mockRs = { fleschReadingEase: sinon.stub() };
+    mockFranc = sinon.stub();
+    mockCalculateReadabilityScore = sinon.stub();
+    mockIsSupportedLanguage = sinon.stub();
+    mockGetLanguageName = sinon.stub();
+
+    const module = await esmock(
+      '../../../src/readability/shared/analysis-utils.js',
+      {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub() },
+        'text-readability': mockRs,
+        'franc-min': { franc: mockFranc },
+        '../../../src/readability/shared/multilingual-readability.js': {
+          calculateReadabilityScore: mockCalculateReadabilityScore,
+          isSupportedLanguage: mockIsSupportedLanguage,
+          getLanguageName: mockGetLanguageName,
+        },
+      },
+    );
+    analyzePageContent = module.analyzePageContent;
+  });
+
+  afterEach(() => sinon.restore());
+
+  it('should not flag Getty-style credit in a plain p (no figcaption)', async () => {
+    const credit = 'Paras Griffin / Contributor via Getty Images, Kevin C. Cox / Staff via Getty Images, and Erika Goldring / Contributor via Getty Images.';
+    const body = 'Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall. Additional wording ensures this block meets the minimum length threshold.';
+    const html = `<!DOCTYPE html><html><body><p>${credit}</p><p>${body}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(15);
+
+    const result = await analyzePageContent(html, 'https://revolt.tv/article', 0, mockLog, '2025-01-01');
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('Getty Images'))).to.equal(false);
+    expect(result.length).to.be.greaterThan(0);
+  });
+
+  it('should not flag a figcaption image credit even with a low score', async () => {
+    const html = `
+      <!DOCTYPE html><html><body>
+        <figure>
+          <img src="photo.jpg" alt="Tallest rappers">
+          <figcaption>Photo credit: revolt.tv — all rights reserved by the respective photographers and agencies.</figcaption>
+        </figure>
+        <p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall. Additional wording ensures this block meets the minimum length threshold.</p>
+      </body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(20); // Poor score
+
+    const result = await analyzePageContent(html, 'https://revolt.tv/article', 0, mockLog, '2025-01-01');
+
+    // figcaption should be stripped, body paragraph should still be flagged
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('revolt.tv'))).to.equal(false);
+    expect(result.length).to.be.greaterThan(0); // body paragraph still flagged
+  });
+
+  it('should not flag a DOI citation block', async () => {
+    const doiCitation = 'Whelton PK, et al. 2017 ACC/AHA/AAPA guideline for prevention and management of high blood pressure in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const html = `<!DOCTYPE html><html><body><p>${doiCitation}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://mayoclinic.org', 0, mockLog, '2025-01-01');
+    expect(result).to.deep.equal([]);
+  });
+
+  it('should not flag a web citation "Accessed" line', async () => {
+    const webCitation = 'Physical Activity Guidelines for Americans. 2nd ed. U.S. Department of Health and Human Services. https://health.gov/our-work/physical-activity/current-guidelines. Accessed June 15, 2022.';
+    const html = `<!DOCTYPE html><html><body><p>${webCitation}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(5);
+
+    const result = await analyzePageContent(html, 'https://mayoclinic.org', 0, mockLog, '2025-01-01');
+    expect(result).to.deep.equal([]);
+  });
+
+  it('should still flag normal hard-to-read body copy (regression)', async () => {
+    const bodyText = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of phenomenological underpinnings that have heretofore characterized methodological frameworks in the operationalization of theoretical constructs.';
+    const html = `<!DOCTYPE html><html><body><p>${bodyText}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://example.com', 0, mockLog, '2025-01-01');
+    expect(result.length).to.be.greaterThan(0);
+  });
+
+  it('should skip only the citation chunk in a br-split element, not the body chunk', async () => {
+    const bodyChunk = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of phenomenological underpinnings employed in methodological frameworks.';
+    const citationChunk = 'Whelton PK, et al. 2017 ACC/AHA guideline for high blood pressure management in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const html = `<!DOCTYPE html><html><body><p>${bodyChunk}<br>${citationChunk}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://example.com', 0, mockLog, '2025-01-01');
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('doi:10.1161'))).to.equal(false);
+    // body chunk meets MIN_TEXT_LENGTH and should still be flagged
+    expect(result.length).to.be.greaterThan(0);
+  });
+});
+
+describe('isEligibleTextElement', () => {
+  it('should return false for an element with no text', () => {
+    const $ = cheerioLoad('<html><body><p></p></body></html>');
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return false for an element whose collapsed text is below MIN_TEXT_LENGTH', () => {
+    const $ = cheerioLoad('<html><body><p>Short.</p></body></html>');
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return false for an element with no whitespace', () => {
+    const $ = cheerioLoad(`<html><body><p>${'x'.repeat(150)}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return true for a <br>-split element even when combined text matches a citation', () => {
+    const prose = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of all phenomenological underpinnings.';
+    const citation = 'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const $ = cheerioLoad(`<html><body><p>${prose}<br>${citation}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(true);
+  });
+
+  it('should return false for a citation-only element', () => {
+    const citation = 'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const $ = cheerioLoad(`<html><body><p>${citation}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return true for a long enough normal prose element', () => {
+    const prose = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.';
+    const $ = cheerioLoad(`<html><body><p>${prose}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(true);
+  });
+});
+
+describe('isEligibleParagraphText', () => {
+  it('should return false for text below MIN_TEXT_LENGTH', () => {
+    expect(isEligibleParagraphText('Too short.')).to.equal(false);
+  });
+
+  it('should return false for text with no whitespace', () => {
+    expect(isEligibleParagraphText('x'.repeat(150))).to.equal(false);
+  });
+
+  it('should return false for a citation paragraph', () => {
+    expect(isEligibleParagraphText(
+      'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.',
+    )).to.equal(false);
+  });
+
+  it('should return true for a normal long prose paragraph', () => {
+    expect(isEligibleParagraphText(
+      'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.',
+    )).to.equal(true);
   });
 });
 

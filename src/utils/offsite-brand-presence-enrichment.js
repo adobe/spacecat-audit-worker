@@ -16,6 +16,8 @@
  */
 
 import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { isBrandalfEnabled, resolveOrganizationIdForSite } from './brandalf-utils.js';
+import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-postgrest.js';
 import {
   BRAND_PRESENCE_REGEX,
   FETCH_PAGE_SIZE,
@@ -36,7 +38,7 @@ const DOMAIN_ALIASES = Object.freeze({
  * Gets the ISO week number and year for the previous two weeks.
  * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
  */
-function getPreviousWeeks() {
+export function getPreviousWeeks() {
   return [1, 2].map((i) => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() - (7 * i));
@@ -226,11 +228,14 @@ function normalizeUrl(parsed, domain) {
 
 /**
  * Classifies a URL into its matching offsite domain (if any) and normalizes it.
+ * Filters out URLs belonging to the client's own site when siteHostname is provided.
  *
  * @param {string} rawUrl - The raw URL string to classify and normalize
+ * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
+ *   matching this hostname or any subdomain of it are excluded
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl) {
+function classifyAndNormalize(rawUrl, siteHostname) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -240,6 +245,13 @@ function classifyAndNormalize(rawUrl) {
   }
 
   const { hostname } = parsed;
+
+  if (siteHostname) {
+    const bare = hostname.replace(/^www\./, '');
+    if (bare === siteHostname || bare.endsWith(`.${siteHostname}`)) {
+      return null;
+    }
+  }
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
@@ -287,8 +299,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
+ * @param {string} [siteHostname] - Client site hostname to exclude
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -308,7 +321,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed);
+      const result = classifyAndNormalize(trimmed, siteHostname);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -330,19 +343,79 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
 }
 
 /**
- * Fetches matched brand presence files sequentially and aggregates
- * all source URLs and topic associations across files.
+ * Loads brand-presence data for the given site via PostgREST (brandalf orgs)
+ * or the legacy file-fetch path.  Returns raw rows wrapped in `{ data }` so
+ * callers can run their own extraction/aggregation.
  *
- * @param {string} siteId - The site ID
- * @param {string[]} matchedFiles - File paths to fetch
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
+ * @param {object} opts
+ * @param {string} opts.siteId - Site ID
+ * @param {object} [opts.site] - Site entity (optional fast-path for org resolution)
+ * @param {Array<{week: number, year: number}>} opts.previousWeeks - Weeks to load
+ * @param {object} opts.context - Lambda context (env, log, dataAccess)
+ * @returns {Promise<{data: object[]}|null>} Raw brand-presence rows or null
  */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
-  const allUrls = new Map();
-  const topicMap = new Map();
+export async function loadBrandPresenceData({
+  siteId, site, previousWeeks, context,
+}) {
+  const { env, log } = context;
 
+  const organizationId = await resolveOrganizationIdForSite({
+    site,
+    siteId,
+    dataAccess: context.dataAccess,
+    log,
+  });
+
+  const isBrandalfOrg = organizationId
+    ? await isBrandalfEnabled(organizationId, env, log)
+    : false;
+
+  if (isBrandalfOrg === null) {
+    log.warn(`${LOG_PREFIX} Brandalf flag state unknown for org ${organizationId}; skipping legacy file fetch for site ${siteId}`);
+    return null;
+  }
+
+  if (isBrandalfOrg) {
+    const postgrestClient = context.dataAccess?.services?.postgrestClient;
+    const dbData = await loadBrandPresenceDataFromPostgrest({
+      siteId,
+      organizationId,
+      previousWeeks,
+      postgrestClient,
+      log,
+    });
+    if (dbData) {
+      return dbData;
+    }
+    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
+    return null;
+  }
+
+  if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
+    log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
+    return null;
+  }
+
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
+
+  const queryIndex = await fetchQueryIndex(siteId, env, log);
+  if (!queryIndex) {
+    log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
+    return null;
+  }
+
+  const matchedFiles = previousWeeks.flatMap(
+    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+  );
+  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
+
+  if (matchedFiles.length === 0) {
+    return null;
+  }
+
+  const allRows = [];
   for (const filePath of matchedFiles) {
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -351,15 +424,16 @@ async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
         // eslint-disable-next-line no-continue
         continue;
       }
-
-      extractUrlsAndTopics(data, allUrls, topicMap, log);
+      allRows.push(...data.data);
     } catch (err) {
       log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
     }
   }
 
-  log.info(`${LOG_PREFIX} Extracted ${topicMap.size} unique topics`);
-  return { allUrls, topicMap };
+  if (allRows.length === 0) {
+    return null;
+  }
+  return { data: allRows };
 }
 
 /**
@@ -390,38 +464,39 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  *
  * @param {string} siteId - Site ID
  * @param {{ env: object, log: object }} context - Lambda context
+ * @param {object} [site] - Site entity; when provided, URLs matching the site's own
+ *   hostname are filtered out
  * @returns {Promise<Array<{ name: string, urls: object[] }>>}
  */
-export async function computeTopicsFromBrandPresence(siteId, context) {
-  const { env, log } = context;
-
-  if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
-    log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return [];
-  }
-
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return [];
-  }
+export async function computeTopicsFromBrandPresence(siteId, context, site) {
+  const { log } = context;
 
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
-
   log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
-
-  if (matchedFiles.length === 0) {
+  const brandPresenceData = await loadBrandPresenceData({
+    siteId, site, previousWeeks, context,
+  });
+  if (!brandPresenceData) {
     return [];
   }
 
-  const { allUrls, topicMap } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const baseURL = site?.getBaseURL?.();
+  let siteHostname;
+  if (baseURL) {
+    try {
+      siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+    } catch {
+      log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+    }
+  }
+
+  const allUrls = new Map();
+  const topicMap = new Map();
+  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
+
   return formatTopicsForEnrichment(topicMap, allUrls);
 }

@@ -10,9 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+
+use(sinonChai);
 
 describe('CWV Auto-Suggest', () => {
   let processAutoSuggest;
@@ -76,9 +79,9 @@ describe('CWV Auto-Suggest', () => {
             url: 'https://example.com/page1',
             metrics: [{
               deviceType: 'mobile',
-              lcp: 2500,
-              cls: 0.1,
-              inp: 200,
+              lcp: 3500, // > 2500 threshold
+              cls: 0.2,  // > 0.1 threshold
+              inp: 300,  // > 200 threshold
             }],
             issues: [],
           }),
@@ -146,7 +149,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -206,7 +209,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -237,7 +240,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'group',
               pattern: 'https://example.com/products/*',
-              metrics: [{ deviceType: 'mobile' }],
+              metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -247,7 +250,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page1',
-              metrics: [{ deviceType: 'desktop' }],
+              metrics: [{ deviceType: 'desktop', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -330,7 +333,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -342,7 +345,7 @@ describe('CWV Auto-Suggest', () => {
       expect(context.log.info).to.have.been.calledWith('[audit-worker-cwv] siteId: test-site-id | baseURL: https://example.com | CWV auto-suggest is disabled, skipping');
     });
 
-    it('should not send messages for suggestions with existing guidance', async () => {
+    it('should not send messages when a code change is already available', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
@@ -354,7 +357,8 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            isCodeChangeAvailable: true,
             issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
           }),
         }]),
@@ -363,6 +367,33 @@ describe('CWV Auto-Suggest', () => {
       await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
+    });
+
+    it('should send messages for NEW suggestions with guidance text but no code change yet (Bug 2 regression)', async () => {
+      // Bug 2: previously, populated issues[*].value blocked re-dispatch even
+      // when no code patch had ever succeeded. Now the dispatch decision is
+      // driven by isCodeChangeAvailable instead.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            // isCodeChangeAvailable not set / null — no successful patch yet
+            issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
     });
 
     it('should not send messages for non-NEW suggestions', async () => {
@@ -377,7 +408,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -401,7 +432,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page1',
-              metrics: [{ deviceType: 'mobile' }],
+              metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -411,7 +442,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page2',
-              metrics: [{ deviceType: 'desktop' }],
+              metrics: [{ deviceType: 'desktop', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -439,7 +470,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -466,7 +497,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -489,10 +520,157 @@ describe('CWV Auto-Suggest', () => {
         expect(context.log.error.firstCall.args[0]).to.include('opportunityId: unknown');
       }
     });
+
+    it('should populate failing_metrics and cwv_metric_values for above-threshold metrics', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 3500,   // above 2500 threshold
+              cls: 0.05,   // below 0.1 threshold
+              inp: 100,    // below 200 threshold
+            }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.failing_metrics).to.deep.equal(['lcp']);
+      expect(message.data.cwv_metric_values).to.deep.equal({ lcp: 3500 });
+    });
+
+    it('should track worst-case metric value when the same metric exceeds threshold across multiple device rows', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            // Three device rows: first sets the worst value, second is higher (covers
+            // the right-side branch of the || condition), third is lower (covers the
+            // false branch where the existing worst value is kept).
+            metrics: [
+              { deviceType: 'mobile', lcp: 3000, cls: null, inp: null },
+              { deviceType: 'desktop', lcp: 4500, cls: null, inp: null },
+              { deviceType: 'tablet', lcp: 3500, cls: null, inp: null },
+            ],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.failing_metrics).to.deep.equal(['lcp']);
+      expect(message.data.cwv_metric_values).to.deep.equal({ lcp: 4500 });
+    });
+
+    it('should skip suggestions with no metrics field at all without crashing', async () => {
+      // Exercises the `metrics || []` / `metrics[0] || {}` fallbacks when data.metrics is absent.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-no-metrics',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/no-metrics',
+            issues: [],
+            // no metrics field
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping suggestionId: sugg-no-metrics - no failing CWV metrics/),
+      );
+    });
+
+    it('should default device_type to mobile when deviceType is missing', async () => {
+      // Exercises the `firstMetrics.deviceType || 'mobile'` fallback.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-no-device',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/no-device',
+            metrics: [{ lcp: 3500 }], // failing, but no deviceType
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(sqsStub.firstCall.args[1].data.device_type).to.equal('mobile');
+    });
+
+    it('should skip suggestions whose metrics are all green (defense-in-depth)', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/all-green',
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 1200, // < 2500
+              cls: 0.05, // < 0.1
+              inp: 100,  // < 200
+            }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping suggestionId: sugg-001 - no failing CWV metrics/),
+      );
+    });
   });
 
   describe('shouldSendAutoSuggestForSuggestion', () => {
-    it('should return true for NEW suggestion without guidance', () => {
+    it('should return true for NEW suggestion without a code change yet', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({ issues: [] }),
@@ -512,10 +690,11 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return false for NEW suggestion with guidance', () => {
+    it('should return false when isCodeChangeAvailable is true', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
+          isCodeChangeAvailable: true,
           issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
@@ -524,11 +703,13 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return true for NEW suggestion with empty guidance value', () => {
+    it('should return true when NEW with populated guidance text but no code change (Bug 2 regression)', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '' }],
+          // isCodeChangeAvailable not set — guidance text alone must not block
+          // re-dispatch, otherwise codefix retries are silently dropped forever.
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -536,11 +717,12 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true for NEW suggestion with whitespace-only guidance value', () => {
+    it('should return true when isCodeChangeAvailable is false', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '   ' }],
+          isCodeChangeAvailable: false,
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -548,15 +730,10 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true when some issues have empty guidance', () => {
+    it('should return true when data is null', () => {
       const suggestion = {
         getStatus: () => 'NEW',
-        getData: () => ({
-          issues: [
-            { type: 'lcp', value: '# LCP Optimization...' },
-            { type: 'cls', value: '' },
-          ],
-        }),
+        getData: () => null,
       };
 
       const result = shouldSendAutoSuggestForSuggestion(suggestion);

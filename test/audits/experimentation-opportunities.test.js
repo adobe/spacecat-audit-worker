@@ -335,7 +335,9 @@ describe('Experimentation Opportunities Tests', () => {
   });
 
   describe('Message Generation', () => {
-    it('sends messages for each high-organic-low-ctr opportunity to mystique', async () => {
+    // SKIP: HOTLCTR kill switch is active in handler.js (HOTLCTR_DISABLED).
+    // Re-enable this test when reverting the kill switch.
+    it.skip('sends messages for each high-organic-low-ctr opportunity to mystique', async () => {
       context.audit.getAuditResult.returns({
         experimentationOpportunities: [
           {
@@ -1063,7 +1065,8 @@ describe('Experimentation Opportunities Tests', () => {
         expect(context.sqs.sendMessage).to.not.have.been.called;
       });
 
-      it('should filter and process only high-organic-low-ctr opportunities', async () => {
+      // SKIP: HOTLCTR kill switch is active in handler.js. Re-enable on revert.
+      it.skip('should filter and process only high-organic-low-ctr opportunities', async () => {
         context.audit.getAuditResult.returns({
           experimentationOpportunities: [
             {
@@ -1088,7 +1091,9 @@ describe('Experimentation Opportunities Tests', () => {
         expect(message1.type).to.equal('guidance:high-organic-low-ctr');
       });
 
-      it('should handle completely undefined audit result', async () => {
+      // SKIP: HOTLCTR kill switch in handler.js short-circuits before reaching
+      // the "audit result is undefined" log. Re-enable on revert.
+      it.skip('should handle completely undefined audit result', async () => {
         context.audit.getAuditResult.returns(undefined);
 
         await generateOpportunityAndSuggestions(context);

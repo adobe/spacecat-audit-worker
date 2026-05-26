@@ -235,10 +235,9 @@ describe('CDN Utils', () => {
     });
 
     it('returns modern bucket info when byocdn-other prefix exists', async () => {
-      s3Client.send.onFirstCall().resolves({
+      s3Client.send.resolves({
         CommonPrefixes: [{ Prefix: `${pathId}/raw/byocdn-other/` }],
       });
-      s3Client.send.onSecondCall().resolves({ CommonPrefixes: [] });
 
       const result = await getBucketInfo(s3Client, bucketName, pathId);
 
@@ -247,9 +246,8 @@ describe('CDN Utils', () => {
     });
 
     it('returns modern bucket info when byocdn-imperva prefix exists', async () => {
-      s3Client.send.onFirstCall().resolves({ CommonPrefixes: [] });
-      s3Client.send.onSecondCall().resolves({
-        CommonPrefixes: [{ Prefix: `${pathId}_raw_byocdn-imperva/` }],
+      s3Client.send.resolves({
+        CommonPrefixes: [{ Prefix: `${pathId}/raw/byocdn-imperva/` }],
       });
 
       const result = await getBucketInfo(s3Client, bucketName, pathId);

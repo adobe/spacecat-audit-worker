@@ -14,16 +14,11 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { filterBrandPresenceFiles } from '../../src/offsite-brand-presence/handler.js';
 import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
 const {
   DRS_URLS_LIMIT,
-  FETCH_PAGE_SIZE,
-  INCLUDE_COLUMNS,
-  PROVIDERS,
-  REDDIT_COMMENTS_DAYS_BACK,
 } = handlerConstants;
 
 use(sinonChai);
@@ -34,8 +29,8 @@ const DEFAULT_YEAR = 2026;
 
 describe('Offsite Brand Presence Handler', () => {
   let sandbox;
-  let mockFetch;
-  let mockIsoCalendarWeek;
+  let mockLoadBrandPresenceData;
+  let mockGetPreviousWeeks;
   let mockSubmitScrapeJob;
   let mockDrsIsConfigured;
   let mockPostMessageOptional;
@@ -56,18 +51,19 @@ describe('Offsite Brand Presence Handler', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
-    mockFetch = sandbox.stub();
-    mockIsoCalendarWeek = sandbox.stub();
-    mockIsoCalendarWeek.onFirstCall().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
-    mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
+    mockLoadBrandPresenceData = sandbox.stub();
+    mockGetPreviousWeeks = sandbox.stub().returns([
+      { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
+      { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
+    ]);
     mockSubmitScrapeJob = sandbox.stub().resolves({ job_id: 'mock-job' });
     mockDrsIsConfigured = sandbox.stub().returns(true);
     mockPostMessageOptional = sandbox.stub().resolves({ success: true, result: {} });
 
     sharedMocks = {
-      '@adobe/spacecat-shared-utils': {
-        isoCalendarWeek: mockIsoCalendarWeek,
-        tracingFetch: mockFetch,
+      '../../src/utils/offsite-brand-presence-enrichment.js': {
+        getPreviousWeeks: mockGetPreviousWeeks,
+        loadBrandPresenceData: mockLoadBrandPresenceData,
       },
       '@adobe/spacecat-shared-drs-client': {
         default: {
@@ -90,6 +86,8 @@ describe('Offsite Brand Presence Handler', () => {
     offsiteBrandPresenceRunner = mod.offsiteBrandPresenceRunner;
     handlerDefault = mod.default;
 
+    mockLoadBrandPresenceData.resolves(null);
+
     log = {
       info: sandbox.stub(),
       warn: sandbox.stub(),
@@ -98,8 +96,6 @@ describe('Offsite Brand Presence Handler', () => {
     };
 
     env = {
-      SPACECAT_API_BASE_URL: 'https://spacecat.api.example.com',
-      SPACECAT_API_KEY: 'test-api-key',
       DRS_API_URL: 'https://drs.api.example.com',
       DRS_API_KEY: 'test-drs-key',
     };
@@ -129,29 +125,6 @@ describe('Offsite Brand Presence Handler', () => {
 
   // ----- Helpers -----
 
-  function stubFetchSequence(responses) {
-    for (let i = 0; i < responses.length; i += 1) {
-      mockFetch.onCall(i).resolves(responses[i]);
-    }
-  }
-
-  function okJsonResponse(body) {
-    return {
-      ok: true,
-      json: sandbox.stub().resolves(body),
-      text: sandbox.stub().resolves(JSON.stringify(body)),
-    };
-  }
-
-  function failResponse(status, statusText = 'Error') {
-    return {
-      ok: false,
-      status,
-      statusText,
-      text: sandbox.stub().resolves(statusText),
-    };
-  }
-
   function makeBrandPresenceData(sources) {
     return {
       data: sources.map((s) => {
@@ -167,43 +140,10 @@ describe('Offsite Brand Presence Handler', () => {
     };
   }
 
-  function makeQueryIndex(providers = PROVIDERS, week = DEFAULT_WEEK, year = DEFAULT_YEAR) {
-    return {
-      data: providers.map((p) => ({
-        path: `/adobe/brand-presence/w${week}/brandpresence-${p}-w${week}-${year}-010126.json`,
-      })),
-    };
-  }
-
-  function expectedFilePath(providerId, week = DEFAULT_WEEK, year = DEFAULT_YEAR) {
-    return `brand-presence/w${week}/brandpresence-${providerId}-w${week}-${year}-010126.json`;
-  }
-
-  function stubProviderData(sources) {
-    return okJsonResponse(makeBrandPresenceData(sources));
-  }
-
-  /**
-   * Build fetch responses: query-index + providers + DRS jobs.
-   * URL store is handled via dataAccess (not fetch), so no urlStoreResponse needed.
-   */
-  function buildHappyResponses({
-    queryIndex = null,
-    providerResponses = null,
-    week = DEFAULT_WEEK,
-    year = DEFAULT_YEAR,
-  } = {}) {
-    const qi = queryIndex || makeQueryIndex(PROVIDERS, week, year);
-    const responses = [];
-    responses.push(okJsonResponse(qi));
-    if (providerResponses) {
-      responses.push(...providerResponses);
-    } else {
-      for (const _ of (qi.data || [])) {
-        responses.push(okJsonResponse({}));
-      }
-    }
-    return responses;
+  function stubBrandPresenceData(sources) {
+    const data = makeBrandPresenceData(sources);
+    mockLoadBrandPresenceData.resolves(data);
+    return data;
   }
 
   // ----- Tests -----
@@ -216,357 +156,42 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
-  describe('Environment Validation', () => {
-    it('should return error when SPACECAT_API_BASE_URL is missing', async () => {
-      delete env.SPACECAT_API_BASE_URL;
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured');
-      expect(result.fullAuditRef).to.equal(FINAL_URL);
-      expect(mockFetch).to.not.have.been.called;
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/),
-      );
-    });
-
-    it('should return error when SPACECAT_API_KEY is missing', async () => {
-      delete env.SPACECAT_API_KEY;
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured');
-      expect(mockFetch).to.not.have.been.called;
-    });
-  });
-
-  describe('Query Index Fetch', () => {
-    it('should return error when query-index fetch fails', async () => {
-      mockFetch.resolves(failResponse(500, 'Internal Server Error'));
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Failed to fetch query-index');
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to fetch query-index: 500/),
-      );
-    });
-
-    it('should return error when query-index fetch throws a network error', async () => {
-      mockFetch.rejects(new Error('DNS resolution failed'));
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Failed to fetch query-index');
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error fetching query-index: DNS resolution failed/),
-      );
-    });
-
-    it('should use correct API URL and headers for query-index fetch', async () => {
-      mockFetch.resolves(failResponse(500));
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const [url, options] = mockFetch.firstCall.args;
-      expect(url).to.equal(
-        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/query-index.json`,
-      );
-      expect(options.headers).to.deep.equal({
-        'x-api-key': env.SPACECAT_API_KEY,
-        'User-Agent': 'Offsite Audits - Spacecat/1.0',
-      });
-    });
-  });
-
-  describe('Query Index Filtering', () => {
-    it('should match files with single and double-digit week indices', () => {
-      const qi = { data: [
-        { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        { path: '/adobe/brand-presence/w12/brandpresence-perplexity-w12-2026-030326.json' },
-      ] };
-      const singleDigit = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(singleDigit).to.have.lengthOf(1);
-      expect(singleDigit[0]).to.equal('brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json');
-
-      const doubleDigit = filterBrandPresenceFiles(qi, 12, DEFAULT_YEAR);
-      expect(doubleDigit).to.have.lengthOf(1);
-      expect(doubleDigit[0]).to.include('perplexity');
-    });
-
-    it('should filter by week and year', () => {
-      const qi = {
-        data: [
-          { path: '/adobe/brand-presence/w6/brandpresence-chatgpt-w6-2026-020226.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2025-301225.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('w7');
-      expect(result[0]).to.include('2026');
-    });
-
-    it('should filter out files for unknown providers', () => {
-      const qi = {
-        data: [
-          { path: '/adobe/brand-presence/w7/brandpresence-unknown-provider-w7-2026-010126.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('chatgpt');
-    });
-
-    it('should handle provider IDs with hyphens (google-ai-overviews)', () => {
-      const qi = { data: [
-        { path: '/adobe/brand-presence/w7/brandpresence-google-ai-overviews-w7-2026-010126.json' },
-        { path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-      result.forEach((r) => expect(r).to.include('google-ai-overviews'));
-    });
-
-    it('should match filenames without a trailing date suffix', () => {
-      const qi = { data: [
-        { path: '/site/brand-presence/brandpresence-chatgpt-w7-2026.json' },
-        { path: '/site/brand-presence/brandpresence-perplexity-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-    });
-
-    it('should match filenames with and without trailing date suffix in the same index', () => {
-      const qi = { data: [
-        { path: '/site/brand-presence/brandpresence-gemini-w7-2026-010126.json' },
-        { path: '/site/brand-presence/brandpresence-copilot-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-    });
-
-    it('should reject entries that do not match the brand-presence filename pattern', () => {
-      const qi = {
-        data: [
-          { name: 'no-path' },
-          { path: '/adobe/query-index.json' },
-          { path: '/adobe/other-data/report.json' },
-          { path: '/adobe/agentic-traffic/agentictraffic-w07-2026.json' },
-          { path: '/adobe/brand-presence/w7/summary-report-w7.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.csv' },
-          { path: '/adobe/brand-presence/w7/' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('chatgpt');
-    });
-
-    it('should return empty array when query-index has no data', () => {
-      expect(filterBrandPresenceFiles({}, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
-      expect(filterBrandPresenceFiles({ data: [] }, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
-      expect(filterBrandPresenceFiles(null, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
-    });
-
-    it('should only fetch providers present in query-index, not all PROVIDERS', async () => {
-      const qi = makeQueryIndex(['chatgpt', 'perplexity']);
-      const responses = buildHappyResponses({
-        queryIndex: qi,
-        providerResponses: [okJsonResponse({}), okJsonResponse({})],
-      });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(mockFetch.callCount).to.equal(3);
-      expect(result.auditResult.success).to.be.true;
-    });
-
-    it('should complete successfully when query-index has no matching files', async () => {
-      const qi = { data: [{ path: '/adobe/other/report.json' }] };
-      const responses = buildHappyResponses({ queryIndex: qi });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(mockFetch.callCount).to.equal(1);
-      expect(result.auditResult.success).to.be.true;
-    });
-  });
-
-  describe('Provider Data Fetching', () => {
-    it('should fetch data for all providers found in query-index', async () => {
-      const responses = buildHappyResponses();
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(mockFetch.callCount).to.be.at.least(1 + PROVIDERS.length);
-
-      for (const provider of PROVIDERS) {
-        const called = mockFetch.getCalls().some(
-          (call) => call.args[0].includes(expectedFilePath(provider)),
-        );
-        expect(called, `Expected fetch for provider ${provider}`).to.be.true;
-      }
-    });
-
-    it('should use file name from query-index in fetch URL', async () => {
-      const responses = buildHappyResponses();
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const providerCall = mockFetch.getCalls().find(
-        (call) => call.args[0].includes('brandpresence-'),
-      );
-      expect(providerCall.args[0]).to.equal(
-        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/${expectedFilePath(PROVIDERS[0])}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits&limit=${FETCH_PAGE_SIZE}&offset=0`,
-      );
-    });
-
-    it('should handle provider returning non-ok response gracefully', async () => {
-      const providerResponses = [
-        failResponse(404),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-      ];
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-    });
-
-    it('should handle provider throwing an exception gracefully', async () => {
-      mockFetch.onCall(0).resolves(okJsonResponse(makeQueryIndex()));
-      mockFetch.onCall(1).rejects(new Error('Network timeout'));
-      for (let i = 2; i <= PROVIDERS.length; i += 1) {
-        mockFetch.onCall(i).resolves(okJsonResponse({}));
-      }
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error fetching brand presence file/),
-      );
-    });
-
-    it('should report correct aggregated url counts', async () => {
-      const providerResponses = [
-        stubProviderData(['https://www.youtube.com/watch?v=abc']),
-        stubProviderData([]),
-        stubProviderData(['https://reddit.com/r/test/']),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-        okJsonResponse({}),
-      ];
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
-      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(0);
-    });
-
-  });
-
-  describe('Pagination', () => {
-    const TEST_PAGE_SIZE = 3;
-    let paginationRunner;
-
-    beforeEach(async () => {
-      const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
-        ...sharedMocks,
-        '../../src/offsite-brand-presence/constants.js': {
-          ...handlerConstants,
-          FETCH_PAGE_SIZE: TEST_PAGE_SIZE,
-        },
-      });
-      paginationRunner = mod.offsiteBrandPresenceRunner;
-    });
-
-    it('should paginate when a page returns exactly FETCH_PAGE_SIZE rows', async () => {
-      const qi = makeQueryIndex(['chatgpt']);
-
-      const page1Rows = new Array(TEST_PAGE_SIZE).fill({});
-      page1Rows[0] = {
-        Sources: 'https://youtube.com/shorts/p1', Region: 'US', Mentions: 'true', Citations: 'true',
-      };
-      const page1Response = okJsonResponse({ data: page1Rows });
-
-      const page2Response = okJsonResponse({
+  describe('PostgREST Fallback', () => {
+    it('uses PostgREST data before query-index/file fetches', async () => {
+      mockLoadBrandPresenceData.resolves({
         data: [{
-          Sources: 'https://reddit.com/r/p2/', Region: 'US', Mentions: 'true', Citations: 'true',
+          Sources: 'https://www.youtube.com/watch?v=abc123',
+          Region: 'US',
+          Topics: 'Topic A',
+          Category: 'Category A',
+          Prompt: 'Prompt A',
         }],
       });
 
-      mockFetch.onCall(0).resolves(okJsonResponse(qi));
-      mockFetch.onCall(1).resolves(page1Response);
-      mockFetch.onCall(2).resolves(page2Response);
-
-      const result = await paginationRunner(FINAL_URL, context, site);
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
-      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(mockFetch.callCount).to.equal(3);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData.firstCall.args[0].siteId).to.equal(SITE_ID);
+      expect(mockLoadBrandPresenceData.firstCall.args[0].site).to.equal(site);
     });
 
-    it('should return partial data when a subsequent page fails during pagination', async () => {
-      const qi = makeQueryIndex(['chatgpt']);
+    it('returns empty result when loadBrandPresenceData returns null', async () => {
+      mockLoadBrandPresenceData.resolves(null);
 
-      const page1Rows = new Array(TEST_PAGE_SIZE).fill({});
-      page1Rows[0] = {
-        Sources: 'https://youtube.com/shorts/p1', Region: 'US', Mentions: 'true', Citations: 'true',
-      };
-      const page1Response = okJsonResponse({ data: page1Rows });
-
-      mockFetch.onCall(0).resolves(okJsonResponse(qi));
-      mockFetch.onCall(1).resolves(page1Response);
-      mockFetch.onCall(2).resolves(failResponse(500, 'Internal Server Error'));
-
-      const result = await paginationRunner(FINAL_URL, context, site);
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to fetch data for/),
-        sinon.match.object,
-      );
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
     });
   });
 
   describe('URL Extraction', () => {
     it('should extract youtube.com and reddit.com URLs including subdomains', async () => {
       const urls = 'https://www.youtube.com/watch?v=x;https://www.reddit.com/r/test/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([urls]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([urls]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -576,14 +201,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should handle semicolon, newline, and mixed separators in Sources field', async () => {
       const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b\nhttps://reddit.com/r/test/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -593,14 +211,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should ignore invalid, malformed, and unrecognized URLs without crashing', async () => {
       const sources = 'not-a-url;https://youtube.com/v1;;  ;ftp://weird;https:///path;://nohost;plain-text';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -610,23 +221,15 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should count URL occurrences across rows and providers', async () => {
       const sharedUrl = 'https://www.youtube.com/watch?v=shared';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i < 3) return stubProviderData([sharedUrl]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sharedUrl, sharedUrl, sharedUrl]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      // Same URL from 3 providers: 1 unique URL, but counted 3 times
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
     it('should handle rows without Sources field', async () => {
-      const data = {
+      mockLoadBrandPresenceData.resolves({
         data: [
           {
             Prompt: 'test prompt', Region: 'US', Mentions: 'true', Citations: 'true',
@@ -635,15 +238,7 @@ describe('Offsite Brand Presence Handler', () => {
             Sources: 'https://youtube.com/v1', Region: 'US', Mentions: 'true', Citations: 'true',
           },
         ],
-      };
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return okJsonResponse(data);
-        return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -652,7 +247,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should only extract URLs with Region=US', async () => {
-      const data = {
+      mockLoadBrandPresenceData.resolves({
         data: [
           {
             Sources: 'https://youtube.com/v1', Region: 'EU',
@@ -667,15 +262,7 @@ describe('Offsite Brand Presence Handler', () => {
             Sources: 'https://reddit.com/r/ok/', Region: 'US',
           },
         ],
-      };
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return okJsonResponse(data);
-        return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -683,29 +270,9 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
-    it('should handle response with missing data array', async () => {
-      const data = {};
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return okJsonResponse(data);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
-    });
-
     it('should ignore non-offsite and substring-matching domains', async () => {
       const sources = 'https://google.com/search;https://notyoutube.com/watch;https://fakereddit.com/r/test;https://twitter.com/post';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -716,12 +283,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should discard YouTube URLs with non-standard subdomains', async () => {
       const sources = 'https://music.youtube.com/watch?v=abc;https://studio.youtube.com/channel/123;https://www.youtube.com/watch?v=valid';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -730,12 +292,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should discard Reddit URLs with non-standard subdomains', async () => {
       const sources = 'https://m.reddit.com/r/test/;https://old.reddit.com/r/test/;https://www.reddit.com/r/valid/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -744,12 +301,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should discard Reddit URLs without a path after subreddit name', async () => {
       const sources = 'https://reddit.com/r/test;https://reddit.com/r/valid/comments/abc/title';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -758,12 +310,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should accept Reddit URLs with /t/ topic and /user/ paths', async () => {
       const sources = 'https://reddit.com/t/gaming/;https://reddit.com/user/someone/comments/abc/post';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -772,12 +319,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should accept Reddit URLs with percent-encoded characters in path', async () => {
       const sources = 'https://reddit.com/r/sub/some%20path/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -785,14 +327,75 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('Site URL Filtering', () => {
+    it('should filter out URLs matching the site baseURL', async () => {
+      stubBrandPresenceData(['https://example.com/page1;https://other.com/page2']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/page2');
+    });
+
+    it('should filter out URLs with www prefix matching the site baseURL', async () => {
+      stubBrandPresenceData(['https://www.example.com/page;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should filter out subdomain URLs matching the site baseURL', async () => {
+      stubBrandPresenceData(['https://blog.example.com/post;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should not filter URLs from domains that merely contain the site hostname as a substring', async () => {
+      stubBrandPresenceData(['https://notexample.com/page;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(2);
+    });
+
+    it('should skip filtering and log a warning when baseURL is malformed', async () => {
+      site.getBaseURL.returns('not-a-url');
+      stubBrandPresenceData(['https://other.com/page']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Could not parse baseURL/),
+      );
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+    });
+
+    it('should handle www baseURL by filtering both www and bare hostname', async () => {
+      site.getBaseURL.returns('https://www.example.com');
+      stubBrandPresenceData(['https://example.com/page;https://www.example.com/page2;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+  });
+
   describe('URL Normalization', () => {
     it('should normalize youtube.com/watch URLs to youtu.be short form', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://www.youtube.com/watch?v=abc123']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=abc123']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -803,12 +406,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should keep youtube.com/shorts URLs as-is (strip query params only)', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://www.youtube.com/shorts/xyz?feature=share']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://www.youtube.com/shorts/xyz?feature=share']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -819,12 +417,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should normalize youtu.be short URLs via domain alias', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtu.be/shortId']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtu.be/shortId']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -833,26 +426,16 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should preserve trailing slash for domain-root URLs', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://thirdparty.com/']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      expect(createCalls[0].args[0].url).to.equal('https://example.com/');
+      expect(createCalls[0].args[0].url).to.equal('https://thirdparty.com/');
     });
 
     it('should strip trailing slash and query parameters from reddit URLs', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://reddit.com/r/test/post/?utm_source=share']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://reddit.com/r/test/post/?utm_source=share']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -865,8 +448,7 @@ describe('Offsite Brand Presence Handler', () => {
 
   describe('No URLs Found', () => {
     it('should return success with zero counts and skip URL store and DRS', async () => {
-      const responses = buildHappyResponses();
-      stubFetchSequence(responses);
+      mockLoadBrandPresenceData.resolves(null);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -878,25 +460,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No offsite URLs found/),
       );
-      expect(mockFetch.callCount).to.equal(1 + PROVIDERS.length);
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
     });
   });
 
   describe('URL Store Integration', () => {
-    function setupWithYoutubeUrl() {
-      return new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/watch?v=test']);
-        return okJsonResponse({});
-      });
-    }
-
     it('should add URLs to URL store via dataAccess', async () => {
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=test']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -913,9 +483,7 @@ describe('Offsite Brand Presence Handler', () => {
         data: [{ getUrl: () => 'https://youtu.be/test' }],
       });
 
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=test']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -934,9 +502,7 @@ describe('Offsite Brand Presence Handler', () => {
     it('should return empty storedByDomain when batchGetByKeys fails', async () => {
       dataAccess.AuditUrl.batchGetByKeys.rejects(new Error('DB connection lost'));
 
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=test']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -951,11 +517,7 @@ describe('Offsite Brand Presence Handler', () => {
     it('should handle URL store create failure gracefully and skip DRS for failed URLs', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=test']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -972,12 +534,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should only send successfully stored URLs to DRS when some fail', async () => {
       const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b;https://reddit.com/r/test/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       dataAccess.AuditUrl.create.onCall(1).rejects(new Error('write failed'));
 
@@ -1001,12 +558,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should skip DRS for a domain when all its URLs fail to store', async () => {
       const sources = 'https://youtube.com/shorts/a;https://reddit.com/r/test/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       dataAccess.AuditUrl.create.onCall(0).rejects(new Error('youtube store failed'));
 
@@ -1026,14 +578,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should add URLs for multiple domains to URL store', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/a;https://reddit.com/r/test/']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/shorts/a;https://reddit.com/r/test/']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1046,14 +591,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should add wikipedia URLs to URL store with wikipedia-analysis audit type', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1072,14 +610,7 @@ describe('Offsite Brand Presence Handler', () => {
         urls.push(`https://youtube.com/shorts/vid${i}`);
       }
       const sources = urls.join(';');
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([sources]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1093,7 +624,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should select most frequent URLs for DRS when counts differ', async () => {
-      const data = {
+      mockLoadBrandPresenceData.resolves({
         data: [
           {
             Sources: 'https://youtube.com/shorts/popular',
@@ -1114,15 +645,7 @@ describe('Offsite Brand Presence Handler', () => {
             Citations: 'true',
           },
         ],
-      };
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return okJsonResponse(data);
-        return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1132,12 +655,7 @@ describe('Offsite Brand Presence Handler', () => {
 
   describe('Top Cited URLs', () => {
     it('should add non-offsite URLs to URL store with cited-analysis audit type', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://thirdparty.com/page1;https://other.com/page2']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1149,31 +667,19 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should exclude offsite domain URLs from top-cited bucket', async () => {
-      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test/;https://en.wikipedia.org/wiki/Adobe;https://example.com/page';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test/;https://en.wikipedia.org/wiki/Adobe;https://thirdparty.com/page';
+      stubBrandPresenceData([sources]);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
-      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/page');
+      expect(topCitedCalls[0].args[0].url).to.equal('https://thirdparty.com/page');
     });
 
     it('should trigger DRS scraping for top-cited URLs', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://thirdparty.com/page1;https://other.com/page2']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1188,7 +694,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
         datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
         siteId: SITE_ID,
-        urls: [{ url: 'https://example.com/page1' }, { url: 'https://other.com/page2' }],
+        urls: [{ url: 'https://thirdparty.com/page1' }, { url: 'https://other.com/page2' }],
       }));
     });
 
@@ -1198,12 +704,7 @@ describe('Offsite Brand Presence Handler', () => {
       for (let i = 0; i < totalUrls; i += 1) {
         urls.push(`https://example${i}.com/page`);
       }
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([urls.join(';')]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([urls.join(';')]);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1214,12 +715,8 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe.skip('Guideline Store Integration', () => {
-    function stubWithTopicRows(rows, { providerCount = 1 } = {}) {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i < providerCount) return stubProviderData(rows);
-        return okJsonResponse({});
-      });
-      stubFetchSequence(buildHappyResponses({ providerResponses }));
+    function stubWithTopicRows(rows) {
+      stubBrandPresenceData(rows);
     }
 
     it('should create SentimentTopic entities from brand presence data with topics', async () => {
@@ -1364,8 +861,11 @@ describe('Offsite Brand Presence Handler', () => {
         {
           Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
         },
+        {
+          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
+        },
       ];
-      stubWithTopicRows(rows, { providerCount: 2 });
+      stubWithTopicRows(rows);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1395,12 +895,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should skip topic creation when no topics are present in data', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/watch?v=abc']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=abc']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1499,14 +994,7 @@ describe('Offsite Brand Presence Handler', () => {
   describe('DRS Scraping', () => {
     it('should trigger DRS jobs for youtube (2 datasets) and reddit (2 datasets)', async () => {
       const urls = 'https://youtube.com/shorts/v1;https://reddit.com/r/test/';
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([urls]);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData([urls]);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1534,14 +1022,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should call submitScrapeJob with correct params', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/watch?v=x']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/watch?v=x']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1557,15 +1038,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
-    it('should include daysBack for reddit_comments', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://reddit.com/r/adobe/']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+    it('should not attach reddit_comments params by default (DRS client applies defaults)', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1573,24 +1047,140 @@ describe('Offsite Brand Presence Handler', () => {
         (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
       );
       expect(commentsCall).to.exist;
-      expect(commentsCall.args[0].daysBack).to.equal(REDDIT_COMMENTS_DAYS_BACK);
+      expect(commentsCall.args[0]).to.not.have.property('daysBack');
+      expect(commentsCall.args[0]).to.not.have.property('commentLimit');
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
+      expect(commentsCall.args[0]).to.not.have.property('loadAllReplies');
 
       const postsCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_POSTS,
       );
       expect(postsCall).to.exist;
       expect(postsCall.args[0]).to.not.have.property('daysBack');
+      expect(postsCall.args[0]).to.not.have.property('commentLimit');
+      expect(postsCall.args[0]).to.not.have.property('sortBy');
+      expect(postsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('forwards messageData reddit params to submitScrapeJob for reddit_comments only', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: '300',
+          redditSortBy: 'Top',
+          redditDaysBack: '7',
+          redditLoadAllReplies: 'true',
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall).to.exist;
+      expect(commentsCall.args[0]).to.include({
+        commentLimit: 300,
+        sortBy: 'Top',
+        daysBack: 7,
+        loadAllReplies: true,
+      });
+
+      const postsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_POSTS,
+      );
+      expect(postsCall).to.exist;
+      expect(postsCall.args[0]).to.not.have.property('commentLimit');
+      expect(postsCall.args[0]).to.not.have.property('sortBy');
+      expect(postsCall.args[0]).to.not.have.property('daysBack');
+      expect(postsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('normalizes redditSortBy "QA" to "Q&A" before forwarding', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditSortBy: 'QA' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0].sortBy).to.equal('Q&A');
+    });
+
+    it('forwards redditLoadAllReplies=false explicitly when provided as string "false"', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditLoadAllReplies: 'false' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.have.property('loadAllReplies', false);
+    });
+
+    it('forwards reddit params delivered as native types (numbers and booleans)', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: 250,
+          redditDaysBack: 14,
+          redditLoadAllReplies: true,
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.include({
+        commentLimit: 250,
+        daysBack: 14,
+        loadAllReplies: true,
+      });
+    });
+
+    it('drops invalid reddit param values (non-numeric, blank, unknown booleans)', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          redditCommentLimit: 'lots',
+          redditDaysBack: '',
+          redditSortBy: '',
+          redditLoadAllReplies: 'maybe',
+        },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.not.have.property('commentLimit');
+      expect(commentsCall.args[0]).to.not.have.property('daysBack');
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
+      expect(commentsCall.args[0]).to.not.have.property('loadAllReplies');
+    });
+
+    it('drops non-empty redditSortBy values that are not in the allowlist', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditSortBy: 'Hot' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
     });
 
     it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1605,14 +1195,7 @@ describe('Offsite Brand Presence Handler', () => {
     it('should handle DRS API returning error response', async () => {
       mockSubmitScrapeJob.rejects(new Error('DRS POST /jobs failed: 503 - Service Unavailable'));
 
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1625,35 +1208,29 @@ describe('Offsite Brand Presence Handler', () => {
       );
     });
 
-    it('should handle DRS network error gracefully', async () => {
-      mockSubmitScrapeJob.rejects(new Error('DNS resolution failed'));
+    it('should retry once and succeed when first attempt fails', async () => {
+      mockSubmitScrapeJob
+        .onCall(0).rejects(new Error('transient timeout'))
+        .onCall(1).resolves({ job_id: 'retry-ok' })
+        .onCall(2).resolves({ job_id: 'first-try-ok' })
+        .onCall(3).resolves({ job_id: 'first-try-ok' });
 
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.have.lengthOf(2);
-      expect(result.auditResult.drsJobs[0].status).to.equal('error');
-      expect(result.auditResult.drsJobs[0].error).to.equal('DNS resolution failed');
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/failed \(attempt 1\), retrying/),
+      );
     });
 
     it('should skip DRS when not configured', async () => {
       mockDrsIsConfigured.returns(false);
 
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({ providerResponses });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1667,6 +1244,202 @@ describe('Offsite Brand Presence Handler', () => {
 
   });
 
+  describe('DRS Scraping with spacecatOrgId (direct HTTP)', () => {
+    let fetchStub;
+
+    beforeEach(() => {
+      fetchStub = sandbox.stub(global, 'fetch');
+    });
+
+    it('should bypass drsClient and send direct HTTP requests when spacecatOrgId is provided', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'direct-job-123' }),
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-abc-123' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(fetchStub).to.have.been.called;
+
+      const fetchCalls = fetchStub.getCalls();
+      for (const call of fetchCalls) {
+        expect(call.args[0]).to.equal('https://drs.api.example.com/jobs');
+        const options = call.args[1];
+        expect(options.method).to.equal('POST');
+        expect(options.headers['x-api-key']).to.equal('test-drs-key');
+        const body = JSON.parse(options.body);
+        expect(body.spacecat_org_id).to.equal('org-abc-123');
+        expect(body.provider_id).to.equal('brightdata');
+        expect(body.priority).to.equal('HIGH');
+        expect(body.parameters.site_id).to.equal(SITE_ID);
+      }
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      expect(result.auditResult.drsJobs[0].status).to.equal('success');
+      expect(result.auditResult.drsJobs[0].response.job_id).to.equal('direct-job-123');
+    });
+
+    it('forwards messageData.redditDaysBack to the direct HTTP body for reddit_comments only', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'direct-reddit-job' }),
+      });
+
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = {
+        messageData: {
+          spacecatOrgId: 'org-reddit-test',
+          redditDaysBack: 14,
+        },
+      };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = fetchStub.getCalls().find((call) => {
+        const body = JSON.parse(call.args[1].body);
+        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_COMMENTS;
+      });
+      expect(commentsCall).to.exist;
+      const commentsBody = JSON.parse(commentsCall.args[1].body);
+      expect(commentsBody.parameters.days_back).to.equal(14);
+      expect(commentsBody.spacecat_org_id).to.equal('org-reddit-test');
+
+      const postsCall = fetchStub.getCalls().find((call) => {
+        const body = JSON.parse(call.args[1].body);
+        return body.parameters.dataset_id === SCRAPE_DATASET_IDS.REDDIT_POSTS;
+      });
+      expect(postsCall).to.exist;
+      const postsBody = JSON.parse(postsCall.args[1].body);
+      expect(postsBody.parameters).to.not.have.property('days_back');
+    });
+
+    it('should handle direct HTTP error responses gracefully', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-fail-test' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('error');
+        expect(job.error).to.include('500');
+      }
+    });
+
+    it('should skip direct DRS when DRS_API_URL is missing', async () => {
+      delete env.DRS_API_URL;
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-no-url' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+      );
+    });
+
+    it('should skip direct DRS when DRS_API_KEY is missing', async () => {
+      delete env.DRS_API_KEY;
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-no-key' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+      );
+    });
+
+    it('should strip trailing slashes from DRS_API_URL in direct requests', async () => {
+      env.DRS_API_URL = 'https://drs.api.example.com///';
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'slash-job' }),
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-slash-test' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const url = fetchStub.firstCall.args[0];
+      expect(url).to.equal('https://drs.api.example.com/jobs');
+    });
+
+    it('should handle non-JSON response from direct DRS call', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => null },
+      });
+
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-text-resp' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('success');
+        expect(job.response).to.be.null;
+      }
+    });
+
+    it('should use drsClient when spacecatOrgId is not provided', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, { slackContext: {} });
+
+      expect(mockSubmitScrapeJob).to.have.been.called;
+      expect(fetchStub).to.not.have.been.called;
+    });
+
+    it('should send direct HTTP for all domain types when spacecatOrgId is provided', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ job_id: 'multi-domain-job' }),
+      });
+
+      const sources = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://en.wikipedia.org/wiki/Adobe;https://thirdparty.com/page';
+      stubBrandPresenceData([sources]);
+
+      const auditContext = { messageData: { spacecatOrgId: 'org-multi' } };
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+
+      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      for (const job of result.auditResult.drsJobs) {
+        expect(job.status).to.equal('success');
+      }
+
+      for (const call of fetchStub.getCalls()) {
+        const body = JSON.parse(call.args[1].body);
+        expect(body.spacecat_org_id).to.equal('org-multi');
+      }
+    });
+  });
+
   describe('Slack Notifications', () => {
     const SLACK_CHANNEL_ID = 'C-test-channel';
     const SLACK_THREAD_TS = '1700000000.123456';
@@ -1674,16 +1447,8 @@ describe('Offsite Brand Presence Handler', () => {
       slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
     };
 
-    function setupWithSources(sources) {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData([sources]);
-        return okJsonResponse({});
-      });
-      stubFetchSequence(buildHappyResponses({ providerResponses }));
-    }
-
     it('should send a Slack thread reply with DRS job IDs when slackContext is provided', async () => {
-      setupWithSources('https://youtube.com/shorts/v1');
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
@@ -1700,7 +1465,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should include each triggered domain in the Slack thread message', async () => {
-      setupWithSources('https://reddit.com/r/adobe/comments/xyz123/a-reddit-post');
+      stubBrandPresenceData(['https://reddit.com/r/adobe/comments/xyz123/a-reddit-post']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
@@ -1713,10 +1478,12 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should include a failed jobs section in the Slack message when some DRS jobs fail', async () => {
       mockSubmitScrapeJob
-        .onFirstCall().rejects(new Error('DRS timeout'))
-        .onSecondCall().resolves({ job_id: 'mock-job' });
+        .onCall(0).rejects(new Error('DRS timeout'))
+        .onCall(1).rejects(new Error('DRS timeout'))
+        .onCall(2).resolves({ job_id: 'mock-job' })
+        .onCall(3).resolves({ job_id: 'mock-job' });
 
-      setupWithSources('https://youtube.com/shorts/v1');
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
@@ -1731,7 +1498,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should not send a Slack message when no DRS jobs are triggered', async () => {
       mockDrsIsConfigured.returns(false);
-      setupWithSources('https://youtube.com/shorts/v1');
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
@@ -1743,16 +1510,9 @@ describe('Offsite Brand Presence Handler', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
         'https://www.youtube.com/watch?v=abc;https://reddit.com/r/adobe/post1',
-        'https://youtube.com/watch?v=def;https://example.com/unrelated;https://en.wikipedia.org/wiki/Adobe',
+        'https://youtube.com/watch?v=def;https://thirdparty.com/unrelated;https://en.wikipedia.org/wiki/Adobe',
       ];
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(sources);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-      });
-      stubFetchSequence(responses);
+      stubBrandPresenceData(sources);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1766,7 +1526,7 @@ describe('Offsite Brand Presence Handler', () => {
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
-      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/unrelated');
+      expect(topCitedCalls[0].args[0].url).to.equal('https://thirdparty.com/unrelated');
 
       const topCitedJob = result.auditResult.drsJobs.find((j) => j.datasetId === SCRAPE_DATASET_IDS.TOP_CITED);
       expect(topCitedJob).to.deep.include({
@@ -1777,10 +1537,11 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should include both previous weeks in the audit result', async () => {
-      mockIsoCalendarWeek.onFirstCall().returns({ week: 5, year: DEFAULT_YEAR });
-      mockIsoCalendarWeek.onSecondCall().returns({ week: 4, year: DEFAULT_YEAR });
-      const responses = buildHappyResponses({ week: 5 });
-      stubFetchSequence(responses);
+      mockGetPreviousWeeks.returns([
+        { week: 5, year: DEFAULT_YEAR },
+        { week: 4, year: DEFAULT_YEAR },
+      ]);
+      mockLoadBrandPresenceData.resolves(null);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1791,24 +1552,14 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should handle year boundary when previous weeks span two years', async () => {
-      mockIsoCalendarWeek.onFirstCall().returns({ week: 1, year: 2026 });
-      mockIsoCalendarWeek.onSecondCall().returns({ week: 52, year: 2025 });
-
-      const qi = {
-        data: [
-          { path: '/adobe/brand-presence/w1/brandpresence-chatgpt-w1-2026-010126.json' },
-          { path: '/adobe/brand-presence/w52/brandpresence-chatgpt-w52-2025-221225.json' },
-        ],
-      };
-      const responses = buildHappyResponses({
-        queryIndex: qi,
-        providerResponses: [okJsonResponse({}), okJsonResponse({})],
-      });
-      stubFetchSequence(responses);
+      mockGetPreviousWeeks.returns([
+        { week: 1, year: 2026 },
+        { week: 52, year: 2025 },
+      ]);
+      stubBrandPresenceData(['https://youtube.com/shorts/x']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.weeks).to.deep.equal([
         { week: 1, year: 2026 },
         { week: 52, year: 2025 },

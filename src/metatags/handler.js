@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
@@ -150,6 +151,8 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
 
   const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
     : new URL(url).pathname;
+  const lang = tags.lang ?? object.scrapeResult.language;
+
   // handling for homepage
   return {
     [pageUrl]: {
@@ -157,6 +160,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
       description: trimTagValue(object.scrapeResult.tags.description),
       h1: trimTagValue(object.scrapeResult.tags.h1) || [],
       s3key: key,
+      ...(hasText(lang) ? { language: lang } : {}),
     },
   };
 }
