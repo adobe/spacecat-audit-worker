@@ -408,49 +408,27 @@ The links check:
 
 #### Skipping links from the audit
 
-Three composable filters let site authors exclude links the audit cannot reach
-(e.g. SSO-protected, corp-network-only, or known-internal hosts) from being
-reported as broken or insecure. All three are read from the site's preflight
-handler config:
+Site authors can exclude links from the audit by wrapping them in an element
+whose CSS class is listed under `excludedElementClasses` in the site's preflight
+handler config. Any anchor whose DOM node or ancestor carries one of these class
+tokens is pruned before link probing and never reported as broken or insecure.
+Mirrors the pattern from the broken-internal-links audit (PR #2455).
 
 ```json
 {
   "handlers": {
     "preflight": {
       "config": {
-        "excludedElementClasses": ["cmp-feature-apps"],
-        "excludedHrefDomains":    ["timesheet.wal-mart.com", "workvivo.walmart.com"],
-        "excludedHrefPatterns":   ["^https?://internal\\."]
+        "excludedElementClasses": ["cmp-feature-apps"]
       }
     }
   }
 }
 ```
 
-| Field | Semantics | When to use |
-|---|---|---|
-| `excludedElementClasses` | Pruned by **DOM subtree** — any anchor whose DOM node or ancestor has one of these classes is removed before extraction. Whole-token match; leading `.` stripped. | A whole authored component is internal/auth-gated (e.g. a "Featured Apps" carousel). |
-| `excludedHrefDomains` | Pruned by **hostname suffix-match** — `wal-mart.com` matches `timesheet.wal-mart.com` and `wal-mart.com` itself, but NOT `evilwal-mart.com` or `wal-mart.com.evil.io`. | Specific corp-network-only hostnames. List per-subdomain when the parent domain also has public subdomains you want to keep auditing (e.g. `corporate.walmart.com`). |
-| `excludedHrefPatterns` | Pruned by **regex match** against the absolute href. Invalid patterns log a warning and are dropped — they do not crash the audit. | Power-user knob for hrefs that don't fit a clean hostname. |
-
-A link is skipped if **any** of the three filters matches. All three apply to
-both the broken-link probe AND the insecure-link (http→https) scan, so the
-ignore semantics stay consistent across opportunity types.
-
-**Common patterns:**
-- *Casio-style* — one component class wraps a known monolithic internal area →
-  use `excludedElementClasses`.
-- *Walmart-style* — corp-only and public links interleaved in the same authored
-  components → use `excludedHrefDomains` with the corp-only subdomains
-  enumerated explicitly. Setting the parent domain (e.g. `walmart.com`) is
-  almost always too broad.
-
-**Inputs are normalized permissively:**
-- Arrays or comma-separated strings both accepted
-- Leading `.` on classes stripped (`.no-audit` and `no-audit` are equivalent)
-- Hostnames lowercased, `http(s)://` prefix and path/query stripped
-  (`HTTPS://Wal-Mart.com/path` normalizes to `wal-mart.com`)
-- Empty / whitespace-only entries dropped
+The exclusion applies to both the broken-link probe and the insecure-link
+(http→https) scan. Leading `.` on class tokens is stripped (`.no-audit` and
+`no-audit` are equivalent). Empty / whitespace-only entries are dropped.
 
 **Operational note:** the SpaceCat `PATCH /sites/{id}` endpoint
 shallow-merges the top-level `config` object. Always **GET → splice → PATCH**

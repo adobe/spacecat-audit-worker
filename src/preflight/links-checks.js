@@ -48,128 +48,6 @@ export function filterExcludedElements($, excludedElementClasses) {
 }
 
 /**
- * Normalize a customer-supplied list of href-domain tokens. Lowercases, trims,
- * strips an accidental leading "http(s)://" or trailing slash/path, dedupes,
- * drops non-strings and empties. Intentionally permissive on the input side so
- * customer config can be loosely written without breaking.
- *
- * @param {string[]|string|undefined} raw - Array of host strings, or comma-separated
- * @returns {string[]} Cleaned hostnames
- */
-export function normalizeHrefDomains(raw) {
-  let list;
-  if (Array.isArray(raw)) {
-    list = raw;
-  } else if (typeof raw === 'string') {
-    list = raw.split(',');
-  } else {
-    list = [];
-  }
-  const cleaned = list
-    .filter((v) => typeof v === 'string')
-    .map((v) => v.trim().toLowerCase())
-    .map((v) => v.replace(/^https?:\/\//, ''))
-    .map((v) => v.split('/')[0])
-    .filter((v) => v.length > 0);
-  return [...new Set(cleaned)];
-}
-
-/**
- * Normalize a customer-supplied list of regex strings. Just filters non-strings
- * and empties; pattern compilation (and bad-regex defense) happens later in
- * compileHrefPatterns.
- *
- * @param {string[]|string|undefined} raw
- * @returns {string[]}
- */
-export function normalizeHrefPatterns(raw) {
-  let list;
-  if (Array.isArray(raw)) {
-    list = raw;
-  } else if (typeof raw === 'string') {
-    list = [raw];
-  } else {
-    list = [];
-  }
-  return list
-    .filter((v) => typeof v === 'string')
-    .map((v) => v.trim())
-    .filter((v) => v.length > 0);
-}
-
-/**
- * Suffix-match an href's hostname against a list of excluded domains.
- * `wal-mart.com` matches `timesheet.wal-mart.com` and `wal-mart.com` itself,
- * but NOT `evilwal-mart.com` — the match requires either equality or a leading
- * dot boundary on the hostname.
- *
- * @param {string} href - The absolute href to test
- * @param {string[]} excludedHrefDomains - Lowercased hostnames (no protocol, no path)
- * @returns {boolean}
- */
-export function matchesExcludedDomain(href, excludedHrefDomains) {
-  if (!excludedHrefDomains?.length) {
-    return false;
-  }
-  let hostname;
-  try {
-    hostname = new URL(href).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
-  return excludedHrefDomains.some(
-    (d) => hostname === d || hostname.endsWith(`.${d}`),
-  );
-}
-
-/**
- * Test an href against a list of regex strings. Invalid regexes are dropped
- * with a warn — a bad pattern in customer config must not crash the audit.
- *
- * @param {string} href - The absolute href to test
- * @param {RegExp[]} compiledPatterns - Pre-compiled patterns from compileHrefPatterns
- * @returns {boolean}
- */
-export function matchesExcludedPattern(href, compiledPatterns) {
-  if (!compiledPatterns?.length) {
-    return false;
-  }
-  return compiledPatterns.some((re) => re.test(href));
-}
-
-/**
- * Compile customer-supplied regex strings once per audit run. Bad patterns
- * are logged and dropped so subsequent matches don't repeatedly throw.
- *
- * @param {string[]} patterns - Raw regex strings from site config
- * @param {{ warn: Function }} log - Logger
- * @returns {RegExp[]}
- */
-export function compileHrefPatterns(patterns, log) {
-  if (!patterns?.length) {
-    return [];
-  }
-  const out = [];
-  for (const p of patterns) {
-    try {
-      out.push(new RegExp(p));
-    } catch (err) {
-      log.warn(`[preflight-audit] invalid excludedHrefPattern (${p}) — skipping: ${err.message}`);
-    }
-  }
-  return out;
-}
-
-/**
- * Returns true if the href should be skipped from probing per any of the
- * link-level exclusion knobs.
- */
-export function isExcludedHref(href, { excludedHrefDomains, compiledHrefPatterns }) {
-  return matchesExcludedDomain(href, excludedHrefDomains)
-    || matchesExcludedPattern(href, compiledHrefPatterns);
-}
-
-/**
  * Status codes where HEAD is unreliable: bot protection, auth gates, or method restrictions.
  * These trigger a GET retry before deciding the link is broken.
  */
@@ -304,11 +182,6 @@ async function checkLinkStatus(href, pageUrl, context, options = {
  * @param {string[]} [options.excludedElementClasses] - Class tokens that mark subtrees
  *   to ignore. Any anchor whose DOM node or ancestor has one of these classes is
  *   pruned from extraction and therefore never reported as broken.
- * @param {string[]} [options.excludedHrefDomains] - Hostnames to skip (suffix-matched
- *   against each anchor's href hostname). Useful for known auth-gated / corp-network
- *   domains the audit cannot reach from Lambda.
- * @param {string[]} [options.excludedHrefPatterns] - Regex strings to skip (matched
- *   against each anchor's absolute href). Power-user knob.
  * @returns {Promise<Object>} - Object containing both broken internal and external links
  */
 export async function runLinksChecks(urls, scrapedObjects, context, options = {
@@ -316,12 +189,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 }) {
   const {
     excludedElementClasses = [],
-    excludedHrefDomains = [],
-    excludedHrefPatterns = [],
   } = options;
   const { log } = context;
-  const compiledHrefPatterns = compileHrefPatterns(excludedHrefPatterns, log);
-  const hrefFilters = { excludedHrefDomains, compiledHrefPatterns };
   const brokenInternalLinks = [];
   const brokenExternalLinks = [];
 
@@ -349,9 +218,6 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
           try {
             const href = $a.attr('href');
             const abs = new URL(href, pageUrl).toString();
-            if (isExcludedHref(abs, hrefFilters)) {
-              return;
-            }
             const selector = getDomElementSelector(a);
             if (new URL(abs).origin === pageOrigin) {
               if (!internalLinks.has(abs)) {

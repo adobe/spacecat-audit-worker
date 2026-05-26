@@ -15,10 +15,6 @@ import { saveIntermediateResults } from './utils.js';
 import {
   runLinksChecks,
   filterExcludedElements,
-  normalizeHrefDomains,
-  normalizeHrefPatterns,
-  compileHrefPatterns,
-  isExcludedHref,
 } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
 import { normalizeExcludedElementClasses } from '../internal-links/config.js';
@@ -101,18 +97,10 @@ export default async function links(context, auditContext) {
   const excludedElementClasses = normalizeExcludedElementClasses(
     preflightHandlerConfig?.excludedElementClasses,
   );
-  const excludedHrefDomains = normalizeHrefDomains(preflightHandlerConfig?.excludedHrefDomains);
-  const excludedHrefPatterns = normalizeHrefPatterns(preflightHandlerConfig?.excludedHrefPatterns);
   const { auditResult } = await runLinksChecks(auditUrls, scrapedObjects, context, {
     pageAuthToken,
     excludedElementClasses,
-    excludedHrefDomains,
-    excludedHrefPatterns,
   });
-  // Pre-compile patterns once for the insecure-link scan below — keeps both
-  // passes on the same compiled list and surfaces bad-regex warnings only once.
-  const compiledHrefPatterns = compileHrefPatterns(excludedHrefPatterns, log);
-  const hrefFilters = { excludedHrefDomains, compiledHrefPatterns };
 
   const brokenInternalLinksByPage = new Map();
   const brokenExternalLinksByPage = new Map();
@@ -238,9 +226,6 @@ export default async function links(context, auditContext) {
           normalizedUrl = new URL(href).href;
         } catch {
           normalizedUrl = href;
-        }
-        if (isExcludedHref(normalizedUrl, hrefFilters)) {
-          return null;
         }
         const selector = getDomElementSelector(anchor);
         return {
