@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import DrsClient, {
+  SCRAPE_DATASET_IDS,
+  REDDIT_COMMENTS_SORT_BY_VALUES,
+} from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
@@ -27,8 +30,9 @@ import {
  * Extracts reddit_comments scrape parameters from Slack/API `messageData`.
  * Slack delivers keyword values as strings, so this normalizes them:
  *  - `redditCommentLimit` / `redditDaysBack` → positive integer (or undefined)
- *  - `redditSortBy` → string, `'QA'` is normalized to `'Q&A'` so Slack users can
- *    avoid Slack mangling the ampersand
+ *  - `redditSortBy` → allowlisted enum value; `'QA'` is normalized to `'Q&A'`
+ *    so Slack users can avoid Slack mangling the ampersand. Unknown values
+ *    are dropped.
  *  - `redditLoadAllReplies` → strict boolean (only the strings 'true'/'false'
  *    or real booleans are accepted; anything else is dropped)
  *
@@ -66,7 +70,10 @@ function resolveRedditCommentsParams(messageData) {
   }
 
   if (md.redditSortBy !== undefined && md.redditSortBy !== null && md.redditSortBy !== '') {
-    params.sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+    const sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+    if (REDDIT_COMMENTS_SORT_BY_VALUES.has(sortBy)) {
+      params.sortBy = sortBy;
+    }
   }
 
   const rawLoadAll = md.redditLoadAllReplies;

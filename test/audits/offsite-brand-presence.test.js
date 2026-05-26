@@ -1167,6 +1167,18 @@ describe('Offsite Brand Presence Handler', () => {
       expect(commentsCall.args[0]).to.not.have.property('loadAllReplies');
     });
 
+    it('drops non-empty redditSortBy values that are not in the allowlist', async () => {
+      stubBrandPresenceData(['https://reddit.com/r/adobe/']);
+
+      const auditContext = { messageData: { redditSortBy: 'Hot' } };
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      );
+      expect(commentsCall.args[0]).to.not.have.property('sortBy');
+    });
+
     it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {
       stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
