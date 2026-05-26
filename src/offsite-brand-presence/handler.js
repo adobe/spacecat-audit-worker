@@ -17,12 +17,67 @@ import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   DRS_URLS_LIMIT,
-  REDDIT_COMMENTS_DAYS_BACK,
   OFFSITE_DOMAINS,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from './constants.js';
+
+/**
+ * Extracts reddit_comments scrape parameters from Slack/API `messageData`.
+ * Slack delivers keyword values as strings, so this normalizes them:
+ *  - `redditCommentLimit` / `redditDaysBack` → positive integer (or undefined)
+ *  - `redditSortBy` → string, `'QA'` is normalized to `'Q&A'` so Slack users can
+ *    avoid Slack mangling the ampersand
+ *  - `redditLoadAllReplies` → strict boolean (only the strings 'true'/'false'
+ *    or real booleans are accepted; anything else is dropped)
+ *
+ * Invalid values are dropped rather than thrown — the DRS client validates and
+ * surfaces a clear error.
+ *
+ * @param {object} [messageData]
+ * @returns {{
+ *   commentLimit?: number,
+ *   sortBy?: string,
+ *   daysBack?: number,
+ *   loadAllReplies?: boolean,
+ * }}
+ */
+function resolveRedditCommentsParams(messageData) {
+  const md = messageData || {};
+  const params = {};
+
+  const parseInteger = (raw) => {
+    if (raw === undefined || raw === null || raw === '') {
+      return undefined;
+    }
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+
+  const commentLimit = parseInteger(md.redditCommentLimit);
+  if (commentLimit !== undefined) {
+    params.commentLimit = commentLimit;
+  }
+
+  const daysBack = parseInteger(md.redditDaysBack);
+  if (daysBack !== undefined) {
+    params.daysBack = daysBack;
+  }
+
+  if (md.redditSortBy !== undefined && md.redditSortBy !== null && md.redditSortBy !== '') {
+    params.sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+  }
+
+  const rawLoadAll = md.redditLoadAllReplies;
+  if (rawLoadAll === true || rawLoadAll === 'true') {
+    params.loadAllReplies = true;
+  } else if (rawLoadAll === false || rawLoadAll === 'false') {
+    params.loadAllReplies = false;
+  }
+
+  return params;
+}
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
@@ -481,13 +536,29 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
  * When spacecatOrgId is provided, jobs are submitted directly via HTTP with
  * spacecat_org_id in the request body instead of using the DRS client.
  *
+ * Reddit-comments params (`commentLimit`, `sortBy`, `daysBack`,
+ * `loadAllReplies`) are only attached to the `reddit_comments` dataset. When
+ * they are omitted and the request goes through the DRS client, the client
+ * applies its defaults (`commentLimit=150`, `sortBy='Best'`, no `daysBack`,
+ * no `loadAllReplies`). On the direct-HTTP path (`spacecatOrgId` set), only
+ * the params that the direct path explicitly handles (currently `daysBack`)
+ * actually reach DRS.
+ *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
  * @param {string} [spacecatOrgId] - Optional SpaceCat org ID for direct DRS requests
+ * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
+ *   (see {@link resolveRedditCommentsParams})
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) {
+async function triggerDrsScraping(
+  urlsByDomain,
+  siteId,
+  context,
+  spacecatOrgId,
+  redditCommentsParams = {},
+) {
   const { log } = context;
   const drsClient = spacecatOrgId ? null : DrsClient.createFrom(context);
 
@@ -521,7 +592,7 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
         : urlList;
       const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
-        params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
+        Object.assign(params, redditCommentsParams);
       }
       jobs.push({ domain, datasetId, params });
     }
@@ -622,6 +693,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { dataAccess, log } = context;
   const { slackContext, messageData } = auditContext || {};
   const spacecatOrgId = messageData?.spacecatOrgId;
+  const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -681,7 +753,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context, spacecatOrgId);
+  const drsResults = await triggerDrsScraping(
+    storedByDomain,
+    siteId,
+    context,
+    spacecatOrgId,
+    redditCommentsParams,
+  );
 
   await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 
