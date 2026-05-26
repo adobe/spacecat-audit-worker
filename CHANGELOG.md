@@ -1,3 +1,10 @@
+# [1.451.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.4...v1.451.0) (2026-05-26)
+
+
+### Features
+
+* **offsite-brand-presence:** extend reddit comments scraping parameters (LLMO-4464) ([#2562](https://github.com/adobe/spacecat-audit-worker/issues/2562)) ([df2f0b7](https://github.com/adobe/spacecat-audit-worker/commit/df2f0b7dd89ec757791194ace91470f5dd7d4be0))
+
 ## [1.450.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.450.3...v1.450.4) (2026-05-26)
 
 
