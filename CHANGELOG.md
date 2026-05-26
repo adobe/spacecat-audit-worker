@@ -1,3 +1,10 @@
+# [1.452.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.451.1...v1.452.0) (2026-05-26)
+
+
+### Features
+
+* refactor to send spacecatOrgId to submitScrapeJob ([#2552](https://github.com/adobe/spacecat-audit-worker/issues/2552)) ([9cfcd62](https://github.com/adobe/spacecat-audit-worker/commit/9cfcd621771e95ce937237fd16253d34501f9cfb))
+
 ## [1.451.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.451.0...v1.451.1) (2026-05-26)
 
 
