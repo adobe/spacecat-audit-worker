@@ -41,6 +41,8 @@ export function filterExcludedElements($, excludedElementClasses) {
       toRemove.push(el);
     }
   });
+  // Deepest nodes first so removing an ancestor doesn't leave already-queued
+  // descendants as detached nodes that Cheerio would try to remove again.
   toRemove.sort((a, b) => $(b).parents().length - $(a).parents().length);
   for (const el of toRemove) {
     $(el).remove();
