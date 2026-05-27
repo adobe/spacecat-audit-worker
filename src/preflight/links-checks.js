@@ -16,6 +16,40 @@ import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js
 import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
 
 /**
+ * Removes subtrees rooted at elements whose `class` contains an excluded token.
+ * Deepest nodes are removed first so nested excluded wrappers are safe. Mirrors
+ * the broken-internal-links crawl filter introduced in PR #2455 so site authors
+ * can use one mental model across audits.
+ *
+ * @param {CheerioAPI} $ - cheerio document (mutated)
+ * @param {string[]} excludedElementClasses - normalized class tokens (no leading ".")
+ */
+export function filterExcludedElements($, excludedElementClasses) {
+  if (!excludedElementClasses?.length) {
+    return;
+  }
+  const excludedClassSet = new Set(excludedElementClasses);
+  const toRemove = [];
+
+  $('[class]').each((_, el) => {
+    const classAttr = $(el).attr('class');
+    if (!classAttr) {
+      return;
+    }
+    const hasExcluded = classAttr.split(/\s+/).filter(Boolean).some((c) => excludedClassSet.has(c));
+    if (hasExcluded) {
+      toRemove.push(el);
+    }
+  });
+  // Deepest nodes first so removing an ancestor doesn't leave already-queued
+  // descendants as detached nodes that Cheerio would try to remove again.
+  toRemove.sort((a, b) => $(b).parents().length - $(a).parents().length);
+  for (const el of toRemove) {
+    $(el).remove();
+  }
+}
+
+/**
  * Status codes where HEAD is unreliable: bot protection, auth gates, or method restrictions.
  * These trigger a GET retry before deciding the link is broken.
  */
@@ -147,11 +181,17 @@ async function checkLinkStatus(href, pageUrl, context, options = {
  * @param {Object} context - Context object containing the logger
  * @param {RequestOptions} options - Options for to pass to the fetch request
  * @param {String} options.pageAuthToken - Optional authorization token for the page
+ * @param {string[]} [options.excludedElementClasses] - Class tokens that mark subtrees
+ *   to ignore. Any anchor whose DOM node or ancestor has one of these classes is
+ *   pruned from extraction and therefore never reported as broken.
  * @returns {Promise<Object>} - Object containing both broken internal and external links
  */
 export async function runLinksChecks(urls, scrapedObjects, context, options = {
   pageAuthToken: null,
 }) {
+  const {
+    excludedElementClasses = [],
+  } = options;
   const { log } = context;
   const brokenInternalLinks = [];
   const brokenExternalLinks = [];
@@ -165,6 +205,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
         const $ = cheerioLoad(html);
+
+        filterExcludedElements($, excludedElementClasses);
 
         const anchors = $('a[href]');
         const pageOrigin = new URL(pageUrl).origin;
