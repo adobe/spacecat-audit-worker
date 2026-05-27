@@ -682,6 +682,7 @@ export async function filterValidUrls(
         // firstHopUrl is already in the form of  `new URL(Location, url).href` ... (see above)
         const probedHref = new URL(url).href;
         const firstHopHref = new URL(firstHopUrl).href; // just for code clarity
+        const terminalHref = new URL(terminalUrl).href;
         // if the first hop is the same as the probed URL, then we have no suggestion to make
         if (firstHopHref === probedHref) {
           log?.debug('Sitemap: first hop URL equals probed URL (self-redirect) so everything is ok.', {
@@ -697,11 +698,13 @@ export async function filterValidUrls(
 
         // when the terminal URL has an unclear status, try to recommend the first hop instead
         if (!terminalClearly404 && !urlLooksLike404Page(firstHopUrl)) {
-          log?.info(
-            `Sitemap: recommending first hop URL instead of terminal URL for ${url} as the redirect URL; `
-            + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
-            + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
-          );
+          if (firstHopHref !== terminalHref) {
+            log?.info(
+              `Sitemap: recommending first hop URL instead of terminal URL for ${url} as the redirect URL; `
+              + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
+              + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
+            );
+          }
           return refine({
             type: 'notOk',
             url,

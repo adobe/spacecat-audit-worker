@@ -3251,7 +3251,7 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     expect(log.error).to.have.been.calledWith(sinon.match(/no 'Location' header/));
   });
 
-  it('calls log.info for first-hop redirect suggestion when log is provided', async () => {
+  it('does not call log.info when first hop equals terminal candidate on redirect suggestion', async () => {
     const urls = ['https://example.com/redirect-waf'];
     nock('https://example.com')
       .head('/redirect-waf')
@@ -3262,7 +3262,26 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
 
     await filterValidUrls(urls, log);
 
+    expect(log.info).not.to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+  });
+
+  it('calls log.info for first-hop redirect suggestion when terminal differs from first hop', async () => {
+    const urls = ['https://example.com/start'];
+    nock('https://example.com')
+      .head('/start')
+      .reply(302, '', { Location: 'https://example.com/mid' });
+    nock('https://example.com')
+      .head('/mid')
+      .reply(302, '', { Location: 'https://example.com/end' });
+    nock('https://example.com').head('/end').reply(403);
+    nock('https://example.com').get('/end').reply(403);
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
     expect(log.info).to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/first hop: https:\/\/example\.com\/mid/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/terminal candidate: https:\/\/example\.com\/end/));
   });
 
   it('calls log.debug when redirect terminal is clearly bad and log is provided', async () => {

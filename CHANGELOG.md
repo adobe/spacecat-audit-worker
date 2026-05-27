@@ -1,3 +1,24 @@
+## [1.452.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.3...v1.452.4) (2026-05-27)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2566](https://github.com/adobe/spacecat-audit-worker/issues/2566)) ([7c64dbf](https://github.com/adobe/spacecat-audit-worker/commit/7c64dbfc1547bb01012cf1d57ce913379f4cb8f3))
+
+## [1.452.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.2...v1.452.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* process fetched data instead of throwing when MAX_EXECUTION_FETCH_PAGES is reached ([#2567](https://github.com/adobe/spacecat-audit-worker/issues/2567)) ([9d285c0](https://github.com/adobe/spacecat-audit-worker/commit/9d285c05e6589764f92e5bd7ccfc3b97fba26163))
+
+## [1.452.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.1...v1.452.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* Sitemap logging improvements ([#2564](https://github.com/adobe/spacecat-audit-worker/issues/2564)) ([e26d990](https://github.com/adobe/spacecat-audit-worker/commit/e26d99079b35737419123db4e4897c1ecf2cafb1))
+
 ## [1.452.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.0...v1.452.1) (2026-05-26)
 
 
