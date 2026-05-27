@@ -20,7 +20,6 @@ Resources:
           AWS_XRAY_CONTEXT_MISSING: IGNORE_ERROR
           AWS_ACCESS_KEY_ID: !Ref AWS_ACCESS_KEY_ID
           AWS_SECRET_ACCESS_KEY: !Ref AWS_SECRET_ACCESS_KEY
-          AWS_SESSION_TOKEN: !Ref AWS_SESSION_TOKEN
           AWS_DEFAULT_REGION: !Ref AWS_DEFAULT_REGION
           GOOGLE_CLOUD_API_KEY: !Ref GOOGLE_CLOUD_API_KEY
           GOOGLE_CLIENT_ID: !Ref GOOGLE_CLIENT_ID
@@ -70,10 +69,6 @@ Parameters:
   AWS_SECRET_ACCESS_KEY:
     Type: String
     Description: AWS Secret Access Key
-  AWS_SESSION_TOKEN:
-    Type: String
-    Description: AWS Session Token (required for temporary STS/KLAM credentials)
-    Default: ''
   AWS_DEFAULT_REGION:
     Type: String
     Description: AWS Default Region

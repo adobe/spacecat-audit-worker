@@ -24,42 +24,30 @@ import { main as universalMain } from './index.js';
  *   ./scripts/seed-test-data.sh <siteId> <apiKey> [baseUrl]
  */
 export const main = async () => {
-  // Change this to test different audit types.
-  // For SITES-44776 preflight excludedElementClasses (AsyncJob-based) test:
-  //   AUDIT_TYPE=preflight JOB_ID=bbbbbbbb-0000-0000-0000-000000000001 npm run local-run
-  const AUDIT_TYPE = process.env.AUDIT_TYPE || 'preflight';
+  // Change this to test different audit types
+  const AUDIT_TYPE = process.env.AUDIT_TYPE || 'wikipedia-analysis';
   const SITE_ID = process.env.SITE_ID || 'b1555a54-48b4-47ee-97c1-438257bd3839';
-  const JOB_ID = process.env.JOB_ID || null;
 
-  const messageBody = JOB_ID
-    ? {
-      // AsyncJob-based audit (e.g. preflight) — dispatches directly to a named step
+  const messageBody = {
+    type: AUDIT_TYPE,
+    siteId: SITE_ID,
+    auditContext: {
+      next: `check-${AUDIT_TYPE}`,
+      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
       type: AUDIT_TYPE,
-      auditContext: {
-        next: 'preflight-audit',
-        jobId: JOB_ID,
-        type: AUDIT_TYPE,
-      },
-    }
-    : {
-      type: AUDIT_TYPE,
-      siteId: SITE_ID,
-      auditContext: {
-        next: `check-${AUDIT_TYPE}`,
-        auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-        type: AUDIT_TYPE,
-        fullAuditRef: `${AUDIT_TYPE}::example.com`,
-      },
-    };
+      fullAuditRef: `${AUDIT_TYPE}::example.com`,
+    },
+  };
 
   console.log(`\n=== Running ${AUDIT_TYPE} for siteId: ${SITE_ID} ===\n`);
 
-  // sqsEventAdapter (non-Lambda path) calls req.json() — pass a proper Request object.
-  const request = new Request('https://localhost/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(messageBody),
-  });
+  const message = {
+    Records: [
+      {
+        body: JSON.stringify(messageBody),
+      },
+    ],
+  };
 
   const context = {
     env: process.env,
@@ -67,7 +55,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: console.log,
+      debug: console.log, // Enable debug logging for local testing
     },
     runtime: {
       region: 'us-east-1',
@@ -85,5 +73,5 @@ export const main = async () => {
     },
   };
 
-  await universalMain(request, context);
+  await universalMain(message, context);
 };

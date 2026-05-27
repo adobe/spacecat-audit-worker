@@ -22,11 +22,7 @@ export default function s3Client(fn) {
   return async (request, context) => {
     if (!context.s3Client) {
       const region = context.env?.AWS_REGION;
-      const forcePathStyle = context.env?.AWS_S3_FORCE_PATH_STYLE === 'true';
-      const options = {
-        ...(region ? { region } : {}),
-        ...(forcePathStyle ? { forcePathStyle: true } : {}),
-      };
+      const options = region ? { region } : {};
       context.s3Client = instrumentAWSClient(new S3Client(options));
     }
     return fn(request, context);
