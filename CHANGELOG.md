@@ -1,3 +1,10 @@
+## [1.452.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.2...v1.452.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* process fetched data instead of throwing when MAX_EXECUTION_FETCH_PAGES is reached ([#2567](https://github.com/adobe/spacecat-audit-worker/issues/2567)) ([9d285c0](https://github.com/adobe/spacecat-audit-worker/commit/9d285c05e6589764f92e5bd7ccfc3b97fba26163))
+
 ## [1.452.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.1...v1.452.2) (2026-05-27)
 
 
