@@ -424,7 +424,7 @@ describe('offsite-brand-presence-postgrest', () => {
       );
     });
 
-    it('returns null when keyset pagination reaches the max-page guard', async () => {
+    it('returns fetched rows and warns when keyset pagination reaches the max-page guard', async () => {
       const fullBatch = new Array(EXECUTION_FETCH_BATCH_SIZE).fill(makeExecution({
         brand_presence_sources: [embeddedSource('https://example.com/full-page')],
       }));
@@ -437,7 +437,9 @@ describe('offsite-brand-presence-postgrest', () => {
       );
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
-      expect(await loadWith({ postgrestClient })).to.equal(null);
+      const result = await loadWith({ postgrestClient });
+      expect(result).to.not.equal(null);
+      expect(result.data).to.have.length.greaterThan(0);
       expect(log.warn).to.have.been.calledWithMatch(
         `Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`,
       );
