@@ -87,7 +87,6 @@ import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
-import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
 import rumConfigRefresh from './rum-config-refresh/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
@@ -194,7 +193,6 @@ const HANDLERS = {
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
-  'llmo-config-db-sync': llmoConfigDbSync,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
