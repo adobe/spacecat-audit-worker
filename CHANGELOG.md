@@ -1,3 +1,10 @@
+## [1.452.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.1...v1.452.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* Sitemap logging improvements ([#2564](https://github.com/adobe/spacecat-audit-worker/issues/2564)) ([e26d990](https://github.com/adobe/spacecat-audit-worker/commit/e26d99079b35737419123db4e4897c1ecf2cafb1))
+
 ## [1.452.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.0...v1.452.1) (2026-05-26)
 
 
