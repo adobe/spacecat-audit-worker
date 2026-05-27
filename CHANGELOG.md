@@ -1,3 +1,10 @@
+# [1.453.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.4...v1.453.0) (2026-05-27)
+
+
+### Features
+
+* **preflight:** excludedElementClasses to skip auth-gated link subtrees (SITES-44776) ([#2558](https://github.com/adobe/spacecat-audit-worker/issues/2558)) ([c7fbb3d](https://github.com/adobe/spacecat-audit-worker/commit/c7fbb3de14b14a8d682e3376ee8c970432f904e4)), closes [#2533](https://github.com/adobe/spacecat-audit-worker/issues/2533)
+
 ## [1.452.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.3...v1.452.4) (2026-05-27)
 
 
