@@ -48,6 +48,8 @@ import {
   HTTP_AND_HTTPS_PROTOCOLS,
   suggestedUrlMatchesCanonicalUrlWithoutSuffix,
   extractCanonicalHrefFromHtml,
+  httpsDocumentUrlForCanonicalRefinement,
+  fetchHtmlForCanonicalRefinement,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -2087,6 +2089,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
@@ -2254,6 +2257,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
     expect(result.networkErrors).to.deep.equal([
@@ -2399,6 +2403,26 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.ok).to.deep.equal(['https://example.com/self-redirect-loop']);
     expect(result.notOk).to.be.empty;
     expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
+  });
+
+  it('does not treat first hop as self-redirect when Location scheme differs from probed URL', async () => {
+    const probed = 'https://example.com/self-redirect-http-location';
+    nock('https://example.com')
+      .head('/self-redirect-http-location')
+      .reply(301, '', { Location: 'http://example.com/self-redirect-http-location' });
+    nock('http://example.com').head('/self-redirect-http-location').reply(404);
+    nock('http://example.com').get('/self-redirect-http-location').reply(404);
+
+    const result = await filterValidUrls([probed]);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 404,
+        urlsSuggested: '',
+      },
+    ]);
   });
 
   it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
@@ -2753,12 +2777,223 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/probed-http-canonical')
       .reply(301, '', { Location: terminal });
     nock('http://example.com').head('/terminal-http').reply(200);
-    nock('http://example.com')
+    nock('https://example.com')
       .get('/terminal-http')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls([probed]);
     expect(result.ok).to.deep.equal([probed]);
+  });
+
+  it('uses https document fetch first when probed https redirects to http Location', async () => {
+    const probed = 'https://example.com/old-https-to-http';
+    const httpTerminal = 'http://example.com/dest-page';
+    const canonicalHttps = 'https://example.com/dest-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/old-https-to-http')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/dest-page').reply(403);
+    nock('http://example.com').get('/dest-page').reply(403);
+    nock('https://example.com')
+      .get('/dest-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
+  });
+
+  it('falls back to http document fetch when https variant returns no HTML', async () => {
+    const probed = 'https://example.com/fallback-http-get';
+    const httpTerminal = 'http://example.com/http-only-page';
+    const canonicalHttps = 'https://example.com/http-only-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/fallback-http-get')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/http-only-page').reply(200);
+    nock('https://example.com')
+      .get('/http-only-page')
+      .reply(301, '', { Location: canonicalHttps });
+    nock('http://example.com')
+      .get('/http-only-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+  });
+});
+
+describe('httpsDocumentUrlForCanonicalRefinement', () => {
+  it('returns https variant when document is http and probed was https', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'http://example.com/path',
+      'https://example.com/other',
+    )).to.equal('https://example.com/path');
+  });
+
+  it('returns null when document is already https', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'https://example.com/path',
+      'https://example.com/other',
+    )).to.equal(null);
+  });
+
+  it('returns null when probed was http', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'http://example.com/path',
+      'http://example.com/other',
+    )).to.equal(null);
+  });
+
+  it('returns null when document is https and probed was http', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'https://example.com/path',
+      'http://example.com/other',
+    )).to.equal(null);
+  });
+});
+
+describe('fetchHtmlForCanonicalRefinement', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('returns https HTML without calling http when https fetch succeeds', async () => {
+    const html = '<html><head><link rel="canonical" href="https://example.com/p" /></head></html>';
+    nock('https://example.com')
+      .get('/p')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/p',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/p',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('falls back to http when https fetch returns no HTML', async () => {
+    const html = '<html><head></head></html>';
+    nock('https://example.com').get('/p2').reply(301, '', { Location: 'https://example.com/p2' });
+    nock('http://example.com')
+      .get('/p2')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/p2',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'http://example.com/p2',
+    });
+  });
+
+  it('fetches documentUrl once when probed was not https (https document, http probed)', async () => {
+    const html = '<html></html>';
+    nock('https://example.com')
+      .get('/only')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'https://example.com/only',
+      'http://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/only',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('fetches https document once when both document and probed use https', async () => {
+    const html = '<html><head></head></html>';
+    nock('https://example.com')
+      .get('/both-https')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'https://example.com/both-https',
+      'https://example.com/probed-both-https',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/both-https',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('fetches http document once when both document and probed use http', async () => {
+    const html = '<html><head></head></html>';
+    nock('http://example.com')
+      .get('/both-http')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/both-http',
+      'http://example.com/probed-both-http',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'http://example.com/both-http',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('returns null html when documentUrl is empty', async () => {
+    const result = await fetchHtmlForCanonicalRefinement(
+      '',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({ html: null, documentUrl: '' });
+  });
+
+  it('returns null when both https and http canonical fetches fail', async () => {
+    nock('https://example.com').get('/empty').reply(403);
+    nock('http://example.com').get('/empty').reply(403);
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/empty',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html: null,
+      documentUrl: 'http://example.com/empty',
+    });
   });
 });
 
@@ -3042,6 +3277,7 @@ describe('filterValidUrls with status code tracking', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
 
@@ -3141,6 +3377,7 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
       {
         url: 'https://example.com/truly-not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
