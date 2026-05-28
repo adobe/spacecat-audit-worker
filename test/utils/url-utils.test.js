@@ -566,6 +566,48 @@ describe('isEntityReplacementSuggestion', () => {
       'https://example.com/archives/jane-doe',
     )).to.be.true;
   });
+
+  // ── Numeric-ID slug cases (intuitdome pattern) ────────────────────────────
+  it('should flag a numeric broken slug with a named sibling suggestion (intuitdome pattern)', () => {
+    // /events/event-schedule/917 (deleted event record) → /events/babymetal (wrong sibling)
+    // The numeric ID means the page was a database record; the correct fix is the parent path
+    expect(isEntityReplacementSuggestion(
+      'https://intuitdome.com/events/event-schedule/917',
+      'https://intuitdome.com/events/babymetal',
+    )).to.be.true;
+  });
+
+  it('should flag a numeric broken slug with another numeric sibling suggestion', () => {
+    // /events/event-schedule/614 → /events/event-schedule/2671 (different record, equally wrong)
+    expect(isEntityReplacementSuggestion(
+      'https://intuitdome.com/events/event-schedule/614',
+      'https://intuitdome.com/events/event-schedule/2671',
+    )).to.be.true;
+  });
+
+  it('should flag a ticketevent-style slug with a named sibling', () => {
+    // ticketevent-1226947352 is also a database ID format
+    expect(isEntityReplacementSuggestion(
+      'https://intuitdome.com/events/event-schedule/ticketevent-1226947352',
+      'https://intuitdome.com/events/event-schedule/2671',
+    )).to.be.true;
+  });
+
+  it('should not flag a numeric broken slug when the suggestion is the parent path', () => {
+    // /events/event-schedule/ IS the correct fallback — should not be filtered
+    expect(isEntityReplacementSuggestion(
+      'https://intuitdome.com/events/event-schedule/917',
+      'https://intuitdome.com/events/event-schedule/',
+    )).to.be.false;
+  });
+
+  it('should not flag a non-numeric named slug as a database ID', () => {
+    // /events/babymetal is a real named event, not a deleted ID — sibling suggestions are ok
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/events/babymetal',
+      'https://example.com/events/eric-church',
+    )).to.be.false;
+  });
 });
 
 describe('resolveParentPathFallback', () => {
