@@ -98,6 +98,14 @@ describe('User Agent Patterns', () => {
       expect(sql.toLowerCase()).to.include('google-extended');
       expect(sql.toLowerCase()).to.include('google-agent');
     });
+
+    it('classifies Claude desktop/iOS app traffic as Media fetchers', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%com.anthropic.claude%' THEN 'Media fetchers'");
+      expect(sql).to.include("LIKE '%claude/%' THEN 'Media fetchers'");
+    });
   });
 
   describe('buildUserAgentDisplaySQL', () => {
@@ -114,6 +122,14 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('GoogleBot');
       expect(sql).to.include('BingBot');
       expect(sql).to.include('Google-Extended');
+    });
+
+    it('collapses Claude desktop/iOS client UAs into a single "Claude Clients" bucket', () => {
+      const { buildUserAgentDisplaySQL } = userAgentPatterns;
+      const sql = buildUserAgentDisplaySQL();
+
+      expect(sql).to.include("LIKE '%com.anthropic.claude%' THEN 'Claude Clients'");
+      expect(sql).to.include("LIKE '%claude/%' THEN 'Claude Clients'");
     });
   });
 

@@ -17,6 +17,151 @@ import {
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 
+// ── Entity replacement detection ──────────────────────────────────────────────
+
+/**
+ * Directories strongly associated with person/entity leaf pages.
+ * A sibling substitution within these sections (e.g. /team/john-smith →
+ * /team/jane-doe) is semantically wrong and should be rejected.
+ */
+const ENTITY_SECTIONS = new Set([
+  'contact', 'contacts', 'team', 'people', 'staff',
+  'author', 'authors', 'speaker', 'speakers', 'profile', 'profiles',
+  'board', 'leadership', 'members', 'member', 'expert', 'experts',
+  'advisor', 'advisors', 'faculty', 'coach', 'coaches',
+  'attorney', 'attorneys', 'doctor', 'doctors', 'agent', 'agents',
+  'employee', 'employees', 'contributor', 'contributors',
+  'instructor', 'instructors', 'partner', 'partners',
+  'executive', 'executives', 'management', 'directory',
+]);
+
+/**
+ * Words that appear in article/blog slugs but not in person names.
+ * A slug segment matching one of these is not a person-name slug.
+ */
+const SLUG_STOP_WORDS = new Set([
+  'how', 'the', 'for', 'and', 'with', 'from', 'into', 'about',
+  'new', 'old', 'top', 'best', 'your', 'our', 'get', 'use', 'its',
+  'what', 'why', 'when', 'where', 'who', 'which', 'are', 'was',
+  'part', 'page', 'post', 'blog', 'news', 'tips', 'guide', 'series',
+  'intro', 'overview', 'review', 'update', 'release', 'launch',
+  'all', 'key', 'see', 'now', 'via',
+]);
+
+/**
+ * Returns true if slug looks like a person name (e.g. john-smith, mary-jo-watson).
+ * Criteria: 2–3 hyphen-separated alphabetic segments, no stop words.
+ * @param {string} slug
+ * @returns {boolean}
+ */
+function looksLikePersonSlug(slug) {
+  if (!slug || slug.includes('.')) {
+    return false;
+  }
+  const parts = slug.split('-');
+  if (parts.length < 2 || parts.length > 3) {
+    return false;
+  }
+  if (!parts.every((p) => /^[a-z]{2,15}$/.test(p))) {
+    return false;
+  }
+  if (parts.some((p) => SLUG_STOP_WORDS.has(p))) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Returns true when suggestedUrl replaces one specific person/entity with a
+ * different one under the same parent path — a semantically invalid substitution.
+ *
+ * Triggers when ALL of the following hold:
+ * 1. Both URLs are leaf pages at the same depth under the same parent directory.
+ * 2. Their last path segments differ.
+ * 3. Either: the parent directory is a known entity section AND at least one
+ *    slug looks like a person name, OR both slugs look like person names.
+ *
+ * @param {string} brokenUrl   - The original broken target URL.
+ * @param {string} suggestedUrl - The candidate replacement URL.
+ * @returns {boolean}
+ */
+export function isEntityReplacementSuggestion(brokenUrl, suggestedUrl) {
+  try {
+    const bParsed = new URL(brokenUrl);
+    const sParsed = new URL(suggestedUrl);
+    if (stripWWW(bParsed.hostname) !== stripWWW(sParsed.hostname)) {
+      return false;
+    }
+    const bSegs = bParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+    const sSegs = sParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+
+    if (bSegs.length !== sSegs.length || bSegs.length < 2) {
+      return false;
+    }
+    if (bSegs.slice(0, -1).join('/') !== sSegs.slice(0, -1).join('/')) {
+      return false;
+    }
+
+    const bSlug = bSegs.at(-1);
+    const sSlug = sSegs.at(-1);
+    if (bSlug === sSlug) {
+      return false;
+    }
+
+    const parent = bSegs.at(-2).toLowerCase();
+    const inEntitySection = ENTITY_SECTIONS.has(parent);
+    const bPerson = looksLikePersonSlug(bSlug);
+    const sPerson = looksLikePersonSlug(sSlug);
+
+    if (inEntitySection && (bPerson || sPerson)) {
+      return true;
+    }
+    if (bPerson && sPerson) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Walks up the broken URL's path hierarchy, returning the first parent path
+ * that responds with HTTP 200. Stops before the root (depth 0 is never tried).
+ *
+ * e.g. brokenUrl = https://example.com/contact/john-smith
+ *   → tries https://example.com/contact/  (returns it if 200)
+ *   → stops (next level is root)
+ *
+ * @param {string} brokenUrl - The original broken target URL.
+ * @returns {Promise<string|null>} - A valid parent URL, or null if none found.
+ */
+export async function resolveParentPathFallback(brokenUrl) {
+  try {
+    const parsed = new URL(brokenUrl);
+    const segs = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+
+    for (let depth = segs.length - 1; depth >= 1; depth -= 1) {
+      const parentPath = `/${segs.slice(0, depth).join('/')}/`;
+      const parentUrl = `${parsed.origin}${parentPath}`;
+
+      try {
+        // Sequential by design: stop at the first parent that responds 200
+        // eslint-disable-next-line no-await-in-loop
+        const response = await fetch(parentUrl);
+        if (response.ok) {
+          return parentUrl;
+        }
+      } catch {
+        // network/SSL error — try next level up
+      }
+    }
+  } catch {
+    // malformed brokenUrl
+  }
+  return null;
+}
+
 /**
  * Checks if a given URL is a "preview" page
  *

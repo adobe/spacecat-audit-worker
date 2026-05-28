@@ -308,7 +308,7 @@ describe('CWV Auto-Suggest', () => {
       expect(sqsStub.called).to.be.true;
     });
 
-    it('should not send messages for suggestions with existing guidance', async () => {
+    it('should not send messages when a code change is already available', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
@@ -321,6 +321,7 @@ describe('CWV Auto-Suggest', () => {
             type: 'url',
             url: 'https://example.com/page1',
             metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            isCodeChangeAvailable: true,
             issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
           }),
         }]),
@@ -329,6 +330,33 @@ describe('CWV Auto-Suggest', () => {
       await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
+    });
+
+    it('should send messages for NEW suggestions with guidance text but no code change yet (Bug 2 regression)', async () => {
+      // Bug 2: previously, populated issues[*].value blocked re-dispatch even
+      // when no code patch had ever succeeded. Now the dispatch decision is
+      // driven by isCodeChangeAvailable instead.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            // isCodeChangeAvailable not set / null — no successful patch yet
+            issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
     });
 
     it('should not send messages for non-NEW suggestions', async () => {
@@ -605,7 +633,7 @@ describe('CWV Auto-Suggest', () => {
   });
 
   describe('shouldSendAutoSuggestForSuggestion', () => {
-    it('should return true for NEW suggestion without guidance', () => {
+    it('should return true for NEW suggestion without a code change yet', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({ issues: [] }),
@@ -625,10 +653,11 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return false for NEW suggestion with guidance', () => {
+    it('should return false when isCodeChangeAvailable is true', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
+          isCodeChangeAvailable: true,
           issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
@@ -637,11 +666,13 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return true for NEW suggestion with empty guidance value', () => {
+    it('should return true when NEW with populated guidance text but no code change (Bug 2 regression)', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '' }],
+          // isCodeChangeAvailable not set — guidance text alone must not block
+          // re-dispatch, otherwise codefix retries are silently dropped forever.
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -649,11 +680,12 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true for NEW suggestion with whitespace-only guidance value', () => {
+    it('should return true when isCodeChangeAvailable is false', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '   ' }],
+          isCodeChangeAvailable: false,
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -661,15 +693,10 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true when some issues have empty guidance', () => {
+    it('should return true when data is null', () => {
       const suggestion = {
         getStatus: () => 'NEW',
-        getData: () => ({
-          issues: [
-            { type: 'lcp', value: '# LCP Optimization...' },
-            { type: 'cls', value: '' },
-          ],
-        }),
+        getData: () => null,
       };
 
       const result = shouldSendAutoSuggestForSuggestion(suggestion);
