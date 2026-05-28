@@ -17,6 +17,30 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { AUDIT_TYPE, GUIDANCE_TYPE } from './constants.js';
 
 const MAX_TOP_PAGES = 50;
+const FETCH_CONCURRENCY = 10;
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+// Pre-filter helper: checks whether a URL's raw HTML contains an <img> tag.
+// Guards: 10s timeout, HTTP error skip, 5MB response size cap.
+async function fetchAndCheck(url, log) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      log.warn(`[semantic-value-visibility] ${url} returned HTTP ${response.status}, skipping`);
+      return null;
+    }
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+    if (contentLength > MAX_RESPONSE_BYTES) {
+      log.warn(`[semantic-value-visibility] ${url} response too large (${contentLength} bytes), skipping`);
+      return null;
+    }
+    const html = await response.text();
+    return /<img/i.test(html) ? url : null;
+  } catch (err) {
+    log.warn(`[semantic-value-visibility] Failed to fetch ${url}: ${err.message}`);
+    return null;
+  }
+}
 
 export async function auditRunner(auditUrl, context, site) {
   const { log, dataAccess } = context;
@@ -48,16 +72,14 @@ export async function auditRunner(auditUrl, context, site) {
   // Uses a plain HTTP GET so we can check raw HTML without a full browser — this works for
   // server-rendered pages and catches the vast majority of cases. JS-rendered images are
   // handled downstream by Mystique's Playwright scraper.
-  const fetchResults = await Promise.all(result.urls.map(async (url) => {
-    try {
-      const response = await fetch(url);
-      const html = await response.text();
-      return /<img/i.test(html) ? url : null;
-    } catch (err) {
-      log.warn(`[semantic-value-visibility] Failed to fetch ${url}: ${err.message}`);
-      return null;
-    }
-  }));
+  // Processed in batches of FETCH_CONCURRENCY to avoid overwhelming the target origin.
+  const fetchResults = [];
+  for (let i = 0; i < result.urls.length; i += FETCH_CONCURRENCY) {
+    const batch = result.urls.slice(i, i + FETCH_CONCURRENCY);
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.all(batch.map((url) => fetchAndCheck(url, log)));
+    fetchResults.push(...batchResults);
+  }
   const qualifyingUrls = fetchResults.filter(Boolean);
 
   log.info(`[semantic-value-visibility] ${qualifyingUrls.length}/${result.urls.length} URLs qualify (contain <img> tags)`);
@@ -79,17 +101,26 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
     return auditData;
   }
 
-  await Promise.all(urls.map((url) => sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
-    type: GUIDANCE_TYPE,
-    siteId,
-    auditId,
-    url,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: { url },
-  })));
+  const results = await Promise.allSettled(urls.map((url) => sqs.sendMessage(
+    env.QUEUE_SPACECAT_TO_MYSTIQUE,
+    {
+      type: GUIDANCE_TYPE,
+      siteId,
+      auditId,
+      url,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: { url },
+    },
+  )));
 
-  log.info(`[semantic-value-visibility] Sent ${urls.length} requests to Mystique`);
+  const failed = results.filter((r) => r.status === 'rejected');
+  if (failed.length > 0) {
+    failed.forEach((r) => log.error(`[semantic-value-visibility] Failed to send SQS message: ${r.reason}`));
+  }
+
+  const sent = results.length - failed.length;
+  log.info(`[semantic-value-visibility] Sent ${sent}/${urls.length} requests to Mystique`);
   return auditData;
 }
 

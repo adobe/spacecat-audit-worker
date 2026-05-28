@@ -18,6 +18,15 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
+function makeFetchResponse(html, { ok = true, status = 200, contentLength = '0' } = {}) {
+  return {
+    ok,
+    status,
+    headers: { get: (h) => (h === 'content-length' ? contentLength : null) },
+    text: async () => html,
+  };
+}
+
 describe('Semantic Value Visibility Handler', function () {
   this.timeout(10000);
 
@@ -102,11 +111,11 @@ describe('Semantic Value Visibility Handler', function () {
 
       sandbox.stub(globalThis, 'fetch')
         .withArgs('https://example.com/page-with-img')
-        .resolves({ text: async () => '<html><body><img src="hero.jpg"></body></html>' })
+        .resolves(makeFetchResponse('<html><body><img src="hero.jpg"></body></html>'))
         .withArgs('https://example.com/page-without-img')
-        .resolves({ text: async () => '<html><body><p>No images here</p></body></html>' })
+        .resolves(makeFetchResponse('<html><body><p>No images here</p></body></html>'))
         .withArgs('https://example.com/another-with-img')
-        .resolves({ text: async () => '<html><body><img src="banner.jpg" /></body></html>' });
+        .resolves(makeFetchResponse('<html><body><img src="banner.jpg" /></body></html>'));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -129,7 +138,7 @@ describe('Semantic Value Visibility Handler', function () {
       });
 
       sandbox.stub(globalThis, 'fetch')
-        .resolves({ text: async () => '<html><body><p>Text only</p></body></html>' });
+        .resolves(makeFetchResponse('<html><body><p>Text only</p></body></html>'));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -149,7 +158,7 @@ describe('Semantic Value Visibility Handler', function () {
       });
 
       sandbox.stub(globalThis, 'fetch')
-        .withArgs(goodUrl).resolves({ text: async () => '<img src="hero.jpg">' })
+        .withArgs(goodUrl).resolves(makeFetchResponse('<img src="hero.jpg">'))
         .withArgs(badUrl).rejects(new Error('connection refused'));
 
       const result = await auditRunner(auditUrl, context, site);
@@ -158,6 +167,59 @@ describe('Semantic Value Visibility Handler', function () {
       expect(logStub.warn).to.have.been.calledWithMatch(
         '[semantic-value-visibility] Failed to fetch',
       );
+    });
+
+    it('should skip URLs that return a non-OK HTTP status', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['https://example.com/forbidden'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      sandbox.stub(globalThis, 'fetch')
+        .resolves(makeFetchResponse('<img src="logo.png">', { ok: false, status: 403 }));
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal([]);
+      expect(logStub.warn).to.have.been.calledWithMatch('returned HTTP 403, skipping');
+    });
+
+    it('should skip URLs with a response body larger than 5MB', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['https://example.com/huge'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      sandbox.stub(globalThis, 'fetch')
+        .resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: String(6 * 1024 * 1024) }));
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal([]);
+      expect(logStub.warn).to.have.been.calledWithMatch('response too large');
+    });
+
+    it('should qualify a URL when Content-Length header is absent', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['https://example.com/no-content-length'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      sandbox.stub(globalThis, 'fetch')
+        .resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: null }));
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal(['https://example.com/no-content-length']);
     });
 
     it('should return empty urls when getMergedAuditInputUrls returns no URLs', async () => {
@@ -185,7 +247,7 @@ describe('Semantic Value Visibility Handler', function () {
       });
 
       sandbox.stub(globalThis, 'fetch')
-        .resolves({ text: async () => '<img src="x.jpg">' });
+        .resolves(makeFetchResponse('<img src="x.jpg">'));
 
       await auditRunner(auditUrl, context, site);
 
@@ -316,15 +378,31 @@ describe('Semantic Value Visibility Handler', function () {
       expect(new Date(msg.time)).to.be.instanceOf(Date);
     });
 
-    it('should log count of sent messages', async () => {
+    it('should log sent count out of total', async () => {
       const urls = ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'];
       const auditData = { auditResult: { urls } };
 
       await sendToMystique(auditUrl, auditData, context, site);
 
       expect(logStub.info).to.have.been.calledWith(
-        '[semantic-value-visibility] Sent 3 requests to Mystique',
+        '[semantic-value-visibility] Sent 3/3 requests to Mystique',
       );
+    });
+
+    it('should log individual errors and continue when some SQS sends fail', async () => {
+      const urls = ['https://example.com/ok', 'https://example.com/fail'];
+      const auditData = { auditResult: { urls } };
+
+      sqsStub.sendMessage
+        .withArgs(sinon.match.any, sinon.match({ url: 'https://example.com/ok' })).resolves()
+        .withArgs(sinon.match.any, sinon.match({ url: 'https://example.com/fail' }))
+        .rejects(new Error('queue throttled'));
+
+      const result = await sendToMystique(auditUrl, auditData, context, site);
+
+      expect(result).to.equal(auditData);
+      expect(logStub.error).to.have.been.calledWithMatch('Failed to send SQS message');
+      expect(logStub.info).to.have.been.calledWithMatch('Sent 1/2 requests to Mystique');
     });
   });
 });
