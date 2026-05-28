@@ -735,10 +735,11 @@ export async function filterValidUrls(
         // differs from the probed URL and the failure is not a clear HTTP/path 404.
         const terminalClearly404 = redirectResponse
           && (redirectResponse.status === 404 || urlLooksLike404Page(terminalUrl));
+        const probedHref = new URL(url).href;
         const firstHopHref = new URL(firstHopUrl).href;
         const terminalHref = new URL(terminalUrl).href;
         // if the first hop is the same as the probed URL, then we have no suggestion to make
-        if (pathnameKey(firstHopUrl) === pathnameKey(url)) {
+        if (firstHopHref === probedHref) {
           log?.debug('Sitemap: first hop URL equals probed URL (self-redirect) so everything is ok.', {
             probedUrl: url,
             locationHeader: redirectUrl,

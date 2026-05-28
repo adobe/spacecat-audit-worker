@@ -2405,21 +2405,24 @@ describe('filterValidUrls with redirect handling', () => {
     expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
   });
 
-  it('treats self-redirect as ok when first hop is http but probed URL is https (same path)', async () => {
+  it('does not treat first hop as self-redirect when Location scheme differs from probed URL', async () => {
     const probed = 'https://example.com/self-redirect-http-location';
-    const urls = [probed];
     nock('https://example.com')
       .head('/self-redirect-http-location')
       .reply(301, '', { Location: 'http://example.com/self-redirect-http-location' });
     nock('http://example.com').head('/self-redirect-http-location').reply(404);
     nock('http://example.com').get('/self-redirect-http-location').reply(404);
-    const log = { debug: sandbox.spy(), error: sandbox.spy() };
 
-    const result = await filterValidUrls(urls, log);
+    const result = await filterValidUrls([probed]);
 
-    expect(result.ok).to.deep.equal([probed]);
-    expect(result.notOk).to.be.empty;
-    expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 404,
+        urlsSuggested: '',
+      },
+    ]);
   });
 
   it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
