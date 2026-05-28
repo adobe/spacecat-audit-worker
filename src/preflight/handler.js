@@ -145,6 +145,8 @@ export const preflightAudit = async (context) => {
   }
 
   // Enabled checks for this run: site configuration, optionally narrowed by job payload.
+  // Persist the resolved set so SUGGEST inherits the IDENTIFY-time decision; this guarantees
+  // consistency across step boundaries even if site configuration changes between steps.
   let enabledChecks = [];
   try {
     const siteEnabled = (await Promise.all(

@@ -2088,9 +2088,8 @@ describe('Headings Audit', () => {
     // Verify the audit completed successfully with all properties provided
     expect(result.auditResult).to.exist;
     expect(result.auditResult.headings).to.exist;
-    const missingH1 = result.auditResult.headings['heading-missing-h1'] ?? result.auditResult.headings['heading-h1-length'];
-    expect(missingH1, 'expected heading-missing-h1 or heading-h1-length').to.exist;
-    expect(missingH1.urls[0].url).to.equal(url);
+    expect(result.auditResult.headings['heading-missing-h1']).to.exist;
+    expect(result.auditResult.headings['heading-missing-h1'].urls[0].url).to.equal(url);
 
     // Verify AI suggestion was called at least twice (once for brand guidelines, once for H1 suggestion, plus TOC detection)
     expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);

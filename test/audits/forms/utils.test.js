@@ -932,7 +932,7 @@ describe('sendCodeFixMessagesToImporter', () => {
     });
   });
 
-    describe('Code-fix generation (enablement checked upstream)', () => {
+    describe('Code-fix generation (sub-feature flag deliberately removed)', () => {
         it('proceeds with code-fix generation when suggestions exist', async () => {
             await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
 

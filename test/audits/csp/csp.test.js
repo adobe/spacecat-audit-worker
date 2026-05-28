@@ -582,21 +582,6 @@ describe('CSP Post-processor', () => {
     ));
   });
 
-  it('should not extract opportunity if audit is disabled', async () => {
-    auditData.auditResult.csp = [
-      {
-        severity: 'High',
-        description: 'No CSP found in enforcement mode',
-      },
-    ];
-
-    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
-    assertAuditData(cspAuditData);
-
-    expect(opportunityStub.create).to.have.been.called;
-    expect(cspOpportunity.addSuggestions).to.have.been.called;
-  });
-
   it('should not extract opportunity for other delivery types', async () => {
     sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
     auditData.auditResult.csp = [
@@ -959,25 +944,6 @@ describe('CSP Post-processor', () => {
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page head.html'));
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page 404.html'));
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error fetching one or more pages. Skipping CSP auto-suggest.'));
-    });
-
-    it('should not provide suggestions if audit is disabled', async () => {
-      const csp = [
-        {
-          severity: 'High',
-          description: 'No CSP found in enforcement mode',
-        },
-      ];
-
-      const scopeHead = nock('https://adobe.com').get('/head.html').reply(404);
-      const scope404 = nock('https://adobe.com').get('/404.html').reply(404);
-
-      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(cspResult).to.deep.equal(csp);
-
-      expect(scopeHead.isDone()).to.equal(true);
-      expect(scope404.isDone()).to.equal(true);
-      expect(context.log.info).to.not.have.been.calledWithMatch(sinon.match('auto-suggest is disabled for site'));
     });
 
     it('end-to-end: extracts opportunity and auto-suggest from real PSI csp-xss findings', async () => {

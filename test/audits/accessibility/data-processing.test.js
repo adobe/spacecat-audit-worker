@@ -7327,7 +7327,6 @@ describe('data-processing utility functions', () => {
         mockConfiguration.getHandlers.returns({
           'a11y-aemy-code-injection': { enabled: true },
         });
-        mockConfiguration.isHandlerEnabledForSite.returns(false);
 
         const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
 

@@ -73,6 +73,19 @@ export async function isAuditEnabledForSite(type, site, context) {
 /**
  * Returns true if the audit type is disabled for the site (skip execution).
  * Supports use case: customers can disable specific audits (e.g. meta-tags) while others run.
+ *
+ * MUST remain a strict boolean inverse of `isAuditEnabledForSite`. Do not add additional
+ * conditions here — keep all entitlement / configuration logic centralized in
+ * `isAuditEnabledForSite` so both helpers stay in sync.
+ *
+ * Note on gating granularity: this helper checks the audit-TYPE key (e.g. `meta-tags`,
+ * `security-csp`). Finer-grained sub-feature gates (e.g. `*-auto-suggest`, `*-auto-fix`)
+ * are intentionally NOT checked here. If you need a new sub-feature gate, prefer:
+ *   1. Entitlement/onboarding registration (preferred — keep the trust boundary uniform), or
+ *   2. An explicit per-call check at the opportunity-creation or external-service-egress
+ *      point (e.g. before sending data to Genvar / Mystique / AEMY).
+ * Do NOT scatter sub-feature checks back into individual audit handlers.
+ *
  * @param {string} type - Audit type
  * @param {Object} site - Site object
  * @param {Object} context - Context with dataAccess, log

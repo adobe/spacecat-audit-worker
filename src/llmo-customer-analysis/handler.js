@@ -282,6 +282,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         'readability',
         'wikipedia-analysis',
       ];
+      // enableAudits intentionally bypasses isHandlerEnabledForSite (see its JSDoc); only
+      // call it from first-time onboarding paths so previously disabled handlers are not
+      // silently re-toggled on subsequent runs.
       await enableAudits(site, context, auditsToEnable, { configuration });
     } catch (error) {
       log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);

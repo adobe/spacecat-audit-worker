@@ -2124,7 +2124,7 @@ describe('Product MetaTags', () => {
       expect(log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Generated AI suggestions for Product-metatags using Genvar.');
     });
 
-    it('should return original detected tags when auto-suggest is disabled', async () => {
+    it('should return original detected tags when forceAutoSuggest is false', async () => {
       // No options = forceAutoSuggest false, so we return early without calling Genvar
       const result = await localProductMetatagsAutoSuggest(allTags, context, siteStub);
 

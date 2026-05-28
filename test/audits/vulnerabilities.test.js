@@ -705,17 +705,6 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(context.log.warn).to.have.been.calledWithMatch(/QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured/);
     });
 
-    it('should handle configuration lookup failure gracefully', async () => {
-      context.audit = {
-        getAuditResult: () => ({
-          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
-          success: true,
-        }),
-        getId: () => 'test-audit-id',
-      };
-
-      await expect(opportunityAndSuggestionsStep(context)).to.not.be.rejected;
-    });
   });
 
   describe('extractCodeBucket', () => {

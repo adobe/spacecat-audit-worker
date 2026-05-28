@@ -191,7 +191,65 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
     });
 
-    it('should include codeBucket and codePath when site has code (enablement checked upstream)', async () => {
+    it('should omit codeBucket and codePath when CWV auto-fix is disabled but auto-suggest is enabled', async () => {
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const isAuditEnabledStub = sandbox.stub();
+      isAuditEnabledStub.onFirstCall().resolves(true);
+      isAuditEnabledStub.onSecondCall().resolves(false);
+
+      const { processAutoSuggest: processAutoFixDisabled } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite: isAuditEnabledStub,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: getCodeInfoStub,
+        },
+      });
+
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoFixDisabled(context, opportunity, siteWithCode);
+
+      expect(getCodeInfoStub).to.not.have.been.called;
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.type).to.equal('cwv');
+      expect(message.data).to.not.have.property('codeBucket');
+      expect(message.data).to.not.have.property('codePath');
+    });
+
+    it('should include codeBucket and codePath when site has code (auto-fix flag still checked locally)', async () => {
       const getCodeInfoStub = sandbox.stub().resolves({
         codeBucket: 'test-bucket',
         codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
@@ -285,7 +343,7 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.suggestionId).to.equal('sugg-url');
     });
 
-    it('sends messages when opportunity has URL-type suggestions (enablement checked upstream)', async () => {
+    it('sends messages when opportunity has URL-type suggestions (auto-fix flag still checked locally)', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
