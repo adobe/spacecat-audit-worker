@@ -1,3 +1,10 @@
+## [1.454.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.2...v1.454.3) (2026-05-28)
+
+
+### Bug Fixes
+
+* Sitemap audit can now use a refined "first hop" URL as the sugge… ([#2568](https://github.com/adobe/spacecat-audit-worker/issues/2568)) ([c373763](https://github.com/adobe/spacecat-audit-worker/commit/c37376369560cea9d2c27fa551615566eb372033))
+
 ## [1.454.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.1...v1.454.2) (2026-05-28)
 
 
