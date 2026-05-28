@@ -209,12 +209,11 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeU
 
 /**
  * Finds an existing domain-wide suggestion that should be preserved.
- * @param {Object} opportunity - The opportunity object.
+ * @param {Array} existingSuggestions - Pre-fetched suggestions array.
  * @param {Object} log - Logger instance.
- * @returns {Promise<Object|null>} The existing suggestion to preserve, or null if none found.
+ * @returns {Object|null} The existing suggestion to preserve, or null if none found.
  */
-async function findPreservableDomainWideSuggestion(opportunity, log) {
-  const existingSuggestions = await opportunity.getSuggestions();
+function findPreservableDomainWideSuggestion(existingSuggestions, log) {
   const domainWideSuggestions = existingSuggestions.filter(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
@@ -1057,6 +1056,39 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
+ * Builds a merge function for syncSuggestions that handles three suggestion types:
+ * - Path-type: preserves edgeDeployed and coveredByDomainWide from existing data
+ * - Domain-wide: replaces data entirely (preserves edgeDeployed via its own logic)
+ * - Individual: merges new mapped data onto existing data
+ *
+ * @param {Function} mapSuggestionDataFn - Maps raw suggestion to stored data shape
+ * @returns {Function} (existingData, newDataItem) → merged data object
+ */
+export function buildMergeDataFunction(mapSuggestionDataFn) {
+  return (existingData, newDataItem) => {
+    // Path-type: preserve edgeDeployed, coveredByDomainWide
+    if (newDataItem.key && newDataItem.data?.pathType) {
+      return {
+        ...newDataItem.data,
+        ...(existingData?.edgeDeployed !== undefined
+          && { edgeDeployed: existingData.edgeDeployed }),
+        ...(existingData?.coveredByDomainWide !== undefined
+          && { coveredByDomainWide: existingData.coveredByDomainWide }),
+      };
+    }
+    // Domain-wide: replace data (preserves own edgeDeployed via its own logic)
+    if (newDataItem.key) {
+      return { ...newDataItem.data };
+    }
+    // Individual suggestions: merge with existing
+    return {
+      ...existingData,
+      ...mapSuggestionDataFn(newDataItem),
+    };
+  };
+}
+
+/**
  * Processes opportunities and suggestions for prerender audit results.
  * Persists suggestions in the database so they can later be enriched
  * with AI guidance from Mystique.
@@ -1104,7 +1136,11 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
+  // Pre-fetch suggestions once to avoid redundant DB round-trips.
+  // markSuggestionsAsCoveredByPaths (post-sync) fetches its own fresh copy.
+  const cachedSuggestions = await opportunity.getSuggestions();
+
+  const existingPreservable = findPreservableDomainWideSuggestion(cachedSuggestions, log);
 
   let domainWideSuggestion = null;
   if (existingPreservable) {
@@ -1123,7 +1159,7 @@ export async function processOpportunityAndSuggestions(
   let preservablePaths = [];
   let newPathSuggestions = [];
   if (pathSuggestionsEnabled) {
-    preservablePaths = await findPreservablePathSuggestions(opportunity, log);
+    preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
     const preservableByPattern = new Map(preservablePaths.map((s) => [s.getData().pathPattern, s]));
 
     const builtSuggestions = await buildPathTypeSuggestions(
@@ -1131,6 +1167,7 @@ export async function processOpportunityAndSuggestions(
       opportunity,
       context.site,
       context,
+      { suggestions: cachedSuggestions },
     );
 
     // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
@@ -1220,7 +1257,6 @@ export async function processOpportunityAndSuggestions(
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
-      /* c8 ignore next 6 */
       // eslint-disable-next-line no-nested-ternary
       rank: suggestion.key && suggestion.data?.pathType
         ? PATH_TYPE_SUGGESTION_RANK
@@ -1228,29 +1264,7 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
-    // Custom merge function: handle both types
-    /* c8 ignore next 22 - syncSuggestions internals are complex to test */
-    mergeDataFunction: (existingData, newDataItem) => {
-      // Path-type: preserve edgeDeployed, coveredByDomainWide, pathPattern, pathScore
-      if (newDataItem.key && newDataItem.data?.pathType) {
-        return {
-          ...newDataItem.data,
-          ...(existingData?.edgeDeployed !== undefined
-            && { edgeDeployed: existingData.edgeDeployed }),
-          ...(existingData?.coveredByDomainWide !== undefined
-            && { coveredByDomainWide: existingData.coveredByDomainWide }),
-        };
-      }
-      // Domain-wide: replace data (preserves own edgeDeployed via its own logic)
-      if (newDataItem.key) {
-        return { ...newDataItem.data };
-      }
-      // Individual suggestions: merge with existing
-      return {
-        ...existingData,
-        ...mapSuggestionData(newDataItem),
-      };
-    },
+    mergeDataFunction: buildMergeDataFunction(mapSuggestionData),
   });
 
   // Mark per-URL suggestions covered by deployed path suggestions

@@ -133,12 +133,10 @@ describe('Path Suggestions', () => {
       }));
     }
 
-    const log = { debug: () => {} };
-
     it('disqualifies when urlCount is below minUrls', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 10 });
       const urls = makeUrls(5);
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.false;
       expect(result.reason).to.include('urlCount 5');
     });
@@ -148,7 +146,7 @@ describe('Path Suggestions', () => {
         minUrls: 5, minValuablePct: 50, scoreThreshold: 0,
       });
       const urls = makeUrls(5, { valuable: true, agenticTraffic: 5, contentGainRatio: 1 });
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.true;
     });
 
@@ -161,7 +159,7 @@ describe('Path Suggestions', () => {
         ...makeUrls(3, { valuable: true, agenticTraffic: 10, contentGainRatio: 1 }),
         ...makeUrls(7, { valuable: false, agenticTraffic: 10, contentGainRatio: 1 }),
       ];
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.false;
       expect(result.reason).to.include('valuablePercent');
     });
@@ -174,7 +172,7 @@ describe('Path Suggestions', () => {
         ...makeUrls(5, { valuable: true, agenticTraffic: 10, contentGainRatio: 1 }),
         ...makeUrls(5, { valuable: false, agenticTraffic: 10, contentGainRatio: 1 }),
       ];
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.true;
     });
 
@@ -184,7 +182,7 @@ describe('Path Suggestions', () => {
       });
       // All valuable, contentGainRatio = 0.5, agenticTraffic = 0
       const urls = makeUrls(10, { valuable: true, agenticTraffic: 0, contentGainRatio: 0.5 });
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.false;
       expect(result.reason).to.include('score');
     });
@@ -196,7 +194,7 @@ describe('Path Suggestions', () => {
         minUrls: 10, minValuablePct: 50, scoreThreshold: 2,
       });
       const urls = makeUrls(10, { valuable: true, agenticTraffic: 10, contentGainRatio: 1 });
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.true;
       expect(result.score).to.be.at.least(2);
     });
@@ -206,7 +204,7 @@ describe('Path Suggestions', () => {
         minUrls: 5, minValuablePct: 50, scoreThreshold: 0,
       });
       const urls = makeUrls(10, { valuable: true, agenticTraffic: 0, contentGainRatio: 2 });
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       // weightedValuableTraffic = 0 (totalAgenticTraffic = 0), avgContentGainRatio = 2 → score = 2
       expect(result.qualifies).to.be.true;
       expect(result.score).to.equal(2);
@@ -219,7 +217,7 @@ describe('Path Suggestions', () => {
         scoreThreshold: 0.1,
       });
       const urls = makeUrls(3, { valuable: true, agenticTraffic: 5, contentGainRatio: 1 });
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       expect(result.qualifies).to.be.true;
     });
 
@@ -234,7 +232,7 @@ describe('Path Suggestions', () => {
         agenticTraffic: 10,
         contentGainRatio: undefined,
       }));
-      const result = strategy.qualify('/products/*', urls, log);
+      const result = strategy.qualify('/products/*', urls);
       // avgContentGainRatio = 0 (all undefined), weightedValuableTraffic = 1 → score = 1
       expect(result.qualifies).to.be.true;
       expect(result.score).to.equal(1);
@@ -336,7 +334,7 @@ describe('Path Suggestions', () => {
 
       // Only urls[0] and urls[1] qualify; not enough for PATH_TYPE_MIN_URLS=10
       const strategy = new RcvPathQualificationStrategy({ minUrls: 2, minValuablePct: 50, scoreThreshold: 0 });
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.urlCount).to.equal(2);
     });
@@ -347,7 +345,7 @@ describe('Path Suggestions', () => {
       const preRender = makePreRenderSuggestions('/products', 15);
       const strategy = new RcvPathQualificationStrategy({ minUrls: 5, minValuablePct: 50, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(0);
     });
 
@@ -370,7 +368,7 @@ describe('Path Suggestions', () => {
 
       // agenticTraffic = 0 (default mock), score = 0 + avgContentGainRatio
       const strategy = new RcvPathQualificationStrategy({ minUrls: 5, minValuablePct: 50, scoreThreshold: 0 });
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
 
       expect(results).to.have.length(2);
       expect(results[0].data.pathScore).to.be.at.least(results[1].data.pathScore);
@@ -391,7 +389,7 @@ describe('Path Suggestions', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 5, minValuablePct: 50, scoreThreshold: 0 });
 
       // Should not throw
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       // With agenticTraffic=0 but contentGainRatio=3 and threshold=0, should still qualify
       expect(results).to.have.length(1);
     });
@@ -412,7 +410,7 @@ describe('Path Suggestions', () => {
         url, contentGainRatio: 1, wordCountBefore: 100, wordCountAfter: 200,
       }));
       const strategy = new RcvPathQualificationStrategy({ minUrls: 5, minValuablePct: 50, scoreThreshold: 0 });
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
 
       expect(results).to.have.length(1);
       expect(results[0].data.totalAgenticTraffic).to.be.greaterThan(0);
@@ -428,7 +426,7 @@ describe('Path Suggestions', () => {
       }));
       const strategy = new RcvPathQualificationStrategy({ minUrls: 5, minValuablePct: 50, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
 
       const { key, data } = results[0];
@@ -456,7 +454,7 @@ describe('Path Suggestions', () => {
       const preRender = [{ url: validUrl, contentGainRatio: 2, wordCountBefore: 0, wordCountAfter: 0 }];
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       // With minValuablePct=0 and all default-true valuable, should qualify
       expect(results[0].data.valuableCount).to.equal(1);
@@ -474,7 +472,7 @@ describe('Path Suggestions', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
       // null ?? true = true, so valuable=true → valuableCount=1
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.valuableCount).to.equal(1);
     });
@@ -488,7 +486,7 @@ describe('Path Suggestions', () => {
       const preRender = urls.map((url) => ({ url, contentGainRatio: 2 }));
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.totalWordCountBefore).to.equal(0);
       expect(results[0].data.totalWordCountAfter).to.equal(0);
@@ -503,7 +501,7 @@ describe('Path Suggestions', () => {
       const preRender = urls.map((url) => ({ url, wordCountBefore: 100, wordCountAfter: 200 }));
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.avgContentGainRatio).to.equal(0);
     });
@@ -517,7 +515,7 @@ describe('Path Suggestions', () => {
       const preRender = [{ url: rootUrl, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200 }];
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(0);
     });
 
@@ -538,7 +536,7 @@ describe('Path Suggestions', () => {
       }));
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
       // Only item-0 is eligible (item-1 is pathType, /* is isDomainWide)
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.urlCount).to.equal(1);
     });
@@ -556,7 +554,7 @@ describe('Path Suggestions', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
       // Should not throw; invalid-URL suggestion is skipped silently
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       expect(results[0].data.urlCount).to.equal(1);
     });
@@ -575,7 +573,7 @@ describe('Path Suggestions', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
       // Only one valid URL — but extractPathType('not-a-valid-url') is null so it won't be included
       // The filter catch branch is triggered when new URL(s.url) throws
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       // The invalid URL is filtered out; 1 valid URL qualifies with minUrls=1
       expect(results).to.have.length(1);
       expect(results[0].data.urlCount).to.equal(1);
@@ -595,7 +593,7 @@ describe('Path Suggestions', () => {
       // minUrls=10 means the group of 5 won't qualify → log.debug is called
       const strategy = new RcvPathQualificationStrategy({ minUrls: 10, minValuablePct: 50, scoreThreshold: 0 });
 
-      const results = await buildPathTypeSuggestions(preRender, opportunity, site, ctxWithDebugStub, strategy);
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, ctxWithDebugStub, { strategy });
       expect(results).to.have.length(0);
       expect(ctxWithDebugStub.log.debug.calledWith(sinon.match(/Skipping path/))).to.be.true;
     });
@@ -643,6 +641,26 @@ describe('Path Suggestions', () => {
         id: 'url-1',
         status: 'NEW',
         data: { url: `${BASE_URL}/blog/post-1` },
+      });
+      const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, context);
+
+      expect(urlSuggestion.save.notCalled).to.be.true;
+      expect(urlSuggestion.getData().coveredByDomainWide).to.be.undefined;
+    });
+
+    it('does not mark URLs whose path prefix is a substring but not a segment boundary', async () => {
+      // /prod/* should NOT cover /products/item-1 — segment boundary enforced
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { pathType: true, pathPattern: '/prod/*', edgeDeployed: true },
+      });
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products/item-1` },
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 

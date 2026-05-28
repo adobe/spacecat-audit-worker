@@ -25,6 +25,7 @@ import prerenderHandler, {
   uploadStatusSummaryToS3,
   writeToCitabilityRecords,
   getScrapeJobStats,
+  buildMergeDataFunction,
 } from '../../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
@@ -3918,6 +3919,74 @@ describe('Prerender Audit', () => {
       expect(buildPathTypeSuggestionsStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(markSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('assigns PATH_TYPE_SUGGESTION_RANK to path-type suggestions via mapNewSuggestion', async () => {
+      const pathSuggestion = {
+        key: '/products/*|prerender',
+        data: {
+          pathType: true, pathPattern: '/products/*', pathScore: 2.5,
+          urlCount: 10, valuableCount: 8, valuablePercent: 80,
+          avgContentGainRatio: 2, totalWordCountBefore: 1000, totalWordCountAfter: 2000,
+          totalAgenticTraffic: 100, url: 'https://example.com/products/*',
+          allowedRegexPatterns: ['/products/*'],
+        },
+      };
+
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/path-suggestions.js': {
+          findPreservablePathSuggestions: sinon.stub().resolves([]),
+          buildPathTypeSuggestions: sinon.stub().resolves([pathSuggestion]),
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/products/item-1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ get: () => true }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const { mapNewSuggestion, newData } = syncCall.args[0];
+
+      // Find the path-type suggestion in newData
+      const pathItem = newData.find((item) => item.key === '/products/*|prerender');
+      expect(pathItem).to.exist;
+
+      const mapped = mapNewSuggestion(pathItem);
+      expect(mapped.rank).to.equal(100000); // PATH_TYPE_SUGGESTION_RANK
+      expect(mapped.data.pathType).to.be.true;
     });
 
     it('refreshes metrics on preserved path suggestions', async () => {
@@ -8936,6 +9005,78 @@ describe('Prerender Audit', () => {
       }
 
       expect(allBySiteIdStub.calledOnce).to.be.true;
+    });
+  });
+
+  describe('buildMergeDataFunction', () => {
+    const mapSuggestionDataFn = (s) => ({ url: s.url, score: s.score });
+
+    it('preserves edgeDeployed and coveredByDomainWide for path-type suggestions', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = {
+        edgeDeployed: true,
+        coveredByDomainWide: 'dw-1',
+        pathPattern: '/old/*',
+        pathScore: 1.0,
+      };
+      const newDataItem = {
+        key: '/products/*|prerender',
+        data: {
+          pathType: true,
+          pathPattern: '/products/*',
+          pathScore: 2.5,
+          urlCount: 10,
+        },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.pathType).to.be.true;
+      expect(result.pathPattern).to.equal('/products/*');
+      expect(result.pathScore).to.equal(2.5);
+      expect(result.urlCount).to.equal(10);
+      expect(result.edgeDeployed).to.be.true;
+      expect(result.coveredByDomainWide).to.equal('dw-1');
+    });
+
+    it('does not inject edgeDeployed when not present on existing data for path-type', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = { pathPattern: '/old/*' };
+      const newDataItem = {
+        key: '/products/*|prerender',
+        data: { pathType: true, pathPattern: '/products/*', pathScore: 2.0 },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.edgeDeployed).to.be.undefined;
+      expect(result.coveredByDomainWide).to.be.undefined;
+    });
+
+    it('replaces data entirely for domain-wide suggestions', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = { oldField: 'should-disappear', edgeDeployed: true };
+      const newDataItem = {
+        key: 'domain-wide-aggregate|prerender',
+        data: { isDomainWide: true, newField: 'value' },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result).to.deep.equal({ isDomainWide: true, newField: 'value' });
+      expect(result.oldField).to.be.undefined;
+    });
+
+    it('merges mapped data onto existing data for individual suggestions', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = { url: 'https://example.com/page', preserved: true };
+      const newDataItem = { url: 'https://example.com/page', score: 3.5 };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.url).to.equal('https://example.com/page');
+      expect(result.score).to.equal(3.5);
+      expect(result.preserved).to.be.true;
     });
   });
 });

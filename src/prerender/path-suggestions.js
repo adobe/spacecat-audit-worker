@@ -33,6 +33,10 @@ const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
  * e.g. https://example.com/products/shoes → '/products/*'
  * Returns null for root-level URLs or invalid URLs.
  *
+ * Known limitation: for locale-prefixed sites (e.g. /en/products/..., /fr/blog/...),
+ * this groups all content under the locale segment (/en/*, /fr/*) rather than the
+ * semantic content type. The resulting path suggestion will be overly coarse.
+ *
  * @param {string} url
  * @returns {string|null}
  */
@@ -48,7 +52,7 @@ export function extractPathType(url) {
 
 /**
  * Qualification strategy that mirrors rcv-scoring-dashboard's computeScore formula exactly.
- * Pluggable: swap in any object with qualify(pathPattern, urls, log) → { qualifies, score, ... }
+ * Pluggable: swap in any object with qualify(pathPattern, urls) → { qualifies, score, ... }
  */
 export class RcvPathQualificationStrategy {
   constructor({
@@ -61,7 +65,7 @@ export class RcvPathQualificationStrategy {
     this.scoreThreshold = scoreThreshold;
   }
 
-  qualify(pathPattern, urls, log) { // eslint-disable-line no-unused-vars
+  qualify(pathPattern, urls) {
     if (urls.length < this.minUrls) {
       return { qualifies: false, score: 0, reason: `urlCount ${urls.length} < minUrls ${this.minUrls}` };
     }
@@ -117,10 +121,11 @@ function shouldPreservePathSuggestion(suggestion) {
  *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} log - Logger
+ * @param {Array} [suggestions] - Pre-fetched suggestions (avoids redundant DB call)
  * @returns {Promise<Array>}
  */
-export async function findPreservablePathSuggestions(opportunity, log) {
-  const existingSuggestions = await opportunity.getSuggestions();
+export async function findPreservablePathSuggestions(opportunity, log, suggestions) {
+  const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
   const preservable = existingSuggestions.filter((s) => {
     const d = s.getData();
     return d?.pathType === true && shouldPreservePathSuggestion(s);
@@ -137,7 +142,10 @@ export async function findPreservablePathSuggestions(opportunity, log) {
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} site - SpaceCat site entity
  * @param {Object} context - Audit context (log, etc.)
- * @param {Object} [strategy] - Qualification strategy (default: RcvPathQualificationStrategy)
+ * @param {Object} [options] - Optional overrides
+ * @param {Object} [options.strategy] - Qualification strategy
+ *   (default: RcvPathQualificationStrategy)
+ * @param {Array} [options.suggestions] - Pre-fetched suggestions (avoids redundant DB call)
  * @returns {Promise<Array>} Array of { key, data } path suggestion objects
  */
 export async function buildPathTypeSuggestions(
@@ -145,7 +153,7 @@ export async function buildPathTypeSuggestions(
   opportunity,
   site,
   context,
-  strategy = new RcvPathQualificationStrategy(),
+  { strategy = new RcvPathQualificationStrategy(), suggestions } = {},
 ) {
   const { log } = context;
 
@@ -156,7 +164,7 @@ export async function buildPathTypeSuggestions(
   });
 
   // 2. Read existing suggestions — only NEW or FIXED per-URL suggestions are eligible
-  const existingSuggestions = await opportunity.getSuggestions();
+  const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
   const eligibleSuggestions = existingSuggestions.filter((s) => {
     const d = s.getData();
     if (d?.pathType || d?.isDomainWide) {
@@ -271,6 +279,10 @@ export async function buildPathTypeSuggestions(
  * When set by this function it holds a path suggestion ID (not a domain-wide suggestion ID).
  * The self-heal distinguishes the two by checking `ref.getData()?.pathType === true`.
  *
+ * Tech debt: if a referenced suggestion is deleted, the self-heal cannot distinguish a stale
+ * path ref from a stale domain-wide ref. A dedicated field or structured { type, id } value
+ * would be more robust long-term.
+ *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} context - Audit context
  * @returns {Promise<void>}
@@ -288,13 +300,14 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
   const deployedPathIds = new Set(deployedPaths.map((s) => s.getId()));
 
   // Self-heal: clear stale coveredByDomainWide references pointing to undeployed paths
+  const suggestionsById = new Map(suggestions.map((s) => [s.getId(), s]));
   const stale = suggestions.filter((s) => {
     const covId = s.getData()?.coveredByDomainWide;
     if (!covId) {
       return false;
     }
     // Only clear refs that point to a path suggestion that is no longer deployed
-    const ref = suggestions.find((r) => r.getId() === covId);
+    const ref = suggestionsById.get(covId);
     return ref && ref.getData()?.pathType === true && !deployedPathIds.has(covId);
   });
 
@@ -329,7 +342,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
         return false;
       }
       try {
-        return new URL(s.getData().url).pathname.startsWith(prefix);
+        return new URL(s.getData().url).pathname.startsWith(`${prefix}/`);
       } catch {
         return false;
       }
