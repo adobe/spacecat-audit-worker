@@ -181,6 +181,7 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
     gapAnalysis,
     overallAlignmentScore,
     keywordAnalysis,
+    adAnalysis,
     recommendation,
     rank,
   } = cluster;
@@ -214,6 +215,12 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
         gapAnalysis: gapAnalysis || {},
         overallAlignmentScore: overallAlignmentScore || null,
         keywordAnalysis: keywordAnalysis || [],
+        // `?? null` (not `|| {}`): mystique emits an explicit `null` when the
+        // cluster lacks sufficient ad-copy signal, and the UI hides the
+        // "What the ad promises" block on that signal. Coercing null to {}
+        // would silently break the hide-when-missing branch. See spec
+        // products/aso/ad-intent-cluster-ad-analysis.md (B.1 + Decision #3).
+        adAnalysis: adAnalysis ?? null,
       },
       ...(recommendationType && { recommendationType }),
       ...(cleanedRecommendation && { recommendation: cleanedRecommendation }),
