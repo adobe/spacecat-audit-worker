@@ -56,6 +56,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
+  { pattern: '%com.anthropic.claude%', displayName: 'Claude Clients' },
+  { pattern: '%claude/%', displayName: 'Claude Clients' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
   // Amazon
@@ -106,6 +108,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
+    { pattern: '%com.anthropic.claude%', result: 'Media fetchers' },
+    { pattern: '%claude/%', result: 'Media fetchers' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
@@ -132,10 +136,13 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(anthropic|claude)/.test(ua)) {
     return 'Anthropic';
   }
-  if (/gemini/.test(ua)) {
+  if (/(gemini-deep-research|google-?agent)/.test(ua)) {
     return 'Gemini';
   }
-  if (/(google|googlebot|googleagent|google-agent|notebooklm)/.test(ua)) {
+  if (/google-ai-mode/.test(ua)) {
+    return 'Google AI Mode';
+  }
+  if (/(google|googlebot|notebooklm)/.test(ua)) {
     return 'Google';
   }
   if (/copilot/.test(ua)) {

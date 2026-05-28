@@ -25,6 +25,7 @@ describe('agentic-urls', () => {
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
   let getTopAgenticUrlsFromAthena;
+  let getTopAgenticLiveUrlsFromAthena;
   let getPreferredBaseUrl;
   let getAgenticHitsMapFromAthena;
 
@@ -78,6 +79,7 @@ describe('agentic-urls', () => {
     });
 
     getTopAgenticUrlsFromAthena = module.getTopAgenticUrlsFromAthena;
+    getTopAgenticLiveUrlsFromAthena = module.getTopAgenticLiveUrlsFromAthena;
     getPreferredBaseUrl = module.getPreferredBaseUrl;
     // eslint-disable-next-line prefer-destructuring
     getAgenticHitsMapFromAthena = module.getAgenticHitsMapFromAthena;
@@ -566,6 +568,67 @@ describe('agentic-urls', () => {
       expect(excludedUrlSuffixes).to.include('.docx');
       expect(excludedUrlSuffixes).to.include('.pptx');
       expect(excludedUrlSuffixes).to.include('.ico');
+    });
+
+    it('should call createTopUrlsQueryWithLimit (not live variant) by default', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([]);
+
+      await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.called;
+    });
+  });
+
+  describe('getTopAgenticLiveUrlsFromAthena', () => {
+    it('should call createTopUrlsQueryWithLimit with statuses=[200]', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([{ url: '/page1' }]);
+
+      await getTopAgenticLiveUrlsFromAthena(site, context);
+
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.calledWith(
+        sinon.match({ statuses: [200] }),
+      );
+    });
+
+    it('should return URLs using the same resolution logic as getTopAgenticUrlsFromAthena', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([{ url: '/live-page' }]);
+
+      const result = await getTopAgenticLiveUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal(['https://www.example.com/live-page']);
+    });
+
+    it('should use default limit of 200', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([]);
+
+      await getTopAgenticLiveUrlsFromAthena(site, context);
+
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.calledWith(
+        sinon.match({ limit: 200, statuses: [200] }),
+      );
+    });
+
+    it('should return empty array when Athena returns no results', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([]);
+
+      const result = await getTopAgenticLiveUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([]);
     });
   });
 

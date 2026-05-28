@@ -1023,6 +1023,40 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
+    it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
+      const suggestionsData = [{ key: '1', title: 'old title' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [{ key: '1', title: 'new title' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(mockLogger.info).to.have.been.calledWith(
+        'ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.',
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
     it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
@@ -1212,6 +1246,73 @@ describe('data-access', () => {
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
         [existingSuggestions[2]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark prerender domain-wide or covered suggestions as OUTDATED', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
+
+      const domainWideSuggestion = {
+        id: 'domain-wide',
+        data: {
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        },
+        getId: sinon.stub().returns('domain-wide'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const coveredSuggestion = {
+        id: 'covered',
+        data: {
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        },
+        getId: sinon.stub().returns('covered'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const normalSuggestion = {
+        id: 'normal',
+        data: { url: 'https://example.com/page2', key: 'page2' },
+        getId: sinon.stub().returns('normal'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      const scrapedUrlsSet = new Set([
+        'https://example.com/* (All Domain URLs)',
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves([
+        domainWideSuggestion,
+        coveredSuggestion,
+        normalSuggestion,
+      ]);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [normalSuggestion],
         'OUTDATED',
       );
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');

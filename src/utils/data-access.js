@@ -267,9 +267,16 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
     ].includes(existing.getStatus()))
     .filter((existing) => {
-      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
+      // Preserve prerender suggestions that are already deployed or covered by
+      // domain-wide deployment. Domain-wide rows are synthetic aggregate records,
+      // not real scraped URLs, so generic stale-page cleanup should not age them out.
       const data = existing.getData?.();
-      return !(data?.tokowakaDeployed || data?.edgeDeployed);
+      return !(
+        data?.tokowakaDeployed
+        || data?.edgeDeployed
+        || data?.coveredByDomainWide
+        || data?.isDomainWide
+      );
     })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -327,6 +334,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * This function encapsulates the default behavior for status transitions:
  * - REJECTED suggestions remain REJECTED
  * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
+ * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
+ *   Recovers any suggestion that errored due to a transient or codefix-side bug
+ *   once the underlying fix has shipped; pages that fail every run keep
+ *   re-dispatching but the audit cadence (weekly for CWV) bounds the cost.
  * - Other statuses remain unchanged
  *
  * @param {Object} existing - The existing suggestion object.
@@ -351,6 +362,11 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
     return (requiresValidation && !isTBYB)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
+  }
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.ERROR) {
+    log.info('ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.');
+    return SuggestionDataAccess.STATUSES.NEW;
   }
 
   return null; // Keep existing status
