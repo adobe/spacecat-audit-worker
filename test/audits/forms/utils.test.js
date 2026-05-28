@@ -645,8 +645,8 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.type).to.equal('guidance:other-type');
     expect(message.data.url).to.equal('https://example.com/form2');
     expect(message.data.cr).to.equal(0.85);
-    expect(message.data.form_source).to.equal('source2');
-    expect(message.data.form_details).to.deep.equal([{ detail: 'detail2' }]);
+    expect(message.data.formSource).to.equal('source2');
+    expect(message.data.formDetails).to.deep.equal([{ detail: 'detail2' }]);
   });
 
   it('should handle empty formDetails gracefully', async () => {
@@ -672,7 +672,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_details).to.deep.equal([]);
+    expect(message.data.formDetails).to.deep.equal([]);
   });
 
   it('should send message with default deliveryType when site is not available', async () => {
@@ -723,11 +723,11 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_navigation).to.deep.equal({
+    expect(message.data.formNavigation).to.deep.equal({
       url: '',
       source: '',
-      cta_clicks: 0,
-      page_views: 0,
+      ctaClicks: 0,
+      pageViews: 0,
     });
   });
 
@@ -755,7 +755,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
+    expect(message.data.formDetails).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
 });

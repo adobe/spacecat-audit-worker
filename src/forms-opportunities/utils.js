@@ -442,9 +442,9 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
 
     const data = {
       url: site ? site.getBaseURL() : formsList[0]?.form,
-      form_details: formsList.map(({ form, formSource }) => ({
+      formDetails: formsList.map(({ form, formSource }) => ({
         url: form,
-        form_source: formSource,
+        formSource,
       })),
     };
 
@@ -478,25 +478,23 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
       auditId: opptyData.auditId,
       deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
-      // keys inside data should follow snake case and outside should follow camel case
       data: {
         url: opptyData.data?.form,
         cr: opptyData.data?.trackedFormKPIValue || 0,
         metrics: opptyData.data?.metrics || [],
-        cta_source: opptyData.data?.formNavigation?.source || '',
-        cta_text: opptyData.data?.formNavigation?.text || '',
+        ctaSource: opptyData.data?.formNavigation?.source || '',
+        ctaText: opptyData.data?.formNavigation?.text || '',
         opportunityId: opptyData.opportunityId || '',
-        form_source: opptyData.data?.formsource || '',
-        // form_details: opptyData.data?.formDetails,
+        formSource: opptyData.data?.formsource || '',
         // eslint-disable-next-line max-len,no-nested-ternary
-        form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
-        page_views: opptyData.data?.pageViews,
-        form_views: opptyData.data?.formViews,
-        form_navigation: {
+        formDetails: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
+        pageViews: opptyData.data?.pageViews,
+        formViews: opptyData.data?.formViews,
+        formNavigation: {
           url: opptyData.data?.formNavigation?.url || '',
           source: opptyData.data?.formNavigation?.source || '',
-          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
-          page_views: opptyData.data?.formNavigation?.pageViews || 0,
+          ctaClicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
+          pageViews: opptyData.data?.formNavigation?.pageViews || 0,
         },
       },
     };

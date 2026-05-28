@@ -48,7 +48,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance',
         suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
@@ -126,7 +126,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance'
       },
     };
@@ -153,7 +153,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance'
       },
     };
@@ -212,7 +212,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance',
         suggestions: newSuggestion
       },
