@@ -281,7 +281,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500 }],
             issues: [],
           }),
         }]),
@@ -306,7 +306,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500 }],
             issues: [],
           }),
         }]),

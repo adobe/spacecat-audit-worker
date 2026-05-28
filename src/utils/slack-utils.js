@@ -300,7 +300,7 @@ export async function sendAuditFailureNotification(context, {
   let message;
 
   if (abort?.reason === 'bot-protection') {
-    const botIps = env?.SPACECAT_BOT_IPS /* istanbul ignore next */ || '';
+    const botIps = env?.SPACECAT_BOT_IPS;
     const allowlistInfo = formatAllowlistMessage(botIps);
     message = formatBotProtectionSlackMessage({
       auditType: type,

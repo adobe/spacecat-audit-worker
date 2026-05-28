@@ -85,6 +85,25 @@ describe('Index Tests', () => {
     expect(resp.status).to.equal(500);
   });
 
+  it('uses site base URL in failure notification when site is fetched before handler throws', async () => {
+    messageBodyJson.type = 'apex';
+    messageBodyJson.siteId = 'fetched-site-id';
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    const mockSite = {
+      getId: () => 'fetched-site-id',
+      getBaseURL: () => 'https://fetched-site.com',
+      getDeliveryType: () => 'aem_cs',
+      getOrganizationId: () => null,
+    };
+    context.dataAccess = {
+      Site: { findById: sandbox.stub().resolves(mockSite) },
+    };
+
+    const resp = await main(request, context);
+    expect(resp.status).to.equal(500);
+  });
+
   it('happy path', async () => {
     const resp = await main(request, context);
     expect(resp.status).to.equal(200);
