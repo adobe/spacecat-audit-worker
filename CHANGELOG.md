@@ -1,3 +1,10 @@
+# [1.454.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.453.0...v1.454.0) (2026-05-28)
+
+
+### Features
+
+* **paid-keyword-optimizer:** pass adAnalysis through to suggestion.data ([#2569](https://github.com/adobe/spacecat-audit-worker/issues/2569)) ([c483154](https://github.com/adobe/spacecat-audit-worker/commit/c4831549856d0f48db6abdf954aeb770f042b447)), closes [#2420](https://github.com/adobe/spacecat-audit-worker/issues/2420) [#3](https://github.com/adobe/spacecat-audit-worker/issues/3) [#2420](https://github.com/adobe/spacecat-audit-worker/issues/2420) [#3](https://github.com/adobe/spacecat-audit-worker/issues/3)
+
 # [1.453.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.452.4...v1.453.0) (2026-05-27)
 
 
