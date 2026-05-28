@@ -2162,10 +2162,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                     accessibility: [{
                       form: 'test-form-2',
                       formDetails: {
-                        is_lead_gen: true,
+                        isLeadGen: true,
                         industry: 'Insurance',
-                        form_type: 'Quote Request Form',
-                        form_category: 'B2C',
+                        formType: 'Quote Request Form',
+                        formCategory: 'B2C',
                         cpl: 230.6,
                       },
                       formsource: 'test-source',

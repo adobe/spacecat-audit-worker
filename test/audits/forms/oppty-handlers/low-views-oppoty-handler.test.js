@@ -233,10 +233,10 @@ describe('createLowFormViewsOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: true,
+        isLeadGen: true,
         industry: 'Insurance',
-        form_type: 'Quote Request Form',
-        form_category: 'B2C',
+        formType: 'Quote Request Form',
+        formCategory: 'B2C',
         cpl: 230.6,
       },
     });
@@ -270,8 +270,8 @@ describe('createLowFormViewsOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: true,
-        form_type: 'Quote Request Form',
+        isLeadGen: true,
+        formType: 'Quote Request Form',
       },
     });
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
@@ -290,8 +290,8 @@ describe('createLowFormViewsOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: false,
-        form_type: 'search form',
+        isLeadGen: false,
+        formType: 'search form',
       },
     });
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);

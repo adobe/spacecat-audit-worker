@@ -323,17 +323,17 @@ export function shouldExcludeForm(scrapedFormData) {
  * Forms are ignored if they match certain form types (defined in FORM_TYPES_TO_IGNORE)
  * and are not lead generation forms.
  *
- * @param {Object} formDetails - The form details object containing form_type and is_lead_gen
+ * @param {Object} formDetails - The form details object containing formType and isLeadGen
  * @returns {boolean} - True if the form should be ignored, false otherwise
  */
 export function shouldIgnoreFormByDetails(formDetails) {
   if (!formDetails || typeof formDetails !== 'object') {
     return false;
   }
-  // Normalize form_type to lowercase for case-insensitive comparison
-  const formType = formDetails.form_type?.toLowerCase();
+  // Normalize formType to lowercase for case-insensitive comparison
+  const formType = formDetails.formType?.toLowerCase();
   // Ignore forms that match specified types and are not lead generation (boolean check)
-  return FORM_TYPES_TO_IGNORE.includes(formType) && formDetails.is_lead_gen === false;
+  return FORM_TYPES_TO_IGNORE.includes(formType) && formDetails.isLeadGen === false;
 }
 
 /**

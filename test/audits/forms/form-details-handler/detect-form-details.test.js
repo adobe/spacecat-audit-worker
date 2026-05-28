@@ -102,9 +102,9 @@ describe('Detect Form Details Handler', () => {
       {
         url: 'testUrl1',
         formSource: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'Contact Form',
-        form_category: 'B2B',
+        isLeadGen: true,
+        formType: 'Contact Form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -121,9 +121,9 @@ describe('Detect Form Details Handler', () => {
         samples: 987,
         projectedConversionValue: 8789.0,
         formDetails: {
-          is_lead_gen: true,
-          form_type: 'Contact Form',
-          form_category: 'B2B',
+          isLeadGen: true,
+          formType: 'Contact Form',
+          formCategory: 'B2B',
           industry: 'Telecommunications',
           cpl: 94.0,
         },
@@ -222,9 +222,9 @@ describe('Detect Form Details Handler', () => {
       {
         url: 'testUrl1',
         formSource: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'Contact Form',
-        form_category: 'B2B',
+        isLeadGen: true,
+        formType: 'Contact Form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -242,9 +242,9 @@ describe('Detect Form Details Handler', () => {
           a11yIssues: [],
           formTitle: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
           formDetails: {
-            is_lead_gen: true,
-            form_type: 'Contact Form',
-            form_category: 'B2B',
+            isLeadGen: true,
+            formType: 'Contact Form',
+            formCategory: 'B2B',
             industry: 'Telecommunications',
             cpl: 94,
           },
@@ -276,9 +276,9 @@ describe('Detect Form Details Handler', () => {
       {
         url: 'testUrl1',
         formSource: 'formSource1',
-        is_lead_gen: false,
-        form_type: 'search form',
-        form_category: 'B2B',
+        isLeadGen: false,
+        formType: 'search form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -311,8 +311,8 @@ describe('Detect Form Details Handler', () => {
       {
         url: 'testUrl1',
         formSource: 'formSource1',
-        is_lead_gen: false,
-        form_type: 'SEARCH form',
+        isLeadGen: false,
+        formType: 'SEARCH form',
       },
     ];
 
@@ -342,8 +342,8 @@ describe('Detect Form Details Handler', () => {
       {
         url: 'testUrl1',
         formSource: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'search form',
+        isLeadGen: true,
+        formType: 'search form',
       },
     ];
 
