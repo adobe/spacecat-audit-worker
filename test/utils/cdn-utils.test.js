@@ -52,6 +52,7 @@ describe('CDN Utils', () => {
         CLOUDFRONT: 'cloudfront',
         FRONTDOOR: 'frontdoor',
         IMPERVA: 'imperva',
+        F5: 'f5',
         OTHER: 'other',
       });
     });

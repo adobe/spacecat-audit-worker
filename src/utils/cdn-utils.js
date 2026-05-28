@@ -29,6 +29,7 @@ export const CDN_TYPES = {
   CLOUDFRONT: 'cloudfront',
   FRONTDOOR: 'frontdoor',
   IMPERVA: 'imperva',
+  F5: 'f5',
   OTHER: 'other',
 };
 
@@ -41,6 +42,7 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
   BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
   BYOCDN_IMPERVA: 'byocdn-imperva',
+  BYOCDN_F5: 'byocdn-f5',
   BYOCDN_OTHER: 'byocdn-other',
   AMS_CLOUDFRONT: 'ams-cloudfront',
   AMS_FRONTDOOR: 'ams-frontdoor',
@@ -56,6 +58,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
   [SERVICE_PROVIDER_TYPES.BYOCDN_IMPERVA]: CDN_TYPES.IMPERVA,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_F5]: CDN_TYPES.F5,
   [SERVICE_PROVIDER_TYPES.BYOCDN_OTHER]: CDN_TYPES.OTHER,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
@@ -222,6 +225,9 @@ export async function determineCdnProvider(s3, bucket, prefix) {
     }
     if (hasText(rec.ClientRequestURI)) {
       return CDN_TYPES.CLOUDFLARE;
+    }
+    if (hasText(rec.req_path)) {
+      return CDN_TYPES.F5;
     }
   } catch {
     // fall-through intended
