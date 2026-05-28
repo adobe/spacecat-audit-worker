@@ -1584,6 +1584,7 @@ describe('Meta Tags', () => {
                 }),
               },
             ]),
+            bulkUpdateStatus: sinon.stub().resolves(),
             saveMany: sinon.stub().resolves(),
             STATUSES: {
               NEW: 'NEW',
@@ -1615,6 +1616,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: sinon.stub(),
           getData: sinon.stub(),
+          setStatus: sinon.stub(),
           setUpdatedBy: sinon.stub().returnsThis(),
         };
 
@@ -1982,45 +1984,128 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
       });
 
-      it('should return { status: complete } if no valid metatag issues are detected', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
-        const mockValidateDetectedIssues = sinon.stub()
-          .resolves({});
+      it('should return { status: complete } if no valid metatag issues are detected and no existing opportunity', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
-          '../../src/metatags/ssr-meta-validator.js': {
-            validateDetectedIssues: mockValidateDetectedIssues,
-          },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
         });
 
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([]);
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.info).to.have.been.calledWith(sinon.match(/No valid metatag issues detected/));
+        expect(dataAccessStub.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
       });
 
-      it('should return { status: complete } if validatedDetectedTags is null', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
-        const mockValidateDetectedIssues = sinon.stub()
-          .resolves(null);
+      it('should return { status: complete } if validatedDetectedTags is null and no existing opportunity', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves(null);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
-          '../../src/metatags/ssr-meta-validator.js': {
-            validateDetectedIssues: mockValidateDetectedIssues,
-          },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
         });
+
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([]);
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should resolve existing NEW opportunity and mark NEW/PENDING_VALIDATION suggestions OUTDATED when no metatag issues detected', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        const mockSuggestions = [
+          { getId: () => 's-new', getStatus: () => 'NEW' },
+          { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' },
+        ];
+        metatagsOppty.getSuggestions = sinon.stub().resolves(mockSuggestions);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
+        expect(metatagsOppty.setStatus).to.have.been.calledOnce;
+        expect(metatagsOppty.getSuggestions).to.have.been.calledOnce;
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus)
+          .to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+        expect(metatagsOppty.setUpdatedBy).to.have.been.calledOnceWith('system');
+        expect(metatagsOppty.save).to.have.been.calledOnce;
+      });
+
+      it('should not call bulkUpdateStatus when all suggestions are in preserved states (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        // null covers the (suggestions || []) fallback branch
+        metatagsOppty.getSuggestions = sinon.stub().resolves(null);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+        expect(metatagsOppty.save).to.have.been.calledOnce;
+      });
+
+      it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+        const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+        const fixedSuggestion = { getId: () => 's-fixed', getStatus: () => 'FIXED' };
+        const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
+        const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
+        metatagsOppty.getSuggestions = sinon.stub().resolves([
+          newSuggestion, pendingSuggestion, fixedSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          [newSuggestion, pendingSuggestion],
+          'OUTDATED',
+        );
+      });
+
+      it('should log error and still return complete when opportunity lookup fails on no-issues path (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.error).to.have.been.calledWith(
+          sinon.match(/Failed to resolve meta-tags opportunity.*DB error/),
+        );
       });
 
       it('should handle error when Site.findById fails during useHostnameOnly check', async () => {
