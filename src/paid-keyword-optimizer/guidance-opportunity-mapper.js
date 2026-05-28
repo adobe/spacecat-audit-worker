@@ -14,6 +14,8 @@ import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
+const MISALIGNED_SCORES = new Set(['poor', 'fair']);
+
 /**
  * Formats a currency value with $ prefix and K suffix for thousands.
  * @param {number} num - The number to format
@@ -44,6 +46,10 @@ export function assignClusterRanks(clusterResults) {
     return [];
   }
 
+  // Ranking tiers use "has recommendation" (not alignment score) intentionally:
+  // clusters with any recommendation sort first so the UI surfaces them at top,
+  // even if the alignment is "good" (minor heading tweak). The separate
+  // misalignedClusters count in the opportunity uses MISALIGNED_SCORES instead.
   const isMismatched = (c) => c.analysisStatus !== 'failed' && c.recommendation;
   const isAligned = (c) => c.analysisStatus !== 'failed' && !c.recommendation;
   const isFailed = (c) => c.analysisStatus === 'failed';
@@ -81,6 +87,21 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     clusterResults = [],
     portfolioMetrics = {},
   } = guidanceBody;
+  /**
+   * Page-level context fields emitted by mystique (additive, both optional).
+   *
+   * Distinct from per-cluster
+   * `gapAnalysis.{keywordToPageGap,adToPageGap}.relevantExtractedTopics`,
+   * which are LLM-filtered subsets of `pageTopics` filtered for cluster-
+   * specific intent relevance. `pageTopics` here is the full page-level set.
+   *
+   * Use `??` (nullish coalescing) instead of ES destructure defaults so that
+   * a future regression emitting `pageTopics: null` (instead of omitting the
+   * key) still results in an empty array on the consumer side. ES destructure
+   * defaults only fire for `undefined`, not `null`.
+   */
+  const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
+  const pageTopics = guidanceBody.pageTopics ?? [];
   const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
@@ -89,7 +110,8 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
 
   const totalClusters = clusterResults.length;
   const misalignedClusters = clusterResults.filter(
-    (c) => c.analysisStatus !== 'failed' && c.recommendation,
+    (c) => c.analysisStatus !== 'failed' && c.recommendation
+      && MISALIGNED_SCORES.has(c.overallAlignmentScore),
   ).length;
   const totalMisalignedSpend = clusterResults.reduce(
     (sum, c) => sum + (c.clusterMisalignedSpend || 0),
@@ -97,7 +119,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   );
 
   const description = 'Multiple keyword intent groups target this page. '
-    + `${misalignedClusters} of ${totalClusters} clusters show alignment gaps. `
+    + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
     + `Estimated misaligned spend: ~${formatCurrency(totalMisalignedSpend)}/month (based on Semrush data).`;
 
   return {
@@ -108,7 +130,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     origin: 'AUTOMATION',
     title: 'Ad intent mismatch detected across keyword clusters',
     description,
-    guidance: {},
+    guidance: null,
     data: {
       dataSources: [
         DATA_SOURCES.SITE,
@@ -125,6 +147,8 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       totalClusters,
       misalignedClusters,
       totalMisalignedSpend,
+      resolvedPageHeading,
+      pageTopics,
     },
     status: 'NEW',
     tags: [
@@ -157,6 +181,7 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
     gapAnalysis,
     overallAlignmentScore,
     keywordAnalysis,
+    adAnalysis,
     recommendation,
     rank,
   } = cluster;
@@ -190,6 +215,12 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
         gapAnalysis: gapAnalysis || {},
         overallAlignmentScore: overallAlignmentScore || null,
         keywordAnalysis: keywordAnalysis || [],
+        // `?? null` (not `|| {}`): mystique emits an explicit `null` when the
+        // cluster lacks sufficient ad-copy signal, and the UI hides the
+        // "What the ad promises" block on that signal. Coercing null to {}
+        // would silently break the hide-when-missing branch. See spec
+        // products/aso/ad-intent-cluster-ad-analysis.md (B.1 + Decision #3).
+        adAnalysis: adAnalysis ?? null,
       },
       ...(recommendationType && { recommendationType }),
       ...(cleanedRecommendation && { recommendation: cleanedRecommendation }),

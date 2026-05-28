@@ -10,192 +10,89 @@
  * governing permissions and limitations under the License.
  */
 
-import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import DrsClient, {
+  SCRAPE_DATASET_IDS,
+  REDDIT_COMMENTS_SORT_BY_VALUES,
+} from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  BRAND_PRESENCE_REGEX,
   DRS_URLS_LIMIT,
-  FETCH_PAGE_SIZE,
-  FETCH_TIMEOUT_MS,
-  INCLUDE_COLUMNS,
-  REDDIT_COMMENTS_DAYS_BACK,
+  RETRIABLE_STATUSES,
+  RETRY_DELAY_MS,
   OFFSITE_DOMAINS,
-  PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
-  USER_AGENT,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from './constants.js';
+
+/**
+ * Extracts reddit_comments scrape parameters from Slack/API `messageData`.
+ * Slack delivers keyword values as strings, so this normalizes them:
+ *  - `redditCommentLimit` / `redditDaysBack` → positive integer (or undefined)
+ *  - `redditSortBy` → allowlisted enum value; `'QA'` is normalized to `'Q&A'`
+ *    so Slack users can avoid Slack mangling the ampersand. Unknown values
+ *    are dropped.
+ *  - `redditLoadAllReplies` → strict boolean (only the strings 'true'/'false'
+ *    or real booleans are accepted; anything else is dropped)
+ *
+ * Invalid values are dropped rather than thrown — the DRS client validates and
+ * surfaces a clear error.
+ *
+ * @param {object} [messageData]
+ * @returns {{
+ *   commentLimit?: number,
+ *   sortBy?: string,
+ *   daysBack?: number,
+ *   loadAllReplies?: boolean,
+ * }}
+ */
+function resolveRedditCommentsParams(messageData) {
+  const md = messageData || {};
+  const params = {};
+
+  const parseInteger = (raw) => {
+    if (raw === undefined || raw === null || raw === '') {
+      return undefined;
+    }
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+
+  const commentLimit = parseInteger(md.redditCommentLimit);
+  if (commentLimit !== undefined) {
+    params.commentLimit = commentLimit;
+  }
+
+  const daysBack = parseInteger(md.redditDaysBack);
+  if (daysBack !== undefined) {
+    params.daysBack = daysBack;
+  }
+
+  if (md.redditSortBy !== undefined && md.redditSortBy !== null && md.redditSortBy !== '') {
+    const sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+    if (REDDIT_COMMENTS_SORT_BY_VALUES.has(sortBy)) {
+      params.sortBy = sortBy;
+    }
+  }
+
+  const rawLoadAll = md.redditLoadAllReplies;
+  if (rawLoadAll === true || rawLoadAll === 'true') {
+    params.loadAllReplies = true;
+  } else if (rawLoadAll === false || rawLoadAll === 'false') {
+    params.loadAllReplies = false;
+  }
+
+  return params;
+}
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
-
-/**
- * Gets the ISO week number and year for the previous two weeks.
- * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
- */
-function getPreviousWeeks() {
-  return [1, 2].map((i) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - (7 * i));
-    return isoCalendarWeek(d);
-  });
-}
-
-/**
- * Fetches query-index.json for a site via the Spacecat API.
- *
- * @param {string} siteId - The site ID
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
- */
-async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
-
-  log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
-
-  try {
-    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      log.warn(`${LOG_PREFIX} Failed to fetch query-index: ${response.status}`);
-      return null;
-    }
-
-    return response.json();
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Error fetching query-index: ${error.message}`);
-    return null;
-  }
-}
-
-/**
- * Fetches brand presence JSON data for a specific file via the Spacecat API.
- * Uses pagination (limit/offset) to handle large files that would otherwise
- * exceed the API's response size limit (HTTP 413).
- *
- * @param {string} siteId - The site ID
- * @param {string} fileName - The brand presence file path relative to the llmo data directory
- *                            (e.g. 'brand-presence/w7/brandpresence-copilot-w7-2026-010126.json')
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if not found
- */
-async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
-
-  let allRows = [];
-  let offset = 0;
-  let hasMore = true;
-
-  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${baseUrl}`);
-  while (hasMore) {
-    const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
-
-    // eslint-disable-next-line no-await-in-loop
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      // eslint-disable-next-line no-await-in-loop
-      const errorBody = await response.text().catch(() => '(unable to read body)');
-      log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`, {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        responseBody: errorBody,
-      });
-      if (allRows.length === 0) {
-        return null;
-      }
-      break;
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    const data = await response.json();
-    const rows = data?.data || [];
-    allRows = allRows.concat(rows);
-
-    if (rows.length < FETCH_PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      offset += FETCH_PAGE_SIZE;
-    }
-  }
-  return { data: allRows };
-}
-
-/**
- * Attempts to extract a matching brand presence file path from a query-index entry.
- * Returns the relative file path if it matches the target week and a known provider,
- * or null otherwise.
- *
- * @param {object} entry - A single query-index entry
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string|null} The matched file path, or null
- */
-function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) {
-    return null;
-  }
-
-  const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) {
-    return null;
-  }
-
-  const filePath = entry.path.substring(bpIdx);
-  const match = filePath.match(BRAND_PRESENCE_REGEX);
-  if (!match) {
-    return null;
-  }
-
-  const [, providerId, weekStr, yearStr] = match;
-  const fileWeek = Number.parseInt(weekStr, 10);
-  const fileYear = Number.parseInt(yearStr, 10);
-  const yearMatches = fileYear === targetYear;
-
-  if (fileWeek === targetWeek && yearMatches && PROVIDERS_SET.has(providerId)) {
-    return filePath;
-  }
-  return null;
-}
-
-/**
- * Filters brand presence file paths from the query-index response.
- * Only returns files matching the pattern brandpresence-{provider}-w{week}-{year}-*.json
- * where the provider is in PROVIDERS and both week and year match the targets.
- *
- * @param {object} queryIndex - The parsed query-index response
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string[]} Matched file paths relative to the llmo data directory
- */
-export function filterBrandPresenceFiles(queryIndex, targetWeek, targetYear) {
-  const entries = queryIndex?.data || [];
-  const matched = [];
-
-  for (const entry of entries) {
-    const filePath = matchBrandPresenceEntry(entry, targetWeek, targetYear);
-    if (filePath) {
-      matched.push(filePath);
-    }
-  }
-  return matched;
-}
 
 /**
  * Normalizes a YouTube URL to keep only essential identifiers.
@@ -541,16 +438,97 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 /* c8 ignore stop */
 
 /**
+ * Determines whether an error is worth retrying.
+ * Retries on network-level failures (TypeError from fetch) and specific HTTP
+ * status codes that indicate transient server problems.
+ *
+ * @param {Error} err
+ * @returns {boolean}
+ */
+function isRetriable(err) {
+  if (err instanceof TypeError) {
+    return true;
+  }
+  return typeof err.status === 'number' && RETRIABLE_STATUSES.has(err.status);
+}
+
+/**
+ * Submits a single DRS job with one selective retry.
+ * Only retries on network errors (TypeError) and retriable HTTP status codes
+ * (408, 429, 500, 502, 503, 504). Non-retriable errors (4xx) fail immediately.
+ *
+ * NOTE: POST /jobs is not idempotent and DRS does not support an idempotency
+ * key. A request that times out client-side but lands server-side may produce
+ * a duplicate job. The retry is limited to one attempt to minimise this risk.
+ *
+ * @param {{ domain: string, datasetId: string, params: object }} job
+ * @param {Function} submitFn - Async function that submits the job
+ * @param {object} log - Logger
+ * @returns {Promise<object>} Job result with status
+ */
+async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const start = Date.now();
+      // eslint-disable-next-line no-await-in-loop
+      const result = await submitFn(params);
+      log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
+      return {
+        domain, datasetId, status: 'success', response: result,
+      };
+    } catch (err) {
+      if (attempt === 0 && isRetriable(err)) {
+        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms: ${err.message}`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, RETRY_DELAY_MS);
+        });
+      } else {
+        const label = attempt === 0 ? '' : ' after retry';
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}${label}: ${err.message}`);
+        return {
+          domain, datasetId, status: 'error', error: err.message,
+        };
+      }
+    }
+  }
+  /* c8 ignore next 4 */
+  return {
+    domain, datasetId, status: 'error', error: 'unexpected',
+  };
+}
+
+/**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
  * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
+ * When spacecatOrgId is provided, it is passed through to
+ * drsClient.submitScrapeJob and included as spacecat_org_id in the DRS request.
+ *
+ * Reddit-comments params (`commentLimit`, `sortBy`, `daysBack`,
+ * `loadAllReplies`) are only attached to the `reddit_comments` dataset. When
+ * they are omitted and the request goes through the DRS client, the client
+ * applies its defaults (`commentLimit=150`, `sortBy='Best'`, no `daysBack`,
+ * no `loadAllReplies`). On the direct-HTTP path (`spacecatOrgId` set), only
+ * the params that the direct path explicitly handles (currently `daysBack`)
+ * actually reach DRS.
+ *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
+ * @param {string} [spacecatOrgId] - Optional SpaceCat org ID
+ * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
+ *   (see {@link resolveRedditCommentsParams})
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, siteId, context) {
+async function triggerDrsScraping(
+  urlsByDomain,
+  siteId,
+  context,
+  spacecatOrgId,
+  redditCommentsParams = {},
+) {
   const { log } = context;
   const drsClient = DrsClient.createFrom(context);
 
@@ -576,64 +554,24 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
         : urlList;
       const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
-        params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
+        Object.assign(params, redditCommentsParams);
+      }
+      if (spacecatOrgId) {
+        params.spacecatOrgId = spacecatOrgId;
       }
       jobs.push({ domain, datasetId, params });
     }
   }
 
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs`);
+  const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
+  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
-  return Promise.all(
-    jobs.map(async ({ domain, datasetId, params }) => {
-      try {
-        const result = await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
-        return {
-          domain, datasetId, status: 'success', response: result,
-        };
-      } catch (err) {
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${err.message}`);
-        return {
-          domain, datasetId, status: 'error', error: err.message,
-        };
-      }
-    }),
-  );
-}
-
-/**
- * Fetches matched brand presence files sequentially and aggregates
- * all source URLs and topic associations across files.
- *
- * @param {string} siteId - The site ID
- * @param {string[]} matchedFiles - File paths to fetch
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @param {string} [siteHostname] - Client site hostname to exclude
- * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
- */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname) {
-  const allUrls = new Map();
-  const topicMap = new Map();
-
-  for (const filePath of matchedFiles) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const data = await fetchBrandPresenceData(siteId, filePath, env, log);
-      if (!data) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname);
-    } catch (err) {
-      log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
-    }
+  const results = [];
+  for (const job of jobs) {
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), log));
   }
-
-  log.info(`${LOG_PREFIX} Extracted ${topicMap.size} unique topics`);
-  return { allUrls, topicMap };
+  return results;
 }
 
 /**
@@ -669,6 +607,33 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Sends a Slack notification summarizing DRS job results.
+ *
+ * @param {Array} drsResults - Array of DRS job result objects
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsResults(drsResults, baseURL, context, channelId, threadTs) {
+  if (drsResults.length === 0) {
+    return;
+  }
+
+  const succeeded = drsResults.filter((r) => r.status === 'success');
+  const failed = drsResults.filter((r) => r.status === 'error');
+  const lines = [
+    `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response?.job_id}\``),
+    ...(failed.length > 0 ? [
+      `:x: *Failed (${failed.length}):*`,
+      ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
+    ] : []),
+  ];
+  await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -686,11 +651,20 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
  * @returns {Promise<object>} Audit result
  */
 export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditContext) {
-  const { dataAccess, env, log } = context;
-  const { slackContext } = auditContext || {};
+  const { dataAccess, log } = context;
+  const { slackContext, messageData } = auditContext || {};
+  const spacecatOrgId = messageData?.spacecatOrgId;
+  const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+  const previousWeeks = getPreviousWeeks();
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
+
+  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
+
   let siteHostname;
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
@@ -698,40 +672,16 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
   }
 
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
+  const brandPresenceData = await loadBrandPresenceData({
+    siteId, site, previousWeeks, context,
+  });
 
-  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return {
-      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
-      fullAuditRef: finalUrl,
-    };
+  const allUrls = new Map();
+  if (brandPresenceData) {
+    const topicMap = new Map();
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
   }
 
-  // Fetch query-index.json
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.error(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return {
-      auditResult: { success: false, error: 'Failed to fetch query-index' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
-  const previousWeeks = getPreviousWeeks();
-  const weekLabels = previousWeeks
-    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
-    .join(', ');
-
-  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
-
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
-
-  // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname);
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result
@@ -764,21 +714,15 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
+  const drsResults = await triggerDrsScraping(
+    storedByDomain,
+    siteId,
+    context,
+    spacecatOrgId,
+    redditCommentsParams,
+  );
 
-  if (drsResults.length > 0) {
-    const succeeded = drsResults.filter((r) => r.status === 'success');
-    const failed = drsResults.filter((r) => r.status === 'error');
-    const lines = [
-      `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-      ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
-      ...(failed.length > 0 ? [
-        `:x: *Failed (${failed.length}):*`,
-        ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
-      ] : []),
-    ];
-    await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
-  }
+  await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 
   // TODO: temporarily disabled
   // if (topicMap.size > 0) {

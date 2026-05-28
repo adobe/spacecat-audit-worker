@@ -16,7 +16,7 @@ const OpptyDataForTOC = {
   runbook: '',
   origin: 'AUTOMATION',
   title: '[Beta] Add Table of Content',
-  description: 'Ensure table of contents (TOC) is properly implemented in the <head> section of each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content',
+  description: 'Ensure table of contents (TOC) is properly implemented in the <head> section of each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content. Suggestions are generated based on page heading (H1, H2) structure, so pages with correct heading structure will produce accurate TOC suggestions.',
   guidance: {
     steps: [
       'Review pages flagged for TOC issues in the audit results.',
