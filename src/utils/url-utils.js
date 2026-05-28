@@ -72,6 +72,23 @@ function looksLikePersonSlug(slug) {
 }
 
 /**
+ * Returns true if slug looks like a database record ID — either a pure integer
+ * or a prefixed integer (e.g. "917", "2671", "ticketevent-1226947352").
+ * These slugs represent deleted records; the parent path is always a better
+ * fallback than any sibling page.
+ * @param {string} slug
+ * @returns {boolean}
+ */
+function looksLikeRecordId(slug) {
+  if (!slug) return false;
+  // Pure numeric: "917", "614", "2671"
+  if (/^\d+$/.test(slug)) return true;
+  // Prefixed numeric: "ticketevent-1226947352", "event-1645182281"
+  if (/^[a-z]+-\d{6,}$/.test(slug)) return true;
+  return false;
+}
+
+/**
  * Returns true when suggestedUrl replaces one specific person/entity with a
  * different one under the same parent path — a semantically invalid substitution.
  *
@@ -79,7 +96,8 @@ function looksLikePersonSlug(slug) {
  * 1. Both URLs are leaf pages at the same depth under the same parent directory.
  * 2. Their last path segments differ.
  * 3. Either: the parent directory is a known entity section AND at least one
- *    slug looks like a person name, OR both slugs look like person names.
+ *    slug looks like a person name, OR both slugs look like person names,
+ *    OR the broken slug is a database record ID (pure/prefixed integer).
  *
  * @param {string} brokenUrl   - The original broken target URL.
  * @param {string} suggestedUrl - The candidate replacement URL.
@@ -95,16 +113,43 @@ export function isEntityReplacementSuggestion(brokenUrl, suggestedUrl) {
     const bSegs = bParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
     const sSegs = sParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
 
-    if (bSegs.length !== sSegs.length || bSegs.length < 2) {
-      return false;
-    }
-    if (bSegs.slice(0, -1).join('/') !== sSegs.slice(0, -1).join('/')) {
+    if (bSegs.length < 2) {
       return false;
     }
 
     const bSlug = bSegs.at(-1);
     const sSlug = sSegs.at(-1);
     if (bSlug === sSlug) {
+      return false;
+    }
+
+    // ── Record-ID broken slugs ─────────────────────────────────────────────
+    // If the broken slug is a database record ID (pure numeric like "917" or
+    // prefixed like "ticketevent-1226947352"), the record was deleted and no
+    // sibling page is an appropriate replacement.
+    if (looksLikeRecordId(bSlug)) {
+      if (bSegs.length === sSegs.length) {
+        // Same depth: any sibling is wrong (e.g. event-schedule/917 → event-schedule/2671).
+        return bSegs.slice(0, -1).join('/') === sSegs.slice(0, -1).join('/');
+      }
+      if (sSegs.length === bSegs.length - 1) {
+        // Suggestion is one level shallower: filter siblings of the parent directory
+        // (e.g. events/babymetal when broken is events/event-schedule/917), but keep
+        // the parent directory itself (events/event-schedule/ is the correct fallback).
+        const bGrandParentPath = bSegs.slice(0, -2).join('/');
+        const sSuggParentPath = sSegs.slice(0, -1).join('/');
+        const brokenParentDir = bSegs.at(-2);
+        const suggestedDir = sSegs.at(-1);
+        return bGrandParentPath === sSuggParentPath && suggestedDir !== brokenParentDir;
+      }
+      return false;
+    }
+
+    // ── Person/entity section check (original logic) ───────────────────────
+    if (bSegs.length !== sSegs.length) {
+      return false;
+    }
+    if (bSegs.slice(0, -1).join('/') !== sSegs.slice(0, -1).join('/')) {
       return false;
     }
 
