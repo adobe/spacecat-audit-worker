@@ -1,3 +1,17 @@
+## [1.454.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.3...v1.454.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* canonical / broken-backlinks / metatags - update opportunity when no issues detected ([#2519](https://github.com/adobe/spacecat-audit-worker/issues/2519)) ([a3f652e](https://github.com/adobe/spacecat-audit-worker/commit/a3f652e826d542ca8f84324128a04375484bbdc5))
+
+## [1.454.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.2...v1.454.3) (2026-05-28)
+
+
+### Bug Fixes
+
+* Sitemap audit can now use a refined "first hop" URL as the sugge… ([#2568](https://github.com/adobe/spacecat-audit-worker/issues/2568)) ([c373763](https://github.com/adobe/spacecat-audit-worker/commit/c37376369560cea9d2c27fa551615566eb372033))
+
 ## [1.454.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.1...v1.454.2) (2026-05-28)
 
 
