@@ -133,7 +133,13 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}, competitors=${citedConfig.competitors.length}`);
+    if (citedConfig.competitors.length === 0) {
+      // Surfaces the misconfiguration before the SQS hop to Mystique. With an
+      // empty list Mystique will only count the primary brand in Share of Voice
+      // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
+      log.warn(`${LOG_PREFIX} No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`);
+    }
 
     const storeData = await fetchStoreData(siteId, context);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
