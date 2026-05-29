@@ -2231,6 +2231,273 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
+    describe('v2 changeKind dispatch (LLMO-4744)', () => {
+      const SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      const SPACECAT_API_KEY = 'test-api-key';
+
+      const findSqsCall = (type) => sqs.sendMessage.getCalls().find(
+        (c) => c.args[1]?.type === type,
+      );
+
+      const enableBrandalfFeatureFlag = () => {
+        context.env.SPACECAT_API_BASE_URL = SPACECAT_API_BASE_URL;
+        context.env.SPACECAT_API_KEY = SPACECAT_API_KEY;
+        mockFetch.reset();
+        mockFetch.callsFake(async (url) => {
+          if (typeof url === 'string' && url.includes('/feature-flags')) {
+            return {
+              ok: true,
+              json: async () => [{ flagName: 'brandalf', flagValue: true }],
+            };
+          }
+          return { ok: false, status: 404, text: async () => 'unexpected' };
+        });
+      };
+
+      beforeEach(() => {
+        enableBrandalfFeatureFlag();
+      });
+
+      it('fires only geo-brand-presence-refresh for changeKind=brands', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'brands', organizationId: 'org-123' },
+        );
+
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.exist;
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(mockLlmoConfig.readConfig).to.not.have.been.called;
+        expect(result.auditResult.status).to.equal('completed');
+        expect(result.auditResult.onboardingMode).to.equal('v2');
+        expect(result.auditResult.changeKind).to.equal('brands');
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['geo-brand-presence-trigger-refresh']);
+        expect(result.auditResult.configChangesDetected).to.equal(true);
+      });
+
+      it('fires only geo-brand-presence-refresh for changeKind=competitors', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'competitors', organizationId: 'org-123' },
+        );
+
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.exist;
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['geo-brand-presence-trigger-refresh']);
+      });
+
+      it('fires only drs-brand-detection for changeKind=categories', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'categories', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.have.been.calledOnceWith('site-123');
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.not.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['drs-brand-detection']);
+      });
+
+      it('fires only drs-brand-detection for changeKind=topics', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'topics', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['drs-brand-detection']);
+      });
+
+      it('fires only drs-brand-detection for changeKind=entities', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'entities', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['drs-brand-detection']);
+      });
+
+      it('fires both triggers for changeKind=prompts', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'prompts', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.have.been.calledOnceWith('site-123');
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.exist;
+        expect(result.auditResult.triggeredSteps).to.have.members([
+          'drs-brand-detection',
+          'geo-brand-presence-trigger-refresh',
+        ]);
+      });
+
+      it('never fires cdn-logs-report for v2 dispatch (out of scope under brandalf)', async () => {
+        await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'categories', organizationId: 'org-123' },
+        );
+
+        expect(findSqsCall('cdn-logs-report')).to.not.exist;
+      });
+
+      it('does not run v1 S3 diff or first-onboarding logic for v2 dispatch', async () => {
+        const auditContext = { onboardingMode: 'v2', changeKind: 'topics', organizationId: 'org-123' };
+
+        await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+        // No S3 reads
+        expect(mockLlmoConfig.readConfig).to.not.have.been.called;
+        // No BP schedule creation (the DRS schedule POST goes through tracingFetch)
+        const scheduleCalls = mockFetch.getCalls()
+          .filter((c) => typeof c.args[0] === 'string' && c.args[0].includes('/schedules'));
+        expect(scheduleCalls).to.have.lengthOf(0);
+      });
+
+      it('returns no-op when changeKind is unknown', async () => {
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'unknown-kind', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.not.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal([]);
+        expect(result.auditResult.configChangesDetected).to.equal(false);
+        expect(log.warn).to.have.been.calledWithMatch(/unknown changeKind/);
+      });
+
+      it('returns no-op when organizationId cannot be resolved', async () => {
+        site.getOrganizationId.returns(null);
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'topics' }, // no organizationId in auditContext
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(result.auditResult.triggeredSteps).to.deep.equal([]);
+        expect(log.warn).to.have.been.calledWithMatch(/no organizationId/);
+      });
+
+      it('uses auditContext.organizationId when site.getOrganizationId returns null', async () => {
+        site.getOrganizationId.returns(null);
+
+        await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'categories', organizationId: 'org-fallback' },
+        );
+
+        expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+        // Feature-flags fetch was called with the fallback orgId
+        expect(mockFetch).to.have.been.calledWithMatch(
+          (url) => typeof url === 'string' && url.includes('/organizations/org-fallback/feature-flags'),
+        );
+      });
+
+      it('returns no-op when brandalf is not enabled for the org', async () => {
+        // Override fetch: feature-flags returns no brandalf flag
+        mockFetch.reset();
+        mockFetch.callsFake(async () => ({
+          ok: true,
+          json: async () => [],
+        }));
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'topics', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.not.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal([]);
+        expect(log.warn).to.have.been.calledWithMatch(/brandalf is not enabled/);
+      });
+
+      it('skips brand-detection trigger when DRS is not configured but still fires BP refresh for prompts', async () => {
+        drsCreateFromStub.returns({
+          isConfigured: sandbox.stub().returns(false),
+          triggerBrandDetection: triggerBrandDetectionStub,
+        });
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'prompts', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal(['geo-brand-presence-trigger-refresh']);
+        expect(log.warn).to.have.been.calledWithMatch(/DRS not configured/);
+      });
+
+      it('returns triggeredSteps=[] and logs "triggered: none" when DRS is unconfigured for a non-prompts changeKind', async () => {
+        drsCreateFromStub.returns({
+          isConfigured: sandbox.stub().returns(false),
+          triggerBrandDetection: triggerBrandDetectionStub,
+        });
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'categories', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.not.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal([]);
+        expect(result.auditResult.configChangesDetected).to.equal(false);
+        expect(log.info).to.have.been.calledWithMatch(/triggered: none/);
+      });
+
+      it('does not affect v1 path when changeKind is absent', async () => {
+        // Sanity check: regular v1 audit context still triggers the diff path
+        mockLlmoConfig.readConfig.resolves({
+          config: {
+            entities: {},
+            categories: {},
+            topics: {},
+            brands: { aliases: [] },
+            competitors: { competitors: [] },
+          },
+        });
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { configVersion: 'v2', previousConfigVersion: 'v1' },
+        );
+
+        expect(mockLlmoConfig.readConfig).to.have.been.called;
+        expect(result.auditResult.onboardingMode).to.be.undefined;
+        expect(result.auditResult.changeKind).to.be.undefined;
+      });
+    });
+
   });
 
 });
