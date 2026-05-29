@@ -4,7 +4,7 @@ permissions:
   id-token: write
   contents: write
   issues: read
-  pull-requests: read
+  pull-requests: write
 
 on:
   push:
@@ -13,7 +13,9 @@ on:
 
 jobs:
   ci:
-    uses: adobe/mysticat-ci/.github/workflows/service-ci.yaml@v1
+    uses: adobe/mysticat-ci/.github/workflows/service-ci.yaml@v2
     with:
       service-name: audit-worker
+      vpc-enabled: true
+      bundle-build: true
     secrets: inherit

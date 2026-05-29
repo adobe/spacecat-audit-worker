@@ -27,6 +27,7 @@ describe('Utils Report Uploader', () => {
   let saveExcelReport;
   let uploadAndPublishFile;
   let readFromSharePoint;
+  let readFromSharePointWithRetry;
   let bulkPublishToAdminHlx;
   let sleepStub;
 
@@ -48,6 +49,7 @@ describe('Utils Report Uploader', () => {
     saveExcelReport = reportUploaderModule.saveExcelReport;
     uploadAndPublishFile = reportUploaderModule.uploadAndPublishFile;
     readFromSharePoint = reportUploaderModule.readFromSharePoint;
+    readFromSharePointWithRetry = reportUploaderModule.readFromSharePointWithRetry;
     bulkPublishToAdminHlx = reportUploaderModule.bulkPublishToAdminHlx;
 
     mockContext = {
@@ -136,6 +138,103 @@ describe('Utils Report Uploader', () => {
       );
 
       expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/monthly-reports/report-2025.xlsx');
+    });
+  });
+
+  describe('readFromSharePointWithRetry', () => {
+    // PK\x03\x04 — valid XLSX magic bytes
+    const xlsxMagic = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+    const htmlContent = Buffer.from('<!DOCTYPE html><html>error</html>');
+
+    it('should return buffer immediately when XLSX magic bytes are valid', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent.resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
+      expect(sleepStub).to.not.have.been.called;
+    });
+
+    it('should retry and succeed when first response is non-XLSX', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent
+        .onFirstCall().resolves(htmlContent)
+        .onSecondCall().resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledTwice;
+      expect(sleepStub).to.have.been.calledOnce;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/sheet=sheet\.xlsx.*folder=source-folder/),
+        'REPORT_UPLOADER',
+      );
+    });
+
+    it('should throw after all retries are exhausted with non-XLSX content', async () => {
+      mockContext.sharepointDoc.getDocumentContent.resolves(htmlContent);
+
+      await expect(
+        readFromSharePointWithRetry(
+          'sheet.xlsx',
+          'source-folder',
+          mockContext.sharepointClient,
+          mockContext.log,
+        ),
+      ).to.be.rejectedWith('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
+
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledThrice;
+      expect(sleepStub).to.have.been.calledTwice;
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/non-XLSX content after 3 attempts/),
+        'REPORT_UPLOADER',
+        sinon.match({ sheetName: 'sheet.xlsx', sourceFolder: 'source-folder' }),
+      );
+    });
+
+    it('should retry when SharePoint returns a buffer shorter than 4 bytes', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent
+        .onFirstCall().resolves(Buffer.alloc(0))
+        .onSecondCall().resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(sleepStub).to.have.been.calledOnce;
+    });
+
+    it('should propagate SharePoint network errors without retrying', async () => {
+      mockContext.sharepointDoc.getDocumentContent.rejects(new Error('Network failure'));
+
+      await expect(
+        readFromSharePointWithRetry(
+          'sheet.xlsx',
+          'source-folder',
+          mockContext.sharepointClient,
+          mockContext.log,
+        ),
+      ).to.be.rejectedWith('Network failure');
+
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
     });
   });
 
@@ -416,7 +515,7 @@ describe('Utils Report Uploader', () => {
   });
 
   describe('bulkPublishToAdminHlx', () => {
-    it('should retry bulk status checks when Helix returns 429', async function bulkPollRetryTest() {
+    it('should retry preview status checks when Helix returns 429 and fire-and-forget publish', async function bulkPollRetryTest() {
       this.timeout(2000);
 
       const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
@@ -455,33 +554,139 @@ describe('Utils Report Uploader', () => {
         statusText: 'OK',
         json: sandbox.stub().resolves({ links: { self: liveJobUrl } }),
       });
-      fetchStub.onCall(4).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'stopped',
-          progress: {
-            total: 2,
-            processed: 2,
-            failed: 0,
-          },
-        }),
-      });
 
       await bulkPublishToAdminHlx([
         { filename: 'agentictraffic-w10-2026.xlsx', outputLocation: 'allianz-at/agentic-traffic' },
         { filename: 'referral-traffic-w10-2026.xlsx', outputLocation: 'allianz-at/referral-traffic-cdn' },
       ], mockContext.log);
 
-      expect(fetchStub.callCount).to.equal(5);
+      // 4 calls: POST preview, GET preview status (429), GET preview status (stopped), POST publish
+      // No 5th call — publish is fire-and-forget
+      expect(fetchStub.callCount).to.equal(4);
+      const publishStatusChecks = fetchStub.getCalls().filter((c) => c.args[0] === liveJobUrl);
+      expect(publishStatusChecks).to.have.lengthOf(0);
       expect(mockContext.log.warn).to.have.been.calledWith(
         sinon.match(/preview status check Helix API failed with error 429 Too Many Requests.*retrying in \d+ms.*attempt 1\/3/),
       );
       expect(sleepStub).to.have.been.calledWith(10000);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/publish job fire-and-forget, not polling for completion/),
+      );
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Bulk publish submitted for 2 files \(preview complete, publish fire-and-forget\)/),
+      );
       expect(mockContext.log.error).to.not.have.been.calledWith(
         sinon.match(/Bulk publish failed/),
       );
+    });
+
+    it('should throw when publish POST returns no job URL', async () => {
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      fetchStub.onCall(1).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'stopped',
+          progress: { total: 1, processed: 1, failed: 0 },
+        }),
+      });
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: {} }),
+      });
+
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+      )).to.be.rejectedWith('No job URL from publish');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Bulk publish failed/),
+      );
+    });
+
+    it('should be a no-op when given no reports', async () => {
+      await bulkPublishToAdminHlx([], mockContext.log);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('should throw preview timeout when state never reaches stopped within the cap', async function previewCapTest() {
+      this.timeout(5000);
+
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      // All subsequent status checks return 'running' so the loop runs to the cap
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'running',
+          progress: { total: 1, processed: 0, failed: 0 },
+        }),
+      });
+
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+      )).to.be.rejectedWith(/^preview timeout for job URL:/);
+
+      // 36 iterations of sleep(5000) -> sleep stubbed, no real wait
+      expect(sleepStub.withArgs(5000).callCount).to.equal(36);
+      // 1 POST + 36 status GETs = 37 fetches
+      expect(fetchStub.callCount).to.equal(37);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Bulk publish failed/),
+      );
+    });
+
+    it('should honor the pollTimeoutMs option for the preview cap', async function pollTimeoutTest() {
+      this.timeout(5000);
+
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      // Status checks always return 'running' so the loop runs to the cap
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'running',
+          progress: { total: 1, processed: 0, failed: 0 },
+        }),
+      });
+
+      // Custom cap: 50_000ms / 5_000ms = 10 iterations
+      await expect(bulkPublishToAdminHlx(
+        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
+        mockContext.log,
+        { pollTimeoutMs: 50_000 },
+      )).to.be.rejectedWith(/^preview timeout for job URL:/);
+
+      expect(sleepStub.withArgs(5000).callCount).to.equal(10);
+      // 1 POST + 10 status GETs
+      expect(fetchStub.callCount).to.equal(11);
     });
   });
 });

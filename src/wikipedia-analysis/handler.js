@@ -14,6 +14,7 @@ import { isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 
 const LOG_PREFIX = '[Wikipedia]';
 
@@ -21,6 +22,7 @@ const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|
 
 const MULTI_PART_TLD_PREFIXES = new Set([
   'co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'mil',
+  'bank', 'firm', 'gen', 'ind', 'res', 'nic',
 ]);
 
 /**
@@ -292,7 +294,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config } = auditResult;
 
-    const message = {
+    const baseMessage = {
       type: 'guidance:wikipedia-analysis',
       siteId,
       url: site.getBaseURL(),
@@ -308,13 +310,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
+    let brand = null;
+    try {
+      brand = await resolveBrandForSite(context, site);
+    } catch (brandError) {
+      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+    }
+    const message = applyBrandScope(baseMessage, brand);
+
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const wikipediaUrlForLog = config.wikipediaUrl?.trim()
       ? config.wikipediaUrl
       : '(empty → auto-detect)';
+    const scopeForLog = brand
+      ? ` brandId=${brand.brandId}`
+      : '';
 
     log.info(
-      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
+      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}${scopeForLog}`,
     );
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);

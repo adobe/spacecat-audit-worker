@@ -455,6 +455,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: [],
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -468,6 +469,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: null,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -479,10 +481,115 @@ describe('Backlinks Tests', function () {
       context.audit.getAuditResult.returns({
         success: true,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('resolves existing NEW opportunity and marks suggestions OUTDATED when no broken backlinks found', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const mockSuggestions = [
+        { getId: () => 'suggestion-1', getStatus: () => 'NEW' },
+        { getId: () => 'suggestion-2', getStatus: () => 'PENDING_VALIDATION' },
+      ];
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves(mockSuggestions),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(mockOpportunity.setStatus).to.have.been.calledOnce;
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+      expect(mockOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should not call bulkUpdateStatus when all suggestions are in preserved states', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({ success: true, brokenBacklinks: [] });
+
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        // null covers the (suggestions || []) fallback branch
+        getSuggestions: sinon.stub().resolves(null),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      await generateSuggestionData(context);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({ success: true, brokenBacklinks: [] });
+
+      const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+      const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+      const fixedSuggestion = { getId: () => 's-fixed', getStatus: () => 'FIXED' };
+      const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
+      const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
+
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([
+          newSuggestion, pendingSuggestion, fixedSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      await generateSuggestionData(context);
+
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
+    });
+
+    it('logs error and still returns complete when opportunity lookup fails on no-backlinks path', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to resolve broken-backlinks opportunity.*DB error/),
+      );
     });
 
     it('processes suggestions for broken backlinks and send message to mystique', async () => {
@@ -1360,6 +1467,48 @@ describe('Backlinks Tests', function () {
       await mockedGenerateSuggestionData(context);
 
       expect(context.log.info).to.have.been.calledWith(sinon.match(/maxResults=5/));
+    });
+
+    it('should forward to Mystique with empty brokenLinks when all links resolved via Bright Data', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Bright Data successfully resolves the suggestion
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested Page' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-bd-all',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const result = await mockedGenerateSuggestionData(context);
+
+      expect(result.status).to.equal('complete');
+      // Must still forward to Mystique so the bridge can enrich the BrightData suggestions
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.brokenLinks).to.deep.equal([]);
+      // Log must say Forwarding, not Skipping
+      expect(context.log.info).to.have.been.calledWith(
+        'All broken links resolved via Bright Data. Forwarding to Mystique.',
+      );
     });
   });
 

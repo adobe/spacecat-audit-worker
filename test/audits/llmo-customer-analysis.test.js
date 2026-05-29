@@ -106,9 +106,19 @@ describe('LLMO Customer Analysis Handler', () => {
     let mockRUMAPIClient;
     let mockGetRUMUrl;
     let mockFetch;
+    let mockIsBrandalfEnabled;
+    let mockResolveOrganizationIdForSite;
+    let triggerBrandDetectionStub;
+    let drsCreateFromStub;
 
     beforeEach(async () => {
       sqs.sendMessage.resetHistory();
+
+      triggerBrandDetectionStub = sandbox.stub().resolves();
+      drsCreateFromStub = sandbox.stub().returns({
+        isConfigured: sandbox.stub().returns(true),
+        triggerBrandDetection: triggerBrandDetectionStub,
+      });
 
       mockLlmoConfig = {
         readConfig: sandbox.stub(),
@@ -144,6 +154,13 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
+      mockIsBrandalfEnabled = sandbox.stub().resolves(false);
+      mockResolveOrganizationIdForSite = sandbox.stub().callsFake(
+        async ({ site: helperSite, fallbackOrganizationId }) => (
+          helperSite?.getOrganizationId?.() || fallbackOrganizationId || null
+        ),
+      );
+
       context.env.DRS_API_URL = 'https://drs.example.com/api';
       context.env.DRS_API_KEY = 'test-drs-key';
 
@@ -157,6 +174,10 @@ describe('LLMO Customer Analysis Handler', () => {
           ],
           llmoConfig: mockLlmoConfig,
           tracingFetch: mockFetch,
+        },
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled: mockIsBrandalfEnabled,
+          resolveOrganizationIdForSite: mockResolveOrganizationIdForSite,
         },
         '@adobe/spacecat-shared-rum-api-client': {
           default: mockRUMAPIClientClass,
@@ -192,6 +213,9 @@ describe('LLMO Customer Analysis Handler', () => {
               getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
             }),
           },
+        },
+        '@adobe/spacecat-shared-drs-client': {
+          default: { createFrom: drsCreateFromStub },
         },
       });
     });
@@ -249,7 +273,14 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.callCount(1);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
+        sinon.match({
+          type: 'cdn-logs-report',
+          auditContext: {
+            weekOffset: -1,
+            categoriesUpdated: true,
+            refreshAgenticDailyExport: true,
+          },
+        }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
@@ -296,8 +327,10 @@ describe('LLMO Customer Analysis Handler', () => {
         'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
       );
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(false);
-      expect(result.auditResult.triggeredSteps || []).to.not.include('cdn-logs-report');
+      // drs-brand-detection fires (categories = hasBrandPresenceChanges), so configChangesDetected is true
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.not.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
@@ -474,7 +507,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should detect brand presence changes when entities change', async () => {
+    it('should trigger drs-brand-detection when entities change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -508,14 +541,14 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
-      );
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
-    it('should detect brand presence changes when brands change', async () => {
+    it('should trigger geo-brand-presence-trigger-refresh when brands change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -548,12 +581,15 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh', siteId: 'site-123' }),
       );
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
     it('should enable audits and trigger referral imports when no config version provided', async () => {
@@ -609,17 +645,32 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(1);
+      // cdn-logs-report + geo-brand-presence-trigger-refresh
+      expect(sqs.sendMessage).to.have.callCount(2);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
+        sinon.match({
+          type: 'cdn-logs-report',
+          auditContext: {
+            weekOffset: -1,
+            categoriesUpdated: true,
+            refreshAgenticDailyExport: true,
+          },
+        }),
       );
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+      );
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
-    it('should detect brand presence changes when topics change', async () => {
+    it('should trigger drs-brand-detection when topics change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -653,14 +704,14 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
-      );
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
-    it('should detect brand presence changes when competitors change', async () => {
+    it('should trigger geo-brand-presence-trigger-refresh when competitors change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -693,12 +744,15 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh', siteId: 'site-123' }),
       );
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
     it('should trigger cdn-logs-report when only categories change', async () => {
@@ -933,7 +987,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
-    it('should log brand presence changes when only entities change without other triggered steps', async () => {
+    it('should trigger drs-brand-detection when only entities change without other triggered steps', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -966,15 +1020,14 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
-      );
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
-      // Only brand presence changes, no CDN or other triggered steps
-      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
-    it('should trigger cdn-logs-report alongside brand presence log when categories change with names', async () => {
+    it('should trigger cdn-logs-report alongside drs-brand-detection when categories change with names', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -1242,6 +1295,7 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-error-pages',
         'summarization',
         'llmo-referral-traffic',
+        'llmo-referral-traffic-daily',
         'readability',
         'wikipedia-analysis',
       ];
@@ -1559,35 +1613,28 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should include brand_id in BP schedule when brandalf is enabled and brand is found', async () => {
       const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
 
-      // Enable brandalf check via SpaceCat API
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
-
-      // Reset mockFetch and set up call ordering:
-      // 1st call: feature-flags API (brandalf enabled)
-      // 2nd call: DRS schedule creation
-      // 3rd call: DRS schedule trigger
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      // Chain the eq calls and resolve with matching brand
+      // Q1 direct match: site_id = 'site-123' → brand-uuid-1 returned immediately
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-uuid-1', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1613,11 +1660,8 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify feature-flags was called
-      expect(mockFetch).to.have.been.calledWith(
-        sinon.match(/\/organizations\/org-123\/feature-flags/),
-        sinon.match.any,
-      );
+      expect(mockIsBrandalfEnabled).to.have.been.calledWith('org-123', context.env, log);
+      expect(mockFetch).to.have.callCount(2);
 
       // Verify schedule was created with brand_id
       const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
@@ -1630,39 +1674,54 @@ describe('LLMO Customer Analysis Handler', () => {
     it('should fall back to imsOrgId when getOrganizationId returns null', async () => {
       const auditContext = { imsOrgId: 'fallback-org' };
       site.getOrganizationId = sandbox.stub().returns(null);
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Q1 direct: no direct site_id match; Q2 brand_sites join returns brand-fb
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-fb', site_id: null, brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
 
+      expect(mockResolveOrganizationIdForSite).to.have.been.calledWithMatch(
+        sinon.match({ fallbackOrganizationId: 'fallback-org' }),
+      );
       const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.equal('brand-fb');
@@ -1671,36 +1730,47 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should handle null brands and missing brand_sites when brandalf is enabled', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      // Return brands without brand_sites property
-      const brandsQuery = {
+      // Both queries return empty: no direct match, no brand_sites match
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-no-sites', site_id: null }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
@@ -1712,35 +1782,47 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should create BP schedule without brand_id when no brand matches site', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Server-side filtering: 'other-site' doesn't match siteId 'site-123' — both queries empty
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-other', site_id: 'other-site', brand_sites: [{ site_id: 'other-site' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis(
@@ -1754,39 +1836,33 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(createCall).to.exist;
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.be.undefined;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
     it('should prefer baseSiteId match over brand_sites match', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      // Two brands: one with baseSiteId (site_id) match, one with only brand_sites match.
-      // The baseSiteId match should be preferred (it has the correct base URL).
+      // Q1 direct: filters by site_id='site-123' server-side → only brand-base returned (Q2 never called)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [
-                { id: 'brand-sub', site_id: null, brand_sites: [{ site_id: 'site-123' }] },
-                { id: 'brand-base', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] },
-              ],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-base' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1816,29 +1892,29 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should create BP schedule without brand_id when brand lookup fails', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
 
-      // Mock postgrestClient that throws
+      // Mock postgrestClient that rejects on limit() (matching the order/limit terminal pattern)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().rejects(new Error('DB error')),
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().rejects(new Error('DB error')),
+                }),
+              }),
+            }),
           }),
         }),
       };
@@ -1872,21 +1948,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should skip brand resolution when brandalf is not enabled', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(false);
 
       mockFetch.reset();
-      // Feature-flags returns no brandalf flag
       mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: async () => [],
-      });
-      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1916,23 +1985,19 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(body.spacecat_org_id).to.be.undefined;
     });
 
-    it('should skip brand resolution when feature-flags API fails', async () => {
+    it('should skip brand resolution when brandalf helper warns and returns false', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.callsFake(async () => {
+        log.warn('Failed to fetch feature flags for org org-123: 500');
+        return false;
+      });
 
       mockFetch.reset();
-      // Feature-flags API returns error
       mockFetch.onFirstCall().resolves({
-        ok: false,
-        status: 500,
-      });
-      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1963,20 +2028,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should warn when postgrestClient is not available for brandalf-enabled org', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1999,23 +2058,22 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(log.warn).to.have.been.calledWith(sinon.match(/postgrestClient not available/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
-    it('should handle network error when checking brandalf flag', async () => {
+    it('should continue when brandalf helper warns on error', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.callsFake(async () => {
+        log.warn('Error checking brandalf flag for org org-123: ECONNREFUSED');
+        return false;
+      });
 
       mockFetch.reset();
-      // Feature-flags fetch throws network error
-      mockFetch.onFirstCall().rejects(new Error('ECONNREFUSED'));
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -2093,6 +2151,84 @@ describe('LLMO Customer Analysis Handler', () => {
       const scheduleBody = JSON.parse(scheduleCall.args[1].body);
       expect(scheduleBody.brand_id).to.be.undefined;
       expect(scheduleBody.spacecat_org_id).to.be.undefined;
+    });
+
+    it('should warn and skip brand detection when DRS is not configured and entities change', async () => {
+      const auditContext = { configVersion: 'v2', previousConfigVersion: 'v1' };
+
+      drsCreateFromStub.returns({
+        isConfigured: sandbox.stub().returns(false),
+        triggerBrandDetection: triggerBrandDetectionStub,
+      });
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: { 'uuid-1': { type: 'product', name: 'Product A' } },
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith('DRS not configured; skipping brand detection trigger');
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should not send brand presence SQS when no previousConfigVersion and only brands change', async () => {
+      const auditContext = { configVersion: 'v2' }; // no previousConfigVersion
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: ['brand1'] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // needsBrandPresenceRefresh requires previousConfigVersion, so no geo-brand-presence-trigger-refresh
+      const refreshCall = sqs.sendMessage.getCalls().find(
+        (c) => c.args[1]?.type === 'geo-brand-presence-trigger-refresh',
+      );
+      expect(refreshCall).to.not.exist;
+      expect(result.auditResult.status).to.equal('completed');
     });
 
   });

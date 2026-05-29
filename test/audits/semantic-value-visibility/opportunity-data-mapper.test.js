@@ -28,9 +28,9 @@ describe('Semantic Value Visibility Opportunity Data Mapper', () => {
       const result = createOpportunityData({ guidance: krisshopFixture.guidance });
 
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.title).to.equal('Improve image semantic visibility for LLMs');
-      expect(result.description).to.include('Marketing images on this site contain text');
-      expect(result.tags).to.deep.equal(['LLMO', 'SEO', 'Images']);
+      expect(result.title).to.equal('Expose in-image text to AI search and LLMs');
+      expect(result.description).to.include('readable to AI search engines');
+      expect(result.tags).to.deep.equal(['isElmo', 'content', 'edgeOptimize']);
     });
 
     it('should include correct data sources', () => {
@@ -38,6 +38,13 @@ describe('Semantic Value Visibility Opportunity Data Mapper', () => {
 
       expect(result.data.dataSources).to.be.an('array').with.lengthOf(1);
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
+    });
+
+    it('should include additionalMetrics subtype discriminator', () => {
+      const result = createOpportunityData({ guidance: krisshopFixture.guidance });
+
+      expect(result.data.additionalMetrics).to.be.an('array').with.lengthOf(1);
+      expect(result.data.additionalMetrics[0]).to.deep.equal({ key: 'subtype', value: 'semantic-value-visibility' });
     });
 
     it('should include guidance with insight, rationale, recommendation', () => {

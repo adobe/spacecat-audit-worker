@@ -64,6 +64,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getOrganizationId: sinon.stub().returns('org-1'),
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
@@ -88,6 +89,11 @@ describe('Commerce Product Enrichments Handler', () => {
     dataAccess = {
       SiteTopPage: {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+      },
+      Organization: {
+        findById: sinon.stub().resolves({
+          getImsOrgId: sinon.stub().returns('ims-org-1@AdobeOrg'),
+        }),
       },
     };
   });
@@ -257,6 +263,9 @@ describe('Commerce Product Enrichments Handler', () => {
         waitTimeoutForMetaTags: 5000,
         screenshotTypes: [],
         expandShadowDOM: false,
+      },
+      customHeaders: {
+        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot',
       },
       allowCache: false,
       maxScrapeAge: 0,
@@ -508,6 +517,9 @@ describe('Commerce Product Enrichments Handler', () => {
         screenshotTypes: [],
         expandShadowDOM: false,
       },
+      customHeaders: {
+        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot',
+      },
       allowCache: false,
       maxScrapeAge: 0,
     });
@@ -556,6 +568,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -576,6 +589,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths: new Map(),
     };
 
@@ -596,6 +610,7 @@ describe('Commerce Product Enrichments Handler', () => {
       finalUrl: 'https://example.com',
       log,
       env: {},
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -632,6 +647,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -664,6 +680,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -714,6 +731,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -755,6 +773,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -811,6 +830,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -876,6 +896,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -942,6 +963,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -997,6 +1019,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1045,6 +1068,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1110,6 +1134,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1168,6 +1193,7 @@ describe('Commerce Product Enrichments Handler', () => {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1233,6 +1259,7 @@ describe('Commerce Product Enrichments Handler', () => {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         // CATALOG_ENRICHMENT_ENDPOINT not set
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1295,6 +1322,7 @@ describe('Commerce Product Enrichments Handler', () => {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
       },
+      dataAccess,
       scrapeResultPaths,
     };
 
@@ -1366,6 +1394,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1415,6 +1444,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1457,6 +1487,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1499,6 +1530,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1537,6 +1569,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1575,6 +1608,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1617,6 +1651,7 @@ describe('Commerce Product Enrichments Handler', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths,
     });
 
@@ -1631,9 +1666,18 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
   let fetchStub;
   let mockImsClient;
   let runAuditWithIms;
+  let dataAccess;
 
   beforeEach(async () => {
     fetchStub = sinon.stub(global, 'fetch');
+
+    dataAccess = {
+      Organization: {
+        findById: sinon.stub().resolves({
+          getImsOrgId: sinon.stub().returns('ims-org-1@AdobeOrg'),
+        }),
+      },
+    };
 
     mockImsClient = {
       getServiceAccessToken: sinon.stub().resolves({
@@ -1664,6 +1708,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getOrganizationId: sinon.stub().returns('org-1'),
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
@@ -1746,6 +1791,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_SECRET: 'test-client-secret',
 
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -1811,6 +1857,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_SECRET: 'test-client-secret',
 
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -1824,11 +1871,10 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     const payload = JSON.parse(enrichmentCall.args[1].body);
     expect(payload).to.deep.include({
       siteId: 'site-1',
-      environmentId: 'env-123',
-      websiteCode: 'website-code',
-      storeCode: 'store-code',
-      storeViewCode: 'view-code',
+      imsOrgId: 'ims-org-1@AdobeOrg',
+      storeViewUrl: 'https://example.com',
     });
+    expect(payload).to.not.have.any.keys('environmentId', 'websiteCode', 'storeCode', 'storeViewCode');
     expect(payload.scrapes).to.have.lengthOf(1);
     expect(payload.scrapes[0]).to.deep.equal({
       sku: 'TEST-SKU-123',
@@ -1841,24 +1887,8 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     }]);
   });
 
-  it('attaches preFetch to product scrape when product URL matches categoryPages config', async () => {
-    const preFetchRules = [
-      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
-    ];
-
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            { url: 'https://example.com/sactionals', categoryId: '1032', preFetch: preFetchRules },
-          ],
-        },
-      }),
-    });
+  it('includes null organizationId in payload when Organization.findById returns no record', async () => {
+    dataAccess.Organization.findById.resolves(null);
 
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
       ok: true,
@@ -1880,9 +1910,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
             scrapeResult: {
-              structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/sactionals/build' }] },
-              },
+              structuredData: { jsonld: { Product: [{ sku: 'SKU-1' }] } },
             },
           })),
         },
@@ -1891,7 +1919,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     const context = {
       site,
-      audit: { getId: () => 'audit-prefetch-1' },
+      audit: { getId: () => 'audit-org-null' },
       finalUrl: 'https://example.com',
       log,
       s3Client,
@@ -1903,6 +1931,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_CODE: 'test-client-code',
         IMS_CLIENT_SECRET: 'test-client-secret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -1911,28 +1940,12 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     await runAuditWithIms(context);
 
     const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
     const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes).to.have.lengthOf(1);
-    expect(payload.scrapes[0].sku).to.equal('TEST-SKU-123');
-    expect(payload.scrapes[0].preFetch).to.deep.equal(preFetchRules);
+    expect(payload).to.have.property('imsOrgId', null);
   });
 
-  it('does not attach preFetch when product URL does not match categoryPages config', async () => {
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            { url: 'https://example.com/sacs', categoryId: '1035', preFetch: [{ type: 'commerce-catalog-search', params: {} }] },
-          ],
-        },
-      }),
-    });
+  it('logs warning and sends null organizationId when Organization.findById throws', async () => {
+    dataAccess.Organization.findById.rejects(new Error('DB timeout'));
 
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
       ok: true,
@@ -1954,9 +1967,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
             scrapeResult: {
-              structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/snugg/build' }] },
-              },
+              structuredData: { jsonld: { Product: [{ sku: 'SKU-1' }] } },
             },
           })),
         },
@@ -1965,7 +1976,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     const context = {
       site,
-      audit: { getId: () => 'audit-prefetch-2' },
+      audit: { getId: () => 'audit-org-err' },
       finalUrl: 'https://example.com',
       log,
       s3Client,
@@ -1977,6 +1988,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_CODE: 'test-client-code',
         IMS_CLIENT_SECRET: 'test-client-secret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -1984,543 +1996,12 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     await runAuditWithIms(context);
 
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to get IMS org ID/));
     const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
     const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes[0]).to.deep.equal({
-      sku: 'TEST-SKU-123',
-      key: 'scrapes/site-1/product-1/scrape.json',
-    });
-    expect(payload.scrapes[0]).to.not.have.property('preFetch');
+    expect(payload).to.have.property('imsOrgId', null);
   });
 
-  it('attaches preFetch only to products whose URL matches categoryPages in mixed batch', async () => {
-    const preFetchRules = [
-      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
-    ];
-
-    site.getConfig.returns({
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            { url: 'https://example.com/sactionals', categoryId: '1032', preFetch: preFetchRules },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-789' }),
-    });
-
-    const s3Client = { send: sinon.stub() };
-
-    s3Client.send.onCall(0).resolves({
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify({
-          scrapeResult: {
-            structuredData: {
-              jsonld: { Product: [{ name: 'Product 1', sku: 'SKU-001', url: 'https://example.com/sactionals/build' }] },
-            },
-          },
-        })),
-      },
-    });
-
-    s3Client.send.onCall(1).resolves({
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify({
-          scrapeResult: {
-            structuredData: {
-              jsonld: { Product: [{ name: 'Product 2', sku: 'SKU-002', url: 'https://example.com/snugg/build' }] },
-            },
-          },
-        })),
-      },
-    });
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-prefetch-3' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-        IMS_HOST: 'ims-na1.adobelogin.com',
-        IMS_CLIENT_ID: 'test-client-id',
-        IMS_CLIENT_CODE: 'test-client-code',
-        IMS_CLIENT_SECRET: 'test-client-secret',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-        ['https://example.com/product-2', 'scrapes/site-1/product-2/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes).to.have.lengthOf(2);
-
-    const scrape1 = payload.scrapes.find((s) => s.sku === 'SKU-001');
-    const scrape2 = payload.scrapes.find((s) => s.sku === 'SKU-002');
-
-    expect(scrape1.preFetch).to.deep.equal(preFetchRules);
-    expect(scrape2).to.not.have.property('preFetch');
-  });
-
-  it('does not attach preFetch when categoryPages config is empty', async () => {
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted' }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: {
-              structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/product-1' }] },
-              },
-            },
-          })),
-        },
-      }),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-prefetch-4' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-        IMS_HOST: 'ims-na1.adobelogin.com',
-        IMS_CLIENT_ID: 'test-client-id',
-        IMS_CLIENT_CODE: 'test-client-code',
-        IMS_CLIENT_SECRET: 'test-client-secret',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes[0]).to.deep.equal({
-      sku: 'TEST-SKU-123',
-      key: 'scrapes/site-1/product-1/scrape.json',
-    });
-    expect(payload.scrapes[0]).to.not.have.property('preFetch');
-  });
-
-  it('includes category page scrapes in enrichment payload', async () => {
-    const categoryPreFetch = [
-      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals/bundles' }], pageSize: 10 } },
-    ];
-
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            {
-              url: 'https://example.com/sactionals',
-              categoryId: '1032',
-              preFetch: categoryPreFetch,
-            },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted' }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { structuredData: { jsonld: {} } },
-          })),
-        },
-      }),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-cat-1' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-        IMS_HOST: 'ims-na1.adobelogin.com',
-        IMS_CLIENT_ID: 'test-client-id',
-        IMS_CLIENT_CODE: 'test-client-code',
-        IMS_CLIENT_SECRET: 'test-client-secret',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/sactionals', 'scrapes/site-1/sactionals/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    const enrichmentCall = fetchStub.getCalls().find(
-      (call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment',
-    );
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes).to.have.lengthOf(1);
-    expect(payload.scrapes[0].sku).to.equal('1032');
-    expect(payload.scrapes[0].key).to.equal('scrapes/site-1/sactionals/scrape.json');
-    expect(payload.scrapes[0].preFetch).to.deep.equal(categoryPreFetch);
-  });
-
-  it('includes both product and category scrapes in enrichment payload', async () => {
-    const categoryPreFetch = [
-      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sacs/bundles' }], pageSize: 10 } },
-    ];
-
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            {
-              url: 'https://example.com/sacs',
-              categoryId: '1035',
-              preFetch: categoryPreFetch,
-            },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted' }),
-    });
-
-    const s3Client = {
-      send: sinon.stub()
-        .onFirstCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sinon.stub().resolves(JSON.stringify({
-              scrapeResult: {
-                structuredData: {
-                  jsonld: { Product: [{ name: 'Test', sku: 'PROD-1' }] },
-                },
-              },
-            })),
-          },
-        })
-        .onSecondCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sinon.stub().resolves(JSON.stringify({
-              scrapeResult: { structuredData: { jsonld: {} } },
-            })),
-          },
-        }),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-mixed-1' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-        IMS_HOST: 'ims-na1.adobelogin.com',
-        IMS_CLIENT_ID: 'test-client-id',
-        IMS_CLIENT_CODE: 'test-client-code',
-        IMS_CLIENT_SECRET: 'test-client-secret',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-        ['https://example.com/sacs', 'scrapes/site-1/sacs/scrape.json'],
-      ]),
-    };
-
-    const result = await runAuditWithIms(context);
-
-    const enrichmentCall = fetchStub.getCalls().find(
-      (call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment',
-    );
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes).to.have.lengthOf(2);
-    expect(payload.scrapes[0].sku).to.equal('PROD-1');
-    expect(payload.scrapes[1].sku).to.equal('1035');
-    expect(payload.scrapes[1].preFetch).to.deep.equal(categoryPreFetch);
-
-    expect(result.auditResult.productPages).to.equal(1);
-    expect(result.auditResult.categoryPages).to.equal(1);
-  });
-
-  it('skips category pages when no scrape result exists for URL', async () => {
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            {
-              url: 'https://example.com/missing-page',
-              categoryId: '9999',
-              preFetch: [{ type: 'commerce-catalog-search', params: {} }],
-            },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-no-scrape' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client: { send: sinon.stub() },
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/other', 'scrapes/site-1/other/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    expect(log.warn).to.have.been.calledWith(
-      sinon.match(/No scrape result found for category page/),
-    );
-  });
-
-  it('skips category pages with missing config fields', async () => {
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            { url: 'https://example.com/sactionals', categoryId: '1032' },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { structuredData: { jsonld: {} } },
-          })),
-        },
-      }),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-invalid-cat' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/sactionals', 'scrapes/site-1/sactionals/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    expect(log.warn).to.have.been.calledWith(
-      sinon.match(/Skipping invalid categoryPages entry/),
-    );
-  });
-
-  it('does not add category page URLs to excludedURLs', async () => {
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-          categoryPages: [
-            {
-              url: 'https://example.com/sactionals',
-              categoryId: '1032',
-              preFetch: [{ type: 'commerce-catalog-search', params: {} }],
-            },
-          ],
-        },
-      }),
-    });
-
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted' }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            scrapeResult: { structuredData: { jsonld: {} } },
-          })),
-        },
-      }),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-excl-1' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
-        IMS_HOST: 'ims-na1.adobelogin.com',
-        IMS_CLIENT_ID: 'test-client-id',
-        IMS_CLIENT_CODE: 'test-client-code',
-        IMS_CLIENT_SECRET: 'test-client-secret',
-      },
-      scrapeResultPaths: new Map([
-        ['https://example.com/sactionals', 'scrapes/site-1/sactionals/scrape.json'],
-        ['https://example.com/other-page', 'scrapes/site-1/other/scrape.json'],
-      ]),
-    };
-
-    await runAuditWithIms(context);
-
-    const updateCall = site.getConfig().updateExcludedURLs;
-    if (updateCall.called) {
-      const excludedUrls = updateCall.firstCall.args[1];
-      expect(excludedUrls).to.not.include('https://example.com/sactionals');
-      expect(excludedUrls).to.include('https://example.com/other-page');
-    }
-  });
 
   it('handles enrichment API failure gracefully', async () => {
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
@@ -2570,6 +2051,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_SECRET: 'test-client-secret',
 
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -2626,6 +2108,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_SECRET: 'test-client-secret',
 
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -2715,6 +2198,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_SECRET: 'test-client-secret',
 
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
         ['https://example.com/about', 'scrapes/site-1/about/scrape.json'],
@@ -2782,6 +2266,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         IMS_CLIENT_CODE: 'test-client-code',
         IMS_CLIENT_SECRET: 'test-client-secret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -2803,6 +2288,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
   let fetchStub;
   let mockImsClient;
   let runAuditWithIms;
+  let dataAccess;
 
   const commerceLlmoConfig = {
     'https://www.example.com/ro': {
@@ -2823,6 +2309,14 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
 
   beforeEach(async () => {
     fetchStub = sinon.stub(global, 'fetch');
+
+    dataAccess = {
+      Organization: {
+        findById: sinon.stub().resolves({
+          getImsOrgId: sinon.stub().returns('ims-org-1@AdobeOrg'),
+        }),
+      },
+    };
 
     mockImsClient = {
       getServiceAccessToken: sinon.stub().resolves({
@@ -2853,6 +2347,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getOrganizationId: sinon.stub().returns('org-1'),
       getBaseURL: sinon.stub().returns('https://www.example.com'),
       getConfig: sinon.stub().returns({
         state: { commerceLlmoConfig },
@@ -2934,6 +2429,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         IMS_CLIENT_CODE: 'ccode',
         IMS_CLIENT_SECRET: 'csecret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/ro/product-1', 'scrapes/site-1/ro-product-1/scrape.json'],
         ['https://www.example.com/en/product-2', 'scrapes/site-1/en-product-2/scrape.json'],
@@ -2950,18 +2446,16 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
 
     const payloads = enrichmentCalls.map((call) => JSON.parse(call.args[1].body));
 
-    const roPayload = payloads.find((p) => p.storeViewCode === 'view-ro');
-    const defaultPayload = payloads.find((p) => p.storeViewCode === 'view-default');
+    const roPayload = payloads.find((p) => p.storeViewUrl === 'https://www.example.com/ro');
+    const defaultPayload = payloads.find((p) => p.storeViewUrl === 'https://www.example.com');
 
     expect(roPayload).to.exist;
-    expect(roPayload.environmentId).to.equal('env-ro');
-    expect(roPayload.storeViewUrl).to.equal('https://www.example.com/ro');
+    expect(roPayload).to.not.have.any.keys('environmentId', 'websiteCode', 'storeCode', 'storeViewCode');
     expect(roPayload.scrapes).to.have.lengthOf(1);
     expect(roPayload.scrapes[0].sku).to.equal('SKU-RO');
 
     expect(defaultPayload).to.exist;
-    expect(defaultPayload.environmentId).to.equal('env-default');
-    expect(defaultPayload.storeViewUrl).to.equal('https://www.example.com');
+    expect(defaultPayload).to.not.have.any.keys('environmentId', 'websiteCode', 'storeCode', 'storeViewCode');
     expect(defaultPayload.scrapes).to.have.lengthOf(1);
     expect(defaultPayload.scrapes[0].sku).to.equal('SKU-DEFAULT');
 
@@ -3016,6 +2510,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         IMS_CLIENT_CODE: 'ccode',
         IMS_CLIENT_SECRET: 'csecret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/fr/product-1', 'scrapes/site-1/fr-product-1/scrape.json'],
       ]),
@@ -3031,7 +2526,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
     expect(result.auditResult.enrichmentResponse).to.deep.equal([]);
   });
 
-  it('groups products from same storeViewCode together in one enrichment call', async () => {
+  it('groups products from same storeViewUrl together in one enrichment call', async () => {
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
       ok: false,
       status: 404,
@@ -3090,6 +2585,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         IMS_CLIENT_CODE: 'ccode',
         IMS_CLIENT_SECRET: 'csecret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/ro/product-a', 'scrapes/site-1/ro-a/scrape.json'],
         ['https://www.example.com/ro/product-b', 'scrapes/site-1/ro-b/scrape.json'],
@@ -3105,7 +2601,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
     expect(enrichmentCalls).to.have.lengthOf(1);
 
     const payload = JSON.parse(enrichmentCalls[0].args[1].body);
-    expect(payload.storeViewCode).to.equal('view-ro');
+    expect(payload.storeViewUrl).to.equal('https://www.example.com/ro');
     expect(payload.scrapes).to.have.lengthOf(2);
   });
 
@@ -3171,6 +2667,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         IMS_CLIENT_CODE: 'ccode',
         IMS_CLIENT_SECRET: 'csecret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/product-1', 'scrapes/site-1/p1/scrape.json'],
         ['https://www.example.com/product-2', 'scrapes/site-1/p2/scrape.json'],
@@ -3187,7 +2684,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
 
     const payload = JSON.parse(enrichmentCalls[0].args[1].body);
     expect(payload.scrapes).to.have.lengthOf(2);
-    expect(payload.storeViewCode).to.equal('view-code');
+    expect(payload.storeViewUrl).to.equal('https://www.example.com');
   });
 
   it('preserves commerceLlmoConfig when saving excludedURLs', async () => {
@@ -3219,6 +2716,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/about', 'scrapes/site-1/about/scrape.json'],
       ]),
@@ -3258,6 +2756,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
       log,
       s3Client,
       env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/about', 'scrapes/site-1/about/scrape.json'],
       ]),
@@ -3278,6 +2777,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         'Magento-Website-Code': 'web-fallback',
         'x-api-key': 'key-fallback',
       },
+      storeViewUrl: 'https://www.example.com',
     });
 
     const mockedHandlerWithConfig = await esmock(
@@ -3337,6 +2837,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
         IMS_CLIENT_CODE: 'ccode',
         IMS_CLIENT_SECRET: 'csecret',
       },
+      dataAccess,
       scrapeResultPaths: new Map([
         ['https://www.example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
       ]),
@@ -3354,8 +2855,8 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
     expect(enrichmentCalls).to.have.lengthOf(1);
 
     const payload = JSON.parse(enrichmentCalls[0].args[1].body);
-    expect(payload.environmentId).to.equal('env-fallback');
-    expect(payload.storeViewCode).to.equal('view-fallback');
+    expect(payload).to.not.have.any.keys('environmentId', 'storeViewCode');
+    expect(payload.storeViewUrl).to.equal('https://www.example.com');
     expect(payload.scrapes).to.have.lengthOf(1);
     expect(payload.scrapes[0].sku).to.equal('SKU-FB');
 
@@ -3391,6 +2892,7 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getOrganizationId: sinon.stub().returns('org-1'),
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),

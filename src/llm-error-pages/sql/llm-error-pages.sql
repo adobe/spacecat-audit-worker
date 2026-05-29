@@ -11,6 +11,7 @@ WITH classified_data AS (
     {{pageCategoryClassification}} as category
   FROM {{databaseName}}.{{tableName}}
   {{whereClause}}
+  {{excludedUrlSuffixesFilter}}
 ),
 aggregated_data AS (
   SELECT 

@@ -78,9 +78,13 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(headOptions.headers['User-Agent']).to.match(/Spacecat/);
   });
 
-  // ── 404 / 410 / 5xx — definitively broken ─────────────────────────────────
+  // ── 404 / 410 / 5xx — broken only when GET confirms ───────────────────────
+  // SITES-43720: HEAD is a fast-path optimization, GET is the source of truth.
+  // Real servers (misconfigured Apache origins, SSO endpoints, etc.) commonly
+  // return 4xx/5xx to HEAD on routes that respond 200 to GET, so we always
+  // GET-confirm before reporting a link as broken.
 
-  it('flags a 404 external link as broken without a GET retry', async () => {
+  it('flags a 404 external link as broken when both HEAD and GET return 404', async () => {
     fetchStub.resolves(makeResponse(404));
 
     const result = await runLinksChecks(
@@ -91,10 +95,27 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenExternalLinks[0].status).to.equal(404);
-    expect(fetchStub.callCount).to.equal(1); // HEAD only, no GET retry
+    expect(fetchStub.callCount).to.equal(2); // HEAD then GET-confirm
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
   });
 
-  it('flags a 410 external link as broken', async () => {
+  it('does NOT flag as broken when HEAD returns 404 but GET returns 200 (sparkshop pattern)', async () => {
+    fetchStub.onFirstCall().resolves(makeResponse(404)); // HEAD → 404 (misconfigured origin)
+    fetchStub.onSecondCall().resolves(makeResponse(200)); // GET → 200
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://www.sparkshop.com/">link</a>'),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+  });
+
+  it('flags a 410 external link as broken when both HEAD and GET return 410', async () => {
     fetchStub.resolves(makeResponse(410));
 
     const result = await runLinksChecks(
@@ -105,9 +126,28 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenExternalLinks[0].status).to.equal(410);
+    expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
   });
 
-  it('flags a 500 external link as broken', async () => {
+  it('does NOT flag as broken when HEAD returns 500 but GET returns 200', async () => {
+    fetchStub.onFirstCall().resolves(makeResponse(500));
+    fetchStub.onSecondCall().resolves(makeResponse(200));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://flaky.com/page">link</a>'),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+  });
+
+  it('flags a 500 external link as broken when both HEAD and GET return 500', async () => {
     fetchStub.resolves(makeResponse(500));
 
     const result = await runLinksChecks(
@@ -118,6 +158,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenExternalLinks[0].status).to.equal(500);
+    expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
+  });
+
+  // ── Range header — only on the GET retry, never on HEAD ────────────────────
+
+  it('sends Range: bytes=0-0 only on the GET retry, not on HEAD', async () => {
+    fetchStub.onFirstCall().resolves(makeResponse(404)); // HEAD
+    fetchStub.onSecondCall().resolves(makeResponse(200)); // GET (sparkshop pattern)
+
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      context,
+    );
+
+    expect(fetchStub.firstCall.args[1].headers.Range).to.be.undefined;
+    expect(fetchStub.secondCall.args[1].headers.Range).to.equal('bytes=0-0');
   });
 
   // ── 405 — Method Not Allowed: HEAD unsupported, retry GET ─────────────────
@@ -242,7 +301,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
-  it('returns null (not broken) when both HEAD and GET throw network errors', async () => {
+  it('flags as broken (status 0) when both HEAD and GET throw network errors', async () => {
     fetchStub.onFirstCall().rejects(new Error('network error'));
     fetchStub.onSecondCall().rejects(new Error('still failing'));
 
@@ -252,8 +311,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
       context,
     );
 
-    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
-    expect(context.log.error).to.have.been.called;
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
+    expect(context.log.error).to.not.have.been.called;
+  });
+
+  it('flags internal link as broken (status 0) when both HEAD and GET throw network errors', async () => {
+    fetchStub.onFirstCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+    fetchStub.onSecondCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${pageUrl}/unreachable">internal broken</a>`),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
   });
 
   // ── Broken internal links ─────────────────────────────────────────────────
@@ -341,6 +417,39 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
   // ── Invalid hrefs are silently skipped ────────────────────────────────────
 
+  it('does not flag mailto: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="mailto:someone@example.com">email</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag tel: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="tel:+18005551212">call us</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag javascript: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="javascript:void(0)">click</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
   it('silently skips hrefs that cannot be parsed as URLs', async () => {
     fetchStub.resolves(makeResponse(200));
 
@@ -375,9 +484,14 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
-  // ── Header/footer links are skipped ───────────────────────────────────────
+  // ── Chrome (header/footer) links are checked, not skipped ─────────────────
+  // Preflight audits a single page and is expected to give full coverage of that
+  // page's links, including its header and footer. The bulk-audit dedup rationale
+  // that motivated the original chrome-skip does not apply here. See SITES-43720.
 
-  it('skips links inside header and footer elements', async () => {
+  it('checks links inside header and footer elements', async () => {
+    // 404 on both HEAD and GET → both links flagged as broken.
+    // 2 links × (HEAD + GET-confirm) = 4 fetch calls.
     fetchStub.resolves(makeResponse(404));
 
     const result = await runLinksChecks(
@@ -389,7 +503,205 @@ describe('preflight/links-checks - runLinksChecks', () => {
       context,
     );
 
-    expect(fetchStub.callCount).to.equal(0);
-    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(4);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(2);
+  });
+
+  it('checks links inside ARIA banner and contentinfo landmarks', async () => {
+    fetchStub.resolves(makeResponse(404));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`
+        <div role="banner"><a href="https://other.com/nav">nav</a></div>
+        <div role="contentinfo"><a href="https://other.com/footer">footer</a></div>
+      `),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(4);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(2);
+  });
+
+  it('checks links inside AEM experience-fragment header/footer wrappers', async () => {
+    fetchStub.resolves(makeResponse(404));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`
+        <div class="cmp-experiencefragment cmp-experiencefragment--header">
+          <div class="header">
+            <a href="https://outlook.example.com/owa/">email</a>
+          </div>
+        </div>
+        <div class="cmp-experiencefragment cmp-experiencefragment--footer">
+          <div class="footer">
+            <a href="https://x.com/example">social</a>
+          </div>
+        </div>
+        <main><a href="https://other.com/article">content</a></main>
+      `),
+      context,
+    );
+
+    // All three links checked × (HEAD + GET-confirm) = 6 fetch calls.
+    expect(fetchStub.callCount).to.equal(6);
+    const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+    expect(fetchedUrls).to.deep.equal([
+      'https://other.com/article',
+      'https://outlook.example.com/owa/',
+      'https://x.com/example',
+    ]);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(3);
+  });
+
+  // ── excludedElementClasses ─────────────────────────────────────────────────
+
+  describe('excludedElementClasses', () => {
+    it('skips anchors inside an element with an excluded class', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="cmp-feature-apps">
+          <a href="https://corp-only.example.com/a">intranet a</a>
+          <a href="https://corp-only.example.com/b">intranet b</a>
+        </div>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      const result = await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['cmp-feature-apps'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo)
+        .to.equal('https://public.example.com/article');
+    });
+
+    it('skips anchors nested deep under an excluded ancestor', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <section class="no-audit">
+          <div><ul><li><a href="https://deep.example.com/x">deep</a></li></ul></div>
+        </section>
+        <a href="https://public.example.com/y">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['no-audit'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.not.include('https://deep.example.com/x');
+      expect(fetchedUrls).to.include('https://public.example.com/y');
+    });
+
+    it('handles nested excluded wrappers safely (deepest-first removal)', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      // Outer + inner both match. Inner is removed first; outer removal must not throw.
+      const html = `
+        <div class="excluded">
+          <div class="excluded">
+            <a href="https://inner.example.com/a">inner</a>
+          </div>
+          <a href="https://outer.example.com/b">outer</a>
+        </div>
+        <a href="https://keep.example.com/c">keep</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['excluded'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.deep.equal(['https://keep.example.com/c', 'https://keep.example.com/c']);
+    });
+
+    it('matches a token among multi-class elements', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="container  cmp-feature-apps  bg-light">
+          <a href="https://skip.example.com/a">skip</a>
+        </div>
+        <a href="https://keep.example.com/b">keep</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['cmp-feature-apps'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.not.include('https://skip.example.com/a');
+      expect(fetchedUrls).to.include('https://keep.example.com/b');
+    });
+
+    it('is a no-op when no classes are configured', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="cmp-feature-apps"><a href="https://a.example.com/x">a</a></div>
+        <a href="https://b.example.com/y">b</a>
+      `;
+
+      // No excludedElementClasses option at all
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      const fetchedUrls1 = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls1).to.deep.equal(['https://a.example.com/x', 'https://b.example.com/y']);
+
+      fetchStub.resetHistory();
+
+      // Explicit empty array
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: [] },
+      );
+      const fetchedUrls2 = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls2).to.deep.equal(['https://a.example.com/x', 'https://b.example.com/y']);
+    });
+
+    it('ignores elements whose class attribute is empty or whitespace', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      // Both forms are valid HTML. The defensive `if (!classAttr)` branch covers
+      // the empty-string case; the no-match branch covers whitespace-only.
+      const html = `
+        <div class=""><a href="https://a.example.com/x">empty-class</a></div>
+        <div class=" "><a href="https://b.example.com/y">whitespace-class</a></div>
+        <a href="https://c.example.com/z">plain</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['anything'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls).to.deep.equal([
+        'https://a.example.com/x',
+        'https://b.example.com/y',
+        'https://c.example.com/z',
+      ]);
+    });
   });
 });

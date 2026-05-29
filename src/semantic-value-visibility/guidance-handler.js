@@ -14,7 +14,15 @@ import { ok, notFound, badRequest } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { OPPORTUNITY_TYPE } from './constants.js';
+import { AUDIT_TYPE, OPPORTUNITY_TYPE } from './constants.js';
+
+// Matches SVV opportunities by subtype discriminator, regardless of which bucket type they carry.
+// Needed because OPPORTUNITY_TYPE ('generic-autofix-edge') is shared across multiple audits.
+const isSvvOpportunity = (oppty) => {
+  const metrics = oppty.getData?.()?.additionalMetrics;
+  const isSvvSubtype = (m) => m.key === 'subtype' && m.value === AUDIT_TYPE;
+  return Array.isArray(metrics) && metrics.some(isSvvSubtype);
+};
 
 /**
  * Guidance handler for semantic value visibility.
@@ -68,7 +76,9 @@ export default async function handler(message, context) {
     // Check if there's an existing opportunity to clean up
     const existing = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     const staleOpportunity = existing.find(
-      (oppty) => oppty.getType() === OPPORTUNITY_TYPE,
+      // Match new (generic-autofix-edge + subtype) and legacy (semantic-value-visibility) rows
+      (oppty) => oppty.getType() === AUDIT_TYPE
+        || (oppty.getType() === OPPORTUNITY_TYPE && isSvvOpportunity(oppty)),
     );
 
     if (staleOpportunity) {
@@ -91,6 +101,7 @@ export default async function handler(message, context) {
     createOpportunityData,
     OPPORTUNITY_TYPE,
     { guidance },
+    isSvvOpportunity,
   );
 
   if (!opportunity) {
@@ -107,7 +118,7 @@ export default async function handler(message, context) {
     buildKey: (suggestionData) => suggestionData.imageUrl,
     mapNewSuggestion: (suggestionData) => ({
       opportunityId: opportunity.getId(),
-      type: 'SUGGESTION_CODE',
+      type: 'CODE_CHANGE',
       rank: 0,
       data: suggestionData,
     }),

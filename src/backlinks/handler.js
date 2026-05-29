@@ -21,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
@@ -294,6 +294,14 @@ export const generateSuggestionData = async (context) => {
     || !Array.isArray(auditResult.brokenBacklinks)
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+
+    await resolveOpportunityIfNoIssues(
+      site.getId(),
+      Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+      dataAccess,
+      log,
+    );
+
     return {
       status: 'complete',
     };
@@ -527,12 +535,7 @@ export const generateSuggestionData = async (context) => {
 
   // Validate before sending to Mystique
   if (brokenLinksForMystique.length === 0) {
-    log.info('All broken links resolved via Bright Data. Skipping Mystique.');
-    opportunity.setLastAuditedAt(new Date().toISOString());
-    await opportunity.save();
-    return {
-      status: 'complete',
-    };
+    log.info('All broken links resolved via Bright Data. Forwarding to Mystique.');
   }
 
   if (alternativeUrls.length === 0) {

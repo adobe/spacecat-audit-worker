@@ -459,6 +459,14 @@ export async function importAhrefPaidStep(context) {
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Triggering ${IMPORT_TYPE_AHREF_PAID_PAGES} import`);
 
+  const siteConfig = site.getConfig();
+  const imports = siteConfig?.getImports() || [];
+
+  if (!isImportEnabled(IMPORT_TYPE_AHREF_PAID_PAGES, imports)) {
+    log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TYPE_AHREF_PAID_PAGES} import for site ${siteId}`);
+    await enableImport(site, IMPORT_TYPE_AHREF_PAID_PAGES, log);
+  }
+
   return {
     auditResult: {
       status: 'processing',
