@@ -55,6 +55,7 @@ describe('rum-config-refresh handler', () => {
     mockConfig = {
       getRumConfig: sandbox.stub().returns(undefined),
       updateRumConfig: sandbox.stub(),
+      getFetchConfig: sandbox.stub().returns(undefined),
     };
 
     mockSite = {
@@ -189,6 +190,43 @@ describe('rum-config-refresh handler', () => {
       await handler.default({ siteId: SITE_ID }, context);
 
       expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
+    });
+
+    it('tries overrideBaseURL first when fetchConfig.overrideBaseURL is set', async () => {
+      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
+      retrieveDomainkeyStub.resolves('domainkey-abc');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.override.com');
+      expect(retrieveDomainkeyStub).not.to.have.been.calledWith('www.example.com');
+    });
+
+    it('falls back to baseURL when overrideBaseURL domain key lookup fails', async () => {
+      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
+      retrieveDomainkeyStub
+        .withArgs('www.override.com').rejects(new Error('404'))
+        .withArgs('www.example.com').resolves('domainkey-abc');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.override.com');
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
+    });
+
+    it('sets hasDomainKey=false when all domain candidates fail', async () => {
+      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
+      retrieveDomainkeyStub.rejects(new Error('404'));
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
+      expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
     });
   });
 

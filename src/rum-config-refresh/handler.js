@@ -51,15 +51,32 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const domain = new URL(site.getBaseURL()).hostname;
+  const overrideBaseURL = site.getConfig().getFetchConfig()?.overrideBaseURL;
+  const domains = [...new Set([
+    overrideBaseURL && new URL(overrideBaseURL).hostname,
+    new URL(site.getBaseURL()).hostname,
+  ].filter(Boolean))];
+
   let hasDomainKey = false;
   let timeoutId;
   let timedOut = false;
 
+  const rumApiClient = RUMAPIClient.createFrom(context);
+
   try {
-    const rumApiClient = RUMAPIClient.createFrom(context);
     await Promise.race([
-      rumApiClient.retrieveDomainkey(domain),
+      (async () => {
+        for (const domain of domains) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await rumApiClient.retrieveDomainkey(domain);
+            hasDomainKey = true;
+            return;
+          } catch (e) {
+            log.warn(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
+          }
+        }
+      })(),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           timedOut = true;
@@ -67,13 +84,11 @@ export default async function rumConfigRefresh(message, context) {
         }, RUM_CHECK_TIMEOUT_MS);
       }),
     ]);
-    hasDomainKey = true;
   } catch (e) {
     if (timedOut) {
-      log.error(`[rum-config-refresh] RUM check timed out for ${domain}, skipping config update`);
+      log.error(`[rum-config-refresh] RUM check timed out for ${domains.join(', ')}, skipping config update`);
       return ok({ skipped: true, reason: 'timeout' });
     }
-    log.warn(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
   } finally {
     clearTimeout(timeoutId);
   }
