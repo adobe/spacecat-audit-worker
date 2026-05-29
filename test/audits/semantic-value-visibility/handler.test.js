@@ -313,6 +313,28 @@ describe('Semantic Value Visibility Handler', function () {
 
       await auditRunner(auditUrl, context, site);
     });
+
+    it('should warn and return empty array when SiteTopPage accessor is unavailable', async () => {
+      context.dataAccess.SiteTopPage = undefined;
+
+      getMergedAuditInputUrlsStub.callsFake(async ({ getTopPages }) => {
+        const pages = await getTopPages();
+        expect(pages).to.deep.equal([]);
+        return {
+          urls: [],
+          agenticUrls: [],
+          topPagesUrls: [],
+          includedURLs: [],
+          filteredCount: 0,
+        };
+      });
+
+      await auditRunner(auditUrl, context, site);
+
+      expect(logStub.warn).to.have.been.calledWith(
+        '[semantic-value-visibility] SiteTopPage accessor unavailable, falling back to agentic URLs only',
+      );
+    });
   });
 
   describe('sendToMystique', () => {

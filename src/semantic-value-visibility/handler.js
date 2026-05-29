@@ -52,7 +52,11 @@ export async function auditRunner(auditUrl, context, site) {
     auditType: AUDIT_TYPE,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
     getTopPages: async () => {
-      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+      if (!dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo) {
+        log.warn('[semantic-value-visibility] SiteTopPage accessor unavailable, falling back to agentic URLs only');
+        return [];
+      }
+      const topPages = await dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo(
         siteId,
         'seo',
         'global',
