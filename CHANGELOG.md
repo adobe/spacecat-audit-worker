@@ -1,3 +1,16 @@
+# [1.456.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.455.0...v1.456.0) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cited-analysis:** filter owned-domain URLs before DRS scrapping ([#2580](https://github.com/adobe/spacecat-audit-worker/issues/2580)) ([4abd511](https://github.com/adobe/spacecat-audit-worker/commit/4abd51125471b700f0dcb8ed485eeef2a87d8e8e))
+* **cited-analysis:** warn when site has no competitors configured ([#2579](https://github.com/adobe/spacecat-audit-worker/issues/2579)) ([95faccc](https://github.com/adobe/spacecat-audit-worker/commit/95faccce48235c99846eecb9517a83f30605fa3b))
+
+
+### Features
+
+* decouple Slack one-off audit execution from site enablement and  Centralize the "is this audit enabled for this site?" decision at the runner level and move new-handler enablement out of every audit run and into first-time onboarding.  ([#1820](https://github.com/adobe/spacecat-audit-worker/issues/1820)) ([fc35fbc](https://github.com/adobe/spacecat-audit-worker/commit/fc35fbc94c899a369fe18c7bf0f47137870abb1a))
+
 # [1.455.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.5...v1.455.0) (2026-05-29)
 
 
