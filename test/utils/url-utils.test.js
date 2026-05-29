@@ -608,6 +608,23 @@ describe('isEntityReplacementSuggestion', () => {
       'https://example.com/events/eric-church',
     )).to.be.false;
   });
+
+  it('should return false when suggestion is 2+ levels shallower than a record-ID broken URL', () => {
+    // broken: 3 segments with record-ID slug; suggestion: only 1 segment deep
+    // neither same-depth nor one-level-up → falls through to return false
+    expect(isEntityReplacementSuggestion(
+      'https://intuitdome.com/events/event-schedule/917',
+      'https://intuitdome.com/other/',
+    )).to.be.false;
+  });
+
+  it('should return false when person slugs are at the same depth but under different parent directories', () => {
+    // same depth, but bSegs.slice(0,-1) !== sSegs.slice(0,-1) → return false
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/team/john-smith',
+      'https://example.com/leadership/jane-doe',
+    )).to.be.false;
+  });
 });
 
 describe('resolveParentPathFallback', () => {

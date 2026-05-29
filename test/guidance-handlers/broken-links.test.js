@@ -1232,6 +1232,59 @@ describe('guidance-broken-links-remediation handler', () => {
     }));
   });
 
+  it('should keep a schema-less suggested URL that passes domain check but fails URL parsing in nonRootSuggestedUrls', async () => {
+    // 'foo.com/page' has no schema. filterBrokenSuggestedUrls prepends 'https://' for the
+    // fetch (returns 200) and hands back the original schema-less string. Inside
+    // nonRootSuggestedUrls the bare `new URL('foo.com/page')` throws, so the catch
+    // branch returns true — keeping the URL rather than dropping it.
+    const schemalessMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['foo.com/page'],
+          aiRationale: 'Schema-less suggestion',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // filterBrokenSuggestedUrls fetches the prepended URL https://foo.com/page
+    nock('https://foo.com').get('/page').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(schemalessMessage, mockContext);
+    expect(response.status).to.equal(200);
+    // The schema-less URL survives because the catch branch returns true
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      urlsSuggested: ['foo.com/page'],
+    }));
+  });
+
   it('should use parent path fallback when no suggestions pass filtering', async () => {
     const noSuggestionMessage = {
       ...mockMessage,
