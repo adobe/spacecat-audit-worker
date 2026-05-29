@@ -345,8 +345,9 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com',
+        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -357,9 +358,21 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com',
+        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
+    });
+
+    it('should NOT warn when competitors are configured', async () => {
+      // mockSite default config has two competitors configured.
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Config: companyName=Example Corp, website=${baseURL}, competitors=2`,
+      );
     });
 
     it('should handle general errors during execution', async () => {
