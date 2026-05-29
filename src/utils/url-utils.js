@@ -80,11 +80,17 @@ function looksLikePersonSlug(slug) {
  * @returns {boolean}
  */
 function looksLikeRecordId(slug) {
-  if (!slug) return false;
+  if (!slug) {
+    return false;
+  }
   // Pure numeric: "917", "614", "2671"
-  if (/^\d+$/.test(slug)) return true;
+  if (/^\d+$/.test(slug)) {
+    return true;
+  }
   // Prefixed numeric: "ticketevent-1226947352", "event-1645182281"
-  if (/^[a-z]+-\d{6,}$/.test(slug)) return true;
+  if (/^[a-z]+-\d{6,}$/.test(slug)) {
+    return true;
+  }
   return false;
 }
 
