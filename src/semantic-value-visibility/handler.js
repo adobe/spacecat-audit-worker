@@ -21,10 +21,17 @@ const FETCH_CONCURRENCY = 10;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
 // Pre-filter helper: checks whether a URL's raw HTML contains an <img> tag.
-// Guards: 10s timeout, HTTP error skip, 5MB response size cap.
+// Guards: HTTPS-only, 10s timeout, User-Agent header, HTTP error skip, 5MB streaming body cap.
 async function fetchAndCheck(url, log) {
+  if (!url.startsWith('https://')) {
+    log.warn(`[semantic-value-visibility] ${url} is not HTTPS, skipping`);
+    return null;
+  }
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: { 'User-Agent': 'SpaceCat/1.0' },
+    });
     if (!response.ok) {
       log.warn(`[semantic-value-visibility] ${url} returned HTTP ${response.status}, skipping`);
       return null;
@@ -34,11 +41,26 @@ async function fetchAndCheck(url, log) {
       log.warn(`[semantic-value-visibility] ${url} response too large (${contentLength} bytes), skipping`);
       return null;
     }
-    const html = await response.text();
-    if (html.length > MAX_RESPONSE_BYTES) {
-      log.warn(`[semantic-value-visibility] ${url} response too large (body ${html.length} bytes), skipping`);
-      return null;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let received = 0;
+    let html = '';
+    let streamDone = false;
+    while (!streamDone) {
+      // eslint-disable-next-line no-await-in-loop
+      const { done, value } = await reader.read();
+      streamDone = done;
+      if (value) {
+        received += value.length;
+        if (received > MAX_RESPONSE_BYTES) {
+          reader.cancel();
+          log.warn(`[semantic-value-visibility] ${url} response too large (exceeded ${MAX_RESPONSE_BYTES} bytes while streaming), skipping`);
+          return null;
+        }
+        html += decoder.decode(value, { stream: true });
+      }
     }
+    html += decoder.decode();
     return /<img/i.test(html) ? url : null;
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {

@@ -19,11 +19,24 @@ import esmock from 'esmock';
 use(sinonChai);
 
 function makeFetchResponse(html, { ok = true, status = 200, contentLength = '0' } = {}) {
+  const encoded = new TextEncoder().encode(html);
   return {
     ok,
     status,
     headers: { get: (h) => (h === 'content-length' ? contentLength : null) },
-    text: async () => html,
+    body: {
+      getReader: () => {
+        let delivered = false;
+        return {
+          read: async () => {
+            if (delivered) return { done: true, value: undefined };
+            delivered = true;
+            return { done: false, value: encoded };
+          },
+          cancel: () => {},
+        };
+      },
+    },
   };
 }
 
@@ -31,6 +44,7 @@ describe('Semantic Value Visibility Handler', function () {
   this.timeout(10000);
 
   let sandbox;
+  let fetchStub;
   let site;
   let context;
   let sqsStub;
@@ -63,6 +77,8 @@ describe('Semantic Value Visibility Handler', function () {
     sandbox = sinon.createSandbox();
 
     getMergedAuditInputUrlsStub.reset();
+
+    fetchStub = sandbox.stub(globalThis, 'fetch').rejects(new Error('unstubbed fetch call'));
 
     site = {
       getId: () => siteId,
@@ -109,7 +125,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
+      fetchStub
         .withArgs('https://example.com/page-with-img')
         .resolves(makeFetchResponse('<html><body><img src="hero.jpg"></body></html>'))
         .withArgs('https://example.com/page-without-img')
@@ -137,8 +153,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse('<html><body><p>Text only</p></body></html>'));
+      fetchStub.resolves(makeFetchResponse('<html><body><p>Text only</p></body></html>'));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -157,7 +172,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
+      fetchStub
         .withArgs(goodUrl).resolves(makeFetchResponse('<img src="hero.jpg">'))
         .withArgs(badUrl).rejects(new Error('connection refused'));
 
@@ -179,7 +194,7 @@ describe('Semantic Value Visibility Handler', function () {
       });
 
       const timeoutError = Object.assign(new Error('signal timed out'), { name: 'TimeoutError' });
-      sandbox.stub(globalThis, 'fetch').rejects(timeoutError);
+      fetchStub.rejects(timeoutError);
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -196,8 +211,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse('<img src="logo.png">', { ok: false, status: 403 }));
+      fetchStub.resolves(makeFetchResponse('<img src="logo.png">', { ok: false, status: 403 }));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -214,8 +228,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: String(6 * 1024 * 1024) }));
+      fetchStub.resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: String(6 * 1024 * 1024) }));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -223,7 +236,7 @@ describe('Semantic Value Visibility Handler', function () {
       expect(logStub.warn).to.have.been.calledWithMatch('response too large');
     });
 
-    it('should skip URLs when Content-Length is absent but body exceeds 5MB', async () => {
+    it('should skip URLs when Content-Length is absent but streamed body exceeds 5MB', async () => {
       getMergedAuditInputUrlsStub.resolves({
         urls: ['https://example.com/chunked-large'],
         agenticUrls: [],
@@ -233,8 +246,7 @@ describe('Semantic Value Visibility Handler', function () {
       });
 
       const largeHtml = `<img src="x.jpg">${'x'.repeat(6 * 1024 * 1024)}`;
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse(largeHtml, { contentLength: null }));
+      fetchStub.resolves(makeFetchResponse(largeHtml, { contentLength: null }));
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -251,12 +263,27 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: null }));
+      fetchStub.resolves(makeFetchResponse('<img src="x.jpg">', { contentLength: null }));
 
       const result = await auditRunner(auditUrl, context, site);
 
       expect(result.auditResult.urls).to.deep.equal(['https://example.com/no-content-length']);
+    });
+
+    it('should skip non-HTTPS URLs without making a network request', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['http://example.com/insecure'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal([]);
+      expect(logStub.warn).to.have.been.calledWithMatch('is not HTTPS, skipping');
+      expect(fetchStub).not.to.have.been.called;
     });
 
     it('should collect qualifying URLs from multiple fetch batches (>10 URLs)', async () => {
@@ -270,7 +297,6 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 0,
       });
 
-      const fetchStub = sandbox.stub(globalThis, 'fetch');
       urls.slice(0, 10).forEach((u) => {
         fetchStub.withArgs(u).resolves(makeFetchResponse('<img src="hero.jpg">'));
       });
@@ -307,8 +333,7 @@ describe('Semantic Value Visibility Handler', function () {
         filteredCount: 1,
       });
 
-      sandbox.stub(globalThis, 'fetch')
-        .resolves(makeFetchResponse('<img src="x.jpg">'));
+      fetchStub.resolves(makeFetchResponse('<img src="x.jpg">'));
 
       await auditRunner(auditUrl, context, site);
 
