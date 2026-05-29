@@ -1,3 +1,10 @@
+# [1.455.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.5...v1.455.0) (2026-05-29)
+
+
+### Features
+
+* **semantic-value-visibility:** dispatch top 50 URLs to Mystique per audit run ([#2574](https://github.com/adobe/spacecat-audit-worker/issues/2574)) ([f23d03d](https://github.com/adobe/spacecat-audit-worker/commit/f23d03dd7120d2e570e5b70efd739ed39d8af60e))
+
 ## [1.454.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.454.4...v1.454.5) (2026-05-29)
 
 
