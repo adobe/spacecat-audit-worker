@@ -35,9 +35,17 @@ async function fetchAndCheck(url, log) {
       return null;
     }
     const html = await response.text();
+    if (html.length > MAX_RESPONSE_BYTES) {
+      log.warn(`[semantic-value-visibility] ${url} response too large (body ${html.length} bytes), skipping`);
+      return null;
+    }
     return /<img/i.test(html) ? url : null;
   } catch (err) {
-    log.warn(`[semantic-value-visibility] Failed to fetch ${url}: ${err.message}`);
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      log.warn(`[semantic-value-visibility] ${url} timed out after 10s, skipping`);
+    } else {
+      log.warn(`[semantic-value-visibility] Failed to fetch ${url}: ${err.message}`);
+    }
     return null;
   }
 }

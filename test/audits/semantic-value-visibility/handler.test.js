@@ -169,6 +169,24 @@ describe('Semantic Value Visibility Handler', function () {
       );
     });
 
+    it('should skip URLs that time out and log a distinct message', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['https://example.com/slow'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const timeoutError = Object.assign(new Error('signal timed out'), { name: 'TimeoutError' });
+      sandbox.stub(globalThis, 'fetch').rejects(timeoutError);
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal([]);
+      expect(logStub.warn).to.have.been.calledWithMatch('timed out after 10s');
+    });
+
     it('should skip URLs that return a non-OK HTTP status', async () => {
       getMergedAuditInputUrlsStub.resolves({
         urls: ['https://example.com/forbidden'],
@@ -205,6 +223,25 @@ describe('Semantic Value Visibility Handler', function () {
       expect(logStub.warn).to.have.been.calledWithMatch('response too large');
     });
 
+    it('should skip URLs when Content-Length is absent but body exceeds 5MB', async () => {
+      getMergedAuditInputUrlsStub.resolves({
+        urls: ['https://example.com/chunked-large'],
+        agenticUrls: [],
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const largeHtml = `<img src="x.jpg">${'x'.repeat(6 * 1024 * 1024)}`;
+      sandbox.stub(globalThis, 'fetch')
+        .resolves(makeFetchResponse(largeHtml, { contentLength: null }));
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.deep.equal([]);
+      expect(logStub.warn).to.have.been.calledWithMatch('response too large');
+    });
+
     it('should qualify a URL when Content-Length header is absent', async () => {
       getMergedAuditInputUrlsStub.resolves({
         urls: ['https://example.com/no-content-length'],
@@ -220,6 +257,30 @@ describe('Semantic Value Visibility Handler', function () {
       const result = await auditRunner(auditUrl, context, site);
 
       expect(result.auditResult.urls).to.deep.equal(['https://example.com/no-content-length']);
+    });
+
+    it('should collect qualifying URLs from multiple fetch batches (>10 URLs)', async () => {
+      const urls = Array.from({ length: 12 }, (_, i) => `https://example.com/page-${i}`);
+
+      getMergedAuditInputUrlsStub.resolves({
+        urls,
+        agenticUrls: urls,
+        topPagesUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const fetchStub = sandbox.stub(globalThis, 'fetch');
+      urls.slice(0, 10).forEach((u) => {
+        fetchStub.withArgs(u).resolves(makeFetchResponse('<img src="hero.jpg">'));
+      });
+      urls.slice(10).forEach((u) => {
+        fetchStub.withArgs(u).resolves(makeFetchResponse('<p>No images</p>'));
+      });
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(result.auditResult.urls).to.have.members(urls.slice(0, 10));
     });
 
     it('should return empty urls when getMergedAuditInputUrls returns no URLs', async () => {
