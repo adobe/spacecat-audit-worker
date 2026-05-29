@@ -7381,5 +7381,107 @@ describe('data-processing utility functions', () => {
         });
       });
     });
+
+    describe('Code config branch (imported archive)', () => {
+      beforeEach(() => {
+        // Force the imported-archive branch by making delivery type non-aem_edge
+        // and providing a populated code config.
+        mockSite.getDeliveryType = () => 'aem_cs';
+        mockS3Client.send.resolves();
+      });
+
+      // Refs containing URL-special characters must be encoded so the HEAD check
+      // targets the same key the import-worker actually wrote (which uses
+      // encodeURIComponent on the ref segment).
+      const encodedRefCases = [
+        { ref: 'release/2.03.0', encoded: 'release%2F2.03.0' },
+        { ref: 'feature/foo', encoded: 'feature%2Ffoo' },
+        { ref: 'release/26-March-2026-PROD', encoded: 'release%2F26-March-2026-PROD' },
+        { ref: 'topic#hot', encoded: 'topic%23hot' },
+        { ref: 'spaced ref', encoded: 'spaced%20ref' },
+        { ref: 'q?uery', encoded: 'q%3Fuery' },
+      ];
+
+      encodedRefCases.forEach(({ ref, encoded }) => {
+        it(`encodes ref "${ref}" when reconstructing codePath`, async () => {
+          mockSite.getCode = () => ({
+            type: 'github', owner: 'o', repo: 'r', ref,
+          });
+
+          const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+          const expectedPath = `code/site-123/github/o/r/${encoded}/repository.zip`;
+          expect(result).to.deep.equal({
+            codeBucket: 'importer-bucket',
+            codePath: expectedPath,
+          });
+          expect(mockS3Client.send).to.have.been.calledOnce;
+          const cmd = mockS3Client.send.firstCall.args[0];
+          expect(cmd).to.be.instanceOf(HeadObjectCommand);
+          expect(cmd.input).to.deep.equal({
+            Bucket: 'importer-bucket',
+            Key: expectedPath,
+          });
+        });
+      });
+
+      it('leaves refs without special characters unchanged', async () => {
+        mockSite.getCode = () => ({
+          type: 'github', owner: 'o', repo: 'r', ref: 'main',
+        });
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(result.codePath).to.equal('code/site-123/github/o/r/main/repository.zip');
+      });
+
+      it('prefers s3StoragePath from site.code when present (Option B)', async () => {
+        mockSite.getCode = () => ({
+          type: 'github',
+          owner: 'o',
+          repo: 'r',
+          ref: 'release/2.03.0',
+          s3StoragePath: 'code/site-123/github/o/r/release%2F2.03.0/repository.zip',
+        });
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: 'code/site-123/github/o/r/release%2F2.03.0/repository.zip',
+        });
+        // HEAD check still runs against the stored key
+        expect(mockS3Client.send.firstCall.args[0].input.Key)
+          .to.equal('code/site-123/github/o/r/release%2F2.03.0/repository.zip');
+      });
+
+      it('uses the encoded fallback when s3StoragePath is missing', async () => {
+        // Simulates a site imported before s3StoragePath was populated.
+        mockSite.getCode = () => ({
+          type: 'github', owner: 'o', repo: 'r', ref: 'release/2.03.0',
+        });
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(result.codePath)
+          .to.equal('code/site-123/github/o/r/release%2F2.03.0/repository.zip');
+      });
+
+      it('returns null for non-aem_edge when the archive is missing in S3', async () => {
+        const notFound = new Error('Not Found');
+        notFound.name = 'NotFound';
+        mockS3Client.send.rejects(notFound);
+        mockSite.getCode = () => ({
+          type: 'github', owner: 'o', repo: 'r', ref: 'release/2.03.0',
+        });
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(result).to.be.null;
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/release%2F2\.03\.0\/repository\.zip/),
+        );
+      });
+    });
   });
 });
