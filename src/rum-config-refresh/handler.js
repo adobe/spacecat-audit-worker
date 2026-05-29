@@ -42,7 +42,8 @@ export default async function rumConfigRefresh(message, context) {
     return ok({ skipped: true, reason: 'site not found' });
   }
 
-  const rumConfig = site.getConfig().getRumConfig();
+  const siteConfig = site.getConfig();
+  const rumConfig = siteConfig.getRumConfig();
   if (rumConfig?.lastCheckedAt) {
     const age = Date.now() - new Date(rumConfig.lastCheckedAt).getTime();
     if (age < STALENESS_MS) {
@@ -51,9 +52,15 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const overrideBaseURL = site.getConfig().getFetchConfig()?.overrideBaseURL;
+  const overrideBaseURL = siteConfig.getFetchConfig()?.overrideBaseURL;
+  let overrideHostname = null;
+  try {
+    overrideHostname = overrideBaseURL ? new URL(overrideBaseURL).hostname : null;
+  } catch {
+    log.warn(`[rum-config-refresh] Malformed overrideBaseURL for site ${siteId}: ${overrideBaseURL}, falling back to baseURL`);
+  }
   const domains = [...new Set([
-    overrideBaseURL && new URL(overrideBaseURL).hostname,
+    overrideHostname,
     new URL(site.getBaseURL()).hostname,
   ].filter(Boolean))];
 
@@ -63,6 +70,8 @@ export default async function rumConfigRefresh(message, context) {
 
   const rumApiClient = RUMAPIClient.createFrom(context);
 
+  // RUM_CHECK_TIMEOUT_MS is a shared budget for the full candidate loop,
+  // not a per-domain limit, so total RUM check time stays bounded.
   try {
     await Promise.race([
       (async () => {
@@ -94,7 +103,6 @@ export default async function rumConfigRefresh(message, context) {
   }
 
   try {
-    const siteConfig = site.getConfig();
     siteConfig.updateRumConfig(hasDomainKey);
     site.setConfig(Config.toDynamoItem(siteConfig));
     await site.save();
