@@ -236,11 +236,28 @@ export async function findSitemap(inputUrl, log) {
 /**
  * Main audit runner function
  */
-export async function sitemapAuditRunner(baseURL, context) {
+export async function sitemapAuditRunner(baseURL, context, site) {
   const { log } = context;
   const startTime = process.hrtime();
 
   log.info(`Starting sitemap audit for ${baseURL}`);
+
+  // Sitemap and robots.txt are root-domain resources. Subpath sites (e.g. nba.com/timberwolves)
+  // don't own these files, so skip the audit rather than generating misleading opportunities.
+  const siteBaseUrl = site?.getBaseURL?.() ?? baseURL;
+  try {
+    const { pathname } = new URL(siteBaseUrl);
+    if (pathname !== '/') {
+      log.info(`Skipping sitemap audit for subpath site: ${siteBaseUrl}`);
+      return {
+        fullAuditRef: baseURL,
+        auditResult: { success: false, reasons: [{ value: 'Subpath site — sitemap belongs to root domain' }] },
+        url: baseURL,
+      };
+    }
+  } catch {
+    // If URL parsing fails, proceed with the audit
+  }
 
   const auditResult = await findSitemap(baseURL, log);
 

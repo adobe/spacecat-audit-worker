@@ -354,7 +354,10 @@ async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT)
 
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   try {
-    return await getTopAgenticLiveUrlsFromAthena(site, context, limit);
+    const urls = await getTopAgenticLiveUrlsFromAthena(site, context, limit);
+    // Filter to subpath scope — Athena query is domain-wide so results may include
+    // URLs outside this site's baseURL path (e.g. nba.com/scores for nba.com/timberwolves).
+    return urls.filter((url) => isUrlUnderSiteBase(url, site.getBaseURL()));
   } catch (e) {
     context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
@@ -741,7 +744,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
     await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
-      url: baseUrl, //todo:dhavkuma
+      url: baseUrl,
       siteId,
       auditId,
       deliveryType,
@@ -1110,7 +1113,7 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  */
 async function prepareDomainWideAggregateSuggestion(
   preRenderSuggestions,
-  baseUrl,//todo:dhavkuma
+  baseUrl,
   context,
 ) {
   const { log } = context;
@@ -1510,7 +1513,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     ).length;
 
     const statusSummary = {
-      baseUrl: auditUrl,//todo:dhavkuma
+      baseUrl: auditUrl,
       siteId,
       auditType: AUDIT_TYPE,
       scrapeJobId: scrapeJobId || existingStatus.scrapeJobId || null,
