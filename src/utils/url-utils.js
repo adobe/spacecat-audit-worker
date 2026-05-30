@@ -80,9 +80,6 @@ function looksLikePersonSlug(slug) {
  * @returns {boolean}
  */
 function looksLikeRecordId(slug) {
-  if (!slug) {
-    return false;
-  }
   // Pure numeric: "917", "614", "2671"
   if (/^\d+$/.test(slug)) {
     return true;
