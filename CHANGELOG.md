@@ -1,3 +1,10 @@
+## [1.456.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.1...v1.456.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* pre-create audit row for backfill runs ([#2465](https://github.com/adobe/spacecat-audit-worker/issues/2465)) ([769d1ea](https://github.com/adobe/spacecat-audit-worker/commit/769d1ea62b655a275f84824eac30bdb5628bc4f7))
+
 ## [1.456.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.0...v1.456.1) (2026-05-30)
 
 
