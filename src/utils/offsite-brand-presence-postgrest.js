@@ -82,7 +82,8 @@ async function fetchExecutionsWithSources(postgrestClient, {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
-      throw new Error(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`);
+      log.warn(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES}), processing ${rows.length} rows fetched so far`);
+      break;
     }
 
     let query = postgrestClient

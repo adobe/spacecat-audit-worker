@@ -689,9 +689,11 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.addSuggestions).to.not.have.been.called;
     });
 
-    it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
-      // Mock mixed suggestions - some with guidance, some without. Include a failing metric
-      // on the no-guidance one so the auto-suggest skip doesn't drop it.
+    it('calls processAutoSuggest only for suggestions without a code change available', async () => {
+      // Dispatch decision is driven by data.isCodeChangeAvailable: suggestions
+      // where a code patch already landed are skipped; everything else is
+      // dispatched (regardless of whether text guidance already exists, which is
+      // not proof that a code patch ran successfully).
       const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
         {
@@ -699,6 +701,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
           getData: () => ({
             type: 'url',
             url: 'test1',
+            isCodeChangeAvailable: true,
             issues: [
               { type: 'lcp', value: '# LCP Optimization...' }
             ],
@@ -711,90 +714,78 @@ describe('collectCWVDataAndImportCode Tests', () => {
           getData: () => ({
             type: 'url',
             url: 'test2',
-            issues: [], // No guidance (empty issues array)
+            // no isCodeChangeAvailable — patch hasn't landed yet
+            issues: [],
             metrics: failingMetrics,
           }),
           getStatus: () => 'NEW'
         }
       ];
-      
+
       // Setup opportunity with mock suggestions before the function call
       oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
-      
+
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await syncOpportunityAndSuggestionsStep({ site, audit: mockAudit, finalUrl: auditUrl, log: context.log, ...context });
 
-      // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
+      // Only sugg-2 (no code change yet) should be dispatched.
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage.firstCall.args[1].data.suggestionId).to.equal('sugg-2');
     });
   });
 });
 
-describe('shouldSendAutoSuggestForSuggestion — per-issue status gating', () => {
+describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () => {
   let shouldSendAutoSuggestForSuggestion;
 
   before(async () => {
     ({ shouldSendAutoSuggestForSuggestion } = await import('../../src/cwv/auto-suggest.js'));
   });
 
-  const stub = (suggestionStatus, issues) => ({
+  const stub = (suggestionStatus, data = {}) => ({
     getStatus: () => suggestionStatus,
-    getData: () => ({ issues }),
+    getData: () => data,
   });
 
   it('returns false when suggestion status is not NEW', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('APPROVED', [{ type: 'lcp' }]))).to.be.false;
-    expect(shouldSendAutoSuggestForSuggestion(stub('OUTDATED', [{ type: 'lcp' }]))).to.be.false;
-    expect(shouldSendAutoSuggestForSuggestion(stub('FIXED', []))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('APPROVED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('OUTDATED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('FIXED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('ERROR'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('REJECTED'))).to.be.false;
   });
 
-  it('returns true when suggestion is NEW with no issues yet (creation path)', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', []))).to.be.true;
+  it('returns true when suggestion is NEW and no code change has landed', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW'))).to.be.true;
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { issues: [] }))).to.be.true;
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { isCodeChangeAvailable: false }))).to.be.true;
   });
 
-  it('returns true when a NEW issue has empty value', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
-      { type: 'lcp', status: 'NEW', value: '' },
-    ]))).to.be.true;
+  it('returns false when isCodeChangeAvailable is true', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { isCodeChangeAvailable: true }))).to.be.false;
   });
 
-  it('returns true when an issue lacks an explicit status (legacy data) and has empty value', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
-      { type: 'lcp', value: '' },
-    ]))).to.be.true;
+  it('dispatches NEW suggestions whose issues already have guidance text but no code change yet (Bug 2 regression)', () => {
+    // Previously, populated issues[*].value blocked re-dispatch and silently
+    // killed codefix retries. The done-signal is now isCodeChangeAvailable.
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', {
+      issues: [
+        { type: 'lcp', status: 'NEW', value: '# LCP guidance...' },
+        { type: 'cls', status: 'NEW', value: '# CLS guidance...' },
+      ],
+    }))).to.be.true;
   });
 
-  it('returns false when all NEW issues already have non-empty guidance', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
-      { type: 'lcp', status: 'NEW', value: '# LCP guidance...' },
-      { type: 'cls', status: 'NEW', value: '# CLS guidance...' },
-    ]))).to.be.false;
-  });
-
-  it('skips OUTDATED issues — does not re-fire Mystique for resolved metrics', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
-      { type: 'lcp', status: 'OUTDATED', value: '' }, // resolved, ignore
-    ]))).to.be.false;
-  });
-
-  it('skips APPROVED/REJECTED/SKIPPED/FIXED/IN_PROGRESS/ERROR issues — customer/system intent recorded', () => {
-    const nonNewStatuses = ['APPROVED', 'REJECTED', 'SKIPPED', 'FIXED', 'IN_PROGRESS', 'ERROR'];
-    nonNewStatuses.forEach((status) => {
-      const result = shouldSendAutoSuggestForSuggestion(stub('NEW', [
-        { type: 'lcp', status, value: '' },
-      ]));
-      expect(result, `expected false for status=${status}`).to.be.false;
+  it('dispatches NEW suggestions regardless of per-issue status when isCodeChangeAvailable is not true', () => {
+    ['APPROVED', 'REJECTED', 'SKIPPED', 'FIXED', 'IN_PROGRESS', 'ERROR', 'OUTDATED'].forEach((status) => {
+      const result = shouldSendAutoSuggestForSuggestion(stub('NEW', {
+        issues: [{ type: 'lcp', status, value: '# guidance...' }],
+      }));
+      expect(result, `expected true for issue.status=${status}`).to.be.true;
     });
-  });
-
-  it('fires when at least one NEW issue is missing guidance, even if siblings are APPROVED', () => {
-    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
-      { type: 'lcp', status: 'APPROVED', value: '# LCP guidance...' }, // ignore
-      { type: 'cls', status: 'NEW', value: '' }, // needs guidance → fire
-    ]))).to.be.true;
   });
 });
 

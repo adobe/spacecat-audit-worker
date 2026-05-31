@@ -807,5 +807,16 @@ describe('Wikipedia Analysis Handler', () => {
       expect(extractBrandFromUrl('https://a.b.walmart.com')).to.equal('walmart');
       expect(extractBrandFromUrl('https://dev.blog.google.com')).to.equal('google');
     });
+
+    it('should handle branded TLDs like .bank.in', () => {
+      expect(extractBrandFromUrl('https://hdfc.bank.in')).to.equal('hdfc');
+      expect(extractBrandFromUrl('https://icici.bank.in')).to.equal('icici');
+    });
+
+    it('should handle other industry-specific ccSLDs', () => {
+      expect(extractBrandFromUrl('https://acme.firm.in')).to.equal('acme');
+      expect(extractBrandFromUrl('https://iitd.res.in')).to.equal('iitd');
+      expect(extractBrandFromUrl('https://example.nic.in')).to.equal('example');
+    });
   });
 });

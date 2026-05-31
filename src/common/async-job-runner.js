@@ -16,7 +16,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import {
   sendContinuationMessage,
-  isAuditEnabledForSite,
+  isAuditDisabledForSite,
   preserveOnDemand,
   preserveSlackContext,
 } from './audit-utils.js';
@@ -90,8 +90,8 @@ export class AsyncJobRunner extends StepAudit {
 
       const site = await this.siteProvider(siteId, context);
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         job.setStatus(AsyncJob.Status.CANCELLED);
         job.setMetadata({
           payload: {
