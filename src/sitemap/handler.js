@@ -10,6 +10,23 @@
  * governing permissions and limitations under the License.
  */
 
+// FUTURE CONSIDERATIONS FOR ENHANCEMENTS:
+//
+//  ** Audit Worker **
+//    * detect circular redirects
+//    * ensure "money pages" are entries in the sitemap.xml
+//    * detect duplicate entries
+//
+//  ** BackOffice UI **
+//    * bulk Delete ... especially for "rejected" status
+//    * display {50, 100} entries per page
+//    * add "statistics" page: show {how many sitemaps.xml files found, page URLs probed, ??}
+//
+//  ** Front End UI **
+//    * switch display to see all errors by type {"404" + "Redirect"} vs "per sitemap" file
+//    * enhance "redirect" codes by adding {303, 307, 308}
+//    * add new displays in the UI: {"circular redirect" detection, missing "money pages", ...}
+
 import {
   isArray,
 } from '@adobe/spacecat-shared-utils';
@@ -132,9 +149,9 @@ export async function findSitemap(inputUrl, log) {
             const pct = (slowdownStats.ratio * 100).toFixed(0);
             log?.warn(`* Sitemap: slowing down page URL probing starting with sitemap ${sitemapUrl} due to high count of 'otherStatus' codes: ${slowdownStats.otherCount} out of ${slowdownStats.total} (${pct}%)`);
             urlsToProbe = slicePageUrlsForSlowProbeSampling(urlsFromSampling); // re-do current set
-            const slowCapRetainPct = urlsFromSampling.length > 0
-              ? ((100 * urlsToProbe.length) / urlsFromSampling.length).toFixed(0)
-              : '0';
+            const slowCapRetainPct = (
+              (100 * urlsToProbe.length) / urlsFromSampling.length
+            ).toFixed(0);
             log?.warn(`* Sitemap: since we are going slower, the slow probe uses ~${slowCapRetainPct}% of our original "fast" sampled page URLs (ex: ${urlsToProbe.length} of ${urlsFromSampling.length} from this current sitemap)`);
             log?.warn(`* Sitemap: pausing ${SLOW_MODE_ENTRY_DELAY_MS / 1000} seconds for anticipated WAF rules before switching into a slow page URL re-probe for sitemap ${sitemapUrl}`);
             // eslint-disable-next-line no-await-in-loop
