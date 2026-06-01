@@ -27,13 +27,13 @@ import {
 import {
   getHeadingSelector,
   cheerioLoad,
-  loadScrapeJson,
-  initializeAuditContext,
 } from '../headings/shared-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const MAX_TOP_PAGES = 200;
 
 /**
@@ -96,10 +96,12 @@ export const TOPPAGES_CHECK = {
  * @returns {boolean} True if a TOC is detected in the DOM
  */
 export function hasTocInDom($) {
-  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#...")
+  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#section-id").
+  // Exclude bare href="#" (JavaScript tab/nav placeholders) — only count links
+  // with a non-empty fragment so search menus and tab widgets don't false-positive.
   let anchorListFound = false;
   $('ul, ol').each((_, listEl) => {
-    if ($(listEl).find('a[href^="#"]').length >= 2) {
+    if ($(listEl).find('a[href^="#"]:not([href="#"])').length >= 2) {
       anchorListFound = true;
       return false; // break the each loop
     }
@@ -109,16 +111,28 @@ export function hasTocInDom($) {
     return true;
   }
 
-  // Signal 2: elements with TOC-related class or id names
-  const tocPatterns = [
-    'toc',
+  // Signal 2: elements with TOC-related class or id names.
+  // Use a regex with hyphen/underscore word boundaries for the short "toc" token to avoid
+  // false positives from substrings like "autocomplete" (au-toc-omplete has letters, not
+  // separators, around "toc"). Longer compound patterns are safe with CSS *=.
+  const TOC_WORD_RE = /(?:^|[-_\s])toc(?:[-_\s]|$)/i;
+  const tocWordMatch = $('[class], [id]').toArray().some((el) => {
+    const cls = $(el).attr('class') || '';
+    const id = $(el).attr('id') || '';
+    return TOC_WORD_RE.test(cls) || TOC_WORD_RE.test(id);
+  });
+  if (tocWordMatch) {
+    return true;
+  }
+
+  const substringPatterns = [
     'table-of-contents',
     'tableofcontents',
     'anchor-list',
     'anchor__list',
     'cmp-toc__content',
   ];
-  return tocPatterns.some(
+  return substringPatterns.some(
     (pattern) => $(`[class*="${pattern}"], [id*="${pattern}"]`).length > 0,
   );
 }
@@ -205,8 +219,8 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      if (headingsData.length === 0) {
-        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      if (headingsData.length <= 1) {
+        log.debug(`[TOC Detection] ${headingsData.length === 0 ? 'No headings' : 'Only one heading'} found for TOC suggestion for ${url}, skipping`);
       } else {
         result.suggestedPlacement = placement;
         result.transformRules = {
@@ -280,148 +294,70 @@ export async function validatePageTocFromScrapeJson(
 }
 
 /**
- * Validate TOC presence for a single page
- * @param {string} url - Page URL
- * @param {Object} log - Logger instance
- * @param {Object} site - Site object
- * @param {Array} allKeys - S3 keys
- * @param {Object} s3Client - S3 client
- * @param {string} S3_SCRAPER_BUCKET_NAME - S3 bucket name
+ * Step 1: Import top pages for the TOC audit.
  * @param {Object} context - Audit context
- * @returns {Promise<{url: string, tocDetails: Object}>}
+ * @returns {Promise<Object>}
  */
-export async function validatePageToc(
-  url,
-  log,
-  site,
-  allKeys,
-  s3Client,
-  S3_SCRAPER_BUCKET_NAME,
-  context,
-) {
-  if (!url) {
-    log.error('URL is undefined or null, cannot validate TOC');
+export async function importTopPages(context) {
+  const { site, log } = context;
+  try {
+    const { urls } = await getTocInputUrls(context, site);
+    log.info(`[TOC] Found ${urls.length} URLs for audit`);
     return {
-      url,
-      tocDetails: null,
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: { success: true, topPages: urls },
+      fullAuditRef: site.getBaseURL(),
+    };
+  } catch (error) {
+    log.error(`[TOC] Failed to import top pages: ${error.message}`, error);
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: { success: false, error: error.message, topPages: [] },
+      fullAuditRef: site.getBaseURL(),
     };
   }
-
-  const scrapeJsonObject = await loadScrapeJson(
-    url,
-    site,
-    allKeys,
-    s3Client,
-    S3_SCRAPER_BUCKET_NAME,
-    log,
-  );
-  if (!scrapeJsonObject) {
-    return null;
-  }
-  return validatePageTocFromScrapeJson(url, scrapeJsonObject, log, context);
 }
 
 /**
- * Main TOC audit runner
- * @param {string} baseURL - Base URL
+ * Step 2: Submit TOC URLs for scraping via ScrapeClient.
+ * Reads topPages from the stored audit result (set by importTopPages in step 1).
+ * Returns empty urls array when step 1 failed or found no pages — the framework
+ * will bypass the scrape client and route directly to process-toc-results.
  * @param {Object} context - Audit context
- * @param {Object} site - Site object
  * @returns {Promise<Object>}
  */
-export async function tocAuditRunner(baseURL, context, site) {
-  const { log, s3Client } = context;
-  const { S3_SCRAPER_BUCKET_NAME } = context.env;
+export async function submitForScraping(context) {
+  const { site, audit, log } = context;
+  const { Audit: AuditModel } = context.dataAccess;
+  const auditResult = audit.getAuditResult();
+  const topPages = auditResult?.topPages ?? [];
 
-  try {
-    const { urls: auditUrls } = await getTocInputUrls(context, site);
-
-    if (auditUrls.length === 0) {
-      log.warn('[TOC Audit] No URLs found for audit, ending audit.');
-      return {
-        fullAuditRef: baseURL,
-        auditResult: {
-          check: TOPPAGES_CHECK.check,
-          success: false,
-          explanation: TOPPAGES_CHECK.explanation,
-        },
-      };
-    }
-
-    const { allKeys } = await initializeAuditContext(context, site);
-
-    // Validate TOC for each URL
-    const auditPromises = auditUrls.map(async (url) => validatePageToc(
-      url,
-      log,
-      site,
-      allKeys,
-      s3Client,
-      S3_SCRAPER_BUCKET_NAME,
-      context,
-    ));
-    const auditResults = await Promise.allSettled(auditPromises);
-
-    // Aggregate results
-    const aggregatedResults = {};
-    let totalIssuesFound = 0;
-
-    auditResults.forEach((result) => {
-      if (result.status === 'fulfilled' && result.value) {
-        const { url, tocDetails } = result.value;
-
-        // Handle TOC detection - only add to results if TOC is missing
-        if (tocDetails && !tocDetails.tocPresent && tocDetails.transformRules) {
-          if (!aggregatedResults[TOC_CHECK.check]) {
-            totalIssuesFound += 1;
-            aggregatedResults[TOC_CHECK.check] = {
-              success: false,
-              explanation: TOC_CHECK.explanation,
-              suggestion: TOC_CHECK.suggestion,
-              urls: [],
-            };
-          }
-
-          if (!aggregatedResults[TOC_CHECK.check].urls.find((urlObj) => urlObj.url === url)) {
-            aggregatedResults[TOC_CHECK.check].urls.push({
-              url,
-              explanation: TOC_CHECK.explanation,
-              suggestion: TOC_CHECK.suggestion,
-              isAISuggested: false,
-              checkTitle: TOC_CHECK.title,
-              tagName: 'nav',
-              transformRules: tocDetails.transformRules,
-              tocConfidence: tocDetails.confidence,
-              tocReasoning: tocDetails.reasoning,
-            });
-          }
-        }
-      }
-    });
-
-    log.debug(`Successfully completed TOC Audit for site: ${baseURL}. Found ${totalIssuesFound} issues.`);
-
-    // Return success if no issues found, otherwise return the aggregated results
-    if (totalIssuesFound === 0) {
-      return {
-        fullAuditRef: baseURL,
-        auditResult: {
-          toc: {},
-        },
-      };
-    }
-    return {
-      fullAuditRef: baseURL,
-      auditResult: {
-        toc: aggregatedResults,
-      },
+  if (auditResult?.success === false) {
+    log.warn('[TOC] Audit failed in previous step, skipping scraping');
+    const terminalResult = {
+      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
-  } catch (error) {
-    log.error(`TOC audit failed: ${error.message}`);
-    return {
-      fullAuditRef: baseURL,
-      auditResult: { error: `Audit failed with error: ${error.message}`, success: false },
-    };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
   }
+
+  if (topPages.length === 0) {
+    log.warn('[TOC] No top pages found, ending audit');
+    const terminalResult = {
+      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
+    };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
+  }
+
+  log.info(`[TOC] Submitting ${topPages.length} URLs for scraping`);
+  return {
+    urls: topPages.map((url) => ({ url })),
+    siteId: site.getId(),
+    maxScrapeAge: 24,
+  };
 }
 
 /**
@@ -581,6 +517,117 @@ export function slimTocAuditResult(auditResult) {
   };
 }
 
+/**
+ * Step 3: Process scraped content and generate TOC opportunities.
+ * Inlines suggestion generation, DB update, and result slimming so that
+ * transformRules are used to build suggestions before being stripped from the
+ * audit DB record (which has a size limit).
+ * @param {Object} context - Audit context
+ * @returns {Promise<Object>}
+ */
+export async function processTocResults(context) {
+  const {
+    site, log, s3Client, scrapeResultPaths, audit,
+  } = context;
+  const { S3_SCRAPER_BUCKET_NAME } = context.env;
+  const { Audit: AuditModel } = context.dataAccess;
+  const baseURL = site.getBaseURL();
+
+  let auditResult;
+
+  try {
+    if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+      log.warn('[TOC Audit] No scrape results available, ending audit.');
+      auditResult = {
+        check: TOPPAGES_CHECK.check,
+        success: false,
+        explanation: TOPPAGES_CHECK.explanation,
+      };
+      await AuditModel.updateByKeys(
+        { auditId: audit.getId() },
+        { auditResult },
+      );
+      return { fullAuditRef: baseURL, auditResult };
+    }
+
+    const auditPromises = Array.from(scrapeResultPaths.entries()).map(async ([url, s3Path]) => {
+      const scrapeJsonObject = await getObjectFromKey(
+        s3Client,
+        S3_SCRAPER_BUCKET_NAME,
+        s3Path,
+        log,
+      );
+      return validatePageTocFromScrapeJson(url, scrapeJsonObject, log, context);
+    });
+    const auditResults = await Promise.allSettled(auditPromises);
+
+    const aggregatedResults = {};
+    let totalIssuesFound = 0;
+
+    auditResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        const { url, tocDetails } = result.value;
+
+        if (tocDetails && !tocDetails.tocPresent && tocDetails.transformRules) {
+          if (!aggregatedResults[TOC_CHECK.check]) {
+            totalIssuesFound += 1;
+            aggregatedResults[TOC_CHECK.check] = {
+              success: false,
+              explanation: TOC_CHECK.explanation,
+              suggestion: TOC_CHECK.suggestion,
+              urls: [],
+            };
+          }
+
+          if (!aggregatedResults[TOC_CHECK.check].urls.find((urlObj) => urlObj.url === url)) {
+            aggregatedResults[TOC_CHECK.check].urls.push({
+              url,
+              explanation: TOC_CHECK.explanation,
+              suggestion: TOC_CHECK.suggestion,
+              isAISuggested: false,
+              checkTitle: TOC_CHECK.title,
+              tagName: 'nav',
+              transformRules: tocDetails.transformRules,
+              tocConfidence: tocDetails.confidence,
+              tocReasoning: tocDetails.reasoning,
+            });
+          }
+        }
+      }
+    });
+
+    log.debug(`Successfully completed TOC Audit for site: ${baseURL}. Found ${totalIssuesFound} issues.`);
+
+    auditResult = totalIssuesFound === 0 ? { toc: {} } : { toc: aggregatedResults };
+
+    // Build suggestions from FULL result (transformRules present) before slimming
+    const auditData = {
+      id: audit.getId(),
+      siteId: site.getId(),
+      auditType,
+      auditResult,
+      fullAuditRef: baseURL,
+    };
+    const withSuggestions = generateSuggestions(baseURL, auditData, context);
+    await opportunityAndSuggestions(baseURL, withSuggestions, context);
+
+    // Slim AFTER suggestions are persisted — strips transformRules from the audit DB record
+    const slimmedAuditResult = slimTocAuditResult(auditResult);
+
+    await AuditModel.updateByKeys(
+      { auditId: audit.getId() },
+      { auditResult: slimmedAuditResult },
+    );
+
+    return { fullAuditRef: baseURL, auditResult: slimmedAuditResult };
+  } catch (error) {
+    log.error(`TOC audit failed: ${error.message}`);
+    const errorResult = { error: `Audit failed with error: ${error.message}`, success: false };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: errorResult });
+    throw error;
+  }
+}
+
 export async function tocPersister(auditData, context) {
   const { dataAccess, log } = context;
   const { Audit: AuditCreate } = dataAccess;
@@ -597,10 +644,7 @@ export async function tocPersister(auditData, context) {
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(tocAuditRunner)
-  .withPersister(tocPersister)
-  .withPostProcessors([
-    generateSuggestions,
-    opportunityAndSuggestions,
-  ])
+  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('process-toc-results', processTocResults)
   .build();

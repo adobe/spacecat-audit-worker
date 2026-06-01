@@ -32,6 +32,7 @@ import {
   warnOnInvalidSuggestionData,
   isTBYBSite,
   SUMMIT_PLG_HANDLER,
+  resolveOpportunityIfNoIssues,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -1023,6 +1024,40 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
+    it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
+      const suggestionsData = [{ key: '1', title: 'old title' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [{ key: '1', title: 'new title' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(mockLogger.info).to.have.been.calledWith(
+        'ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.',
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
     it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
@@ -1212,6 +1247,73 @@ describe('data-access', () => {
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
         [existingSuggestions[2]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark prerender domain-wide or covered suggestions as OUTDATED', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
+
+      const domainWideSuggestion = {
+        id: 'domain-wide',
+        data: {
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        },
+        getId: sinon.stub().returns('domain-wide'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const coveredSuggestion = {
+        id: 'covered',
+        data: {
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        },
+        getId: sinon.stub().returns('covered'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const normalSuggestion = {
+        id: 'normal',
+        data: { url: 'https://example.com/page2', key: 'page2' },
+        getId: sinon.stub().returns('normal'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      const scrapedUrlsSet = new Set([
+        'https://example.com/* (All Domain URLs)',
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves([
+        domainWideSuggestion,
+        coveredSuggestion,
+        normalSuggestion,
+      ]);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [normalSuggestion],
         'OUTDATED',
       );
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
@@ -3277,6 +3379,110 @@ describe('data-access', () => {
 
     it('does not throw even when validation fails', () => {
       expect(() => warnOnInvalidSuggestionData(null, 'structured-data', mockLog)).to.not.throw();
+    });
+  });
+
+  describe('resolveOpportunityIfNoIssues', () => {
+    let log;
+    let dataAccess;
+    let bulkUpdateStatusStub;
+
+    beforeEach(() => {
+      log = { info: sinon.stub(), error: sinon.stub() };
+      bulkUpdateStatusStub = sinon.stub().resolves();
+      dataAccess = {
+        Opportunity: { allBySiteIdAndStatus: sinon.stub() },
+        Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+      };
+    });
+
+    it('does nothing when no existing NEW opportunity is found', async () => {
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+    });
+
+    it('does nothing when existing opportunity has a different audit type', async () => {
+      const otherOppty = { getType: () => 'broken-backlinks' };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOppty]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+    });
+
+    it('resolves matching opportunity and marks NEW/PENDING_VALIDATION suggestions OUTDATED', async () => {
+      const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+      const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([newSuggestion, pendingSuggestion]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(opportunity.setStatus).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
+      expect(opportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('preserves FIXED, SKIPPED, REJECTED suggestions and does not call bulkUpdateStatus', async () => {
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([
+          { getId: () => 's-fixed', getStatus: () => 'FIXED' },
+          { getId: () => 's-skipped', getStatus: () => 'SKIPPED' },
+          { getId: () => 's-rejected', getStatus: () => 'REJECTED' },
+        ]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('handles null suggestions returned by getSuggestions without error', async () => {
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves(null),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('logs error and does not throw when allBySiteIdAndStatus rejects', async () => {
+      dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to resolve canonical opportunity.*DB error/),
+      );
     });
   });
 });

@@ -16,6 +16,40 @@ import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js
 import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
 
 /**
+ * Removes subtrees rooted at elements whose `class` contains an excluded token.
+ * Deepest nodes are removed first so nested excluded wrappers are safe. Mirrors
+ * the broken-internal-links crawl filter introduced in PR #2455 so site authors
+ * can use one mental model across audits.
+ *
+ * @param {CheerioAPI} $ - cheerio document (mutated)
+ * @param {string[]} excludedElementClasses - normalized class tokens (no leading ".")
+ */
+export function filterExcludedElements($, excludedElementClasses) {
+  if (!excludedElementClasses?.length) {
+    return;
+  }
+  const excludedClassSet = new Set(excludedElementClasses);
+  const toRemove = [];
+
+  $('[class]').each((_, el) => {
+    const classAttr = $(el).attr('class');
+    if (!classAttr) {
+      return;
+    }
+    const hasExcluded = classAttr.split(/\s+/).filter(Boolean).some((c) => excludedClassSet.has(c));
+    if (hasExcluded) {
+      toRemove.push(el);
+    }
+  });
+  // Deepest nodes first so removing an ancestor doesn't leave already-queued
+  // descendants as detached nodes that Cheerio would try to remove again.
+  toRemove.sort((a, b) => $(b).parents().length - $(a).parents().length);
+  for (const el of toRemove) {
+    $(el).remove();
+  }
+}
+
+/**
  * Status codes where HEAD is unreliable: bot protection, auth gates, or method restrictions.
  * These trigger a GET retry before deciding the link is broken.
  */
@@ -59,6 +93,14 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     pageAuthToken, isInternal, selectors = [],
   } = options;
   const linkType = isInternal ? 'internal' : 'external';
+
+  // Only probe http/https URLs. Non-web schemes (mailto:, tel:, javascript:,
+  // sms:, etc.) are not web links — fetch() cannot probe them and they should
+  // never be reported as broken.
+  const { protocol } = new URL(href);
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    return null;
+  }
 
   const headers = { 'User-Agent': DEFAULT_USER_AGENT };
 
@@ -119,8 +161,16 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 
     return null;
   } catch (finalErr) {
-    log.error(`[preflight-audit] Error checking ${linkType} link ${href} from ${pageUrl} with GET fallback:`, finalErr.message);
-    return null;
+    // Network-level failure (DNS, timeout, unsupported protocol) — the link is
+    // unreachable, which is a broken-link condition. status: 0 is the sentinel
+    // for "no HTTP response received".
+    log.info(`[preflight-audit] ${linkType} link ${href} unreachable (${finalErr.message}) — reporting as broken`);
+    return {
+      urlTo: href,
+      href: pageUrl,
+      status: 0,
+      ...toElementTargets(selectors),
+    };
   }
 }
 
@@ -131,11 +181,17 @@ async function checkLinkStatus(href, pageUrl, context, options = {
  * @param {Object} context - Context object containing the logger
  * @param {RequestOptions} options - Options for to pass to the fetch request
  * @param {String} options.pageAuthToken - Optional authorization token for the page
+ * @param {string[]} [options.excludedElementClasses] - Class tokens that mark subtrees
+ *   to ignore. Any anchor whose DOM node or ancestor has one of these classes is
+ *   pruned from extraction and therefore never reported as broken.
  * @returns {Promise<Object>} - Object containing both broken internal and external links
  */
 export async function runLinksChecks(urls, scrapedObjects, context, options = {
   pageAuthToken: null,
 }) {
+  const {
+    excludedElementClasses = [],
+  } = options;
   const { log } = context;
   const brokenInternalLinks = [];
   const brokenExternalLinks = [];
@@ -149,6 +205,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
         const $ = cheerioLoad(html);
+
+        filterExcludedElements($, excludedElementClasses);
 
         const anchors = $('a[href]');
         const pageOrigin = new URL(pageUrl).origin;

@@ -11,6 +11,7 @@
  */
 import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import {
+  Opportunity as OpportunityDataAccess,
   Suggestion as SuggestionDataAccess,
   FixEntity as FixEntityDataAccess,
 } from '@adobe/spacecat-shared-data-access';
@@ -267,9 +268,16 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
     ].includes(existing.getStatus()))
     .filter((existing) => {
-      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
+      // Preserve prerender suggestions that are already deployed or covered by
+      // domain-wide deployment. Domain-wide rows are synthetic aggregate records,
+      // not real scraped URLs, so generic stale-page cleanup should not age them out.
       const data = existing.getData?.();
-      return !(data?.tokowakaDeployed || data?.edgeDeployed);
+      return !(
+        data?.tokowakaDeployed
+        || data?.edgeDeployed
+        || data?.coveredByDomainWide
+        || data?.isDomainWide
+      );
     })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -327,6 +335,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * This function encapsulates the default behavior for status transitions:
  * - REJECTED suggestions remain REJECTED
  * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
+ * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
+ *   Recovers any suggestion that errored due to a transient or codefix-side bug
+ *   once the underlying fix has shipped; pages that fail every run keep
+ *   re-dispatching but the audit cadence (weekly for CWV) bounds the cost.
  * - Other statuses remain unchanged
  *
  * @param {Object} existing - The existing suggestion object.
@@ -351,6 +363,11 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
     return (requiresValidation && !isTBYB)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
+  }
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.ERROR) {
+    log.info('ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.');
+    return SuggestionDataAccess.STATUSES.NEW;
   }
 
   return null; // Keep existing status
@@ -869,4 +886,40 @@ export async function syncSuggestionsWithPublishDetection({
     scrapedUrlsSet,
     existingSuggestions,
   });
+}
+
+/**
+ * Resolves the existing NEW opportunity for the given site and audit type when no issues are
+ * detected. Marks actionable suggestions (NEW, PENDING_VALIDATION) as OUTDATED while preserving
+ * suggestions already in terminal states (FIXED, SKIPPED, REJECTED, APPROVED, IN_PROGRESS).
+ *
+ * @param {string} siteId - The site ID.
+ * @param {string} auditType - The audit type (e.g. 'canonical', 'broken-backlinks').
+ * @param {object} dataAccess - The data access object.
+ * @param {object} log - Logger instance.
+ * @returns {Promise<void>}
+ */
+export async function resolveOpportunityIfNoIssues(siteId, auditType, dataAccess, log) {
+  try {
+    const opportunities = await dataAccess.Opportunity
+      .allBySiteIdAndStatus(siteId, OpportunityDataAccess.STATUSES.NEW);
+    const opportunity = opportunities.find((oppty) => oppty.getType() === auditType);
+    if (opportunity) {
+      log.info(`Resolving existing ${auditType} opportunity ${opportunity.getId()} for ${siteId}`);
+      await opportunity.setStatus(OpportunityDataAccess.STATUSES.RESOLVED);
+      const suggestions = await opportunity.getSuggestions();
+      const suggestionsToOutdate = (suggestions || []).filter((s) => [
+        SuggestionDataAccess.STATUSES.NEW,
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+      ].includes(s.getStatus()));
+      if (suggestionsToOutdate.length > 0) {
+        await dataAccess.Suggestion
+          .bulkUpdateStatus(suggestionsToOutdate, SuggestionDataAccess.STATUSES.OUTDATED);
+      }
+      opportunity.setUpdatedBy('system');
+      await opportunity.save();
+    }
+  } catch (e) {
+    log.error(`Failed to resolve ${auditType} opportunity for ${siteId}: ${e.message}`);
+  }
 }

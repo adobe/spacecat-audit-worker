@@ -147,6 +147,9 @@ async function buildScrapePayload({
       screenshotTypes: [],
       expandShadowDOM: false,
     },
+    customHeaders: {
+      'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot',
+    },
     allowCache: false,
     maxScrapeAge: 0,
   };
@@ -184,61 +187,10 @@ export async function submitForScraping(context) {
   return buildScrapePayload({ sourceUrls, site, log });
 }
 
-/**
- * Builds scrape entries for category pages that have preFetch config.
- * Category pages (e.g., /sactionals, /sacs, /snugg) don't have SKUs but carry
- * preFetch directives that tell CAS to fetch category-level catalog data.
- * This is currently specific to clients like Lovesac that need category bundle data
- * alongside product enrichment.
- *
- * @param {object} handlerConfig - The site's handler config for this audit type
- * @param {Map} scrapeResultPaths - Map of URL -> S3 path from scrape results
- * @param {object} log - Logger
- * @returns {object[]} Array of scrape entries for category pages
- */
-function buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log) {
-  const categoryPages = handlerConfig?.categoryPages || [];
-  if (categoryPages.length === 0) {
-    return [];
-  }
-
-  return categoryPages.reduce((scrapes, categoryPage) => {
-    const { url, categoryId, preFetch } = categoryPage;
-    if (!url || !categoryId || !preFetch) {
-      log.warn(`${LOG_PREFIX} Step 3: Skipping invalid categoryPages entry (missing url, categoryId, or preFetch)`);
-      return scrapes;
-    }
-
-    const s3Path = scrapeResultPaths?.get(url);
-    if (!s3Path) {
-      log.warn(`${LOG_PREFIX} Step 3: No scrape result found for category page: ${url}`);
-      return scrapes;
-    }
-
-    log.info(`${LOG_PREFIX} Step 3: Including category page: ${url} (categoryId: ${categoryId}, preFetch strategies: ${preFetch.length})`);
-    scrapes.push({
-      sku: categoryId, // SKU is the category ID.
-      key: s3Path,
-      preFetch,
-    });
-    return scrapes;
-  }, []);
-}
-
 async function sendEnrichment(productPages, commerceConfig, site, env, log, {
-  categoryPageScrapes = [],
   imsOrgId = null,
 } = {}) {
-  const allScrapes = [
-    ...productPages.map((page) => {
-      const scrape = { sku: page.sku, key: page.location };
-      if (page.preFetch) {
-        scrape.preFetch = page.preFetch;
-      }
-      return scrape;
-    }),
-    ...categoryPageScrapes,
-  ];
+  const allScrapes = productPages.map((page) => ({ sku: page.sku, key: page.location }));
 
   const enrichmentEndpoint = env.CATALOG_ENRICHMENT_ENDPOINT;
   if (!enrichmentEndpoint) {
@@ -248,12 +200,8 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
-    imsOrgId,
     storeViewUrl: commerceConfig.storeViewUrl,
-    environmentId: commerceConfig.headers['Magento-Environment-Id'],
-    websiteCode: commerceConfig.headers['Magento-Website-Code'],
-    storeCode: commerceConfig.headers['Magento-Store-Code'],
-    storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
+    imsOrgId,
     scrapes: allScrapes,
   };
 
@@ -370,8 +318,6 @@ export async function runAuditAndProcessResults(context) {
     }
   }
 
-  const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
-
   // Process each scraped result in parallel
   const processResults = await Promise.all(
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
@@ -395,7 +341,6 @@ export async function runAuditAndProcessResults(context) {
         let isProductPage = false;
         let skuCount = 0;
         let sku = null;
-        let preFetch = null;
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
@@ -405,15 +350,6 @@ export async function runAuditAndProcessResults(context) {
           // Extract the actual SKU value
           if (isProductPage) {
             sku = Product.find((p) => p.sku)?.sku;
-          }
-
-          const categoryProductUrl = Product.find((p) => p.url)?.url;
-          const categoryPage = handlerConfig?.categoryPages?.find(
-            (cp) => categoryProductUrl && cp.url && categoryProductUrl.includes(cp.url),
-          );
-
-          if (categoryPage) {
-            preFetch = categoryPage.preFetch;
           }
         }
 
@@ -426,7 +362,6 @@ export async function runAuditAndProcessResults(context) {
           isProductPage,
           skuCount,
           sku,
-          preFetch,
         };
       } catch (error) {
         log.error(`${LOG_PREFIX} Step 3: Error processing scrape result for ${url}: ${error.message}`, error);
@@ -447,9 +382,6 @@ export async function runAuditAndProcessResults(context) {
   // Filter for product pages only
   const productPages = processedPages.filter((page) => page.isProductPage);
 
-  // Build category page scrapes from handler config
-  const categoryPageScrapes = buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log);
-
   // Resolve config per product URL: manual config takes precedence over remote
   const resolvedProducts = productPages.map((page) => {
     const manualConfig = memoizedManualResolver(page.url);
@@ -461,7 +393,7 @@ export async function runAuditAndProcessResults(context) {
     };
   });
 
-  // Group products by storeViewCode
+  // Group products by storeViewUrl
   const groups = new Map();
   resolvedProducts
     .filter((product) => product.resolvedConfig)
@@ -473,44 +405,16 @@ export async function runAuditAndProcessResults(context) {
       groups.get(key).products.push(product);
     });
 
-  // Distribute category scrapes to matching groups
-  const resolvedCategoryScrapes = categoryPageScrapes.map((scrape) => {
-    const categoryUrl = [...scrapeResultPaths.entries()]
-      .find(([, path]) => path === scrape.key)?.[0];
-    const manualConfig = memoizedManualResolver(categoryUrl);
-    const resolvedConfig = manualConfig || remoteConfig;
-    return { ...scrape, configKey: configGroupKey(resolvedConfig), resolvedConfig };
-  });
-
-  // Add category scrapes to their matching groups (or create new groups)
-  resolvedCategoryScrapes
-    .filter((catScrape) => catScrape.resolvedConfig)
-    .forEach((catScrape) => {
-      const key = catScrape.configKey;
-      if (!groups.has(key)) {
-        groups.set(key, { config: catScrape.resolvedConfig, products: [] });
-      }
-    });
-
-  // Send separate enrichment requests per storeViewCode group
+  // Send separate enrichment requests per storeViewUrl group
   log.info(`${LOG_PREFIX} Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
-  const enrichmentPromises = [...groups.entries()].map(([groupKey, group]) => {
-    const groupCategoryScrapes = resolvedCategoryScrapes
-      .filter((cs) => cs.configKey === groupKey)
-      .map((cs) => ({
-        sku: cs.sku,
-        key: cs.key,
-        ...(cs.preFetch && { preFetch: cs.preFetch }),
-      }));
-    return sendEnrichment(
-      group.products,
-      group.config,
-      site,
-      env,
-      log,
-      { categoryPageScrapes: groupCategoryScrapes, imsOrgId },
-    );
-  });
+  const enrichmentPromises = [...groups.values()].map((group) => sendEnrichment(
+    group.products,
+    group.config,
+    site,
+    env,
+    log,
+    { imsOrgId },
+  ));
   const settledResults = await Promise.allSettled(enrichmentPromises);
   const enrichmentResponses = settledResults.map((result) => {
     if (result.status === 'fulfilled') {
@@ -521,13 +425,9 @@ export async function runAuditAndProcessResults(context) {
   });
   const enrichmentResponse = enrichmentResponses;
 
-  // Persist non-product URLs as excluded for future runs,
-  // but skip URLs that are configured as category pages
-  const categoryPageUrls = new Set(
-    (handlerConfig?.categoryPages || []).map((cp) => cp.url),
-  );
+  // Persist non-product URLs as excluded for future runs
   const nonProductUrls = processedPages
-    .filter((page) => !page.isProductPage && !categoryPageUrls.has(page.url))
+    .filter((page) => !page.isProductPage)
     .map((page) => page.url);
 
   if (nonProductUrls.length > 0) {
@@ -550,26 +450,22 @@ export async function runAuditAndProcessResults(context) {
     }
   }
 
-  const totalEnrichmentScrapes = productPages.length + categoryPageScrapes.length;
-
   log.info(`${LOG_PREFIX} Step 3: completed`, {
     totalScraped: scrapeResultPaths.size,
     processed: processedPages.length,
     failed: failedPages.length,
     productPages: productPages.length,
-    categoryPages: categoryPageScrapes.length,
   });
 
   const result = {
     status: 'complete',
     auditResult: {
-      status: totalEnrichmentScrapes > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
-      message: `Found ${productPages.length} product pages and ${categoryPageScrapes.length} category pages out of ${processedPages.length} processed pages`,
+      status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
+      message: `Found ${productPages.length} product pages out of ${processedPages.length} processed pages`,
       totalScraped: scrapeResultPaths.size,
       processedPages: processedPages.length,
       failedPages: failedPages.length,
       productPages: productPages.length,
-      categoryPages: categoryPageScrapes.length,
       enrichmentResponse,
     },
     fullAuditRef: finalUrl,

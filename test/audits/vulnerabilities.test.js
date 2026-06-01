@@ -667,6 +667,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         'codePath',
         'code/ad3d5bb7-9e85-4195-94e8-833cc5a73253/github/adobe/mystique-project/main/repository.zip',
       );
+      expect(message.data).to.have.property('imsOrg', 'test-ims-org');
     });
 
     it('should skip starfish-auto-code when queue env var is not configured', async () => {
@@ -704,21 +705,6 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(context.log.warn).to.have.been.calledWithMatch(/QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured/);
     });
 
-    it('should handle configuration lookup failure gracefully', async () => {
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Database connection failed'));
-
-      context.audit = {
-        getAuditResult: () => ({
-          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
-          success: true,
-        }),
-        getId: () => 'test-audit-id',
-      };
-
-      // This should throw an error since the handler doesn't
-      // handle config lookup failures gracefully
-      await expect(opportunityAndSuggestionsStep(context)).to.be.rejectedWith('Database connection failed');
-    });
   });
 
   describe('extractCodeBucket', () => {

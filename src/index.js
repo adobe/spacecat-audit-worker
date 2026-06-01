@@ -72,6 +72,7 @@ import triggerA11yCodefix from './accessibility/trigger-codefix-handler.js';
 import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import cdnReportsBulkPublish from './cdn-reports-bulk-publish/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
@@ -86,7 +87,7 @@ import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
-import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
+import rumConfigRefresh from './rum-config-refresh/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
@@ -183,6 +184,7 @@ const HANDLERS = {
   preflight,
   'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
+  'cdn-reports-bulk-publish': cdnReportsBulkPublish,
   'analytics-report': analyticsReport,
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
@@ -191,7 +193,6 @@ const HANDLERS = {
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
-  'llmo-config-db-sync': llmoConfigDbSync,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
@@ -231,6 +232,7 @@ const HANDLERS = {
   'offsite-brand-presence': offsiteBrandPresence,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
+  'rum-config-refresh': rumConfigRefresh,
   dummy: (message) => ok(message),
 };
 

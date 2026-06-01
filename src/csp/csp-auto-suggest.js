@@ -156,14 +156,7 @@ function createGitPatch(findings) {
 }
 
 export async function cspAutoSuggest(auditUrl, csp, context, site) {
-  const { dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-
-  if (!configuration.isHandlerEnabledForSite('security-csp-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] auto-suggest is disabled for site`);
-    return csp;
-  }
+  const { log } = context;
 
   // For now, auto-suggest works only for pages without any CSP
   const result = [...csp];

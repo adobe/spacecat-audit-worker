@@ -23,8 +23,9 @@ import {
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
-import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
+import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
+import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 
 const LOG_PREFIX = '[Cited]';
 
@@ -59,13 +60,76 @@ function getCitedConfig(site) {
 }
 
 /**
+ * Extracts the apex hostname from a URL or bare host string, stripping the
+ * leading ``www.`` so apex-to-apex comparison works regardless of how the
+ * brand domain is configured (``bmw.com`` vs ``https://www.bmw.com/``).
+ *
+ * Returns an empty string for unparseable input — the caller then treats the
+ * ownership check as a no-op rather than dropping URLs based on garbage.
+ * @param {string} value
+ * @returns {string}
+ */
+function toApexHost(value) {
+  if (!value) {
+    return '';
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '';
+  }
+  try {
+    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const host = new URL(withScheme).hostname.toLowerCase();
+    return host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Filters out cited URLs that live on the customer's own domain.
+ *
+ * Cited URLs are meant to represent 3rd-party EARNED citations. A page on
+ * ``bmw.com`` for the BMW customer is self-owned content; counting it as an
+ * earned citation skews offsite brand-perception reporting. We drop these
+ * here — before the expensive DRS lookup and before shipping the SQS payload
+ * to Mystique. The mystique flow re-applies the same filter for defense in
+ * depth.
+ *
+ * Ownership is matched on dotted suffix boundaries: ``bmw.com`` matches
+ * ``bmw.com``, ``www.bmw.com``, and ``m.bmw.com``, but NOT ``not-bmw.com``
+ * or ``bmw.com.attacker.example``.
+ * @param {Array<{url: string}>} urls
+ * @param {string} brandBaseURL
+ * @returns {{ kept: Array<{url: string}>, droppedCount: number }}
+ */
+function partitionOwnedUrls(urls, brandBaseURL) {
+  const ownedHost = toApexHost(brandBaseURL);
+  if (!ownedHost) {
+    return { kept: urls, droppedCount: 0 };
+  }
+  const kept = [];
+  let droppedCount = 0;
+  for (const entry of urls) {
+    const host = toApexHost(entry.url);
+    const isOwned = host && (host === ownedHost || host.endsWith(`.${ownedHost}`));
+    if (isOwned) {
+      droppedCount += 1;
+    } else {
+      kept.push(entry);
+    }
+  }
+  return { kept, droppedCount };
+}
+
+/**
  * Fetches all required data from stores for Cited analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context) {
+async function fetchStoreData(siteId, context, site) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
 
@@ -74,12 +138,34 @@ async function fetchStoreData(siteId, context) {
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
   log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} cited URLs from URL Store`);
 
+  // Drop URLs on the customer's own domain. Cited URLs represent 3rd-party
+  // EARNED citations — pages on ``bmw.com`` for the BMW customer would
+  // skew earned-media reporting. The mystique flow re-applies the same
+  // filter for defense in depth.
+  const { kept: earnedUrls, droppedCount: ownedDroppedCount } = partitionOwnedUrls(
+    rawUrls,
+    site?.getBaseURL?.(),
+  );
+  if (ownedDroppedCount > 0) {
+    log.info(
+      `${LOG_PREFIX} Excluded ${ownedDroppedCount} owned-domain URLs `
+      + '(cited analysis is 3rd-party earned only)',
+    );
+  }
+
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
-  const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
+  const urls = await filterUrlsByDrsStatus(
+    earnedUrls,
+    datasetIds,
+    siteId,
+    drsClient,
+    log,
+    LOG_PREFIX,
+  );
   log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
 
-  const topics = await computeTopicsFromBrandPresence(siteId, context);
+  const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
   log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
@@ -133,9 +219,15 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}, competitors=${citedConfig.competitors.length}`);
+    if (citedConfig.competitors.length === 0) {
+      // Surfaces the misconfiguration before the SQS hop to Mystique. With an
+      // empty list Mystique will only count the primary brand in Share of Voice
+      // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
+      log.warn(`${LOG_PREFIX} No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`);
+    }
 
-    const storeData = await fetchStoreData(siteId, context);
+    const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
@@ -226,7 +318,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit);
 
-    const message = {
+    const baseMessage = {
       type: 'guidance:cited-analysis',
       siteId,
       url: site.getBaseURL(),
@@ -244,11 +336,22 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
+    let brand = null;
+    try {
+      brand = await resolveBrandForSite(context, site);
+    } catch (brandError) {
+      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+    }
+    const message = applyBrandScope(baseMessage, brand);
+
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    const scopeForLog = brand
+      ? ` brandId=${brand.brandId}`
+      : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs`,
+        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
     );
     return auditData;
   } catch (error) {

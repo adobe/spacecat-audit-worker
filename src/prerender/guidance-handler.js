@@ -11,28 +11,27 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidLLMOCustomer } from './utils/utils.js';
+import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 const LOG_PREFIX = 'Prerender -';
 
 /**
- * Downloads JSON data from a presigned URL
+ * Downloads JSON data from a presigned URL using the shared analysis-fetch helper
+ * (SSRF guard, size cap, log scrub of query-string credentials).
+ *
  * @param {string} presignedUrl - The presigned S3 URL
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} - The parsed JSON data
- * @throws {Error} - If download fails or response is not OK
+ * @throws {Error} - If the URL is not allowlisted, fetch fails, response is too
+ *   large, or the body is missing the required `suggestions` array.
  */
 async function downloadFromPresignedUrl(presignedUrl, log) {
-  const response = await fetch(presignedUrl);
-
-  if (!response.ok) {
-    const errorMsg = `Failed to download from presigned URL: ${response.status} ${response.statusText}`;
-    log.error(`${LOG_PREFIX} ${errorMsg}`);
-    throw new Error(errorMsg);
-  }
-
-  const data = await response.json();
+  const data = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+    log,
+    prefix: LOG_PREFIX,
+  });
 
   if (!data || !data.suggestions) {
     const errorMsg = 'Downloaded data is missing required suggestions array';
@@ -123,12 +122,15 @@ export default async function handler(message, context) {
 
     log.info(`${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
 
-    // Index updateable suggestions by URL for quick lookup
-    const suggestionsByUrl = new Map();
+    // Index updateable suggestions by pathname for domain-shift-safe lookup.
+    // When the preferred base URL changes (e.g. www.example.com → example.com),
+    // Mystique responses may use the new domain while stored suggestions still
+    // carry the old domain — keying by pathname ensures they still match.
+    const suggestionsByPathname = new Map();
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();
       if (dataObj?.url) {
-        suggestionsByUrl.set(dataObj.url, s);
+        suggestionsByPathname.set(toPathname(dataObj.url), s);
       }
     });
 
@@ -152,7 +154,7 @@ export default async function handler(message, context) {
         return;
       }
 
-      const existing = suggestionsByUrl.get(url);
+      const existing = suggestionsByPathname.get(toPathname(url));
       if (!existing) {
         log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;

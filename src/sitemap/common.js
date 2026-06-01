@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { load as cheerioLoad } from 'cheerio';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
   isAuthUrl,
@@ -67,8 +68,22 @@ const VALID_MIME_TYPES = Object.freeze([
   'text/plain',
 ]);
 
+/**
+ * URL {@link URL#protocol} values treated as the same family for comparisons and normalized
+ * to {@code https:} in {@link pathnameKey} so http/https variants of the same resource match.
+ */
+export const HTTP_AND_HTTPS_PROTOCOLS = Object.freeze(['http:', 'https:']);
+
 /** HEAD responses that we will retry with a GET request. */
 const HEAD_FALLBACK_STATUSES = Object.freeze([403, 404, 405, 501]);
+
+/** HTTP statuses treated as redirects when probing page URLs ({@code redirect: 'manual'}). */
+export const REDIRECT_STATUSES = Object.freeze([301, 302, 303]);
+
+/** Max bytes read from a streamed GET when looking for {@code link rel="canonical"} */
+const MAX_CANONICAL_HTML_BYTES = 512 * 1024;
+
+// ----- functions -------------------------------------------------------------
 
 /**
  * Returns whether the URL path looks like a "not found" or error page (soft 404 style).
@@ -209,17 +224,360 @@ export function formatUrlProbeErrorDetail(err) {
 }
 
 /**
- * Returns the results of validating all the URLs. Every URL is validated.
+ * Returns the first usable {@code link rel="canonical"} href from HTML, or null.
+ *
+ * @param {string} rawBody - HTML (can be truncated)
+ * @param {string} documentUrl - Base URL for resolving relative href values
+ * @returns {string|null} Absolute canonical href, or null
+ */
+export function extractCanonicalHrefFromHtml(rawBody, documentUrl) {
+  if (!rawBody || typeof rawBody !== 'string' || !documentUrl) {
+    return null; // we have nothing to work with, so return null
+  }
+  try {
+    const $ = cheerioLoad(rawBody); // $ == jQuery/Cheerio selector function
+    const headCanonicals = $('head link[rel="canonical"]');
+    const allCanonicals = $('link[rel="canonical"]');
+    const count = allCanonicals.length;
+    if (count === 0) {
+      return null; // no canonical link found
+    }
+    const inHead = headCanonicals.length > 0;
+    const href = (inHead ? headCanonicals : allCanonicals).first().attr('href');
+    if (!href || !String(href).trim()) {
+      return null; // the canonical link contains nothing
+    }
+    return new URL(String(href).trim(), documentUrl).href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns the response text capped to {@code maxBytes}.
+ *
+ * @param {*} response - Response-like object with an async text() method.
+ * @param {number} maxBytes - Maximum number of characters to return.
+ *
+ * @returns {Promise<string>} Promise resolving to the response body converted to a string and
+ *                            truncated to maxBytes characters.
+ */
+async function streamResponseTextCapped(response, maxBytes) {
+  // Uses response.text() so nock/undici bodies are consumed reliably
+  // (streaming readers can yield empty chunks in test doubles).
+  const t = await response.text();
+  return String(t).slice(0, maxBytes);
+}
+
+/**
+ * Gets the document and returns its truncated HTML suitable to parse to discover its canonical URL.
+ *
+ * @param {string} documentUrl - URL we are wanting to find the canonical URL for
+ * @param {(() => Promise<void>) | null | undefined} beforeRequest - delay before the GET request
+ * @param {number} timeoutMs - how long we wait for the GET request to complete before giving up
+ *
+ * @returns {Promise<string | null>} HTML payload, or null when unavailable or not HTML-like
+ */
+async function getDocumentHtmlForCanonical(documentUrl, beforeRequest, timeoutMs) {
+  if (!documentUrl) {
+    return null;
+  }
+
+  await beforeRequest?.();
+
+  let response;
+  try {
+    response = await fetch(documentUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      timeout: timeoutMs,
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) {
+    return null;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const fromContentType = /html|xml\+html|xhtml/i.test(contentType); // html xml+html xhtml
+
+  const text = await streamResponseTextCapped(response, MAX_CANONICAL_HTML_BYTES);
+  const fromBodyPrefix = /^[\s\n\r]*</.test(text); // does text start with a '<'
+
+  const seemsLikeTextIsHtml = fromContentType || fromBodyPrefix;
+  if (!seemsLikeTextIsHtml) {
+    return null;
+  }
+
+  return text.length > 0 ? text : null;
+}
+
+/**
+ * Returns a normalized string for comparing resources.
+ *
+ * The returned string is safe to compare for "same resource" semantics:
+ * - uses hostname (lowercased); {@link HTTP_AND_HTTPS_PROTOCOLS} are normalized to {@code https:}
+ * - preserves the pathname but trims a trailing slash except for the root path
+ *
+ * Examples:
+ *   pathnameKey('https://Example.COM/foo/') === 'https://example.com/foo' // lowercase
+ *   pathnameKey('http://example.com/foo') === 'https://example.com/foo'   // protocol compatibility
+ *   pathnameKey('https://example.com/') === 'https://example.com/'        // exactly the same
+ *
+ * If `urlString` is not a valid absolute URL, the original input is returned unchanged.
+ *
+ * @param {string} urlString - absolute URL string to normalize
+ * @returns {string} origin + normalized pathname (or the original `urlString` if parsing fails)
+ */
+export function pathnameKey(urlString) {
+  try {
+    const u = new URL(urlString);
+    let { pathname } = u;
+    if (pathname.length > 1 && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    const protocol = HTTP_AND_HTTPS_PROTOCOLS.includes(u.protocol) ? 'https:' : u.protocol;
+    return `${protocol}//${u.hostname.toLowerCase()}${pathname}`;
+  } catch {
+    return urlString;
+  }
+}
+
+/**
+ * Returns true if the canonical URL is a better match than the suggested URL.
+ * The canonical URL must match the suggested URL except for the canonical can lack a suffix.
+ *
+ * Examples of true:
+ * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuff
+ * * https://www.example.com/my-stuff.html  and  http://www.example.com/my-stuff
+ * * https://www.example.com/my-stuff       and  http://www.example.com/my-stuff
+ *
+ * Examples of false:
+ * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuffing
+ * * https://www.example.com/foo/bar        and  https://www.example.com/foo
+ *
+ * @param {string} suggestedUrl - What we think we want to suggest
+ * @param {string} canonicalUrl - Absolute canonical href from HTML page
+ * @returns {boolean}
+ */
+export function suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+  suggestedUrl,
+  canonicalUrl,
+) {
+  let s;
+  let c;
+  try {
+    s = new URL(suggestedUrl);
+    c = new URL(canonicalUrl);
+  } catch {
+    return false; // since we cannot create proper URL objects
+  }
+
+  // for our purposes, we treat "https:" as compatible with "http:"
+  const protocolsCompatible = s.protocol === c.protocol
+    || (HTTP_AND_HTTPS_PROTOCOLS.includes(s.protocol)
+      && HTTP_AND_HTTPS_PROTOCOLS.includes(c.protocol));
+  if (!protocolsCompatible) {
+    return false;
+  }
+
+  if (s.hostname.toLowerCase() !== c.hostname.toLowerCase()) {
+    return false;
+  }
+
+  const normalizePathname = (pathname) => {
+    let p = pathname;
+    if (p.length > 1 && p.endsWith('/')) {
+      p = p.slice(0, -1);
+    }
+    return p; // has trailing slash removed
+  };
+  const sp = normalizePathname(s.pathname);
+  const cp = normalizePathname(c.pathname);
+
+  if (sp.length < cp.length) {
+    return false;
+  }
+  if (!sp.startsWith(cp)) {
+    return false;
+  }
+
+  const rest = sp.slice(cp.length);
+  if (!rest.startsWith('.')) {
+    return false; // since we are looking for a suffix on the suggested URL
+  }
+  const afterDot = rest.slice(1);
+  if (afterDot.length === 0 || afterDot.includes('/')) {
+    return false;
+  }
+
+  return true; // the canonical URL can be used in place of the suggested URL
+}
+
+/**
+ * When {@code documentUrl} is {@code http:} but {@code probedUrl} was {@code https:}, returns the
+ * {@code https:} variant of {@code documentUrl} for canonical HTML fetch; otherwise {@code null}.
+ *
+ * @param {string} documentUrl - suggested replacement URL
+ * @param {string} probedUrl - originally probed sitemap URL
+ * @returns {string|null}
+ */
+export function httpsDocumentUrlForCanonicalRefinement(documentUrl, probedUrl) {
+  if (documentUrl.startsWith('http://') && probedUrl.startsWith('https://')) {
+    return `https://${documentUrl.slice('http://'.length)}`;
+  }
+  return null;
+}
+
+/**
+ * GETs HTML for canonical refinement for the documentUrl. Also returns the actual documentUrl we
+ * used to retrieve this HTML.
+ *
+ * When the probed URL was https but the suggested documentUrl is http,
+ * tries the https variant first for the documentUrl, then falls back to the original http.
+ *
+ * @param {string} documentUrl
+ * @param {string} probedUrl
+ * @param {(() => Promise<void>) | null | undefined} beforeRequest - delay before the GET request
+ * @param {number} timeoutMs - how long we wait for the GET request to complete before giving up
+ *
+ * @returns {Promise<{ html: string | null, documentUrl: string }>}
+ */
+export async function fetchHtmlForCanonicalRefinement(
+  documentUrl,
+  probedUrl,
+  beforeRequest,
+  timeoutMs,
+) {
+  // determine if we really have two different versions of the documentUrl to try
+  const httpsDocumentUrl = httpsDocumentUrlForCanonicalRefinement(documentUrl, probedUrl);
+  if (httpsDocumentUrl) {
+    // if we need to try two different versions, then 1st try the modified  "https://" version
+    const httpsHtml = await getDocumentHtmlForCanonical(
+      httpsDocumentUrl,
+      beforeRequest,
+      timeoutMs,
+    );
+    if (httpsHtml) {
+      return { html: httpsHtml, documentUrl: httpsDocumentUrl };
+    }
+  }
+
+  // try the original version of the documentUrl
+  const html = await getDocumentHtmlForCanonical(documentUrl, beforeRequest, timeoutMs);
+  return { html, documentUrl };
+}
+
+/**
+ * Typically after a redirect {@code notOk} decision, GET the document and refine using
+ * {@code rel="canonical"}. Promotes to {@code ok} when canonical matches the probed URL;
+ * otherwise may replace {@code urlsSuggested} when canonical matches the suggested URL's path
+ * (exact pathname) or extends it with a dot-suffix segment per
+ * {@link suggestedUrlMatchesCanonicalUrlWithoutSuffix}.
+ *
+ * @param {object} params
+ * @param {string} params.documentUrl - URL to GET so we can extract its canonical href
+ *        note: in specific cases we might try the "https://" variant 1st, and then the original URL
+ * @param {string} params.probedUrl - the originally probed URL
+ * @param {Object} params.notOkPayload - the `notOk` payload to refine
+ *        (shape: { type: string, url: string, statusCode?: number, urlsSuggested?: string })
+ * @param {(() => Promise<void>) | null | undefined} params.beforeRequest - optional
+ *        throttle callback to be invoked before the GET
+ * @param {number} params.timeoutMs - timeout in ms while we wait for the GET request to return
+ * @param {Object} [params.log] - optional logger for diagnostics
+ *
+ * @returns {Promise<{
+ *   type: string,
+ *   url: string,
+ *   statusCode?: number,
+ *   urlsSuggested?: string
+ * }>}
+ */
+async function refineSuggestedUrlWithItsCanonicalUrl({
+  documentUrl,
+  probedUrl,
+  notOkPayload,
+  beforeRequest,
+  timeoutMs,
+  log,
+}) {
+  const { html, documentUrl: effectiveDocumentUrl } = await fetchHtmlForCanonicalRefinement(
+    documentUrl,
+    probedUrl,
+    beforeRequest, // any delay needed
+    timeoutMs,
+  );
+  if (!html) {
+    return notOkPayload;
+  }
+
+  const canonicalUrl = extractCanonicalHrefFromHtml(html, effectiveDocumentUrl);
+  if (!canonicalUrl || !/^https?:\/\//i.test(canonicalUrl)) {
+    /* c8 ignore start -- log-only */
+    log?.info(
+      `Sitemap: could not find a valid canonical URL for probed URL ${probedUrl} that redirected to the suggested URL ${documentUrl}. Keeping original suggested URL.`,
+    );
+    /* c8 ignore end */
+    return notOkPayload; // since we could not extract a valid canonical URL, we return what we have
+  }
+  /* c8 ignore start -- log-only */
+  log?.debug(
+    `Sitemap: refining suggested URL with canonical URL: probedUrl=${probedUrl}, suggestedUrl=${effectiveDocumentUrl}, canonicalUrl=${canonicalUrl ?? ''}`,
+  );
+  /* c8 ignore end */
+
+  // if the canonical URL is essentially the page URL we are probing, then everything is A-OK.
+  //   ex: if the probed URL redirects to a URL that is just the probed URL with query params.
+  if (pathnameKey(probedUrl) === pathnameKey(canonicalUrl)) {
+    /* c8 ignore start -- log-only; branch outcome covered by filterValidUrls redirect tests */
+    log?.info(
+      `Sitemap: canonical matches probed URL path for ${probedUrl}; everything is actually OK.`,
+    );
+    /* c8 ignore end */
+    return { type: 'ok', url: probedUrl }; // note that we do NOT return the `notOkPayload`
+  }
+
+  // if the canonical URL is essentially our suggested URL, use the canonical URL instead
+  const suggestedUrl = notOkPayload.urlsSuggested;
+  if (
+    typeof suggestedUrl === 'string'
+    && suggestedUrl.length > 0
+    && (pathnameKey(suggestedUrl) === pathnameKey(canonicalUrl)) // ignore query parms
+  ) {
+    log?.debug(
+      `Sitemap: using the canonical URL ${canonicalUrl} (replacing initial suggested URL ${suggestedUrl}) for the probed URL ${probedUrl}.`,
+    );
+    return { ...notOkPayload, urlsSuggested: canonicalUrl };
+  }
+
+  // if the canonical URL is a reasonably shorter form of our suggested URL, use the canonical URL
+  if (
+    typeof suggestedUrl === 'string'
+    && suggestedUrl.length > 0
+    && suggestedUrlMatchesCanonicalUrlWithoutSuffix(suggestedUrl, canonicalUrl)
+  ) {
+    log?.debug(
+      `Sitemap: suggesting the canonical URL ${canonicalUrl} (terminal path extends canonical by dot suffix; replacing ${suggestedUrl}) for probed ${probedUrl}.`,
+    );
+    return { ...notOkPayload, urlsSuggested: canonicalUrl };
+  }
+
+  // keep our originally suggested URL
+  return notOkPayload;
+}
+
+/**
+ * Returns a structure of the results of validating each URL.
  * The returned structure filters each of these URLs into exactly one "bucket."
  *
  * Validation means performing a HEAD request on the URL and reacting on the returned
  * HTTP status code. (If the web server rejects HEAD requests, we try with a GET.)
  * * 200 -- valid URL; add to the `ok` bucket ... this is the preferred response
- * * 301, 302 -- redirected; add to `notOk` bucket with a suggestion to replace the URL:
+ * * 301, 302, 303, etc. -- redirected; add to `notOk` bucket with a suggestion to replace the URL:
  * * * we prefer to use the terminal "final" URL
  * * * otherwise, we will use the "first hop" URL
- * * * however, there are cases -- such as redirecting to a soft "404" page -- where we have
- *      no suggested URL
+ * * * however, there are cases where we have no suggested URL
  * * 404 -- not found; add to `notOk` bucket with no explicit `urlsSuggested` value
  * * network errors -- add to `networkErrors` bucket
  * * (all other codes) -- such as 400, 401, 405, 500: add to `otherStatusCodes` bucket
@@ -268,11 +626,11 @@ export async function filterValidUrls(
     try {
       const response = await fetchWithHeadFallback(url, {
         ...probeFetchOpts, // == beforeRequest: callbackFunction
-        redirect: 'manual', // so we can watch if we go to an auth or a login page
+        redirect: 'manual', // so we can watch if we initially go to an auth or a login page
         timeout: timeoutMs,
       });
 
-      // Handle successful responses
+      // Handle an immediately successful response
       if (response.status === 200) {
         // beware if we really have a soft 404
         if (urlLooksLike404Page(url)) {
@@ -288,42 +646,43 @@ export async function filterValidUrls(
       log?.debug(`Sitemap: URL check for ${url} returned status: ${response.status}`);
 
       // Handle redirects
-      if (response.status === 301 || response.status === 302) {
+      if (REDIRECT_STATUSES.includes(response.status)) {
         const redirectUrl = response.headers.get('location');
         const firstHopUrl = redirectUrl ? new URL(redirectUrl, url).href : null;
 
-        // if redirect leads to an auth or a login page, then treat as valid
-        if (firstHopUrl && isAuthUrl(firstHopUrl)) {
-          return { type: 'ok', url };
-        }
-
+        // if there is no `firstHopUrl` then something is wrong with the website itself
         if (!firstHopUrl) {
-          // this is actually something that is wrong with the website itself
           log?.error(
             `Sitemap: redirect (${response.status}) for ${url} has no 'Location' header; `
-            + 'cannot suggest a replacement URL.',
+            + 'cannot suggest a replacement URL. Marking as a 404 error.',
           );
           return {
             type: 'notOk',
             url,
-            statusCode: response.status, // redirected
-            urlsSuggested: '', // no reasonable suggestion available
+            statusCode: 404, // we need to remove this entry from the sitemap.xml file
+            urlsSuggested: '', // no reasonable suggestion available: no Location header
           };
         }
 
-        let terminalValid = false;
-        let terminalUrl = firstHopUrl; // "final" URL after follow, when available
+        // if redirect leads to an auth or a login page, then treat as valid
+        if (isAuthUrl(firstHopUrl)) {
+          return { type: 'ok', url };
+        }
+
+        // follow the redirect to find its terminal URL
+        let terminalValid = false; // to become true: return a 200 and not be a 404 page
+        let terminalUrl = firstHopUrl; // "final" URL after following the redirect to its end
         let redirectResponse = null;
         try {
           redirectResponse = await fetchWithHeadFallback(firstHopUrl, {
+            ...probeFetchOpts, // == beforeRequest: callbackFunction
             redirect: 'follow',
             timeout: timeoutMs,
-            ...probeFetchOpts,
           });
 
           const resolvedUrl = redirectResponse.url?.trim();
           if (resolvedUrl) {
-            terminalUrl = resolvedUrl;
+            terminalUrl = resolvedUrl; // otherwise keep terminalUrl equal to firstHopUrl
           }
 
           const statusOk = redirectResponse.status === 200;
@@ -335,54 +694,93 @@ export async function filterValidUrls(
           redirectResponse = null;
         }
 
+        // create a callback function: will refine the URL we will be suggesting for this redirect
+        /**
+         * Returns a payload based on canonically refining the input payload's suggested URL.
+         * See documentation below for details.
+         *
+         * @param {{ type: string, url: string, statusCode?: number, urlsSuggested?: string }} row
+         *        the `notOk` payload object to refine; see {@link filterValidUrls}.
+         * @param {Object} [refineLog] - optional logger
+         *
+         * @returns {Promise<{
+         *   type: string,
+         *   url: string,
+         *   statusCode?: number,
+         *   urlsSuggested?: string
+         * }>} A promise that resolves to the refined payload. The refinement function may return
+         * the original `row`, a modified `row` with `urlsSuggested` replaced, or an `ok`-typed
+         * object when the refinement actually indicates the probed URL is the correct resource.
+         */
+        const refine = (row, refineLog = log) => refineSuggestedUrlWithItsCanonicalUrl({
+          documentUrl: row.urlsSuggested, // URL we will try to refine by getting its canonical URL
+          probedUrl: url, // the original URL that was investigated
+          notOkPayload: row, // the `notOk` object to refine. Might be transformed into an `ok`.
+          beforeRequest, // callback method (if any) that provides a delayed start to processing
+          timeoutMs, // how long we wait for our response (before we give up)
+          log: refineLog, // optional logger
+        });
+
         if (terminalValid) {
-          return {
+          log?.debug(`Sitemap: refining the terminal URL ${terminalUrl} as the suggest URL`);
+          return refine({
             type: 'notOk',
             url,
-            statusCode: response.status,
-            urlsSuggested: terminalUrl, // "final" URL
-          };
+            statusCode: response.status, // a redirect HTTP code
+            urlsSuggested: terminalUrl, // refine: if available, use its canonical URL instead
+          });
         }
 
-        // Terminal could not be confirmed (e.g. WAF 403). Still suggest first Location when it
+        // Terminal URL could not be confirmed (e.g. WAF 403). Still suggest first Location when it
         // differs from the probed URL and the failure is not a clear HTTP/path 404.
-        const terminalClearlyBad = redirectResponse
+        const terminalClearly404 = redirectResponse
           && (redirectResponse.status === 404 || urlLooksLike404Page(terminalUrl));
-        // firstHopUrl is always `new URL(Location, url).href` (already parsed above).
         const probedHref = new URL(url).href;
         const firstHopHref = new URL(firstHopUrl).href;
-        const firstHopDiffersFromProbed = firstHopHref !== probedHref;
-
-        if (firstHopDiffersFromProbed && !terminalClearlyBad) {
-          log?.debug(
-            `Sitemap: recommending first-hop redirect target instead of terminal URL for ${url}; `
-            + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
-            + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
-          );
-          return {
-            type: 'notOk',
-            url,
-            statusCode: response.status, // redirected
-            urlsSuggested: firstHopUrl, // suggest a reasonable URL
-          };
+        const terminalHref = new URL(terminalUrl).href;
+        // if the first hop is the same as the probed URL, then we have no suggestion to make
+        if (firstHopHref === probedHref) {
+          log?.debug('Sitemap: first hop URL equals probed URL (self-redirect) so everything is ok.', {
+            probedUrl: url,
+            locationHeader: redirectUrl,
+            firstHopUrl,
+            firstHopHref,
+            terminalCandidate: terminalUrl,
+            terminalStatus: redirectResponse?.status,
+          });
+          return { type: 'ok', url };
         }
 
-        // Unfortunately we have no URL suggestion for this redirected URL
-        log?.error(
+        // when the terminal URL has an unclear status, try to recommend the first hop instead
+        if (!terminalClearly404 && !urlLooksLike404Page(firstHopUrl)) {
+          if (firstHopHref !== terminalHref) {
+            log?.info(
+              `Sitemap: recommending first hop URL instead of terminal URL for ${url} as the redirect URL; `
+              + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
+              + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
+            );
+          }
+          return refine({
+            type: 'notOk',
+            url,
+            statusCode: response.status, // a redirect HTTP code
+            urlsSuggested: firstHopUrl, // refine: if available, use its canonical URL instead
+          });
+        }
+
+        // we have a redirect, but the first hop URL and/or the terminal URL looks like a 404 page
+        log?.debug(
           `Sitemap: redirect (${response.status}) for ${url} does not resolve to a valid terminal page URL; `
-          + `first hop: ${firstHopUrl}, terminal URL: ${terminalUrl}. No urlsSuggested.`,
+          + `first hop: ${firstHopUrl}, terminal URL: ${terminalUrl}. At least one of these seem to be a 404 page.`,
         );
-        return {
-          type: 'notOk',
-          url,
-          statusCode: response.status, // redirected
-          urlsSuggested: '', // no reasonable suggestion available
-        };
+        // eslint-disable-next-line object-curly-newline
+        return { type: 'notOk', url, statusCode: 404, urlsSuggested: '' };
       }
 
-      // Handle 404s
+      // Handle explicit 404s
       if (response.status === 404) {
-        return { type: 'notOk', url, statusCode: response.status };
+        // eslint-disable-next-line object-curly-newline
+        return { type: 'notOk', url, statusCode: response.status, urlsSuggested: '' };
       }
 
       // All remaining status codes
@@ -391,6 +789,7 @@ export async function filterValidUrls(
       // exception during the fetch (network error, timeout, etc.) is considered a network error
       const detail = formatUrlProbeErrorDetail(err);
       log?.debug(`Sitemap: network error while probing URL ${url}: ${detail}`);
+      // eslint-disable-next-line object-curly-newline
       return { type: 'networkError', url, error: 'NETWORK_ERROR' };
     }
   };
@@ -479,8 +878,8 @@ export function applyPageUrlProbeSampling(extractedPaths, log) {
   let working = entries;
   if (working.length > FAST_MAX_PAGE_URLS_PROBED) {
     log?.info(
-      `Sitemap: ${working.length} sitemap(s) with page URLs exceed cap ${FAST_MAX_PAGE_URLS_PROBED}; `
-      + `only the first ${FAST_MAX_PAGE_URLS_PROBED} sitemap(s) will be probed.`,
+      `Sitemap: ${working.length} sitemaps with page URLs exceed cap ${FAST_MAX_PAGE_URLS_PROBED}; `
+      + `only the first ${FAST_MAX_PAGE_URLS_PROBED} sitemaps will be probed.`,
     );
     working = working.slice(0, FAST_MAX_PAGE_URLS_PROBED);
   }
@@ -509,7 +908,7 @@ export function applyPageUrlProbeSampling(extractedPaths, log) {
   const sumQ = quotas.reduce((a, b) => a + b, 0); // actual total URLs to be probed
   if (sumQ > FAST_MAX_PAGE_URLS_PROBED) {
     log?.warn(
-      `Sitemap: Proportional quotas will actually probe ${sumQ} page URL(s), above the `
+      `Sitemap: Proportional quotas will actually probe ${sumQ} page URLs, above the `
       + `FAST_MAX_PAGE_URLS_PROBED (${FAST_MAX_PAGE_URLS_PROBED}) desired limit.`,
     );
   }
@@ -520,7 +919,7 @@ export function applyPageUrlProbeSampling(extractedPaths, log) {
     out[key] = urls.slice(0, quotas[i]); // quotas[i] is always >= 1
   });
   log?.info(
-    `Sitemap: Page URL probe sampling — ${originalTotal} page URL(s) discovered, ${sumQ} selected `
+    `Sitemap: Page URL probe sampling — ${originalTotal} page URLs discovered, ${sumQ} selected `
     + `(target cap ${FAST_MAX_PAGE_URLS_PROBED}, with at least 1 probe per each sitemap.xml file).`,
   );
   return out;
@@ -565,7 +964,7 @@ export async function checkSitemap(sitemapUrl, log) {
   try {
     log?.debug(`Sitemap: Fetching sitemap URL: ${sitemapUrl}`);
     const sitemapContent = await fetchContent(sitemapUrl);
-    log?.info(`Sitemap: Successfully fetched sitemap URL: ${sitemapUrl} with content type: ${sitemapContent.type}`);
+    log?.debug(`Sitemap: Successfully fetched sitemap URL: ${sitemapUrl} with content type: ${sitemapContent.type}`);
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
@@ -680,7 +1079,7 @@ export async function getSitemapUrls(inputUrl, log) {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
     if (robotsResult?.paths?.length) {
       sitemapUrls.ok = robotsResult.paths;
-      log?.info(`Sitemap: Found ${robotsResult.paths.length} sitemap URL(s) in robots.txt for ${inputUrl}`);
+      log?.info(`Sitemap: Found ${robotsResult.paths.length} sitemap URLs in robots.txt for ${inputUrl}`);
     }
   } catch (error) {
     /* c8 ignore next */

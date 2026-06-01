@@ -241,7 +241,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const {
     site, data, audit, log, sqs, env, finalUrl, dataAccess,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -310,16 +310,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log,
   });
 
-  const configuration = await Configuration.findLatest();
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
-      'security-vulnerabilities-auto-suggest' not configured.`,
-    );
-    return { status: 'complete' };
-  }
-
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {
     log.info(
@@ -344,6 +334,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
   ].includes(s.getStatus()));
   const suggestionIds = newSuggestions.map((s) => s.getId());
+  const imsOrg = await getImsOrgId(site, dataAccess, log);
   const message = {
     type: 'codefix:security-vulnerabilities',
     siteId: site.getId(),
@@ -355,6 +346,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       suggestionIds,
       codeBucket: codeInfo.codeBucket,
       codePath: codeInfo.codePath,
+      imsOrg,
     },
   };
 

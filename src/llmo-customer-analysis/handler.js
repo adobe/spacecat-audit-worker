@@ -21,77 +21,37 @@ import { wwwUrlResolver } from '../common/index.js';
 import {
   compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
+import {
+  isBrandalfEnabled,
+  resolveOrganizationIdForSite,
+} from '../utils/brandalf-utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
+import { findActiveBrandForSite } from '../utils/brand-resolver.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_DAILY_AUDIT = 'llmo-referral-traffic-daily';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-
-/**
- * Checks whether the brandalf feature flag is enabled for an organization
- * by calling the SpaceCat API feature-flags endpoint.
- *
- * @param {string} organizationId - SpaceCat org UUID
- * @param {object} env - Environment variables (needs SPACECAT_API_BASE_URL, SPACECAT_API_KEY)
- * @param {object} log - Logger
- * @returns {Promise<boolean>} true if brandalf is enabled, false otherwise
- */
-async function isBrandalfEnabled(organizationId, env, log) {
-  const { SPACECAT_API_BASE_URL: apiBase, SPACECAT_API_KEY: apiKey } = env;
-  if (!apiBase || !apiKey) {
-    log.warn('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured; cannot check brandalf flag');
-    return false;
-  }
-
-  try {
-    const url = `${apiBase}/organizations/${encodeURIComponent(organizationId)}/feature-flags?product=LLMO`;
-    const response = await fetch(url, {
-      headers: { 'x-api-key': apiKey },
-    });
-
-    if (!response.ok) {
-      log.warn(`Failed to fetch feature flags for org ${organizationId}: ${response.status}`);
-      return false;
-    }
-
-    const flags = await response.json();
-    return Array.isArray(flags) && flags.some(
-      (f) => f.flagName === 'brandalf' && f.flagValue === true,
-    );
-  } catch (error) {
-    log.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
-    return false;
-  }
-}
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
- * @param {object} site A site object
- * @param {object} context The request context object
- * @param {string[]} audits Array of audit types to enable
- * @param {object} [options]
- * @param {object} [options.configuration] A global configuration object.
+ * Enables each listed audit handler for the site and persists configuration.
+ * Intentionally does not call isHandlerEnabledForSite — callers must only invoke this on
+ * first-time flows (e.g. no previousConfigVersion) so disabled handlers are not re-toggled
+ * on every LLMO analysis.
+ *
+ * @param {object} site
+ * @param {object} context
+ * @param {string[]} audits
+ * @param {{ configuration: object }} options
  */
-async function enableAudits(site, context, audits = [], options = undefined) {
-  const { dataAccess } = context;
-  const { Configuration } = dataAccess;
-
-  const configuration = options?.configuration ?? await Configuration.findLatest();
-
-  let hasChanges = false;
+async function enableAudits(site, context, audits, options) {
+  const { configuration } = options;
   audits.forEach((audit) => {
-    if (!configuration.isHandlerEnabledForSite(audit, site)) {
-      configuration.enableHandlerForSite(audit, site);
-      hasChanges = true;
-    }
+    configuration.enableHandlerForSite(audit, site);
   });
-
-  if (hasChanges) {
-    await configuration.save();
-  }
-  /* c8 ignore stop */
+  await configuration.save();
 }
 
 async function enableImports(siteId, context, imports = []) {
@@ -275,6 +235,7 @@ export async function triggerCdnLogsReport(context, site) {
     auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
+      refreshAgenticDailyExport: true,
     },
   });
 
@@ -304,25 +265,30 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
-  // Ensure relevant audits and imports are enabled
-  try {
-    const configuration = await Configuration.findLatest();
+  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
+  const isFirstTimeOnboarding = !previousConfigVersion;
 
-    const auditsToEnable = [
-      'scrape-top-pages',
-      'headings',
-      'llm-blocked',
-      'llm-error-pages',
-      'summarization',
-      REFERRAL_TRAFFIC_AUDIT,
-      REFERRAL_TRAFFIC_DAILY_AUDIT,
-      'readability',
-      'wikipedia-analysis',
-    ];
-
-    await enableAudits(site, context, auditsToEnable, { configuration });
-  } catch (error) {
-    log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);
+  if (isFirstTimeOnboarding) {
+    try {
+      const configuration = await Configuration.findLatest();
+      const auditsToEnable = [
+        'scrape-top-pages',
+        'headings',
+        'llm-blocked',
+        'llm-error-pages',
+        'summarization',
+        REFERRAL_TRAFFIC_AUDIT,
+        REFERRAL_TRAFFIC_DAILY_AUDIT,
+        'readability',
+        'wikipedia-analysis',
+      ];
+      // enableAudits intentionally bypasses isHandlerEnabledForSite (see its JSDoc); only
+      // call it from first-time onboarding paths so previously disabled handlers are not
+      // silently re-toggled on subsequent runs.
+      await enableAudits(site, context, auditsToEnable, { configuration });
+    } catch (error) {
+      log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);
+    }
   }
 
   try {
@@ -338,8 +304,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
-  const isFirstTimeOnboarding = !previousConfigVersion;
 
   // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts.
   // If onboardingMode is explicitly 'v1' (set by api-service for mixed-state orgs with
@@ -348,41 +312,21 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   let brandId;
   let organizationId;
   if (isFirstTimeOnboarding) {
-    const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
+    const orgId = await resolveOrganizationIdForSite({
+      site,
+      fallbackOrganizationId: auditContext.imsOrgId,
+      log,
+    });
     if (orgId) {
       const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {
         organizationId = orgId;
-        try {
-          const { postgrestClient } = context.dataAccess?.services || {};
-          if (postgrestClient?.from) {
-            // Prefer the brand whose baseSiteId (site_id column) matches this
-            // site — this is the primary brand created during onboarding with
-            // the correct base URL.  Fall back to brand_sites join if no
-            // baseSiteId match exists (backward compat for brands created
-            // before baseSiteId was set during onboarding).
-            const { data: brands } = await postgrestClient
-              .from('brands')
-              .select('id, site_id, brand_sites(site_id)')
-              .eq('organization_id', organizationId)
-              .eq('status', 'active');
-
-            const baseSiteMatch = brands?.find((b) => b.site_id === siteId);
-            const brandSiteMatch = !baseSiteMatch && brands?.find(
-              (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
-            );
-            const match = baseSiteMatch || brandSiteMatch;
-            if (match) {
-              brandId = match.id;
-              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${baseSiteMatch ? 'baseSiteId' : 'brand_sites'})`);
-            } else {
-              log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
-            }
-          } else {
-            log.warn('postgrestClient not available; cannot resolve brand for v2 BP schedule');
-          }
-        } catch (error) {
-          log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
+        const brand = await findActiveBrandForSite(context, { orgId, siteId });
+        if (brand) {
+          brandId = brand.brandId;
+          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+        } else {
+          log.warn(`No brand resolved for site ${siteId} in org ${organizationId} for v2 BP schedule`);
         }
       }
     }
@@ -421,7 +365,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       auditResult: {
         status: 'completed',
         configChangesDetected: false,
-        message: 'Audits enabled (no config version provided, skipping config comparison)',
+        message: 'No config version provided; skipping config comparison',
         triggeredSteps,
         brandPresenceScheduleId: bpScheduleId,
         previousConfigVersion,
@@ -487,16 +431,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    const configuration = await Configuration.findLatest();
-    const isCdnLogsReportEnabled = await configuration.isHandlerEnabledForSite('cdn-logs-report', site);
-
-    if (isCdnLogsReportEnabled) {
-      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      await triggerCdnLogsReport(context, site);
-      triggeredSteps.push('cdn-logs-report');
-    } else {
-      log.info('LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site');
-    }
+    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+    await triggerCdnLogsReport(context, site);
+    triggeredSteps.push('cdn-logs-report');
   }
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;

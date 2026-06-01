@@ -21,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
@@ -276,17 +276,11 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping suggestions generation');
-  }
-
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
-    log.info('Auto-suggest is disabled for site');
-    throw new Error('Auto-suggest is disabled for site');
   }
 
   // Check if there are broken backlinks BEFORE creating opportunity
@@ -294,6 +288,14 @@ export const generateSuggestionData = async (context) => {
     || !Array.isArray(auditResult.brokenBacklinks)
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+
+    await resolveOpportunityIfNoIssues(
+      site.getId(),
+      Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+      dataAccess,
+      log,
+    );
+
     return {
       status: 'complete',
     };
