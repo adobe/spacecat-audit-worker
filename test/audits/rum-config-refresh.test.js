@@ -269,6 +269,26 @@ describe('rum-config-refresh handler', () => {
       expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
     });
 
+    it('cancellation flag stops the loop when first domain finishes after timeout', async () => {
+      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
+      const clock = sinon.useFakeTimers();
+      // first domain rejects after 5 s — past the 3 s timeout
+      retrieveDomainkeyStub.withArgs('www.override.com').returns(
+        new Promise((_, reject) => { setTimeout(() => reject(new Error('slow error')), 5000); }),
+      );
+      retrieveDomainkeyStub.withArgs('www.example.com').resolves('domainkey-abc');
+
+      const resultPromise = handler.default({ siteId: SITE_ID }, context);
+      await clock.tickAsync(3001); // fires 3 s timeout → cancelled = true, handler returns
+      const result = await resultPromise;
+      await clock.tickAsync(5000); // fires 5 s timer → first domain rejects, loop hits cancelled check
+      clock.restore();
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
+      expect(retrieveDomainkeyStub).not.to.have.been.calledWith('www.example.com');
+    });
+
     it('times out before reaching baseURL when override domain hangs', async () => {
       mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
       const clock = sinon.useFakeTimers();
