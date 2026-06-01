@@ -1143,7 +1143,9 @@ async function prepareDomainWideAggregateSuggestion(
 export function buildMergeDataFunction(mapSuggestionDataFn) {
   return (existingData, newDataItem) => {
     // Path-type: preserve edgeDeployed, coveredByDomainWide
-    if (newDataItem.key && newDataItem.data?.pathType) {
+    const isPath = newDataItem.key && Array.isArray(newDataItem.data?.allowedRegexPatterns)
+      && !newDataItem.data?.isDomainWide;
+    if (isPath) {
       return {
         ...newDataItem.data,
         ...(existingData?.edgeDeployed !== undefined
@@ -1347,8 +1349,8 @@ export async function processOpportunityAndSuggestions(
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
-      // eslint-disable-next-line no-nested-ternary
-      rank: suggestion.key && suggestion.data?.pathType
+      // eslint-disable-next-line no-nested-ternary, max-len
+      rank: suggestion.key && Array.isArray(suggestion.data?.allowedRegexPatterns) && !suggestion.data?.isDomainWide
         ? PATH_TYPE_SUGGESTION_RANK
         : (suggestion.key ? 999999 : 0),
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),

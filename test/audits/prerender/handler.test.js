@@ -4491,7 +4491,7 @@ describe('Prerender Audit', () => {
       const pathSuggestion = {
         key: '/products/*|prerender',
         data: {
-          pathType: true, pathPattern: '/products/*', pathScore: 2.5,
+          pathPattern: '/products/*', pathScore: 2.5,
           urlCount: 10, valuableCount: 8, valuablePercent: 80,
           avgContentGainRatio: 2, totalWordCountBefore: 1000, totalWordCountAfter: 2000,
           totalAgenticTraffic: 100, url: 'https://example.com/products/*',
@@ -4552,7 +4552,7 @@ describe('Prerender Audit', () => {
 
       const mapped = mapNewSuggestion(pathItem);
       expect(mapped.rank).to.equal(100000); // PATH_TYPE_SUGGESTION_RANK
-      expect(mapped.data.pathType).to.be.true;
+      expect(mapped.data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('refreshes metrics on preserved path suggestions', async () => {
@@ -4587,7 +4587,7 @@ describe('Prerender Audit', () => {
           buildPathTypeSuggestions: sinon.stub().resolves([{
             key: '/products/*|prerender',
             data: {
-              pathType: true, pathPattern: '/products/*', urlCount: 15, pathScore: 3,
+              allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', urlCount: 15, pathScore: 3,
               valuableCount: 10, valuablePercent: 66.7, avgContentGainRatio: 2,
               totalWordCountBefore: 1500, totalWordCountAfter: 3000, totalAgenticTraffic: 500,
             },
@@ -9702,7 +9702,7 @@ describe('Prerender Audit', () => {
       const newDataItem = {
         key: '/products/*|prerender',
         data: {
-          pathType: true,
+          allowedRegexPatterns: ['/products/*'],
           pathPattern: '/products/*',
           pathScore: 2.5,
           urlCount: 10,
@@ -9711,7 +9711,7 @@ describe('Prerender Audit', () => {
 
       const result = mergeFn(existingData, newDataItem);
 
-      expect(result.pathType).to.be.true;
+      expect(result.allowedRegexPatterns).to.deep.equal(['/products/*']);
       expect(result.pathPattern).to.equal('/products/*');
       expect(result.pathScore).to.equal(2.5);
       expect(result.urlCount).to.equal(10);
@@ -9724,7 +9724,7 @@ describe('Prerender Audit', () => {
       const existingData = { pathPattern: '/old/*' };
       const newDataItem = {
         key: '/products/*|prerender',
-        data: { pathType: true, pathPattern: '/products/*', pathScore: 2.0 },
+        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', pathScore: 2.0 },
       };
 
       const result = mergeFn(existingData, newDataItem);

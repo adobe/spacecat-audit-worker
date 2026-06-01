@@ -23,6 +23,14 @@ export { PATH_TYPE_SUGGESTION_RANK };
 
 const LOG_PREFIX = '[prerender][path-suggestions]';
 
+/**
+ * Detects a path-level suggestion by the presence of allowedRegexPatterns
+ * without isDomainWide. No `pathType` field is stored on the suggestion.
+ */
+function isPathSuggestionData(data) {
+  return Array.isArray(data?.allowedRegexPatterns) && !data?.isDomainWide;
+}
+
 // Statuses considered active/preservable for path suggestions
 const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
 // Statuses of per-URL suggestions eligible for path scoring
@@ -128,7 +136,7 @@ export async function findPreservablePathSuggestions(opportunity, log, suggestio
   const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
   const preservable = existingSuggestions.filter((s) => {
     const d = s.getData();
-    return d?.pathType === true && shouldPreservePathSuggestion(s);
+    return isPathSuggestionData(d) && shouldPreservePathSuggestion(s);
   });
   log.debug(`${LOG_PREFIX} Found ${preservable.length} preservable path suggestions`);
   return preservable;
@@ -167,7 +175,7 @@ export async function buildPathTypeSuggestions(
   const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
   const eligibleSuggestions = existingSuggestions.filter((s) => {
     const d = s.getData();
-    if (d?.pathType || d?.isDomainWide) {
+    if (isPathSuggestionData(d) || d?.isDomainWide) {
       return false;
     }
     return ELIGIBLE_STATUSES.has(s.getStatus());
@@ -248,7 +256,6 @@ export async function buildPathTypeSuggestions(
         key: `${pathPattern}|prerender`,
         data: {
           url: `${baseUrl}${pathPattern}`,
-          pathType: true,
           pathPattern,
           allowedRegexPatterns: [pathPattern],
           urlCount: urls.length,
@@ -277,7 +284,7 @@ export async function buildPathTypeSuggestions(
  *
  * Note: `coveredByDomainWide` is a shared field used by both domain-wide and path suggestions.
  * When set by this function it holds a path suggestion ID (not a domain-wide suggestion ID).
- * The self-heal distinguishes the two by checking `ref.getData()?.pathType === true`.
+ * The self-heal distinguishes the two by checking `isPathSuggestionData(ref.getData())`.
  *
  * Tech debt: if a referenced suggestion is deleted, the self-heal cannot distinguish a stale
  * path ref from a stale domain-wide ref. A dedicated field or structured { type, id } value
@@ -294,7 +301,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
   // Find deployed path suggestions
   const deployedPaths = suggestions.filter((s) => {
     const d = s.getData();
-    return d?.pathType === true && !!d?.edgeDeployed && s.getStatus() !== 'OUTDATED';
+    return isPathSuggestionData(d) && !!d?.edgeDeployed && s.getStatus() !== 'OUTDATED';
   });
 
   const deployedPathIds = new Set(deployedPaths.map((s) => s.getId()));
@@ -308,7 +315,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
     }
     // Only clear refs that point to a path suggestion that is no longer deployed
     const ref = suggestionsById.get(covId);
-    return ref && ref.getData()?.pathType === true && !deployedPathIds.has(covId);
+    return ref && isPathSuggestionData(ref.getData()) && !deployedPathIds.has(covId);
   });
 
   if (stale.length > 0) {
@@ -327,7 +334,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
   const newSuggestions = suggestions.filter(
     (s) => s.getStatus() === 'NEW'
-      && !s.getData()?.pathType
+      && !isPathSuggestionData(s.getData())
       && !s.getData()?.isDomainWide
       && !s.getData()?.edgeDeployed,
   );
