@@ -1131,6 +1131,50 @@ async function prepareDomainWideAggregateSuggestion(
   };
 }
 
+const METRICS_REFRESH_CHUNK_SIZE = 25;
+const METRICS_FIELDS = [
+  'urlCount', 'valuableCount', 'valuablePercent',
+  'avgContentGainRatio', 'totalWordCountBefore', 'totalWordCountAfter',
+  'totalAgenticTraffic', 'pathScore',
+];
+
+/**
+ * Refreshes metrics on preserved path suggestions from freshly-built data,
+ * keeping status and edgeDeployed untouched.  Saves in chunks via saveMany.
+ *
+ * @param {Array} builtSuggestions - Freshly scored path suggestions ({ data })
+ * @param {Map} preservableByPattern - pathPattern → existing suggestion entity
+ * @param {Object} dataAccess - Data-access layer (Suggestion.saveMany)
+ * @returns {Promise<void>}
+ */
+async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, dataAccess) {
+  const toSave = [];
+  for (const p of builtSuggestions) {
+    const existing = preservableByPattern.get(p.data.pathPattern);
+    if (existing) {
+      const currentData = existing.getData();
+      const updatedData = { ...currentData };
+      let changed = false;
+      for (const field of METRICS_FIELDS) {
+        if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
+          updatedData[field] = p.data[field];
+          changed = true;
+        }
+      }
+      if (changed) {
+        existing.setData(updatedData);
+        toSave.push(existing);
+      }
+    }
+  }
+
+  for (let i = 0; i < toSave.length; i += METRICS_REFRESH_CHUNK_SIZE) {
+    const chunk = toSave.slice(i, i + METRICS_REFRESH_CHUNK_SIZE);
+    // eslint-disable-next-line no-await-in-loop
+    await dataAccess.Suggestion.saveMany(chunk);
+  }
+}
+
 /**
  * Builds a merge function for syncSuggestions that handles three suggestion types:
  * - Path-type: preserves edgeDeployed from existing data (metrics are refreshed)
@@ -1261,31 +1305,7 @@ export async function processOpportunityAndSuggestions(
     );
 
     // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
-    const metricsFields = [
-      'urlCount', 'valuableCount', 'valuablePercent',
-      'avgContentGainRatio', 'totalWordCountBefore', 'totalWordCountAfter',
-      'totalAgenticTraffic', 'pathScore',
-    ];
-    await Promise.all(
-      builtSuggestions
-        .filter((p) => preservableByPattern.has(p.data.pathPattern))
-        .map(async (p) => {
-          const existing = preservableByPattern.get(p.data.pathPattern);
-          const currentData = existing.getData();
-          const updatedData = { ...currentData };
-          let changed = false;
-          for (const field of metricsFields) {
-            if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
-              updatedData[field] = p.data[field];
-              changed = true;
-            }
-          }
-          if (changed) {
-            existing.setData(updatedData);
-            await existing.save();
-          }
-        }),
-    );
+    await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context.dataAccess);
 
     newPathSuggestions = builtSuggestions
       .filter((p) => !preservableByPattern.has(p.data.pathPattern));

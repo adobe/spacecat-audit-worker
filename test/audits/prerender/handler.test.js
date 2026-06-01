@@ -4555,15 +4555,13 @@ describe('Prerender Audit', () => {
       expect(mapped.data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
-    it('refreshes metrics on preserved path suggestions', async () => {
+    it('refreshes metrics on preserved path suggestions via saveMany', async () => {
       const savedData = { pathPattern: '/products/*', pathScore: 1, urlCount: 5, edgeDeployed: true };
-      const saveStub = sinon.stub().resolves();
       const preservedPath = {
         getId: () => 'path-sug-1',
         getStatus: () => 'NEW',
         getData: () => ({ ...savedData }),
         setData: sinon.stub().callsFake((d) => { Object.assign(savedData, d); }),
-        save: saveStub,
       };
 
       const mockOpportunity = {
@@ -4571,6 +4569,7 @@ describe('Prerender Audit', () => {
         getSuggestions: sinon.stub().resolves([preservedPath]),
       };
       const syncSuggestionsStub = sinon.stub().resolves();
+      const saveManyStub = sinon.stub().resolves();
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -4608,6 +4607,7 @@ describe('Prerender Audit', () => {
 
       const context = {
         log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        dataAccess: { Suggestion: { saveMany: saveManyStub } },
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
@@ -4617,8 +4617,9 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-      // Save should have been called to refresh metrics on the preserved path
-      expect(saveStub).to.have.been.calledOnce;
+      // saveMany should have been called to refresh metrics on the preserved path
+      expect(saveManyStub).to.have.been.calledOnce;
+      expect(saveManyStub.firstCall.args[0]).to.have.length(1);
     });
   });
 
