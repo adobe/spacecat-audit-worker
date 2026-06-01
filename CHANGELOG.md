@@ -1,3 +1,10 @@
+## [1.456.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.3...v1.456.4) (2026-06-01)
+
+
+### Bug Fixes
+
+* getCodeInfo() URL-encoding mismatch breaking CWV/a11y code-fix for refs with / ([#2581](https://github.com/adobe/spacecat-audit-worker/issues/2581)) ([21b043c](https://github.com/adobe/spacecat-audit-worker/commit/21b043c654b2c060a22ce8708bc0c3030543167d))
+
 ## [1.456.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.2...v1.456.3) (2026-06-01)
 
 
