@@ -54,19 +54,29 @@ export default async function rumConfigRefresh(message, context) {
 
   const overrideBaseURL = siteConfig.getFetchConfig()?.overrideBaseURL;
   let overrideHostname = null;
-  try {
-    overrideHostname = overrideBaseURL ? new URL(overrideBaseURL).hostname : null;
-  } catch {
-    log.warn(`[rum-config-refresh] Malformed overrideBaseURL for site ${siteId}: ${overrideBaseURL}, falling back to baseURL`);
+  if (overrideBaseURL) {
+    try {
+      overrideHostname = new URL(overrideBaseURL).hostname;
+    } catch {
+      log.warn(`[rum-config-refresh] Malformed overrideBaseURL for site ${siteId}: ${overrideBaseURL}, falling back to baseURL`);
+    }
   }
-  const domains = [...new Set([
-    overrideHostname,
-    new URL(site.getBaseURL()).hostname,
-  ].filter(Boolean))];
+
+  let baseHostname;
+  try {
+    baseHostname = new URL(site.getBaseURL()).hostname;
+  } catch {
+    log.error(`[rum-config-refresh] Malformed baseURL for site ${siteId}: ${site.getBaseURL()}, skipping`);
+    return ok({ skipped: true, reason: 'malformed baseURL' });
+  }
+
+  // override-first: overrideBaseURL is the site's canonical RUM domain when set
+  const domains = [...new Set([overrideHostname, baseHostname].filter(Boolean))];
 
   let hasDomainKey = false;
   let timeoutId;
   let timedOut = false;
+  let cancelled = false;
 
   const rumApiClient = RUMAPIClient.createFrom(context);
 
@@ -76,27 +86,35 @@ export default async function rumConfigRefresh(message, context) {
     await Promise.race([
       (async () => {
         for (const domain of domains) {
+          if (cancelled) break;
           try {
             // eslint-disable-next-line no-await-in-loop
             await rumApiClient.retrieveDomainkey(domain);
             hasDomainKey = true;
             return;
           } catch (e) {
-            log.warn(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
+            log.info(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
           }
         }
       })(),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           timedOut = true;
+          cancelled = true;
           reject(new Error('RUM check timed out'));
         }, RUM_CHECK_TIMEOUT_MS);
       }),
     ]);
+    if (!hasDomainKey) {
+      log.warn(`[rum-config-refresh] No domain key found for site ${siteId} across all candidates: ${domains.join(', ')}`);
+    }
   } catch (e) {
     if (timedOut) {
       log.error(`[rum-config-refresh] RUM check timed out for ${domains.join(', ')}, skipping config update`);
       return ok({ skipped: true, reason: 'timeout' });
+    /* c8 ignore next 3 */
+    } else {
+      log.warn(`[rum-config-refresh] Unexpected error during RUM check for site ${siteId}: ${e.message}`);
     }
   } finally {
     clearTimeout(timeoutId);

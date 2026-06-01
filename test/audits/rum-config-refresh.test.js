@@ -164,7 +164,7 @@ describe('rum-config-refresh handler', () => {
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
       expect(toDynamoItemStub).to.have.been.calledWith(mockConfig);
       expect(mockSite.save).to.have.been.calledOnce;
-      expect(context.log.warn).to.have.been.calledWithMatch('RUM check failed');
+      expect(context.log.info).to.have.been.calledWithMatch('RUM check failed');
     });
 
     it('skips config update and does not write lastCheckedAt when RUM check times out', async () => {
@@ -214,8 +214,11 @@ describe('rum-config-refresh handler', () => {
 
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.override.com');
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
+      sinon.assert.callOrder(
+        retrieveDomainkeyStub.withArgs('www.override.com'),
+        retrieveDomainkeyStub.withArgs('www.example.com'),
+      );
+      expect(context.log.info).to.have.been.calledWithMatch('RUM check failed for www.override.com');
     });
 
     it('falls back to baseURL only when overrideBaseURL is malformed', async () => {
@@ -229,6 +232,31 @@ describe('rum-config-refresh handler', () => {
       expect(retrieveDomainkeyStub).to.have.been.calledOnce;
       expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
       expect(context.log.warn).to.have.been.calledWithMatch('Malformed overrideBaseURL');
+    });
+
+    it('skips when baseURL is malformed', async () => {
+      mockSite.getBaseURL.returns('not-a-valid-url');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      expect(result.status).to.equal(200);
+      const body = await result.json();
+      expect(body).to.deep.equal({ skipped: true, reason: 'malformed baseURL' });
+      expect(retrieveDomainkeyStub).not.to.have.been.called;
+      expect(mockSite.save).not.to.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch('Malformed baseURL');
+    });
+
+    it('uses baseURL when fetchConfig is set but overrideBaseURL is absent', async () => {
+      mockConfig.getFetchConfig.returns({ someOtherProp: 'value' });
+      retrieveDomainkeyStub.resolves('domainkey-abc');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
     });
 
     it('deduplicates when overrideBaseURL hostname matches baseURL hostname', async () => {
@@ -267,6 +295,7 @@ describe('rum-config-refresh handler', () => {
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
+      expect(context.log.warn).to.have.been.calledWithMatch('No domain key found');
     });
   });
 
