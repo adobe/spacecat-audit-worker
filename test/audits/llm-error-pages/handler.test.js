@@ -199,6 +199,7 @@ describe('LLM Error Pages Handler', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { return this; }
+          withPersister() { return this; }
           build() { return {}; }
         },
       },
@@ -1121,6 +1122,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { return this; }
+          withPersister() { return this; }
           build() { return {}; }
         },
       },
@@ -1198,6 +1200,7 @@ describe('LLM Error Pages Handler – default export routing', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { this._runner = true; return this; }
+          withPersister() { return this; }
           build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
         },
       },
@@ -1221,6 +1224,7 @@ describe('LLM Error Pages Handler – default export routing', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { this._runner = true; return this; }
+          withPersister() { return this; }
           build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
         },
       },
@@ -1233,9 +1237,10 @@ describe('LLM Error Pages Handler – default export routing', function () {
     sandbox.restore();
   });
 
-  it('backfillAudit runner calls runAuditAndSendToMystique with enriched context', async () => {
+  it('backfillAudit runner pre-creates the Audit row and forwards it via context', async () => {
     const sandbox = sinon.createSandbox();
     let capturedRunner;
+    let capturedPersister;
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '../../../src/common/audit-builder.js': {
@@ -1243,6 +1248,7 @@ describe('LLM Error Pages Handler – default export routing', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner(runner) { capturedRunner = runner; return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
           build() { return { run: sandbox.stub() }; }
         },
       },
@@ -1279,18 +1285,96 @@ describe('LLM Error Pages Handler – default export routing', function () {
     });
 
     expect(capturedRunner).to.be.a('function');
+    expect(capturedPersister).to.be.a('function');
 
+    const preCreatedAudit = {
+      getId: () => 'pre-created-audit',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    const auditCreate = sandbox.stub().resolves(preCreatedAudit);
     const mockSite = {
       getBaseURL: () => 'https://example.com',
       getId: () => 'site-1',
+      getIsLive: () => true,
       getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
     };
     const mockContext = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      dataAccess: { Audit: { create: auditCreate } },
     };
 
     const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
     expect(result).to.have.property('auditResult');
+    expect(auditCreate).to.have.been.calledOnce;
+    const createPayload = auditCreate.firstCall.args[0];
+    expect(createPayload).to.include({
+      siteId: 'site-1',
+      auditType: 'llm-error-pages',
+      fullAuditRef: 'https://example.com',
+      isLive: true,
+    });
+    expect(createPayload.auditResult).to.deep.equal({ backfill: true, weekOffset: -1 });
+    // Verify context.audit is mutated so the persister (which receives the original
+    // context, not enrichedContext) can access and update the pre-created audit row.
+    expect(mockContext.audit).to.equal(preCreatedAudit);
+
+    sandbox.restore();
+  });
+
+  it('backfill persister updates the pre-created audit and returns it (no duplicate row)', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedPersister;
+
+    await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+    });
+
+    expect(capturedPersister).to.be.a('function');
+
+    const setAuditResult = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    const audit = { setAuditResult, save };
+    const finalAuditResult = [{ success: true, periodIdentifier: 'w17-2026' }];
+
+    const persisted = await capturedPersister(
+      { auditResult: finalAuditResult },
+      { audit },
+    );
+
+    expect(persisted).to.equal(audit);
+    expect(setAuditResult).to.have.been.calledOnceWith(finalAuditResult);
+    expect(save).to.have.been.calledOnce;
+
+    sandbox.restore();
+  });
+
+  it('backfill persister no-ops gracefully when audit is missing', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedPersister;
+
+    await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+    });
+
+    const persisted = await capturedPersister({ auditResult: [] }, {});
+    expect(persisted).to.be.undefined;
 
     sandbox.restore();
   });
@@ -1363,7 +1447,8 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       '../../../src/common/audit-builder.js': {
         AuditBuilder: class {
           withUrlResolver() { return this; } addStep() { return this; }
-          withRunner() { return this; } build() { return {}; }
+          withRunner() { return this; } withPersister() { return this; }
+          build() { return {}; }
         },
       },
       '../../../src/common/audit-utils.js': { default: {} },
@@ -1659,7 +1744,8 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       '../../../src/common/audit-builder.js': {
         AuditBuilder: class {
           withUrlResolver() { return this; } addStep() { return this; }
-          withRunner() { return this; } build() { return {}; }
+          withRunner() { return this; } withPersister() { return this; }
+          build() { return {}; }
         },
       },
       '../../../src/common/audit-utils.js': { default: {} },

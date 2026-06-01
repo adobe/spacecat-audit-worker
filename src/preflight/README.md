@@ -406,6 +406,34 @@ The links check:
 - Skips links in header/footer elements
 - Generates AI suggestions for broken internal links in 'suggest' mode
 
+#### Skipping links from the audit
+
+Site authors can exclude links from the audit by wrapping them in an element
+whose CSS class is listed under `excludedElementClasses` in the site's preflight
+handler config. Any anchor whose DOM node or ancestor carries one of these class
+tokens is pruned before link probing and never reported as broken or insecure.
+Mirrors the pattern from the broken-internal-links audit (PR #2455).
+
+```json
+{
+  "handlers": {
+    "preflight": {
+      "config": {
+        "excludedElementClasses": ["cmp-feature-apps"]
+      }
+    }
+  }
+}
+```
+
+The exclusion applies to both the broken-link probe and the insecure-link
+(http→https) scan. Leading `.` on class tokens is stripped (`.no-audit` and
+`no-audit` are equivalent). Empty / whitespace-only entries are dropped.
+
+**Operational note:** the SpaceCat `PATCH /sites/{id}` endpoint
+shallow-merges the top-level `config` object. Always **GET → splice → PATCH**
+with the full merged config so you don't wipe other handler settings.
+
 ### Metatags Check
 
 The metatags check:

@@ -46,6 +46,22 @@ function hasNonHtmlExtension(pathname) {
 }
 
 /**
+ * Extracts the pathname from a URL string, stripping trailing slashes on non-root paths.
+ * Falls back to the raw string when the URL is not parseable (e.g. invalid or relative).
+ *
+ * @param {string} url
+ * @returns {string} pathname, or the original string on parse failure
+ */
+export function toPathname(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname === '/' ? pathname : pathname.replace(/\/$/, '');
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Merges multiple URL arrays, ensures uniqueness by path, and filters out non-HTML URLs
  * (handles www vs non-www differences by checking path only)
  * @param {...Array<string>} urlArrays - Variable number of URL arrays to merge

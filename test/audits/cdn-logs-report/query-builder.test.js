@@ -354,6 +354,66 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.include('test_db.test_table');
     });
 
+    it('creates query without status filter when statuses is not provided', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100 }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+      expect(query).to.not.include('status');
+    });
+
+    it('creates query without status filter when statuses is empty array', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [] }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+    });
+
+    it('creates live variant query with AND status IN (200) when statuses=[200]', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [200] }),
+      );
+
+      expect(query).to.include('AND status IN (200)');
+      expect(query).to.include('LIMIT 100');
+    });
+
+    it('createTopUrlsQueryWithLimit with statuses respects limit parameter', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 50, statuses: [200] }),
+      );
+
+      expect(query).to.include('LIMIT 50');
+    });
+
+    it('throws on invalid HTTP status code in statuses filter', async () => {
+      let err;
+      try {
+        await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+          createMockOptions({ limit: 10, statuses: ['injection; DROP TABLE'] }),
+        );
+      } catch (e) { err = e; }
+      expect(err).to.be.instanceOf(Error);
+      expect(err.message).to.match(/Invalid HTTP status code/);
+    });
+
+    it('throws on out-of-range status code in statuses filter', async () => {
+      for (const bad of [99, 600]) {
+        // eslint-disable-next-line no-await-in-loop
+        let err;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+            createMockOptions({ limit: 10, statuses: [bad] }),
+          );
+        } catch (e) { err = e; }
+        expect(err).to.be.instanceOf(Error);
+        expect(err.message).to.match(/Invalid HTTP status code/);
+      }
+    });
+
     it('creates query without excluded URL suffixes filter when not provided', async () => {
       const customOptions = createMockOptions({
         limit: 50,

@@ -106,6 +106,8 @@ describe('LLMO Customer Analysis Handler', () => {
     let mockRUMAPIClient;
     let mockGetRUMUrl;
     let mockFetch;
+    let mockIsBrandalfEnabled;
+    let mockResolveOrganizationIdForSite;
     let triggerBrandDetectionStub;
     let drsCreateFromStub;
 
@@ -152,6 +154,13 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
+      mockIsBrandalfEnabled = sandbox.stub().resolves(false);
+      mockResolveOrganizationIdForSite = sandbox.stub().callsFake(
+        async ({ site: helperSite, fallbackOrganizationId }) => (
+          helperSite?.getOrganizationId?.() || fallbackOrganizationId || null
+        ),
+      );
+
       context.env.DRS_API_URL = 'https://drs.example.com/api';
       context.env.DRS_API_KEY = 'test-drs-key';
 
@@ -165,6 +174,10 @@ describe('LLMO Customer Analysis Handler', () => {
           ],
           llmoConfig: mockLlmoConfig,
           tracingFetch: mockFetch,
+        },
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled: mockIsBrandalfEnabled,
+          resolveOrganizationIdForSite: mockResolveOrganizationIdForSite,
         },
         '@adobe/spacecat-shared-rum-api-client': {
           default: mockRUMAPIClientClass,
@@ -274,7 +287,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
     });
 
-    it('should skip cdn-logs-report when categories change but the handler is disabled for the site', async () => {
+    it('should trigger cdn-logs-report when categories change even if handler is disabled for site', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -309,14 +322,13 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
       );
       expect(result.auditResult.status).to.equal('completed');
-      // drs-brand-detection fires (categories = hasBrandPresenceChanges), so configChangesDetected is true
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.not.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
@@ -579,7 +591,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
-    it('should enable audits and trigger referral imports when no config version provided', async () => {
+    it('should trigger referral imports and brand presence when no config version provided', async () => {
       const auditContext = {};
 
       const result = await mockHandler.runLlmoCustomerAnalysis(
@@ -591,7 +603,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
-      expect(result.auditResult.message).to.equal('Audits enabled (no config version provided, skipping config comparison)');
+      expect(result.auditResult.message).to.equal('No config version provided; skipping config comparison');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
@@ -1057,54 +1069,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should handle errors from enableAudits gracefully', async () => {
-      // Use previousConfigVersion to skip first-time onboarding path
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      // Create a context with Configuration.findLatest that throws an error
-      const errorConfiguration = {
-        findLatest: sandbox.stub().rejects(new Error('Configuration service unavailable')),
-      };
-
-      const errorContext = {
-        sqs,
-        log,
-        dataAccess: {
-          Configuration: errorConfiguration,
-          Site: dataAccess.Site,
-          LatestAudit: dataAccess.LatestAudit,
-        },
-        s3Client: {},
-        env: context.env,
-      };
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        errorContext,
-        site,
-        auditContext,
-      );
-
-      // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
-
-      // Should still complete successfully despite the error
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
     it('should handle errors from enableImports gracefully', async () => {
       // Use previousConfigVersion to skip first-time onboarding path
       const auditContext = {
@@ -1252,7 +1216,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should enable audits and save configuration when enableAudits is called', async () => {
+    it('enables baseline LLMO audit handlers only on first-time analysis (no previousConfigVersion)', async () => {
       const auditContext = {
         configVersion: 'v1',
       };
@@ -1274,7 +1238,6 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify enableHandlerForSite was called for each expected audit type
       const expectedAudits = [
         'scrape-top-pages',
         'headings',
@@ -1286,13 +1249,97 @@ describe('LLMO Customer Analysis Handler', () => {
         'readability',
         'wikipedia-analysis',
       ];
-
-      for (const audit of expectedAudits) {
+      expectedAudits.forEach((audit) => {
         expect(configuration.enableHandlerForSite).to.have.been.calledWith(audit, site);
-      }
-
-      // Verify configuration.save was called
+      });
       expect(configuration.save).to.have.been.called;
+    });
+
+    it('does not enable handlers when previousConfigVersion is present', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(configuration.enableHandlerForSite).not.to.have.been.called;
+      expect(configuration.save).not.to.have.been.called;
+    });
+
+    it('should handle errors from enable audits on first-time analysis gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // First findLatest drives enable audits (fails → caught). Later calls during the same
+      // analysis must succeed (e.g. geo refresh, CDN queues) — use resolving mock after first rejection.
+      let findLatestAttempts = 0;
+      const errorConfiguration = {
+        findLatest: sandbox.stub().callsFake(() => {
+          findLatestAttempts += 1;
+          if (findLatestAttempts === 1) {
+            return Promise.reject(new Error('Configuration service unavailable'));
+          }
+          return Promise.resolve(configuration);
+        }),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: errorConfiguration,
+          Site: dataAccess.Site,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
+      expect(result.auditResult.status).to.equal('completed');
     });
 
     it('should create and trigger brand presence schedule on first-time onboarding', async () => {
@@ -1600,25 +1647,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should include brand_id in BP schedule when brandalf is enabled and brand is found', async () => {
       const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
 
-      // Enable brandalf check via SpaceCat API
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
-
-      // Reset mockFetch and set up call ordering:
-      // 1st call: feature-flags API (brandalf enabled)
-      // 2nd call: DRS schedule creation
-      // 3rd call: DRS schedule trigger
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1658,11 +1694,8 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify feature-flags was called
-      expect(mockFetch).to.have.been.calledWith(
-        sinon.match(/\/organizations\/org-123\/feature-flags/),
-        sinon.match.any,
-      );
+      expect(mockIsBrandalfEnabled).to.have.been.calledWith('org-123', context.env, log);
+      expect(mockFetch).to.have.callCount(2);
 
       // Verify schedule was created with brand_id
       const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
@@ -1675,20 +1708,14 @@ describe('LLMO Customer Analysis Handler', () => {
     it('should fall back to imsOrgId when getOrganizationId returns null', async () => {
       const auditContext = { imsOrgId: 'fallback-org' };
       site.getOrganizationId = sandbox.stub().returns(null);
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1726,6 +1753,9 @@ describe('LLMO Customer Analysis Handler', () => {
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
 
+      expect(mockResolveOrganizationIdForSite).to.have.been.calledWithMatch(
+        sinon.match({ fallbackOrganizationId: 'fallback-org' }),
+      );
       const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.equal('brand-fb');
@@ -1734,20 +1764,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should handle null brands and missing brand_sites when brandalf is enabled', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1792,20 +1816,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should create BP schedule without brand_id when no brand matches site', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1857,20 +1875,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should prefer baseSiteId match over brand_sites match', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1914,20 +1926,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should create BP schedule without brand_id when brand lookup fails', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -1976,21 +1982,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should skip brand resolution when brandalf is not enabled', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(false);
 
       mockFetch.reset();
-      // Feature-flags returns no brandalf flag
       mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: async () => [],
-      });
-      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -2020,23 +2019,19 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(body.spacecat_org_id).to.be.undefined;
     });
 
-    it('should skip brand resolution when feature-flags API fails', async () => {
+    it('should skip brand resolution when brandalf helper warns and returns false', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.callsFake(async () => {
+        log.warn('Failed to fetch feature flags for org org-123: 500');
+        return false;
+      });
 
       mockFetch.reset();
-      // Feature-flags API returns error
       mockFetch.onFirstCall().resolves({
-        ok: false,
-        status: 500,
-      });
-      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -2067,20 +2062,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should warn when postgrestClient is not available for brandalf-enabled org', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
@@ -2106,20 +2095,19 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
-    it('should handle network error when checking brandalf flag', async () => {
+    it('should continue when brandalf helper warns on error', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.callsFake(async () => {
+        log.warn('Error checking brandalf flag for org org-123: ECONNREFUSED');
+        return false;
+      });
 
       mockFetch.reset();
-      // Feature-flags fetch throws network error
-      mockFetch.onFirstCall().rejects(new Error('ECONNREFUSED'));
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });

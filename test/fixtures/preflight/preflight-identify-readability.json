@@ -98,6 +98,11 @@
             ]
           }
         ]
+      },
+      {
+        "name": "alt-text",
+        "type": "accessibility",
+        "opportunities": []
       }
     ]
   }

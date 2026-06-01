@@ -22,6 +22,7 @@ import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import {
   syncSuggestions,
   keepLatestMergeDataFunction,
+  resolveOpportunityIfNoIssues,
 } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -681,6 +682,10 @@ export async function processScrapedContent(context) {
   // all checks are successful, no issues were found
   if (Object.keys(filteredAggregatedResults).length === 0) {
     log.info(`[canonical] No canonical issues detected for ${baseURL}`);
+
+    const { dataAccess } = context;
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, dataAccess, log);
+
     return {
       fullAuditRef: baseURL,
       auditResult: {

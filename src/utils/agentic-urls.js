@@ -53,19 +53,14 @@ export const EXCLUDED_URL_SUFFIXES = [
 ];
 
 /**
- * Fetch top Agentic URLs using Athena.
- * Find last week's top agentic URLs, filters out pooled 'Other',
- * groups by URL, and returns the top URLs by total hits.
- * @param {Object} site - Site object
- * @param {Object} context - Context with log, env, etc.
- * @param {number} limit - Maximum number of URLs to return
- * @returns {Promise<Array<string>>} Array of top agentic URLs
+ * Shared Athena execution logic for top agentic URL queries.
+ * @param {Object} site
+ * @param {Object} context
+ * @param {number} limit
+ * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
+ * @returns {Promise<Array<string>>}
  */
-export async function getTopAgenticUrlsFromAthena(
-  site,
-  context,
-  limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
-) {
+async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
   const { log } = context;
   const baseUrl = getPreferredBaseUrl(site, context);
 
@@ -83,8 +78,7 @@ export async function getTopAgenticUrlsFromAthena(
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();
-    const recentWeeks = periods.weeks;
-    const oneWeekPeriods = { weeks: [recentWeeks[0]] };
+    const oneWeekPeriods = { weeks: [periods.weeks[0]] };
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
       periods: oneWeekPeriods,
@@ -93,6 +87,7 @@ export async function getTopAgenticUrlsFromAthena(
       site,
       limit,
       excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+      statuses,
     });
     log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
@@ -106,7 +101,6 @@ export async function getTopAgenticUrlsFromAthena(
       return [];
     }
 
-    // Validate baseUrl before constructing URLs
     let resolvedBaseUrl = baseUrl;
     try {
       // eslint-disable-next-line no-new
@@ -120,15 +114,12 @@ export async function getTopAgenticUrlsFromAthena(
       .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
       .map((row) => {
         const path = row.url;
-        // If path is already an absolute URL, return it as-is
         if (path.startsWith('http://') || path.startsWith('https://')) {
           return path;
         }
-        // If we have a valid base URL, construct the full URL
         if (resolvedBaseUrl) {
           return new URL(path, resolvedBaseUrl).toString();
         }
-        // No valid base URL, return null to filter out
         return null;
       })
       .filter((url) => url !== null);
@@ -140,4 +131,39 @@ export async function getTopAgenticUrlsFromAthena(
     log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
     return [];
   }
+}
+
+/**
+ * Fetch top Agentic URLs using Athena.
+ * Find last week's top agentic URLs, filters out pooled 'Other',
+ * groups by URL, and returns the top URLs by total hits.
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with log, env, etc.
+ * @param {number} limit - Maximum number of URLs to return
+ * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
+ * @returns {Promise<Array<string>>} Array of top agentic URLs
+ */
+export async function getTopAgenticUrlsFromAthena(
+  site,
+  context,
+  limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+  statuses = [],
+) {
+  return runTopAgenticUrlsQuery(site, context, limit, statuses);
+}
+
+/**
+ * Like getTopAgenticUrlsFromAthena but restricted to URLs that returned HTTP 200
+ * during the period — excludes 404s, 410s, and other error responses.
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with log, env, etc.
+ * @param {number} limit - Maximum number of URLs to return
+ * @returns {Promise<Array<string>>} Array of top live agentic URLs
+ */
+export async function getTopAgenticLiveUrlsFromAthena(
+  site,
+  context,
+  limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+) {
+  return getTopAgenticUrlsFromAthena(site, context, limit, [200]);
 }

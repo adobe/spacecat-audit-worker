@@ -45,8 +45,11 @@ import {
   urlLooksLike404Page,
   formatUrlProbeErrorDetail,
   pathnameKey,
+  HTTP_AND_HTTPS_PROTOCOLS,
   suggestedUrlMatchesCanonicalUrlWithoutSuffix,
   extractCanonicalHrefFromHtml,
+  httpsDocumentUrlForCanonicalRefinement,
+  fetchHtmlForCanonicalRefinement,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -2086,6 +2089,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
@@ -2253,6 +2257,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
     expect(result.networkErrors).to.deep.equal([
@@ -2397,7 +2402,27 @@ describe('filterValidUrls with redirect handling', () => {
 
     expect(result.ok).to.deep.equal(['https://example.com/self-redirect-loop']);
     expect(result.notOk).to.be.empty;
-    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop equals probed/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
+  });
+
+  it('does not treat first hop as self-redirect when Location scheme differs from probed URL', async () => {
+    const probed = 'https://example.com/self-redirect-http-location';
+    nock('https://example.com')
+      .head('/self-redirect-http-location')
+      .reply(301, '', { Location: 'http://example.com/self-redirect-http-location' });
+    nock('http://example.com').head('/self-redirect-http-location').reply(404);
+    nock('http://example.com').get('/self-redirect-http-location').reply(404);
+
+    const result = await filterValidUrls([probed]);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 404,
+        urlsSuggested: '',
+      },
+    ]);
   });
 
   it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
@@ -2489,7 +2514,7 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: canonicalClean,
       },
     ]);
-    expect(log.debug).to.have.been.calledWith(sinon.match(/suggesting the canonical URL/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
   });
 
   it('does not replace urlsSuggested when canonical points to a different path', async () => {
@@ -2740,6 +2765,236 @@ describe('filterValidUrls with redirect handling', () => {
     const result = await filterValidUrls([probed]);
     expect(result.ok).to.deep.equal([probed]);
   });
+
+  it('promotes redirect to ok when canonical is http but matches probed https path', async () => {
+    const probed = 'https://example.com/probed-http-canonical';
+    const terminal = 'http://example.com/terminal-http';
+    const html = '<!DOCTYPE html><html><head>'
+      + '<link rel="canonical" href="http://example.com/probed-http-canonical" />'
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/probed-http-canonical')
+      .reply(301, '', { Location: terminal });
+    nock('http://example.com').head('/terminal-http').reply(200);
+    nock('https://example.com')
+      .get('/terminal-http')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.ok).to.deep.equal([probed]);
+  });
+
+  it('uses https document fetch first when probed https redirects to http Location', async () => {
+    const probed = 'https://example.com/old-https-to-http';
+    const httpTerminal = 'http://example.com/dest-page';
+    const canonicalHttps = 'https://example.com/dest-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/old-https-to-http')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/dest-page').reply(403);
+    nock('http://example.com').get('/dest-page').reply(403);
+    nock('https://example.com')
+      .get('/dest-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
+  });
+
+  it('falls back to http document fetch when https variant returns no HTML', async () => {
+    const probed = 'https://example.com/fallback-http-get';
+    const httpTerminal = 'http://example.com/http-only-page';
+    const canonicalHttps = 'https://example.com/http-only-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/fallback-http-get')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/http-only-page').reply(200);
+    nock('https://example.com')
+      .get('/http-only-page')
+      .reply(301, '', { Location: canonicalHttps });
+    nock('http://example.com')
+      .get('/http-only-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+  });
+});
+
+describe('httpsDocumentUrlForCanonicalRefinement', () => {
+  it('returns https variant when document is http and probed was https', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'http://example.com/path',
+      'https://example.com/other',
+    )).to.equal('https://example.com/path');
+  });
+
+  it('returns null when document is already https', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'https://example.com/path',
+      'https://example.com/other',
+    )).to.equal(null);
+  });
+
+  it('returns null when probed was http', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'http://example.com/path',
+      'http://example.com/other',
+    )).to.equal(null);
+  });
+
+  it('returns null when document is https and probed was http', () => {
+    expect(httpsDocumentUrlForCanonicalRefinement(
+      'https://example.com/path',
+      'http://example.com/other',
+    )).to.equal(null);
+  });
+});
+
+describe('fetchHtmlForCanonicalRefinement', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('returns https HTML without calling http when https fetch succeeds', async () => {
+    const html = '<html><head><link rel="canonical" href="https://example.com/p" /></head></html>';
+    nock('https://example.com')
+      .get('/p')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/p',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/p',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('falls back to http when https fetch returns no HTML', async () => {
+    const html = '<html><head></head></html>';
+    nock('https://example.com').get('/p2').reply(301, '', { Location: 'https://example.com/p2' });
+    nock('http://example.com')
+      .get('/p2')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/p2',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'http://example.com/p2',
+    });
+  });
+
+  it('fetches documentUrl once when probed was not https (https document, http probed)', async () => {
+    const html = '<html></html>';
+    nock('https://example.com')
+      .get('/only')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'https://example.com/only',
+      'http://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/only',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('fetches https document once when both document and probed use https', async () => {
+    const html = '<html><head></head></html>';
+    nock('https://example.com')
+      .get('/both-https')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'https://example.com/both-https',
+      'https://example.com/probed-both-https',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'https://example.com/both-https',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('fetches http document once when both document and probed use http', async () => {
+    const html = '<html><head></head></html>';
+    nock('http://example.com')
+      .get('/both-http')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/both-http',
+      'http://example.com/probed-both-http',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html,
+      documentUrl: 'http://example.com/both-http',
+    });
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('returns null html when documentUrl is empty', async () => {
+    const result = await fetchHtmlForCanonicalRefinement(
+      '',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({ html: null, documentUrl: '' });
+  });
+
+  it('returns null when both https and http canonical fetches fail', async () => {
+    nock('https://example.com').get('/empty').reply(403);
+    nock('http://example.com').get('/empty').reply(403);
+
+    const result = await fetchHtmlForCanonicalRefinement(
+      'http://example.com/empty',
+      'https://example.com/probed',
+      null,
+      PAGE_URL_TIMEOUT_MS,
+    );
+    expect(result).to.deep.equal({
+      html: null,
+      documentUrl: 'http://example.com/empty',
+    });
+  });
 });
 
 describe('pathnameKey', () => {
@@ -2748,12 +3003,34 @@ describe('pathnameKey', () => {
     expect(pathnameKey('https://example.com/')).to.equal('https://example.com/');
   });
 
+  it('normalizes http and https to the same https comparison key', () => {
+    expect(pathnameKey('http://ExAmple.com/foo/')).to.equal('https://example.com/foo');
+    expect(pathnameKey('http://example.com/bar')).to.equal('https://example.com/bar');
+    expect(pathnameKey('https://example.com/bar')).to.equal('https://example.com/bar');
+  });
+
+  it('preserves non-http(s) schemes for comparison keys', () => {
+    expect(pathnameKey('ftp://Example.COM/pub/')).to.equal('ftp://example.com/pub');
+  });
+
   it('returns original string when URL parsing fails', () => {
     expect(pathnameKey('not-a-valid-url')).to.equal('not-a-valid-url');
   });
 });
 
 describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
+  it('treats http and https as compatible for dot-suffix matching', () => {
+    expect(HTTP_AND_HTTPS_PROTOCOLS).to.deep.equal(['http:', 'https:']);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'http://www.example.com/dir/name.page',
+      'https://www.example.com/dir/name',
+    )).to.equal(true);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://www.example.com/dir/name.page',
+      'http://www.example.com/dir/name',
+    )).to.equal(true);
+  });
+
   it('returns true when terminal path is canonical path plus dot suffix (e.g. .page)', () => {
     expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
       'https://www.ups.com/us/en/support/contact-us.page',
@@ -2807,7 +3084,7 @@ describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
     )).to.equal(false);
   });
 
-  it('returns false for invalid URLs, mismatched host, or mismatched protocol', () => {
+  it('returns false for invalid URLs, mismatched host, or non-web protocol vs https', () => {
     expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix('', 'https://example.com/a')).to.equal(false);
     expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
       'not-a-url',
@@ -2822,15 +3099,26 @@ describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
       'https://example.com/a',
     )).to.equal(false);
     expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
-      'http://example.com/a.page',
+      'ftp://example.com/a.page',
       'https://example.com/a',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/a.page',
+      'ftp://example.com/a',
     )).to.equal(false);
   });
 
-  it('returns false when paths are identical', () => {
+  it('returns false when paths are identical (not a dot-suffix extension)', () => {
     expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
       'https://example.com/p',
       'https://example.com/p',
+    )).to.equal(false);
+  });
+
+  it('returns false when suggested pathname is shorter than canonical pathname', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/foo',
+      'https://example.com/foo/bar',
     )).to.equal(false);
   });
 });
@@ -2989,6 +3277,7 @@ describe('filterValidUrls with status code tracking', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
 
@@ -3088,6 +3377,7 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
       {
         url: 'https://example.com/truly-not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
@@ -3198,18 +3488,37 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     expect(log.error).to.have.been.calledWith(sinon.match(/no 'Location' header/));
   });
 
-  it('calls log.debug for first-hop redirect suggestion when log is provided', async () => {
+  it('does not call log.info when first hop equals terminal candidate on redirect suggestion', async () => {
     const urls = ['https://example.com/redirect-waf'];
     nock('https://example.com')
       .head('/redirect-waf')
       .reply(301, '', { Location: 'https://example.com/first-hop-page' });
     nock('https://example.com').head('/first-hop-page').reply(403);
     nock('https://example.com').get('/first-hop-page').reply(403);
-    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
 
     await filterValidUrls(urls, log);
 
-    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop redirect target/));
+    expect(log.info).not.to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+  });
+
+  it('calls log.info for first-hop redirect suggestion when terminal differs from first hop', async () => {
+    const urls = ['https://example.com/start'];
+    nock('https://example.com')
+      .head('/start')
+      .reply(302, '', { Location: 'https://example.com/mid' });
+    nock('https://example.com')
+      .head('/mid')
+      .reply(302, '', { Location: 'https://example.com/end' });
+    nock('https://example.com').head('/end').reply(403);
+    nock('https://example.com').get('/end').reply(403);
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.info).to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/first hop: https:\/\/example\.com\/mid/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/terminal candidate: https:\/\/example\.com\/end/));
   });
 
   it('calls log.debug when redirect terminal is clearly bad and log is provided', async () => {
