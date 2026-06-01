@@ -149,9 +149,9 @@ export async function findSitemap(inputUrl, log) {
             const pct = (slowdownStats.ratio * 100).toFixed(0);
             log?.warn(`* Sitemap: slowing down page URL probing starting with sitemap ${sitemapUrl} due to high count of 'otherStatus' codes: ${slowdownStats.otherCount} out of ${slowdownStats.total} (${pct}%)`);
             urlsToProbe = slicePageUrlsForSlowProbeSampling(urlsFromSampling); // re-do current set
-            const slowCapRetainPct = (
-              (100 * urlsToProbe.length) / urlsFromSampling.length
-            ).toFixed(0);
+            const slowCapRetainPct = urlsFromSampling.length
+              ? ((100 * urlsToProbe.length) / urlsFromSampling.length).toFixed(0)
+              : '0';
             log?.warn(`* Sitemap: since we are going slower, the slow probe uses ~${slowCapRetainPct}% of our original "fast" sampled page URLs (ex: ${urlsToProbe.length} of ${urlsFromSampling.length} from this current sitemap)`);
             log?.warn(`* Sitemap: pausing ${SLOW_MODE_ENTRY_DELAY_MS / 1000} seconds for anticipated WAF rules before switching into a slow page URL re-probe for sitemap ${sitemapUrl}`);
             // eslint-disable-next-line no-await-in-loop
