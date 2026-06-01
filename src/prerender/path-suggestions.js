@@ -279,23 +279,20 @@ export async function buildPathTypeSuggestions(
 }
 
 /**
- * Marks NEW per-URL suggestions as coveredByDomainWide for each deployed path suggestion.
- * Also self-heals: clears stale coveredByDomainWide refs where the path is no longer deployed.
+ * Marks NEW per-URL suggestions as coveredByPattern for each deployed path suggestion.
+ * Also self-heals: clears stale coveredByPattern refs where the referenced path is no
+ * longer deployed (handles partial-failure cleanup, manual DB edits, deleted suggestions).
  *
- * Note: `coveredByDomainWide` is a shared field used by both domain-wide and path suggestions.
- * When set by this function it holds a path suggestion ID (not a domain-wide suggestion ID).
- * The self-heal distinguishes the two by checking `isPathSuggestionData(ref.getData())`.
- *
- * Tech debt: if a referenced suggestion is deleted, the self-heal cannot distinguish a stale
- * path ref from a stale domain-wide ref. A dedicated field or structured { type, id } value
- * would be more robust long-term.
+ * Uses `coveredByPattern` — a dedicated field for path coverage, separate from
+ * `coveredByDomainWide` which is reserved for domain-wide coverage. Rollback handlers
+ * in the shared client clear only their own field.
  *
  * @param {Object} opportunity - SpaceCat opportunity entity
- * @param {Object} context - Audit context
+ * @param {Object} context - Audit context (must include dataAccess for bulk saves)
  * @returns {Promise<void>}
  */
 export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
-  const { log } = context;
+  const { log, dataAccess } = context;
   const suggestions = await opportunity.getSuggestions();
 
   // Find deployed path suggestions
@@ -306,26 +303,20 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
   const deployedPathIds = new Set(deployedPaths.map((s) => s.getId()));
 
-  // Self-heal: clear stale coveredByDomainWide references pointing to undeployed paths
-  const suggestionsById = new Map(suggestions.map((s) => [s.getId(), s]));
+  // Self-heal: clear stale coveredByPattern references pointing to undeployed paths
   const stale = suggestions.filter((s) => {
-    const covId = s.getData()?.coveredByDomainWide;
-    if (!covId) {
-      return false;
-    }
-    // Only clear refs that point to a path suggestion that is no longer deployed
-    const ref = suggestionsById.get(covId);
-    return ref && isPathSuggestionData(ref.getData()) && !deployedPathIds.has(covId);
+    const covId = s.getData()?.coveredByPattern;
+    return covId && !deployedPathIds.has(covId);
   });
 
   if (stale.length > 0) {
-    await Promise.all(stale.map(async (s) => {
+    stale.forEach((s) => {
       const d = { ...s.getData() };
-      delete d.coveredByDomainWide;
+      delete d.coveredByPattern;
       s.setData(d);
-      return s.save();
-    }));
-    log.info(`${LOG_PREFIX} Cleared ${stale.length} stale coveredByDomainWide references`);
+    });
+    await dataAccess.Suggestion.saveMany(stale);
+    log.info(`${LOG_PREFIX} Cleared ${stale.length} stale coveredByPattern references`);
   }
 
   if (deployedPaths.length === 0) {
@@ -345,22 +336,23 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
     const pathId = pathSuggestion.getId();
 
     const toCover = newSuggestions.filter((s) => {
-      if (s.getData()?.coveredByDomainWide) {
+      const d = s.getData();
+      if (d?.coveredByPattern || d?.coveredByDomainWide) {
         return false;
       }
       try {
-        return new URL(s.getData().url).pathname.startsWith(`${prefix}/`);
+        return new URL(d.url).pathname.startsWith(`${prefix}/`);
       } catch {
         return false;
       }
     });
 
     if (toCover.length > 0) {
-      toCover.forEach((s) => s.setData({ ...s.getData(), coveredByDomainWide: pathId }));
+      toCover.forEach((s) => s.setData({ ...s.getData(), coveredByPattern: pathId }));
       // eslint-disable-next-line no-await-in-loop
-      await Promise.all(toCover.map((s) => s.save()));
+      await dataAccess.Suggestion.saveMany(toCover);
       log.info(
-        `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByDomainWide=${pathId}`,
+        `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
       );
     }
   }

@@ -603,16 +603,19 @@ describe('Path Suggestions', () => {
 
   describe('markSuggestionsAsCoveredByPaths', () => {
     let markSuggestionsAsCoveredByPaths;
+    let saveManyStub;
+    let ctx;
 
     beforeEach(() => {
       ({ markSuggestionsAsCoveredByPaths } = pathSuggestionsModule);
+      saveManyStub = sinon.stub().resolves();
+      ctx = {
+        log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub() },
+        dataAccess: { Suggestion: { saveMany: saveManyStub } },
+      };
     });
 
-    const context = {
-      log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub() },
-    };
-
-    it('marks NEW per-URL suggestions as coveredByDomainWide when path is deployed', async () => {
+    it('marks NEW per-URL suggestions as coveredByPattern when path is deployed', async () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
@@ -625,10 +628,10 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.calledOnce).to.be.true;
-      expect(urlSuggestion.getData().coveredByDomainWide).to.equal('path-1');
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.equal('path-1');
     });
 
     it('does not mark suggestion if path prefix does not match', async () => {
@@ -644,10 +647,10 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.notCalled).to.be.true;
-      expect(urlSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(saveManyStub.notCalled).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.be.undefined;
     });
 
     it('does not mark URLs whose path prefix is a substring but not a segment boundary', async () => {
@@ -664,13 +667,13 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.notCalled).to.be.true;
-      expect(urlSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(saveManyStub.notCalled).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.be.undefined;
     });
 
-    it('does not re-mark already covered suggestions', async () => {
+    it('does not re-mark suggestions already covered by a path', async () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
@@ -679,35 +682,67 @@ describe('Path Suggestions', () => {
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
         status: 'NEW',
-        data: { url: `${BASE_URL}/products/item-1`, coveredByDomainWide: 'path-1' },
+        data: { url: `${BASE_URL}/products/item-1`, coveredByPattern: 'path-1' },
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.notCalled).to.be.true;
+      expect(saveManyStub.notCalled).to.be.true;
     });
 
-    it('self-heals: clears stale coveredByDomainWide refs to undeployed path suggestions', async () => {
+    it('does not re-mark suggestions already covered by domain-wide', async () => {
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+      });
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products/item-1`, coveredByDomainWide: 'dw-1' },
+      });
+      const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.notCalled).to.be.true;
+    });
+
+    it('self-heals: clears stale coveredByPattern refs to undeployed path suggestions', async () => {
       // A path suggestion that is NOT deployed
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
         data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: false },
       });
-      // A URL suggestion with a stale coveredByDomainWide pointing to that path
-      const staleRef = { ...{} };
+      // A URL suggestion with a stale coveredByPattern pointing to that path
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
         status: 'NEW',
-        data: { url: `${BASE_URL}/products/item-1`, coveredByDomainWide: 'path-1' },
+        data: { url: `${BASE_URL}/products/item-1`, coveredByPattern: 'path-1' },
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.calledOnce).to.be.true;
-      expect(urlSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.be.undefined;
+    });
+
+    it('self-heals: clears coveredByPattern refs to deleted path suggestions', async () => {
+      // No path suggestion exists — the referenced one was deleted
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products/item-1`, coveredByPattern: 'deleted-path-id' },
+      });
+      const opportunity = makeOpportunity([urlSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.be.undefined;
     });
 
     it('does not modify suggestions when no path suggestions are deployed', async () => {
@@ -718,9 +753,9 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.notCalled).to.be.true;
+      expect(saveManyStub.notCalled).to.be.true;
     });
 
     it('does not mark suggestions with edgeDeployed already set', async () => {
@@ -736,9 +771,9 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(urlSuggestion.save.notCalled).to.be.true;
+      expect(saveManyStub.notCalled).to.be.true;
     });
 
     it('skips suggestions with an invalid URL when checking path prefix (catch branch)', async () => {
@@ -760,11 +795,11 @@ describe('Path Suggestions', () => {
       });
       const opportunity = makeOpportunity([pathSuggestion, invalidUrlSuggestion, validUrlSuggestion]);
 
-      await markSuggestionsAsCoveredByPaths(opportunity, context);
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      // Invalid URL suggestion is skipped without error; valid one is covered
-      expect(invalidUrlSuggestion.save.notCalled).to.be.true;
-      expect(validUrlSuggestion.save.calledOnce).to.be.true;
+      // Invalid URL suggestion is skipped without error; valid one is covered via saveMany
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(validUrlSuggestion.getData().coveredByPattern).to.equal('path-1');
     });
   });
 });

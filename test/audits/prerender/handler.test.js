@@ -9691,11 +9691,10 @@ describe('Prerender Audit', () => {
   describe('buildMergeDataFunction', () => {
     const mapSuggestionDataFn = (s) => ({ url: s.url, score: s.score });
 
-    it('preserves edgeDeployed and coveredByDomainWide for path-type suggestions', () => {
+    it('preserves edgeDeployed for path-type suggestions', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = {
         edgeDeployed: true,
-        coveredByDomainWide: 'dw-1',
         pathPattern: '/old/*',
         pathScore: 1.0,
       };
@@ -9716,7 +9715,6 @@ describe('Prerender Audit', () => {
       expect(result.pathScore).to.equal(2.5);
       expect(result.urlCount).to.equal(10);
       expect(result.edgeDeployed).to.be.true;
-      expect(result.coveredByDomainWide).to.equal('dw-1');
     });
 
     it('does not inject edgeDeployed when not present on existing data for path-type', () => {
@@ -9730,7 +9728,6 @@ describe('Prerender Audit', () => {
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.edgeDeployed).to.be.undefined;
-      expect(result.coveredByDomainWide).to.be.undefined;
     });
 
     it('replaces data entirely for domain-wide suggestions', () => {
