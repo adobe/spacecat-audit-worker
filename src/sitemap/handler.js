@@ -149,7 +149,7 @@ export async function findSitemap(inputUrl, log) {
             const pct = (slowdownStats.ratio * 100).toFixed(0);
             log?.warn(`* Sitemap: slowing down page URL probing starting with sitemap ${sitemapUrl} due to high count of 'otherStatus' codes: ${slowdownStats.otherCount} out of ${slowdownStats.total} (${pct}%)`);
             urlsToProbe = slicePageUrlsForSlowProbeSampling(urlsFromSampling); // re-do current set
-            const slowCapRetainPct = urlsFromSampling.length
+            const slowCapRetainPct = urlsFromSampling.length > 0
               ? ((100 * urlsToProbe.length) / urlsFromSampling.length).toFixed(0)
               : '0';
             log?.warn(`* Sitemap: since we are going slower, the slow probe uses ~${slowCapRetainPct}% of our original "fast" sampled page URLs (ex: ${urlsToProbe.length} of ${urlsFromSampling.length} from this current sitemap)`);
