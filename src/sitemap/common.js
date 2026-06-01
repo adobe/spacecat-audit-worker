@@ -245,7 +245,7 @@ export function extractCanonicalHrefFromHtml(rawBody, documentUrl) {
     const inHead = headCanonicals.length > 0;
     const href = (inHead ? headCanonicals : allCanonicals).first().attr('href');
     if (!href || !String(href).trim()) {
-      return null; // the canonical link contains nothing
+      return null; // the canonical link was empty
     }
     return new URL(String(href).trim(), documentUrl).href;
   } catch {
@@ -270,31 +270,13 @@ async function streamResponseTextCapped(response, maxBytes) {
 }
 
 /**
- * Gets the document and returns its truncated HTML suitable to parse to discover its canonical URL.
+ * Reads a response body and returns its truncated HTML.
+ * Text returned is suitable to parse to discover its canonical URL.
  *
- * @param {string} documentUrl - URL we are wanting to find the canonical URL for
- * @param {(() => Promise<void>) | null | undefined} beforeRequest - delay before the GET request
- * @param {number} timeoutMs - how long we wait for the GET request to complete before giving up
- *
- * @returns {Promise<string | null>} HTML payload, or null when unavailable or not HTML-like
+ * @param {*} response - fetch Response ({@code ok} may be true or false)
+ * @returns {Promise<string|null>}
  */
-async function getDocumentHtmlForCanonical(documentUrl, beforeRequest, timeoutMs) {
-  if (!documentUrl) {
-    return null;
-  }
-
-  await beforeRequest?.();
-
-  let response;
-  try {
-    response = await fetch(documentUrl, {
-      method: 'GET',
-      redirect: 'manual',
-      timeout: timeoutMs,
-    });
-  } catch {
-    return null;
-  }
+export async function readHtmlBody(response) {
   if (!response.ok) {
     return null;
   }
@@ -307,7 +289,7 @@ async function getDocumentHtmlForCanonical(documentUrl, beforeRequest, timeoutMs
 
   const seemsLikeTextIsHtml = fromContentType || fromBodyPrefix;
   if (!seemsLikeTextIsHtml) {
-    return null;
+    return null; // since this text does not seem to be HTML
   }
 
   return text.length > 0 ? text : null;
@@ -345,44 +327,46 @@ export function pathnameKey(urlString) {
 }
 
 /**
- * Returns true if the canonical URL is a better match than the suggested URL.
- * The canonical URL must match the suggested URL except for the canonical can lack a suffix.
+ * Returns true if the second URL is a better match than the first URL.
+ * The second URL must match the first URL except that the second URL can lack a suffix.
  *
  * Examples of true:
  * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuff
  * * https://www.example.com/my-stuff.html  and  http://www.example.com/my-stuff
- * * https://www.example.com/my-stuff       and  http://www.example.com/my-stuff
  *
  * Examples of false:
  * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuffing
  * * https://www.example.com/foo/bar        and  https://www.example.com/foo
+ * * https://www.example.com/my-stuff       and  http://www.example.com/my-stuff
  *
- * @param {string} suggestedUrl - What we think we want to suggest
- * @param {string} canonicalUrl - Absolute canonical href from HTML page
+ * @param {string} firstUrl - What we think we want to suggest.
+ *                            Note that this firstUrl is expected to have some sort of suffix.
+ * @param {string} secondUrl - What we might consider suggesting instead (ex: a canonical URL).
+ *                             Note that this secondUrl tends to be shorter than the firstUrl.
  * @returns {boolean}
  */
-export function suggestedUrlMatchesCanonicalUrlWithoutSuffix(
-  suggestedUrl,
-  canonicalUrl,
+export function secondUrlIsBetterChoiceThanFirstUrl(
+  firstUrl,
+  secondUrl,
 ) {
+  let f;
   let s;
-  let c;
   try {
-    s = new URL(suggestedUrl);
-    c = new URL(canonicalUrl);
+    f = new URL(firstUrl);
+    s = new URL(secondUrl);
   } catch {
     return false; // since we cannot create proper URL objects
   }
 
   // for our purposes, we treat "https:" as compatible with "http:"
-  const protocolsCompatible = s.protocol === c.protocol
-    || (HTTP_AND_HTTPS_PROTOCOLS.includes(s.protocol)
-      && HTTP_AND_HTTPS_PROTOCOLS.includes(c.protocol));
+  const protocolsCompatible = f.protocol === s.protocol
+    || (HTTP_AND_HTTPS_PROTOCOLS.includes(f.protocol)
+      && HTTP_AND_HTTPS_PROTOCOLS.includes(s.protocol));
   if (!protocolsCompatible) {
     return false;
   }
 
-  if (s.hostname.toLowerCase() !== c.hostname.toLowerCase()) {
+  if (f.hostname.toLowerCase() !== s.hostname.toLowerCase()) {
     return false;
   }
 
@@ -393,99 +377,219 @@ export function suggestedUrlMatchesCanonicalUrlWithoutSuffix(
     }
     return p; // has trailing slash removed
   };
+  const fp = normalizePathname(f.pathname);
   const sp = normalizePathname(s.pathname);
-  const cp = normalizePathname(c.pathname);
 
-  if (sp.length < cp.length) {
-    return false;
+  if (fp.length < sp.length) {
+    return false; // since we prefer shorter URLs, we cannot recommend the secondUrl
   }
-  if (!sp.startsWith(cp)) {
-    return false;
+  if (!fp.startsWith(sp)) {
+    return false; // since the secondUrl must be fully contained in the firstUrl
   }
-
-  const rest = sp.slice(cp.length);
+  const rest = fp.slice(sp.length);
   if (!rest.startsWith('.')) {
-    return false; // since we are looking for a suffix on the suggested URL
+    return false; // since we are looking for a suffix on the firstUrl
   }
   const afterDot = rest.slice(1);
   if (afterDot.length === 0 || afterDot.includes('/')) {
-    return false;
+    return false; // although firstUrl has a malformed suffix, we haven't proved secondUrl is better
   }
 
   return true; // the canonical URL can be used in place of the suggested URL
 }
 
 /**
- * When {@code documentUrl} is {@code http:} but {@code probedUrl} was {@code https:}, returns the
- * {@code https:} variant of {@code documentUrl} for canonical HTML fetch; otherwise {@code null}.
+ * Returns true when two URLs refer to the same -- or essentially the same -- resource.
  *
- * @param {string} documentUrl - suggested replacement URL
- * @param {string} probedUrl - originally probed sitemap URL
- * @returns {string|null}
+ * @param {string} urlA
+ * @param {string} urlB
+ * @returns {boolean}
  */
-export function httpsDocumentUrlForCanonicalRefinement(documentUrl, probedUrl) {
-  if (documentUrl.startsWith('http://') && probedUrl.startsWith('https://')) {
-    return `https://${documentUrl.slice('http://'.length)}`;
-  }
-  return null;
+function urlsAreSimilar(urlA, urlB) {
+  return secondUrlIsBetterChoiceThanFirstUrl(urlA, urlB)
+    || secondUrlIsBetterChoiceThanFirstUrl(urlB, urlA)
+    || pathnameKey(urlA) === pathnameKey(urlB);
 }
 
 /**
- * GETs HTML for canonical refinement for the documentUrl. Also returns the actual documentUrl we
- * used to retrieve this HTML.
+ * When {@code urlA} and {@code urlB} share a {@link pathnameKey} but differ by query string,
+ * returns the URL without query parameters. Otherwise, prefers the shorter URL. Defaults to urlA.
  *
- * When the probed URL was https but the suggested documentUrl is http,
- * tries the https variant first for the documentUrl, then falls back to the original http.
- *
- * @param {string} documentUrl
- * @param {string} probedUrl
- * @param {(() => Promise<void>) | null | undefined} beforeRequest - delay before the GET request
- * @param {number} timeoutMs - how long we wait for the GET request to complete before giving up
- *
- * @returns {Promise<{ html: string | null, documentUrl: string }>}
+ * @param {string} urlA
+ * @param {string} urlB
+ * @returns {string} - either urlA or urlB. Defaults to urlA.
  */
-export async function fetchHtmlForCanonicalRefinement(
-  documentUrl,
-  probedUrl,
-  beforeRequest,
-  timeoutMs,
-) {
-  // determine if we really have two different versions of the documentUrl to try
-  const httpsDocumentUrl = httpsDocumentUrlForCanonicalRefinement(documentUrl, probedUrl);
-  if (httpsDocumentUrl) {
-    // if we need to try two different versions, then 1st try the modified  "https://" version
-    const httpsHtml = await getDocumentHtmlForCanonical(
-      httpsDocumentUrl,
-      beforeRequest,
-      timeoutMs,
-    );
-    if (httpsHtml) {
-      return { html: httpsHtml, documentUrl: httpsDocumentUrl };
+function preferUrlWithoutQueryWhenPathMatches(urlA, urlB) {
+  try {
+    /* c8 ignore start -- defensive: better() only calls this when pathnameKey already matches */
+    if (pathnameKey(urlA) !== pathnameKey(urlB)) {
+      return urlA; // default
+    }
+    /* c8 ignore end */
+
+    // look at presence of query parms
+    const a = new URL(urlA);
+    const b = new URL(urlB);
+    if (a.search && !b.search) {
+      return b.href; // since urlB has no query parms
+    }
+    if (b.search && !a.search) {
+      return a.href; // since urlA has no query parms
+    }
+    if (a.search && b.search) {
+      const aBare = new URL(urlA);
+      aBare.search = '';
+      aBare.hash = '';
+      const bBare = new URL(urlB);
+      bBare.search = '';
+      bBare.hash = '';
+      return aBare.href.length <= bBare.href.length ? aBare.href : bBare.href; // choose shorter
+    }
+    return urlA.length <= urlB.length ? urlA : urlB; // choose shorter
+    /* c8 ignore start -- defensive: URL() in try block shouldn't throw for valid better() inputs */
+  } catch {
+    return urlA; // default
+  }
+  /* c8 ignore end */
+}
+
+/**
+ * Returns the preferred URL when two candidates refer to the same resource.
+ * Can return null when neither URL can be considered "better" or be preferred.
+ *
+ * @param {string|null|undefined} urlA
+ * @param {string|null|undefined} urlB
+ * @returns {string|null}
+ */
+export function better(urlA, urlB) {
+  // handle simple cases
+  if (urlA == null && urlB == null) {
+    return null;
+  }
+  if (urlA == null || urlA === '') {
+    return urlB ?? null;
+  }
+  if (urlB == null || urlB === '') {
+    return urlA ?? null;
+  }
+  if (!urlsAreSimilar(urlA, urlB)) {
+    return null; // since urlA and urlB are too different
+  }
+
+  // prefer 'https:'
+  let parsedA;
+  let parsedB;
+  try {
+    parsedA = new URL(urlA);
+    parsedB = new URL(urlB);
+  } catch {
+    return null;
+  }
+  const aIsHttps = parsedA.protocol === 'https:';
+  const bIsHttps = parsedB.protocol === 'https:';
+  if (aIsHttps !== bIsHttps) {
+    return aIsHttps ? urlA : urlB; // prefer 'https:' over 'http' (for example)
+  }
+
+  if (secondUrlIsBetterChoiceThanFirstUrl(urlA, urlB)) {
+    return urlB;
+  }
+  if (secondUrlIsBetterChoiceThanFirstUrl(urlB, urlA)) {
+    return urlA;
+  }
+  return preferUrlWithoutQueryWhenPathMatches(urlA, urlB);
+}
+
+/**
+ * Returns a replacement suggested URL.
+ * * Prefers the suggestedUrl's canonical URL.
+ * * If the suggestedUrl redirects, tries to use the {@code Location} header's URL.
+ * * Otherwise, defaults to returning the original {@code suggestedUrl}.
+ *
+ * @param {string} suggestedUrl
+ *
+ * @param {object} [options]
+ * @param {(() => Promise<void>) | null | undefined} [options.beforeRequest] - delay before sending
+ * @param {number} [options.timeoutMs] - how long we wait for the response
+ * @param {Object} [options.log] - logger
+ *
+ * @returns {Promise<string>} - the refined suggestedUrl
+ */
+export async function refineSuggestedUrl(suggestedUrl, options = {}) {
+  const { beforeRequest, timeoutMs = PAGE_URL_TIMEOUT_MS, log } = options;
+
+  if (typeof suggestedUrl !== 'string' || !suggestedUrl.length) {
+    return suggestedUrl ?? '';
+  }
+
+  await beforeRequest?.();
+
+  let response;
+  try {
+    response = await fetch(suggestedUrl, {
+      method: 'GET',
+      redirect: 'manual', // just 1 hop ... we want the immediate HTML text, or a Location header
+      timeout: timeoutMs,
+    });
+  } catch {
+    return suggestedUrl;
+  }
+
+  // if possible, try to use the suggestedUrl's canonical URL
+  if (response.ok) {
+    const html = await readHtmlBody(response);
+    if (html) {
+      const canonicalUrl = extractCanonicalHrefFromHtml(html, suggestedUrl);
+      if (canonicalUrl && /^https?:\/\//i.test(canonicalUrl)) {
+        log?.debug(
+          `Sitemap: refineSuggestedUrl using canonical ${canonicalUrl} for ${suggestedUrl}`,
+        );
+        return canonicalUrl;
+      }
     }
   }
 
-  // try the original version of the documentUrl
-  const html = await getDocumentHtmlForCanonical(documentUrl, beforeRequest, timeoutMs);
-  return { html, documentUrl };
+  // if redirected, choose the better of the suggestedUrl or the redirect's locationUrl
+  if (REDIRECT_STATUSES.includes(response.status)) {
+    const location = response.headers.get('location');
+    if (location) {
+      try {
+        const locationUrl = new URL(location, suggestedUrl).href;
+        if (!isAuthUrl(locationUrl)) {
+          const picked = better(suggestedUrl, locationUrl);
+          if (picked != null) {
+            if (picked !== suggestedUrl) {
+              log?.debug(
+                `Sitemap: refineSuggestedUrl redirect Location picked ${picked} for ${suggestedUrl}`,
+              );
+            }
+            return picked; // either suggestedUrl or locationUrl
+          }
+        }
+      } catch {
+        return suggestedUrl; // default
+      }
+    }
+
+    // otherwise, stick with the suggestedUrl
+    return suggestedUrl;
+  }
+
+  return suggestedUrl; // default
 }
 
 /**
- * Typically after a redirect {@code notOk} decision, GET the document and refine using
- * {@code rel="canonical"}. Promotes to {@code ok} when canonical matches the probed URL;
- * otherwise may replace {@code urlsSuggested} when canonical matches the suggested URL's path
- * (exact pathname) or extends it with a dot-suffix segment per
- * {@link suggestedUrlMatchesCanonicalUrlWithoutSuffix}.
+ * Returns a payload. Refines a redirect {@code notOk} payload by changing the
+ * {@code urlsSuggested} with an updated suggestedUrl. However, if the updated suggestedUrl
+ * matches the probed URL, then the payload returned is an {@code ok} payload.
  *
  * @param {object} params
- * @param {string} params.documentUrl - URL to GET so we can extract its canonical href
- *        note: in specific cases we might try the "https://" variant 1st, and then the original URL
- * @param {string} params.probedUrl - the originally probed URL
- * @param {Object} params.notOkPayload - the `notOk` payload to refine
- *        (shape: { type: string, url: string, statusCode?: number, urlsSuggested?: string })
- * @param {(() => Promise<void>) | null | undefined} params.beforeRequest - optional
- *        throttle callback to be invoked before the GET
- * @param {number} params.timeoutMs - timeout in ms while we wait for the GET request to return
- * @param {Object} [params.log] - optional logger for diagnostics
+ * @param {string} params.probedUrl
+ * @param {{ type: string, url: string, statusCode?: number, urlsSuggested?: string }}
+ *        params.notOkPayload
+ * @param {(() => Promise<void>) | null | undefined} [params.beforeRequest]
+ * @param {number} [params.timeoutMs]
+ * @param {Object} [params.log]
  *
  * @returns {Promise<{
  *   type: string,
@@ -494,77 +598,37 @@ export async function fetchHtmlForCanonicalRefinement(
  *   urlsSuggested?: string
  * }>}
  */
-async function refineSuggestedUrlWithItsCanonicalUrl({
-  documentUrl,
+export async function refineResponsePayload({
   probedUrl,
   notOkPayload,
   beforeRequest,
   timeoutMs,
   log,
 }) {
-  const { html, documentUrl: effectiveDocumentUrl } = await fetchHtmlForCanonicalRefinement(
-    documentUrl,
-    probedUrl,
-    beforeRequest, // any delay needed
-    timeoutMs,
-  );
-  if (!html) {
+  // get the proposed suggestedUrl from the payload
+  const suggestedUrl = notOkPayload.urlsSuggested;
+  if (typeof suggestedUrl !== 'string' || !suggestedUrl.length) {
     return notOkPayload;
   }
 
-  const canonicalUrl = extractCanonicalHrefFromHtml(html, effectiveDocumentUrl);
-  if (!canonicalUrl || !/^https?:\/\//i.test(canonicalUrl)) {
-    /* c8 ignore start -- log-only */
+  // refine by trying to use its canonical URL, otherwise maybe its redirect URL, or just itself
+  const refinedSuggestedUrl = await refineSuggestedUrl(suggestedUrl, {
+    beforeRequest,
+    timeoutMs,
+    log,
+  });
+
+  // safety check
+  if (refinedSuggestedUrl === probedUrl) {
+    // note: in reality, this might actually be a tight circular redirect reference ... hmmm
     log?.info(
-      `Sitemap: could not find a valid canonical URL for probed URL ${probedUrl} that redirected to the suggested URL ${documentUrl}. Keeping original suggested URL.`,
+      `Sitemap: refined suggested URL matches probed path for ${probedUrl}; marking OK.`,
     );
-    /* c8 ignore end */
-    return notOkPayload; // since we could not extract a valid canonical URL, we return what we have
-  }
-  /* c8 ignore start -- log-only */
-  log?.debug(
-    `Sitemap: refining suggested URL with canonical URL: probedUrl=${probedUrl}, suggestedUrl=${effectiveDocumentUrl}, canonicalUrl=${canonicalUrl ?? ''}`,
-  );
-  /* c8 ignore end */
-
-  // if the canonical URL is essentially the page URL we are probing, then everything is A-OK.
-  //   ex: if the probed URL redirects to a URL that is just the probed URL with query params.
-  if (pathnameKey(probedUrl) === pathnameKey(canonicalUrl)) {
-    /* c8 ignore start -- log-only; branch outcome covered by filterValidUrls redirect tests */
-    log?.info(
-      `Sitemap: canonical matches probed URL path for ${probedUrl}; everything is actually OK.`,
-    );
-    /* c8 ignore end */
-    return { type: 'ok', url: probedUrl }; // note that we do NOT return the `notOkPayload`
+    return { type: 'ok', url: probedUrl };
   }
 
-  // if the canonical URL is essentially our suggested URL, use the canonical URL instead
-  const suggestedUrl = notOkPayload.urlsSuggested;
-  if (
-    typeof suggestedUrl === 'string'
-    && suggestedUrl.length > 0
-    && (pathnameKey(suggestedUrl) === pathnameKey(canonicalUrl)) // ignore query parms
-  ) {
-    log?.debug(
-      `Sitemap: using the canonical URL ${canonicalUrl} (replacing initial suggested URL ${suggestedUrl}) for the probed URL ${probedUrl}.`,
-    );
-    return { ...notOkPayload, urlsSuggested: canonicalUrl };
-  }
-
-  // if the canonical URL is a reasonably shorter form of our suggested URL, use the canonical URL
-  if (
-    typeof suggestedUrl === 'string'
-    && suggestedUrl.length > 0
-    && suggestedUrlMatchesCanonicalUrlWithoutSuffix(suggestedUrl, canonicalUrl)
-  ) {
-    log?.debug(
-      `Sitemap: suggesting the canonical URL ${canonicalUrl} (terminal path extends canonical by dot suffix; replacing ${suggestedUrl}) for probed ${probedUrl}.`,
-    );
-    return { ...notOkPayload, urlsSuggested: canonicalUrl };
-  }
-
-  // keep our originally suggested URL
-  return notOkPayload;
+  // always use the refined suggestedUrl
+  return { ...notOkPayload, urlsSuggested: refinedSuggestedUrl };
 }
 
 /**
@@ -712,8 +776,7 @@ export async function filterValidUrls(
          * the original `row`, a modified `row` with `urlsSuggested` replaced, or an `ok`-typed
          * object when the refinement actually indicates the probed URL is the correct resource.
          */
-        const refine = (row, refineLog = log) => refineSuggestedUrlWithItsCanonicalUrl({
-          documentUrl: row.urlsSuggested, // URL we will try to refine by getting its canonical URL
+        const refine = (row, refineLog = log) => refineResponsePayload({
           probedUrl: url, // the original URL that was investigated
           notOkPayload: row, // the `notOk` object to refine. Might be transformed into an `ok`.
           beforeRequest, // callback method (if any) that provides a delayed start to processing
