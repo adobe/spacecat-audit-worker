@@ -86,7 +86,9 @@ export default async function rumConfigRefresh(message, context) {
     await Promise.race([
       (async () => {
         for (const domain of domains) {
-          if (cancelled) break;
+          if (cancelled) {
+            break;
+          }
           try {
             // eslint-disable-next-line no-await-in-loop
             await rumApiClient.retrieveDomainkey(domain);
