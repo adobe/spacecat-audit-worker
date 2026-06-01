@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import * as cheerio from 'cheerio';
 import {
   composeBaseURL, hasText, isString, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
@@ -107,9 +108,19 @@ export async function submitForScraping(context) {
   // Filter out auth pages (non-HTML/PDFs already filtered by getMergedAuditInputUrls)
   const filteredUrls = allUrls.filter((url) => !isAuthUrl(url));
 
+  // Filter out site-configured excluded URLs for the canonical audit
+  const excludedURLs = site.getConfig?.().getExcludedURLs?.('canonical') || [];
+  const allowedBeforeRobots = excludedURLs.length > 0
+    ? filteredUrls.filter((url) => !excludedURLs.includes(url))
+    : filteredUrls;
+
+  if (excludedURLs.length > 0) {
+    log.info(`[canonical] Excluded ${filteredUrls.length - allowedBeforeRobots.length} URLs based on site config excludedURLs`);
+  }
+
   // Filter out pages disallowed by robots.txt
   const robots = await fetchRobotsTxt(site.getBaseURL(), log);
-  const allowedUrls = filterUrlsByRobots(robots, filteredUrls, log);
+  const allowedUrls = filterUrlsByRobots(robots, allowedBeforeRobots, log);
 
   log.info(`[canonical] After filtering: ${allowedUrls.length} pages will be scraped - ${JSON.stringify(allowedUrls)}`);
 
@@ -470,6 +481,9 @@ export async function processScrapedContent(context) {
   // Fetch robots.txt once for use across all scraped pages
   const robots = await fetchRobotsTxt(baseURL, log);
 
+  // Fetch site-configured excluded URLs for the canonical audit once
+  const excludedURLs = site.getConfig?.().getExcludedURLs?.('canonical') || [];
+
   // Process each scraped page
   const auditPromises = scrapeKeys.map(async (key) => {
     try {
@@ -515,6 +529,23 @@ export async function processScrapedContent(context) {
       if (isDisallowedByRobots(robots, finalUrl)) {
         log.info(`[canonical] Skipping ${finalUrl} - disallowed by robots.txt`);
         return null;
+      }
+
+      // Filter out site-configured excluded URLs
+      if (excludedURLs.includes(finalUrl)) {
+        log.info(`[canonical] Skipping ${finalUrl} - excluded by site config`);
+        return null;
+      }
+
+      // Skip pages that explicitly opt out of indexing via meta robots noindex tag
+      const rawBody = scrapedObject?.scrapeResult?.rawBody || '';
+      if (rawBody) {
+        const $page = cheerio.load(rawBody);
+        const robotsMeta = $page('meta[name="robots"], meta[name="googlebot"]').attr('content') || '';
+        if (robotsMeta.toLowerCase().includes('noindex')) {
+          log.info(`[canonical] Skipping ${finalUrl} - noindex page`);
+          return null;
+        }
       }
       const canonicalUrl = canonicalMetadata.href || null;
       const canonicalTagChecks = [];

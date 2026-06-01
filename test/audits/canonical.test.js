@@ -2077,6 +2077,7 @@ describe('Canonical URL Tests', () => {
         getBaseURL: sinon.stub().returns('https://example.com'),
         getConfig: sinon.stub().returns({
           getAuditTargetURLs: sinon.stub().returns([]),
+          getExcludedURLs: sinon.stub().returns([]),
         }),
       };
     });
@@ -2317,6 +2318,58 @@ describe('Canonical URL Tests', () => {
         expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
       });
 
+      it('should filter out site-config excludedURLs before scraping', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/verify' },
+          { getUrl: () => 'https://example.com/es_us/tools' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+        site.getConfig.returns({
+          getAuditTargetURLs: sinon.stub().returns([]),
+          getExcludedURLs: sinon.stub().returns([
+            'https://example.com/verify',
+            'https://example.com/es_us/tools',
+          ]),
+        });
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(2);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page2' });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Excluded 2 URLs based on site config excludedURLs',
+        );
+      });
+
+      it('should not filter any URLs when excludedURLs is empty', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+        site.getConfig.returns({
+          getAuditTargetURLs: sinon.stub().returns([]),
+          getExcludedURLs: sinon.stub().returns([]),
+        });
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(2);
+      });
+
       it('should merge custom audit target URLs with SEO top pages', async () => {
         context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
           { getUrl: () => 'https://example.com/page1' },
@@ -2327,6 +2380,7 @@ describe('Canonical URL Tests', () => {
             { url: 'https://example.com/custom1' },
             { url: 'https://example.com/custom2' },
           ]),
+          getExcludedURLs: sinon.stub().returns([]),
         });
 
         const testContext = {
@@ -2357,6 +2411,7 @@ describe('Canonical URL Tests', () => {
             { url: 'https://example.com/page1' },
             { url: 'https://example.com/custom1' },
           ]),
+          getExcludedURLs: sinon.stub().returns([]),
         });
 
         const testContext = {
@@ -2379,6 +2434,7 @@ describe('Canonical URL Tests', () => {
           getAuditTargetURLs: sinon.stub().returns([
             { url: 'https://example.com/custom1' },
           ]),
+          getExcludedURLs: sinon.stub().returns([]),
         });
 
         const testContext = {
@@ -4579,6 +4635,247 @@ describe('Canonical URL Tests', () => {
         const result = await processScrapedContentMocked(testContext);
 
         // Page is allowed through and audited (self-referenced canonical = no issues)
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+      });
+
+      it('should skip pages that are in the site config excludedURLs', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/verify',
+          finalUrl: 'https://example.com/verify',
+          scrapeResult: {
+            canonical: {
+              exists: false, count: 0, href: null, inHead: false,
+            },
+            rawBody: createValidRawBody(),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const siteWithExclusions = {
+          ...site,
+          getConfig: sinon.stub().returns({
+            getAuditTargetURLs: sinon.stub().returns([]),
+            getExcludedURLs: sinon.stub().returns([
+              'https://example.com/verify',
+              'https://example.com/es_us/tools',
+            ]),
+          }),
+        };
+
+        const testContext = {
+          ...context,
+          site: siteWithExclusions,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/verify', 'scrapes/job-id/verify/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/verify - excluded by site config',
+        );
+      });
+
+      it('should skip pages with noindex meta robots tag', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/internal-page',
+          finalUrl: 'https://example.com/internal-page',
+          scrapeResult: {
+            canonical: {
+              exists: false, count: 0, href: null, inHead: false,
+            },
+            rawBody: createValidRawBody('<html><head><meta name="robots" content="noindex, nofollow"><title>Internal</title></head><body><p>This page should not be indexed by search engines.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/internal-page', 'scrapes/job-id/internal-page/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/internal-page - noindex page',
+        );
+      });
+
+      it('should skip pages with googlebot noindex meta tag', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/no-google',
+          finalUrl: 'https://example.com/no-google',
+          scrapeResult: {
+            canonical: {
+              exists: false, count: 0, href: null, inHead: false,
+            },
+            rawBody: createValidRawBody('<html><head><meta name="googlebot" content="noindex"><title>No Google</title></head><body><p>This page should not be indexed by Googlebot and requires enough padding.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/no-google', 'scrapes/job-id/no-google/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/no-google - noindex page',
+        );
+      });
+
+      it('should handle site with no getConfig in processScrapedContent gracefully', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/page1', inHead: true },
+            rawBody: createValidRawBody(),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const siteWithoutConfig = {
+          getId: sinon.stub().returns('test-site-id'),
+          getBaseURL: sinon.stub().returns('https://example.com'),
+        };
+
+        const testContext = {
+          ...context,
+          site: siteWithoutConfig,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+      });
+
+      it('should handle undefined rawBody without crashing in noindex check', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/page1', inHead: true },
+            rawBody: undefined,
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
         expect(result.auditResult).to.deep.equal({
           status: 'success',
           message: 'No canonical issues detected',
