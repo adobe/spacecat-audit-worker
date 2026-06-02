@@ -415,9 +415,12 @@ export async function analyzePageTypes(domain, paths, context) {
     }
     const capped = Object.fromEntries(entries.slice(0, MAX_LLM_PAGE_TYPES + 1));
 
+    // Anchored + [.] (not \.) for the JSON→Athena pipeline. Unanchored
+    // substrings misclassified URLs like /docs/meta-robots-txt or
+    // /blog/how-to-build-a-sitemap.
     const defaultPatterns = {
-      robots: '(?i)robots.txt',
-      sitemap: '(?i)sitemap',
+      robots: '(?i)/robots[.]txt$',
+      sitemap: '(?i)/sitemap[^/]*[.]xml$',
       'error pages': '(?i)(404|500|error|goodbye)',
     };
 
