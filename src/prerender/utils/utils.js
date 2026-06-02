@@ -101,13 +101,10 @@ export function mergeAndGetUniqueHtmlUrls(...args) {
         dedupKey = dedupKey.replace(/\/+$/, ''); // Remove all trailing slashes
       }
 
-      // Include sorted query params in the dedup key when requested
-      if (includeQueryParams) {
-        urlObj.searchParams.sort();
-        const sortedSearch = urlObj.searchParams.toString();
-        if (sortedSearch) {
-          dedupKey += `?${sortedSearch}`;
-        }
+      // Include the raw query string in the dedup key when requested,
+      // so the user gets exactly what they passed in the CSV.
+      if (includeQueryParams && urlObj.search) {
+        dedupKey += urlObj.search;
       }
 
       // Only add URL if we haven't seen this key before

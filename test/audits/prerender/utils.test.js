@@ -288,7 +288,7 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(1);
     });
 
-    it('should dedup URLs with same query params in different order when includeQueryParams is true', () => {
+    it('should keep URLs with same query params in different order when includeQueryParams is true', () => {
       const urls = [
         'https://example.com/page?b=2&a=1',
         'https://example.com/page?a=1&b=2',
@@ -296,8 +296,8 @@ describe('Prerender Utils', () => {
 
       const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
 
-      // Sorted params produce the same key, so these are duplicates
-      expect(result.urls).to.have.lengthOf(1);
+      // Raw query strings differ, so both are kept (exact CSV input preserved)
+      expect(result.urls).to.have.lengthOf(2);
     });
 
     it('should work with multiple arrays and includeQueryParams option', () => {
