@@ -1056,6 +1056,17 @@ describe('LLM Error Pages Utils', () => {
       expect(isValidUrlPath('/wiki/Article_(disambiguation)')).to.equal(true);
     });
 
+    it("accepts legitimate paths containing apostrophes (e.g. /products/o'reilly)", () => {
+      expect(isValidUrlPath("/products/o'reilly")).to.equal(true);
+      expect(isValidUrlPath("/authors/o'brien")).to.equal(true);
+    });
+
+    it('accepts query-embedded schemes (e.g. /redirect?to=https://...)', () => {
+      expect(isValidUrlPath('/redirect?to=https://example.com')).to.equal(true);
+      expect(isValidUrlPath('/auth/callback?return=https://example.com/x')).to.equal(true);
+      expect(isValidUrlPath('/share?url=https://other.com')).to.equal(true);
+    });
+
     it('rejects non-string inputs', () => {
       expect(isValidUrlPath(null)).to.equal(false);
       expect(isValidUrlPath(undefined)).to.equal(false);
@@ -1068,22 +1079,34 @@ describe('LLM Error Pages Utils', () => {
       expect(isValidUrlPath('   ')).to.equal(false);
     });
 
-    it('rejects paths with an embedded http(s) scheme', () => {
+    it('rejects non-http(s) schemes (javascript:, data:, file:)', () => {
+      expect(isValidUrlPath('javascript:alert(1)')).to.equal(false);
+      expect(isValidUrlPath('data:text/html,<script>alert(1)</script>')).to.equal(false);
+      expect(isValidUrlPath('file:///etc/passwd')).to.equal(false);
+    });
+
+    it('rejects URLs starting with characters Excel treats as formulas', () => {
+      expect(isValidUrlPath('=WEBSERVICE("https://evil")')).to.equal(false);
+      expect(isValidUrlPath('+1234')).to.equal(false);
+      expect(isValidUrlPath('-foo')).to.equal(false);
+      expect(isValidUrlPath('@import')).to.equal(false);
+    });
+
+    it('rejects paths with an embedded http(s) scheme glued to a path segment', () => {
       expect(isValidUrlPath('/brandshttps://www.coca-colacompany.com/brands')).to.equal(false);
       expect(isValidUrlPath('/foohttp://bar')).to.equal(false);
-      expect(isValidUrlPath('/HTTPS://x')).to.equal(false);
+      expect(isValidUrlPath('/aHTTPS://x')).to.equal(false);
     });
 
-    it('rejects URLs containing raw or encoded quote characters', () => {
+    it('rejects URLs containing double-encoded quote characters', () => {
       expect(isValidUrlPath('https://example.com/%2522')).to.equal(false);
-      expect(isValidUrlPath('https://example.com/%22')).to.equal(false);
-      expect(isValidUrlPath('/foo"bar')).to.equal(false);
-      expect(isValidUrlPath("/foo'bar")).to.equal(false);
+      expect(isValidUrlPath('https://example.com/foo%2527bar')).to.equal(false);
     });
 
-    it('rejects URLs with trailing commas', () => {
+    it('rejects URLs with trailing comma or semicolon', () => {
       expect(isValidUrlPath('https://example.com/),')).to.equal(false);
       expect(isValidUrlPath('/foo,')).to.equal(false);
+      expect(isValidUrlPath('/foo];')).to.equal(false);
     });
 
     it('rejects URLs the URL constructor cannot parse', () => {
@@ -1229,7 +1252,8 @@ describe('LLM Error Pages Utils', () => {
 
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(18);
-      expect(processed.errorPages).to.equal(results);
+      expect(processed.errorPages).to.deep.equal(results);
+      expect(processed.droppedUrls).to.deep.equal([]);
       expect(processed.summary.uniqueUrls).to.equal(2);
       expect(processed.summary.uniqueUserAgents).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ 404: 15, 403: 3 });
@@ -1240,6 +1264,7 @@ describe('LLM Error Pages Utils', () => {
       expect(processed).to.deep.equal({
         totalErrors: 0,
         errorPages: [],
+        droppedUrls: [],
         summary: {
           uniqueUrls: 0,
           uniqueUserAgents: 0,
@@ -1264,6 +1289,23 @@ describe('LLM Error Pages Utils', () => {
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
+    });
+
+    it('drops malformed URLs from errorPages, reports them in droppedUrls, and excludes them from totals', () => {
+      const results = [
+        { url: '/legit', total_requests: '5', status: '404', user_agent: 'bot' },
+        { url: '/brandshttps://example.com/x', total_requests: '7', status: '404', user_agent: 'bot' },
+        { url: '/foo,', total_requests: '3', status: '403', user_agent: 'bot' },
+      ];
+      const processed = processErrorPagesResults(results);
+      expect(processed.errorPages).to.have.lengthOf(1);
+      expect(processed.errorPages[0].url).to.equal('/legit');
+      expect(processed.droppedUrls).to.deep.equal([
+        '/brandshttps://example.com/x',
+        '/foo,',
+      ]);
+      expect(processed.totalErrors).to.equal(5);
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 5 });
     });
   });
 

@@ -319,11 +319,85 @@ export function generateReportingPeriods(referenceDate = new Date(), weekOffsets
 // PROCESSING RESULTS
 // ============================================================================
 
+/**
+ * Conservative validity check for URLs surfaced from CDN logs. Bot impersonators
+ * that pass the user-agent regex sometimes request malformed paths (e.g.
+ * `/brandshttps://...`, `/),`, `/%2522`). Those add noise to the 404 opportunity
+ * without being actionable, so we drop them before building suggestions.
+ *
+ * Tracked stopgap: the right long-term fix is upstream UA / IP-fingerprint
+ * hardening so impersonators are rejected before ingestion. See LLMO-5282.
+ *
+ * Rejects:
+ *   - non-strings / empty / whitespace
+ *   - URLs the `URL` constructor cannot parse
+ *   - non-http(s) schemes (javascript:, data:, etc.)
+ *   - leading characters Excel re-interprets as formulas (`= + - @`)
+ *   - paths with an http(s) scheme glued to a path segment (`/foohttps://bar`),
+ *     while still allowing query-embedded schemes (`/redirect?to=https://...`)
+ *   - paths containing double-encoded quote characters (`%2522`, `%2527`)
+ *   - paths whose final non-whitespace char is a comma or semicolon
+ */
+export function isValidUrlPath(url) {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  // Excel / Sheets / Calc treat a leading =, +, -, @ as a formula. URLs
+  // beginning with those characters get re-interpreted on open and have been
+  // used for exfiltration via WEBSERVICE/HYPERLINK. Reject at the validity
+  // boundary so we don't have to remember to sentinel them at every sink.
+  if (/^[=+\-@]/.test(trimmed)) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed, 'https://example.com');
+  } catch {
+    return false;
+  }
+
+  // The base in the constructor lets relative paths parse; restrict the
+  // resulting protocol so javascript:, data:, file:, etc. are rejected even
+  // when supplied as absolute URLs.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  // Embedded http(s):// glued to a path segment (e.g. `/brandshttps://...`).
+  // The negative class before the scheme keeps legitimate query-embedded
+  // URLs like `/redirect?to=https://example.com` allowed.
+  if (/[^/?&=#]https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+
+  // Double-encoded quote characters never appear in legitimate browser or
+  // crawler URLs. Raw and single-encoded quotes can legitimately occur in
+  // paths like `/products/o'reilly` so we leave those alone.
+  if (/%2522|%2527/i.test(trimmed)) {
+    return false;
+  }
+
+  // Trailing comma / semicolon catches copy-paste fragments like `/foo),`
+  // or `/foo];` without rejecting legitimate Wikipedia-style `/foo_(disambig)`.
+  if (/[,;]$/.test(trimmed)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function processErrorPagesResults(results) {
   if (!results || results.length === 0) {
     return {
       totalErrors: 0,
       errorPages: [],
+      droppedUrls: [],
       summary: {
         uniqueUrls: 0,
         uniqueUserAgents: 0,
@@ -332,11 +406,24 @@ export function processErrorPagesResults(results) {
     };
   }
 
+  // Filter malformed URLs at the data boundary so `errorPages`, the per-status
+  // categorization, the Excel export, the opportunity sync, and the Mystique
+  // payload all share one consistent view.
+  const errorPages = [];
+  const droppedUrls = [];
+  results.forEach((row) => {
+    if (isValidUrlPath(row.url)) {
+      errorPages.push(row);
+    } else {
+      droppedUrls.push(row.url);
+    }
+  });
+
   const statusCodes = {};
   const uniqueUrls = new Set();
   const uniqueUserAgents = new Set();
 
-  results.forEach((row) => {
+  errorPages.forEach((row) => {
     const totalRequestsParsed = parseInt(row.total_requests, 10);
     // eslint-disable-next-line no-param-reassign
     row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
@@ -350,7 +437,8 @@ export function processErrorPagesResults(results) {
 
   return {
     totalErrors,
-    errorPages: results,
+    errorPages,
+    droppedUrls,
     summary: {
       uniqueUrls: uniqueUrls.size,
       uniqueUserAgents: uniqueUserAgents.size,
@@ -450,41 +538,6 @@ export function toPathOnly(maybeUrl, baseUrl) {
   } catch {
     return maybeUrl;
   }
-}
-
-/**
- * Conservative validity check for URLs surfaced from CDN logs. Bot impersonators
- * that pass the user-agent regex sometimes request malformed paths (e.g.
- * `/brandshttps://...`, `/),`, `/%2522`). Those add noise to the 404 opportunity
- * without being actionable, so we drop them before building suggestions.
- */
-export function isValidUrlPath(url) {
-  if (typeof url !== 'string') {
-    return false;
-  }
-  const trimmed = url.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  try {
-    // eslint-disable-next-line no-new
-    new URL(trimmed, 'https://example.com');
-  } catch {
-    return false;
-  }
-
-  if (/.+https?:\/\//i.test(trimmed)) {
-    return false;
-  }
-  if (/["']|%2[27]|%252[27]/i.test(trimmed)) {
-    return false;
-  }
-  if (/,$/.test(trimmed)) {
-    return false;
-  }
-
-  return true;
 }
 
 export const SPREADSHEET_COLUMNS = [

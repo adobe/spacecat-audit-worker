@@ -365,15 +365,17 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('filters malformed URLs from categorized results and logs the drop count', async () => {
+    it('logs a sample of malformed URLs filtered upstream in processErrorPagesResults', async () => {
       mockProcessResults.returns({
-        totalErrors: 3,
+        totalErrors: 1,
         errorPages: [
           { user_agent: 'ChatGPT', url: '/legit-page', status: 404, total_requests: 10 },
-          { user_agent: 'GPTBot', url: '/brandshttps://example.com/brands', status: 404, total_requests: 7 },
-          { user_agent: 'Claude', url: '/),', status: 404, total_requests: 3 },
         ],
-        summary: { uniqueUrls: 3, uniqueUserAgents: 3, statusCodes: { 404: 20 } },
+        droppedUrls: [
+          '/brandshttps://example.com/brands',
+          '/),',
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 10 } },
       });
 
       const result = await runAuditAndSendToMystique(context);
@@ -382,7 +384,7 @@ describe('LLM Error Pages Handler', function () {
       expect(result.auditResult[0].categorizedResults[404]).to.have.lengthOf(1);
       expect(result.auditResult[0].categorizedResults[404][0].url).to.equal('/legit-page');
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Filtered 2 malformed URL\(s\) from status 404/),
+        sinon.match(/Filtered 2 malformed URL\(s\); sample: \[.*brandshttps.*\]/),
       );
     });
 

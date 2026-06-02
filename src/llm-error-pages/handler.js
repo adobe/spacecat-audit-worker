@@ -23,7 +23,6 @@ import {
   categorizeErrorsByStatusCode,
   SPREADSHEET_COLUMNS,
   toPathOnly,
-  isValidUrlPath,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
@@ -187,15 +186,12 @@ export async function runAuditAndSendToMystique(context) {
         const processedResults = processErrorPagesResults(results);
         const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-        // Drop malformed URLs (e.g. '/brandshttps://...', '/),') emitted by
-        // bot impersonators that slip through the user-agent filter upstream.
-        for (const code of Object.keys(categorizedResults)) {
-          const before = categorizedResults[code].length;
-          categorizedResults[code] = categorizedResults[code].filter((e) => isValidUrlPath(e.url));
-          const dropped = before - categorizedResults[code].length;
-          if (dropped > 0) {
-            log.info(`[LLM-ERROR-PAGES] Filtered ${dropped} malformed URL(s) from status ${code}`);
-          }
+        // Malformed URLs (e.g. '/brandshttps://...', '/),') are dropped inside
+        // processErrorPagesResults so every downstream view stays consistent.
+        // Log a sample so false positives are diagnosable from Coralogix.
+        if (processedResults.droppedUrls?.length > 0) {
+          const sample = processedResults.droppedUrls.slice(0, 5);
+          log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.droppedUrls.length} malformed URL(s); sample: ${JSON.stringify(sample)}`);
         }
 
         const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
