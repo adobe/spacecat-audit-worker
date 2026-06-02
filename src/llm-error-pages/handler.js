@@ -202,6 +202,14 @@ export async function runAuditAndSendToMystique(context) {
         const processedResults = processErrorPagesResults(results);
         const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
+        // Malformed URLs (e.g. '/brandshttps://...', '/),') are dropped inside
+        // processErrorPagesResults so every downstream view stays consistent.
+        // Log a sample so false positives are diagnosable from Coralogix.
+        if (processedResults.droppedUrls?.length > 0) {
+          const sample = processedResults.droppedUrls.slice(0, 5);
+          log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.droppedUrls.length} malformed URL(s); sample: ${JSON.stringify(sample)}`);
+        }
+
         const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
         const writeCategoryExcel = async (code, errors) => {

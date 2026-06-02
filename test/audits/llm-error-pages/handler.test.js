@@ -364,6 +364,29 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
+    it('logs a sample of malformed URLs filtered upstream in processErrorPagesResults', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          { user_agent: 'ChatGPT', url: '/legit-page', status: 404, total_requests: 10 },
+        ],
+        droppedUrls: [
+          '/brandshttps://example.com/brands',
+          '/),',
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 10 } },
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].categorizedResults[404]).to.have.lengthOf(1);
+      expect(result.auditResult[0].categorizedResults[404][0].url).to.equal('/legit-page');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Filtered 2 malformed URL\(s\); sample: \[.*brandshttps.*\]/),
+      );
+    });
+
     it('should produce two weeks when run on a Monday without weekOffset', async () => {
       const monday = new Date('2025-08-18T12:00:00Z'); // Monday
       const clock = sinon.useFakeTimers(monday.getTime());
