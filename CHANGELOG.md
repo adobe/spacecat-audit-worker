@@ -1,3 +1,10 @@
+# [1.458.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.1...v1.458.0) (2026-06-02)
+
+
+### Features
+
+* **cdn-analysis:** include llms.txt in agentic aggregate inserts ([#2589](https://github.com/adobe/spacecat-audit-worker/issues/2589)) ([cb3c320](https://github.com/adobe/spacecat-audit-worker/commit/cb3c320ef98cf564487d11d444090cd4aa10e08f))
+
 ## [1.457.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.0...v1.457.1) (2026-06-02)
 
 
