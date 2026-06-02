@@ -1,3 +1,10 @@
+# [1.457.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.5...v1.457.0) (2026-06-02)
+
+
+### Features
+
+* migrating llm-error-pages audit to spacecat DB ([#2461](https://github.com/adobe/spacecat-audit-worker/issues/2461)) ([541fc6c](https://github.com/adobe/spacecat-audit-worker/commit/541fc6c32b15825b0bc76c4ed4fc1b2f1f40adab))
+
 ## [1.456.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.4...v1.456.5) (2026-06-02)
 
 
