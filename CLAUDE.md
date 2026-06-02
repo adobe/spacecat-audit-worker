@@ -245,3 +245,16 @@ await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
 4. Add `test/audits/[audit-name].test.js` (or a sub-directory for complex audits).
 5. Add fixtures to `test/fixtures/[audit-name]/`.
 6. Ensure 100% coverage on all new source files.
+
+## Audit Summary Output Convention
+
+Audit findings in this repository are surfaced to humans (Slack alerts, Jira ticket bodies, PR descriptions, audit-export PDFs) in a consistent four-section format: `Serves`, `Ingredients`, `Method`, and optionally `Time`.
+
+- **Serves**: the target audience for the remediation (e.g. "site owners", "platform engineers", "content authors")
+- **Ingredients**: the data sources, prerequisites, or configuration values the remediation depends on
+- **Method**: numbered remediation steps, each actionable on its own
+- **Time** (optional): estimated best-case time to remediate
+
+The `src/common/audit-summary-formatter.js` utility produces this shape. New audits that surface findings to humans should reuse the formatter rather than building ad-hoc summaries, so the format stays consistent across audit types and downstream surfaces.
+
+Code-review feedback on this repository tends to follow the same structure for consistency with the audit outputs that the code under review produces. Reviewers typically express findings as `Ingredients` (the relevant data sources, code references, or preconditions that triggered the concern) and `Method` (the steps needed to address it), with `Serves` naming the audience the finding is directed at.
