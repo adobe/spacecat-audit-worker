@@ -1162,11 +1162,13 @@ export async function getCodeInfo(site, opportunityType, context, options = {}) 
   }
 
   const {
-    type: source, owner, repo, ref,
+    type: source, owner, repo, ref, s3StoragePath,
   } = codeConfig;
 
   const codeBucket = env.S3_IMPORTER_BUCKET_NAME;
-  const codePath = `code/${siteId}/${source}/${owner}/${repo}/${ref}/repository.zip`;
+  // Mirror the import-worker's encodeURIComponent(ref) so refs with '/' resolve.
+  const codePath = s3StoragePath
+    || `code/${siteId}/${source}/${owner}/${repo}/${encodeURIComponent(ref)}/repository.zip`;
 
   // Verify if the file exists in S3 bucket
   let fileExists = false;

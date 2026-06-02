@@ -24,10 +24,10 @@ WHERE year  = '{{year}}'
    -- match known LLM-related user-agents
   AND REGEXP_LIKE(properties.userAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- exclude static assets, but always include HTML, PDF, robots.txt, and sitemaps
+  -- exclude static assets, but always include HTML, PDF, robots.txt, llms.txt, and sitemaps
   AND (
       NOT REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)(\?.*)?$')
-      OR REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)(\.htm|\.pdf|robots\.txt|sitemap)')
+      OR REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)(\.htm|\.pdf|robots\.txt|llms(-full)?\.txt|sitemap)')
   )
 
   -- agentic and LLM-attributed traffic never has self-referer 
