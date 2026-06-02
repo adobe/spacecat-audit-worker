@@ -46,9 +46,13 @@ describe('Cited Analysis Handler', () => {
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
 
+  // Cited URLs represent 3rd-party EARNED citations — pages from blogs,
+  // press, etc. that LLMs reference when answering questions about the
+  // brand. They must NOT be on the brand's own domain (see the
+  // ``runCitedAnalysisAudit owned-domain filter`` describe block below).
   const mockUrls = [
-    { url: 'https://techblog.example.com/review-of-example', type: 'cited-analysis', metadata: {} },
-    { url: 'https://news.example.com/example-corp-article', type: 'cited-analysis', metadata: {} },
+    { url: 'https://techreview.io/review-of-example', type: 'cited-analysis', metadata: {} },
+    { url: 'https://industry-news.org/example-corp-article', type: 'cited-analysis', metadata: {} },
   ];
 
   const mockComputedTopics = [
@@ -56,7 +60,7 @@ describe('Cited Analysis Handler', () => {
       name: 'Brand Perception',
       urls: [
         {
-          url: 'https://techblog.example.com/review-of-example',
+          url: 'https://techreview.io/review-of-example',
           timesCited: 1,
           category: 'general',
           subPrompts: ['brand mentions', 'sentiment'],
@@ -345,8 +349,9 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com',
+        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -357,9 +362,21 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com',
+        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
+    });
+
+    it('should NOT warn when competitors are configured', async () => {
+      // mockSite default config has two competitors configured.
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Config: companyName=Example Corp, website=${baseURL}, competitors=2`,
+      );
     });
 
     it('should handle general errors during execution', async () => {
@@ -390,6 +407,120 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+    });
+  });
+
+  // Cited URLs are meant to represent 3rd-party EARNED citations. URLs on
+  // the customer's own domain must be filtered out before we waste a DRS
+  // lookup on them or ship them to Mystique. The mystique flow has the
+  // same filter for defense in depth, but doing it here avoids the
+  // round-trip cost.
+  describe('runCitedAnalysisAudit owned-domain filter', () => {
+    const ownedBaseURL = 'https://bmw.com';
+
+    beforeEach(() => {
+      mockSite.getBaseURL.returns(ownedBaseURL);
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi', 'Mercedes']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns(['bmw']),
+      });
+    });
+
+    it('handles bare-host brand domain (no scheme)', async () => {
+      // ``site.getBaseURL()`` is normalized to include a scheme in
+      // production, but some site configs historically stored bare hosts
+      // (``bmw.com`` rather than ``https://bmw.com``). The filter must
+      // still produce the same apex match.
+      mockSite.getBaseURL.returns('bmw.com');
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner('bmw.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(1);
+      expect(filtered[0].url).to.equal('https://caranddriver.com/bmw-review');
+    });
+
+    it('drops apex / www / subdomain URLs on the brand domain before DRS lookup', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://bmw.com/news/owned-article', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.bmw.com/configurator', type: 'cited-analysis', metadata: {} },
+        { url: 'https://m.bmw.com/owners', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-3-series-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://motortrend.com/bmw-x5-test', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname).sort();
+      expect(hosts).to.deep.equal(['caranddriver.com', 'motortrend.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 3 owned-domain URLs/);
+    });
+
+    it('keeps lookalike domains that are not actually owned', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://not-bmw.com/page', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com.attacker.example/x', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(3);
+    });
+
+    it('is a no-op when baseURL is whitespace-only', async () => {
+      mockSite.getBaseURL.returns('   ');
+      const urls = [
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+      ];
+      mockStoreClient.getUrls.resolves(urls);
+
+      const result = await citedAnalysisHandler.default.runner('   ', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('keeps URLs whose host string cannot be parsed (defensive)', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'http://[bad', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('is a no-op when baseURL is missing (defensive — keeps everything)', async () => {
+      mockSite.getBaseURL.returns('');
+      const urls = [
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+      ];
+      mockStoreClient.getUrls.resolves(urls);
+
+      const result = await citedAnalysisHandler.default.runner('', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
     });
   });
 

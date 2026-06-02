@@ -168,6 +168,8 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const module = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -227,6 +229,8 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const module = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -291,6 +295,8 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const module = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -350,6 +356,8 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const module = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
