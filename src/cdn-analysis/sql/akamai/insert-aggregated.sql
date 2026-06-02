@@ -31,8 +31,7 @@ WHERE year  = '{{year}}'
     REGEXP_LIKE(lower(rspContentType), '^(text/html|application/pdf|text/markdown)')
     OR REGEXP_LIKE(lower(reqPath), '\.md(\?.*)?$')
     OR reqPath LIKE '%robots.txt'
-    OR reqPath LIKE '%llms.txt'
-    OR reqPath LIKE '%llms-full.txt'
+    OR REGEXP_LIKE(lower(reqPath), 'llms(-full)?\.txt$')
     OR reqPath LIKE '%sitemap%'
   )
 

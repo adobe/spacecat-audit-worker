@@ -32,8 +32,7 @@ WHERE date = '{{year}}{{month}}{{day}}'
     REGEXP_LIKE(lower(EdgeResponseContentType), '^(text/html|application/pdf|text/markdown)')
     OR REGEXP_LIKE(lower(ClientRequestURI), '\.md(\?.*)?$')
     OR ClientRequestURI LIKE '%robots.txt'
-    OR ClientRequestURI LIKE '%llms.txt'
-    OR ClientRequestURI LIKE '%llms-full.txt'
+    OR REGEXP_LIKE(lower(ClientRequestURI), 'llms(-full)?\.txt$')
     OR ClientRequestURI LIKE '%sitemap%'
   )
 

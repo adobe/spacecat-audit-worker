@@ -29,8 +29,7 @@ WHERE year  = '{{year}}'
     REGEXP_LIKE(lower("sc-content-type"), '^(text/html|application/pdf|text/markdown)')
     OR REGEXP_LIKE(lower("cs-uri-stem"), '\.md(\?.*)?$')
     OR "cs-uri-stem" LIKE '%robots.txt'
-    OR "cs-uri-stem" LIKE '%llms.txt'
-    OR "cs-uri-stem" LIKE '%llms-full.txt'
+    OR REGEXP_LIKE(lower("cs-uri-stem"), 'llms(-full)?\.txt$')
     OR "cs-uri-stem" LIKE '%sitemap%'
   )
 

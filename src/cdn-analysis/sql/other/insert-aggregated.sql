@@ -31,8 +31,7 @@ WHERE year  = '{{year}}'
         REGEXP_LIKE(lower(response_content_type), '^(text/html|application/pdf|text/markdown)')
         OR REGEXP_LIKE(lower(url), '\.md(\?.*)?$')
         OR url LIKE '%robots.txt'
-        OR url LIKE '%llms.txt'
-        OR url LIKE '%llms-full.txt'
+        OR REGEXP_LIKE(lower(url), 'llms(-full)?\.txt$')
         OR url LIKE '%sitemap%'
       )
     )
