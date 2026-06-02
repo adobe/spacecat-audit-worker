@@ -90,7 +90,7 @@ describe('fetchAgenticUrlClassificationRules', () => {
 
     const expectedShape = {
       sort_order: 0,
-      source: null,
+      source: 'ai',
       sample_urls: [],
       derivation_method: null,
     };

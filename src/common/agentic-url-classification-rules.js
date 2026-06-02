@@ -20,7 +20,7 @@ function normalizeRuleRows(rows = []) {
     name: row.name,
     regex: row.regex,
     sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
-    source: row.source ?? null,
+    source: row.source ?? 'ai',
     sample_urls: Array.isArray(row.sample_urls) ? row.sample_urls : [],
     derivation_method: row.derivation_method ?? null,
   }));
