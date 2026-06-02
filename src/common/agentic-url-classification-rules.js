@@ -20,6 +20,9 @@ function normalizeRuleRows(rows = []) {
     name: row.name,
     regex: row.regex,
     sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
+    source: row.source ?? null,
+    sample_urls: Array.isArray(row.sample_urls) ? row.sample_urls : [],
+    derivation_method: row.derivation_method ?? null,
   }));
 }
 
@@ -43,13 +46,13 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
       const [categoryResult, pageTypeResult] = await Promise.all([
         postgrestClient
           .from('agentic_url_category_rules')
-          .select('name,regex,sort_order')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),
         postgrestClient
           .from('agentic_url_page_type_rules')
-          .select('name,regex,sort_order')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),

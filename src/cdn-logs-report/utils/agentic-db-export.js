@@ -47,9 +47,7 @@ function getAgenticDbExportReferenceDatesForWeek(weekOffset, referenceDate = new
 }
 
 function shouldRefreshWeeklyAgenticDbExports(auditContext) {
-  // Keep Agentic DB refreshes behind one explicit signal. Other flags, such
-  // as categoriesUpdated, may affect report generation but should not be an
-  // independent DB export trigger.
+  // Keep Agentic DB refreshes behind one explicit signal.
   return hasWeekOffset(auditContext)
     && Boolean(auditContext?.refreshAgenticDailyExport);
 }
@@ -153,7 +151,6 @@ async function queueDailyAgenticDbExport({
       auditContext: {
         date: referenceDate.toISOString(),
         refreshAgenticDailyExport: true,
-        ...(auditContext.categoriesUpdated ? { categoriesUpdated: true } : {}),
         ...(auditContext.triggeredBy ? { triggeredBy: auditContext.triggeredBy } : {}),
         sourceWeekOffset: auditContext.weekOffset,
       },

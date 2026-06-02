@@ -88,12 +88,40 @@ describe('fetchAgenticUrlClassificationRules', () => {
 
     const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
+    const expectedShape = {
+      sort_order: 0,
+      source: null,
+      sample_urls: [],
+      derivation_method: null,
+    };
     expect(result).to.deep.equal({
-      topicPatterns: [{ name: 'adobe', regex: '/adobe', sort_order: 0 }],
-      pagePatterns: [{ name: 'Docs', regex: '/docs', sort_order: 0 }],
+      topicPatterns: [{ name: 'adobe', regex: '/adobe', ...expectedShape }],
+      pagePatterns: [{ name: 'Docs', regex: '/docs', ...expectedShape }],
     });
     expect(sleepStub).to.not.have.been.called;
     expect(context.log.info).to.have.been.calledWithMatch('loaded 1 page patterns, 1 topic patterns');
+  });
+
+  it('passes through populated provenance fields from rows', async () => {
+    const rules = [{
+      name: 'photoshop',
+      regex: '/photoshop',
+      sort_order: 2,
+      source: 'human',
+      sample_urls: ['/photoshop/a', '/photoshop/b'],
+      derivation_method: 'common-prefix',
+    }];
+    const context = makeContext(() => makeQueryChain({ data: rules, error: null }));
+
+    const result = await fetchAgenticUrlClassificationRules(mockSite, context);
+    expect(result.topicPatterns[0]).to.deep.equal({
+      name: 'photoshop',
+      regex: '/photoshop',
+      sort_order: 2,
+      source: 'human',
+      sample_urls: ['/photoshop/a', '/photoshop/b'],
+      derivation_method: 'common-prefix',
+    });
   });
 
   it('fills sort_order with index when not an integer', async () => {

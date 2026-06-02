@@ -186,97 +186,6 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('getConfigCategories', () => {
-    let mockLlmoConfig;
-    let mockedReportUtils;
-    const mockSite = { getSiteId: () => 'test-site-id' };
-    const mockContext = {
-      log: { info: sinon.stub(), warn: sinon.stub() },
-      s3Client: {},
-      env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
-    };
-
-    beforeEach(async () => {
-      mockLlmoConfig = { readConfig: sandbox.stub() };
-      mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '@adobe/spacecat-shared-utils': {
-          getStaticContent: () => Promise.resolve('SELECT * FROM table'),
-          llmoConfig: mockLlmoConfig,
-        },
-      });
-      mockContext.log.warn.resetHistory();
-    });
-
-    it('fetches and extracts category names successfully', async () => {
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          categories: {
-            'cat-id-1': { name: 'General', region: ['us'] },
-            'cat-id-2': { name: 'Products', region: ['us', 'gb'] },
-          },
-        },
-      });
-
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
-
-      expect(result).to.deep.equal(['General', 'Products']);
-    });
-
-    it('returns empty array when categories are missing, null, or empty', async () => {
-      mockLlmoConfig.readConfig.resolves({ config: { categories: null } });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-
-      mockLlmoConfig.readConfig.resolves({ config: {} });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-
-      mockLlmoConfig.readConfig.resolves({ config: { categories: {} } });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-    });
-
-    it('returns empty array when only default intent categories are present', async () => {
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          categories: {
-            'cat-1': { name: 'Usage & Troubleshooting' },
-            'cat-2': { name: 'Comparison & Decision' },
-            'cat-3': { name: 'Discovery & Research' },
-          },
-        },
-      });
-
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
-      expect(result).to.deep.equal([]);
-    });
-
-    it('filters out default intent categories when mixed with custom ones', async () => {
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          categories: {
-            'cat-1': { name: 'Usage & Troubleshooting' },
-            'cat-2': { name: 'Comparison & Decision' },
-            'cat-3': { name: 'Discovery & Research' },
-            'cat-4': { name: 'Analytics' },
-            'cat-5': { name: 'Cloud' },
-          },
-        },
-      });
-
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
-      expect(result).to.deep.equal(['Analytics', 'Cloud']);
-    });
-
-    it('returns empty array and logs warning on error', async () => {
-      mockLlmoConfig.readConfig.rejects(new Error('S3 fetch failed'));
-
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
-
-      expect(result).to.deep.equal([]);
-      expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to fetch config categories:/),
-      );
-    });
-  });
-
   describe('fetchAgenticUrlClassificationRules', () => {
     const mockSite = { getId: () => 'test-site-id' };
 
@@ -331,10 +240,31 @@ describe('CDN Logs Report Utils', () => {
       const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({
-        pagePatterns: [{ name: 'Article', regex: '/blog', sort_order: 0 }],
+        pagePatterns: [{
+          name: 'Article',
+          regex: '/blog',
+          sort_order: 0,
+          source: null,
+          sample_urls: [],
+          derivation_method: null,
+        }],
         topicPatterns: [
-          { name: 'Products', regex: '/products', sort_order: 5 },
-          { name: 'Docs', regex: '/docs', sort_order: 1 },
+          {
+            name: 'Products',
+            regex: '/products',
+            sort_order: 5,
+            source: null,
+            sample_urls: [],
+            derivation_method: null,
+          },
+          {
+            name: 'Docs',
+            regex: '/docs',
+            sort_order: 1,
+            source: null,
+            sample_urls: [],
+            derivation_method: null,
+          },
         ],
       });
       expect(log.info).to.have.been.calledWith(
