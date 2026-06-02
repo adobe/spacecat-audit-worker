@@ -32,6 +32,7 @@ credentials/
 
 # Claude local settings
 .claude/settings.local.json
+src/prerender/.claude/refactoring-proposal.md
 
 # Git worktrees
 .worktrees/

@@ -17,8 +17,8 @@ import {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
-  handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { handleAiOnlyMode } from '../../../src/prerender/ai-only.js';
 
 use(sinonChai);
 
@@ -603,16 +603,12 @@ describe('Prerender AI-Only Mode', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockHandler = await (await import('esmock')).default('../../../src/prerender/handler.js', {
+      const { processOpportunityAndSuggestions: mockedProcessOpportunityAndSuggestions } = await (await import('esmock')).default('../../../src/prerender/opportunity-syncer.js', {
         '../../../src/common/opportunity.js': {
           convertToOpportunity: sinon.stub().resolves(mockOpportunityNormal),
         },
         '../../../src/utils/data-access.js': {
           syncSuggestions: syncSuggestionsStub,
-        },
-        '../../../src/prerender/utils/utils.js': {
-          isPaidLLMOCustomer: sinon.stub().resolves(true),
-          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
         },
       });
 
@@ -646,7 +642,7 @@ describe('Prerender AI-Only Mode', () => {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
       };
 
-      const { opportunity, auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+      const { opportunity, auditRunCandidates } = await mockedProcessOpportunityAndSuggestions(
         'https://example.com',
         auditData,
         sqsContext,
