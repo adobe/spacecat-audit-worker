@@ -1,3 +1,10 @@
+## [1.456.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.4...v1.456.5) (2026-06-02)
+
+
+### Bug Fixes
+
+* **rum-config-refresh:** try overrideBaseURL first for domain key lookup, fall back to baseURL ([#2578](https://github.com/adobe/spacecat-audit-worker/issues/2578)) ([6e75cb7](https://github.com/adobe/spacecat-audit-worker/commit/6e75cb7869c5027b12b00c52a18173915baa990f))
+
 ## [1.456.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.3...v1.456.4) (2026-06-01)
 
 
