@@ -1,3 +1,24 @@
+## [1.456.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.4...v1.456.5) (2026-06-02)
+
+
+### Bug Fixes
+
+* **rum-config-refresh:** try overrideBaseURL first for domain key lookup, fall back to baseURL ([#2578](https://github.com/adobe/spacecat-audit-worker/issues/2578)) ([6e75cb7](https://github.com/adobe/spacecat-audit-worker/commit/6e75cb7869c5027b12b00c52a18173915baa990f))
+
+## [1.456.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.3...v1.456.4) (2026-06-01)
+
+
+### Bug Fixes
+
+* getCodeInfo() URL-encoding mismatch breaking CWV/a11y code-fix for refs with / ([#2581](https://github.com/adobe/spacecat-audit-worker/issues/2581)) ([21b043c](https://github.com/adobe/spacecat-audit-worker/commit/21b043c654b2c060a22ce8708bc0c3030543167d))
+
+## [1.456.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.2...v1.456.3) (2026-06-01)
+
+
+### Bug Fixes
+
+* Sitemap makes better suggestions ([#2583](https://github.com/adobe/spacecat-audit-worker/issues/2583)) ([64902d5](https://github.com/adobe/spacecat-audit-worker/commit/64902d5ba0900f6908182f736d8ca44fad41afbd))
+
 ## [1.456.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.1...v1.456.2) (2026-05-31)
 
 

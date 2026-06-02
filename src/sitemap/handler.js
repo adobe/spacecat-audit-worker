@@ -10,6 +10,23 @@
  * governing permissions and limitations under the License.
  */
 
+// FUTURE CONSIDERATIONS FOR ENHANCEMENTS:
+//
+//  ** Audit Worker **
+//    * detect circular redirects
+//    * ensure "money pages" are entries in the sitemap.xml
+//    * detect duplicate entries
+//
+//  ** BackOffice UI **
+//    * bulk Delete ... especially for "rejected" status
+//    * display {50, 100} entries per page
+//    * add "statistics" page: show {how many sitemaps.xml files found, page URLs probed, ??}
+//
+//  ** Front End UI **
+//    * switch display to see all errors by type {"404" + "Redirect"} vs "per sitemap" file
+//    * enhance "redirect" codes by adding {303, 307, 308}
+//    * add new displays in the UI: {"circular redirect" detection, missing "money pages", ...}
+
 import {
   isArray,
 } from '@adobe/spacecat-shared-utils';
