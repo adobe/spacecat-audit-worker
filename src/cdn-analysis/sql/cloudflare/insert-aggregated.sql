@@ -27,11 +27,13 @@ WHERE date = '{{year}}{{month}}{{day}}'
   -- match known LLM-related user-agents
   AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt and sitemaps
+  -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt, llms.txt and sitemaps
   AND (
     REGEXP_LIKE(lower(EdgeResponseContentType), '^(text/html|application/pdf|text/markdown)')
     OR REGEXP_LIKE(lower(ClientRequestURI), '\.md(\?.*)?$')
     OR ClientRequestURI LIKE '%robots.txt'
+    OR ClientRequestURI LIKE '%llms.txt'
+    OR ClientRequestURI LIKE '%llms-full.txt'
     OR ClientRequestURI LIKE '%sitemap%'
   )
 

@@ -31,6 +31,8 @@ WHERE year  = '{{year}}'
         REGEXP_LIKE(lower(response_content_type), '^(text/html|application/pdf|text/markdown)')
         OR REGEXP_LIKE(lower(url), '\.md(\?.*)?$')
         OR url LIKE '%robots.txt'
+        OR url LIKE '%llms.txt'
+        OR url LIKE '%llms-full.txt'
         OR url LIKE '%sitemap%'
       )
     )
@@ -38,7 +40,7 @@ WHERE year  = '{{year}}'
       NULLIF(trim(response_content_type), '') IS NULL
       AND (
         NOT REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)(\?.*)?$')
-        OR REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\.htm|\.pdf|\.md|robots\.txt|sitemap)')
+        OR REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\.htm|\.pdf|\.md|robots\.txt|llms(-full)?\.txt|sitemap)')
       )
     )
   )
