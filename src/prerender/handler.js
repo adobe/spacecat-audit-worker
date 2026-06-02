@@ -897,7 +897,10 @@ export async function submitForScraping(context) {
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedCsvUrls);
+    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+      rebasedCsvUrls,
+      { includeQueryParams: true },
+    );
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -954,10 +957,10 @@ export async function submitForScraping(context) {
   let edgeDeployedPathnames = new Set();
 
   if (isSlackTriggered) {
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
-      ...rebasedTopPagesUrls,
-      ...rebasedIncludedURLs,
-    ]));
+    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+      [...rebasedTopPagesUrls, ...rebasedIncludedURLs],
+      { includeQueryParams: rebasedIncludedURLs.length > 0 },
+    ));
     currentOrganic = rebasedTopPagesUrls.length;
     currentIncludedUrls = rebasedIncludedURLs.length;
     isFirstRunOfCycle = true;
@@ -999,7 +1002,10 @@ export async function submitForScraping(context) {
       (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
     ).length;
 
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls));
+    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+      batchedUrls,
+      { includeQueryParams: filteredIncludedURLs.length > 0 },
+    ));
   }
 
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:

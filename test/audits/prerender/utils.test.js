@@ -252,7 +252,7 @@ describe('Prerender Utils', () => {
       expect(result.filteredCount).to.equal(0);
     });
 
-    it('should handle URLs with query parameters', () => {
+    it('should handle URLs with query parameters (default: dedup by pathname only)', () => {
       const urls1 = ['https://example.com/page?foo=bar'];
       const urls2 = ['https://example.com/page?baz=qux'];
 
@@ -262,6 +262,52 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(1);
       expect(result.urls[0]).to.equal('https://example.com/page?foo=bar');
       expect(result.filteredCount).to.equal(0);
+    });
+
+    it('should keep URLs with different query params when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?filter=iphone',
+        'https://example.com/page?filter=mac',
+        'https://example.com/page',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls).to.deep.equal(urls);
+    });
+
+    it('should still dedup identical URLs when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?filter=iphone',
+        'https://example.com/page?filter=iphone',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(1);
+    });
+
+    it('should dedup URLs with same query params in different order when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?b=2&a=1',
+        'https://example.com/page?a=1&b=2',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      // Sorted params produce the same key, so these are duplicates
+      expect(result.urls).to.have.lengthOf(1);
+    });
+
+    it('should work with multiple arrays and includeQueryParams option', () => {
+      const urls1 = ['https://example.com/page?a=1'];
+      const urls2 = ['https://example.com/page?b=2'];
+      const urls3 = ['https://example.com/other'];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2, urls3, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(3);
     });
 
     it('should handle URLs with hash fragments', () => {

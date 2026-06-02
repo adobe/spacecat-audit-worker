@@ -4435,8 +4435,8 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should return the raw Athena URL when it is already absolute but invalid', async function () {
       this.timeout(5000);
-      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
-        urls: urlGroups.flat(),
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...args) => ({
+        urls: args.filter(Array.isArray).flat(),
         filteredCount: 0,
       }));
 
