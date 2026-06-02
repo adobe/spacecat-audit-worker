@@ -1,3 +1,10 @@
+## [1.457.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.0...v1.457.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** drop malformed URLs from categorized results ([#2587](https://github.com/adobe/spacecat-audit-worker/issues/2587)) ([eaa6990](https://github.com/adobe/spacecat-audit-worker/commit/eaa6990e5df4b3f5df16fdadec0fa0db89698db1))
+
 # [1.457.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.5...v1.457.0) (2026-06-02)
 
 
