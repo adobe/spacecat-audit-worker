@@ -42,18 +42,24 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
     try {
+      // Only live rules drive classification. Customer-deleted rules are
+      // soft-deleted (status='deleted') by the customer-edit API and must be
+      // excluded here. Requires the 20260602140944 data-service migration that
+      // adds the `status` column — deploy that migration before this filter.
       // eslint-disable-next-line no-await-in-loop
       const [categoryResult, pageTypeResult] = await Promise.all([
         postgrestClient
           .from('agentic_url_category_rules')
           .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
+          .eq('status', 'active')
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),
         postgrestClient
           .from('agentic_url_page_type_rules')
           .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
+          .eq('status', 'active')
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),
       ]);

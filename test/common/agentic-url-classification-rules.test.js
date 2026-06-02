@@ -102,6 +102,23 @@ describe('fetchAgenticUrlClassificationRules', () => {
     expect(context.log.info).to.have.been.calledWithMatch('loaded 1 page patterns, 1 topic patterns');
   });
 
+  it('filters to active rules on both rule tables', async () => {
+    const chains = [];
+    const context = makeContext(() => {
+      const chain = makeQueryChain({ data: [], error: null });
+      chains.push(chain);
+      return chain;
+    });
+
+    await fetchAgenticUrlClassificationRules(mockSite, context);
+
+    expect(chains).to.have.lengthOf(2);
+    chains.forEach((chain) => {
+      expect(chain.eq).to.have.been.calledWith('site_id', SITE_ID);
+      expect(chain.eq).to.have.been.calledWith('status', 'active');
+    });
+  });
+
   it('passes through populated provenance fields from rows', async () => {
     const rules = [{
       name: 'photoshop',
