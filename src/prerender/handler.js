@@ -313,6 +313,32 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
   }
 }
 
+function normalizePathname(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Normalizes a URL to its pathname + search string.
+ * Trailing slashes on the pathname are removed (except for the root path).
+ * Falls back to the raw string when the URL is not parseable.
+ * @param {string} url
+ * @returns {string} pathname+search, or the original string on parse failure
+ */
+function normalizePathnameWithQuery(url) {
+  try {
+    const { pathname, search } = new URL(url);
+    const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    return search ? `${normalized}${search}` : normalized;
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Returns pathnames from PageCitability records updated within the configured recent window.
  * @param {Object} context
@@ -333,13 +359,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
     );
     return new Set(
       records
-        .map((r) => {
-          try {
-            return new URL(r.getUrl()).pathname;
-          } catch {
-            return null;
-          }
-        })
+        .map((r) => normalizePathnameWithQuery(r.getUrl()))
         .filter(Boolean),
     );
   } catch (e) {
@@ -379,20 +399,7 @@ function getEdgeDeployedPathnames(status) {
  * @returns {boolean}
  */
 function isNotRecentUrl(url, recentPathnames) {
-  try {
-    return !recentPathnames.has(new URL(url).pathname);
-  } catch {
-    return true;
-  }
-}
-
-function normalizePathname(url) {
-  try {
-    const { pathname } = new URL(url);
-    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  } catch {
-    return url;
-  }
+  return !recentPathnames.has(normalizePathnameWithQuery(url));
 }
 
 /**
@@ -957,12 +964,19 @@ export async function submitForScraping(context) {
   let edgeDeployedPathnames = new Set();
 
   if (isSlackTriggered) {
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-      [...rebasedTopPagesUrls, ...rebasedIncludedURLs],
-      { includeQueryParams: rebasedIncludedURLs.length > 0 },
-    ));
-    currentOrganic = rebasedTopPagesUrls.length;
-    currentIncludedUrls = rebasedIncludedURLs.length;
+    // Dedup each source independently: organic uses pathname-only dedup (tracking params stay
+    // collapsed), included uses pathname+search so CSV query-param variants are preserved.
+    const {
+      urls: organicSlackDeduped, filteredCount: organicSlackFiltered,
+    } = mergeAndGetUniqueHtmlUrls(rebasedTopPagesUrls);
+    const {
+      urls: includedSlackDeduped,
+      filteredCount: includedSlackFiltered,
+    } = mergeAndGetUniqueHtmlUrls(rebasedIncludedURLs, { includeQueryParams: true });
+    finalUrls = [...organicSlackDeduped, ...includedSlackDeduped];
+    filteredCount = organicSlackFiltered + includedSlackFiltered;
+    currentOrganic = organicSlackDeduped.length;
+    currentIncludedUrls = includedSlackDeduped.length;
     isFirstRunOfCycle = true;
   } else {
     // getTopAgenticUrls internally handles errors and returns [] on failure
@@ -987,25 +1001,33 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
-    const orderedCandidateUrls = [
-      ...filteredOrganicUrls,
-      ...filteredIncludedURLs,
-      ...filteredAgenticUrls,
-    ];
-    const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+    // Dedup each source independently before merging: organic/agentic use pathname-only
+    // dedup (tracking params get collapsed), included uses pathname+search so CSV
+    // query-param variants (e.g. /page?filter=a vs /page?filter=b) are preserved.
+    const {
+      urls: organicDeduped, filteredCount: organicFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredOrganicUrls);
+    const {
+      urls: includedDeduped, filteredCount: includedFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredIncludedURLs, { includeQueryParams: true });
+    const {
+      urls: agenticDeduped, filteredCount: agenticFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredAgenticUrls);
+    filteredCount = organicFiltered + includedFiltered + agenticFiltered;
 
-    const organicUrlSet = new Set(filteredOrganicUrls);
-    const includedUrlSet = new Set(filteredIncludedURLs);
+    const batchedUrls = [
+      ...organicDeduped, ...includedDeduped, ...agenticDeduped,
+    ].slice(0, DAILY_BATCH_SIZE);
+
+    const organicUrlSet = new Set(organicDeduped);
+    const includedUrlSet = new Set(includedDeduped);
     currentOrganic = batchedUrls.filter((url) => organicUrlSet.has(url)).length;
     currentIncludedUrls = batchedUrls.filter((url) => includedUrlSet.has(url)).length;
     currentAgentic = batchedUrls.filter(
       (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
     ).length;
 
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-      batchedUrls,
-      { includeQueryParams: filteredIncludedURLs.length > 0 },
-    ));
+    finalUrls = batchedUrls;
   }
 
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -1212,10 +1234,10 @@ export async function processOpportunityAndSuggestions(
     if (data.key) {
       return data.key;
     }
-    // Key on pathname only so that domain shifts (e.g. after page-citability migration
-    // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
-    // suggestions for the same page path.
-    return toPathname(data.url);
+    // Key on pathname+search so that query-param variants (e.g. /page?filter=a vs /page?filter=b)
+    // produce distinct suggestions. Domain shifts only affect hostname, so migration tolerance
+    // (e.g. switching from site.getBaseURL() to getPreferredBaseUrl()) is preserved.
+    return normalizePathnameWithQuery(data.url);
   };
 
   // Helper function to extract only the fields we want in suggestions
@@ -1326,7 +1348,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
 
   const existingRecords = await PageCitability.allBySiteId(siteId);
   const existingRecordsMap = new Map(
-    existingRecords.map((r) => [normalizePathname(r.getUrl()), r]),
+    existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
   );
 
   const successful = comparisonResults.filter((r) => !r.error);
@@ -1343,7 +1365,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
       isDeployedAtEdge,
     } = result;
     try {
-      const existing = existingRecordsMap.get(normalizePathname(url));
+      const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
       if (existing) {
         existing.setCitabilityScore(citabilityScore ?? null);
         existing.setContentRatio(contentGainRatio ?? null);
@@ -1774,19 +1796,20 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Normalize scraped URLs to pathnames so domain shifts don't prevent
-        // outdating existing suggestions.
-        const scrapedPathnames = new Set(
-          [...scrapedUrlsSet].map(toPathname),
+        // Normalize scraped URLs to pathname+search so query-param variants are treated
+        // as distinct pages. Domain shifts only affect hostname so migration tolerance is
+        // preserved.
+        const scrapedKeys = new Set(
+          [...scrapedUrlsSet].map(normalizePathnameWithQuery),
         );
         const scrapedUrlsForNoOppty = {
-          has: (url) => scrapedPathnames.has(toPathname(url)),
+          has: (url) => scrapedKeys.has(normalizePathnameWithQuery(url)),
         };
         await syncSuggestions({
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => toPathname(suggestionData.url),
+          buildKey: (suggestionData) => normalizePathnameWithQuery(suggestionData.url),
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
