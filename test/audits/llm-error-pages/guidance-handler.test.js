@@ -181,7 +181,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(resp.status).to.equal(404);
   });
 
-  it('returns 400 when Excel processing fails', async () => {
+  it('logs and continues (returns 200) when Excel processing fails — dual-write best-effort', async () => {
     readFromSharePointStub.rejects(new Error('SharePoint error'));
 
     const message = {
@@ -226,8 +226,11 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(400);
-    expect(logMock.error.calledWith('Failed to update 404 Excel on Mystique callback: SharePoint error')).to.be.true;
+    expect(resp.status).to.equal(200);
+    expect(logMock.error).to.have.been.calledWith(
+      sinon.match(/Excel guidance update failed/),
+      sinon.match({ err: 'SharePoint error', siteId: 'site-1' }),
+    );
   });
 
   it('handles empty brokenLinks array', async () => {
@@ -1070,5 +1073,298 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB dual-write paths (Suggestion update alongside Excel cell update)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
+  let guidanceHandler;
+  const sandbox = sinon.createSandbox();
+
+  let createLLMOSharepointClientStub;
+  let readFromSharePointStub;
+  let uploadToSharePointStub;
+  let publishToAdminHlxStub;
+
+  beforeEach(async () => {
+    createLLMOSharepointClientStub = sandbox.stub().resolves({});
+    readFromSharePointStub = sandbox.stub();
+    uploadToSharePointStub = sandbox.stub().resolves();
+    publishToAdminHlxStub = sandbox.stub().resolves();
+
+    // Default: Excel read returns a workbook so the Excel block succeeds.
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 100, 250, 'US', '/products/item', 'X', 'Y', '', '', '']);
+    readFromSharePointStub.resolves(await wb.xlsx.writeBuffer());
+
+    guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        readFromSharePoint: readFromSharePointStub,
+        uploadToSharePoint: uploadToSharePointStub,
+        publishToAdminHlx: publishToAdminHlxStub,
+      },
+    });
+  });
+
+  afterEach(() => sandbox.restore());
+
+  function makeSuggestion(urlPath, existingData = {}) {
+    let data = { url: urlPath, ...existingData };
+    return {
+      getData: () => data,
+      setData: sandbox.stub().callsFake((d) => { data = d; }),
+    };
+  }
+
+  function buildContext(overrides = {}) {
+    const site = {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://example.com',
+      getConfig: () => ({
+        getCdnLogsConfig: () => null,
+        getLlmoDataFolder: () => 'test-customer',
+        getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+      }),
+      ...overrides.site,
+    };
+    const suggestions = overrides.suggestions ?? [];
+    const opportunity = overrides.opportunity || {
+      getId: () => 'opp-1',
+      getSiteId: () => 'site-1',
+      getSuggestions: sandbox.stub().resolves(suggestions),
+    };
+    const dataAccess = {
+      Site: { findById: sandbox.stub().resolves(site) },
+      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-1' }) },
+      Opportunity: {
+        findById: sandbox.stub().resolves(opportunity),
+        ...overrides.Opportunity,
+      },
+      Suggestion: { saveMany: sandbox.stub().resolves() },
+    };
+    const log = {
+      info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
+    };
+    return {
+      log, dataAccess, s3Client: { send: sandbox.stub().resolves() }, env: { AWS_ENV: 'test', AWS_REGION: 'us-east-1' },
+    };
+  }
+
+  it('writes suggestedUrls, aiRationale, confidenceScore to matched DB Suggestion', async () => {
+    const suggestion = makeSuggestion('/products/item');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const message = {
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/products/item',
+          suggestedUrls: ['/products', '/shop'],
+          aiRationale: 'Best match',
+          confidenceScore: 0.9,
+        }],
+      },
+    };
+
+    const resp = await guidanceHandler.default(message, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(suggestion.setData).to.have.been.calledOnce;
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal(['/products', '/shop']);
+    expect(saved.aiRationale).to.equal('Best match');
+    expect(saved.confidenceScore).to.equal(0.9);
+    expect(ctx.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+  });
+
+  it('defaults aiRationale to empty string when missing', async () => {
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: ['/x'],
+        }],
+      },
+    }, ctx);
+
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('omits confidenceScore when not provided', async () => {
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'ChatGPT', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(Object.keys(saved)).to.not.include('confidenceScore');
+  });
+
+  it('warns and skips DB when opportunityId is missing — Excel still runs', async () => {
+    const ctx = buildContext({ suggestions: [] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        // no opportunityId
+        brokenLinks: [{
+          urlFrom: 'ChatGPT', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.dataAccess.Opportunity.findById).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(ctx.log.warn).to.have.been.calledWithMatch(/No opportunityId/);
+    // Excel side ran.
+    expect(uploadToSharePointStub).to.have.been.called;
+  });
+
+  it('skips DB write and warns when opportunity belongs to a different site', async () => {
+    const suggestion = makeSuggestion('/p');
+    const otherSiteOpportunity = {
+      getId: () => 'opp-other-site',
+      getSiteId: () => 'other-site',
+      getSuggestions: sandbox.stub().resolves([suggestion]),
+    };
+    const ctx = buildContext({
+      opportunity: otherSiteOpportunity,
+    });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-other-site',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.log.warn).to.have.been.calledWithMatch(/siteId mismatch/);
+    expect(suggestion.setData).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('warns when Opportunity is not found in DB', async () => {
+    const ctx = buildContext({
+      Opportunity: { findById: sandbox.stub().resolves(null) },
+    });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-missing',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.log.warn).to.have.been.calledWithMatch(/Opportunity not found/);
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('skips brokenLinks with empty suggestedUrls', async () => {
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: [], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(suggestion.setData).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('skips brokenLinks where no suggestion matches the URL path', async () => {
+    const suggestion = makeSuggestion('/other');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/no-match', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(suggestion.setData).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('logs error and continues when DB write throws — Excel still runs', async () => {
+    const ctx = buildContext({
+      Opportunity: { findById: sandbox.stub().rejects(new Error('db-down')) },
+    });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.log.error).to.have.been.calledWithMatch(/DB guidance update failed/);
+    // Excel side completed regardless.
+    expect(uploadToSharePointStub).to.have.been.called;
+  });
+
+  it('handles empty brokenLinks (no DB writes attempted)', async () => {
+    const ctx = buildContext({ suggestions: [makeSuggestion('/p')] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: { opportunityId: 'opp-1', brokenLinks: [] },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
 });
