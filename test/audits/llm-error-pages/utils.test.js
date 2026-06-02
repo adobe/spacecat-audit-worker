@@ -28,6 +28,7 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   toPathOnly,
+  isValidUrlPath,
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
   EXCLUDED_URL_SUFFIXES,
@@ -1040,6 +1041,53 @@ describe('LLM Error Pages Utils', () => {
       // Null input also triggers catch block
       const result2 = toPathOnly(null, 'invalid');
       expect(result2).to.equal(null);
+    });
+  });
+
+  describe('isValidUrlPath', () => {
+    it('accepts well-formed absolute URLs', () => {
+      expect(isValidUrlPath('https://example.com/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('https://example.com/foo?x=1')).to.equal(true);
+    });
+
+    it('accepts well-formed relative paths', () => {
+      expect(isValidUrlPath('/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('/foo/bar?x=1&y=2')).to.equal(true);
+      expect(isValidUrlPath('/wiki/Article_(disambiguation)')).to.equal(true);
+    });
+
+    it('rejects non-string inputs', () => {
+      expect(isValidUrlPath(null)).to.equal(false);
+      expect(isValidUrlPath(undefined)).to.equal(false);
+      expect(isValidUrlPath(42)).to.equal(false);
+      expect(isValidUrlPath({})).to.equal(false);
+    });
+
+    it('rejects empty and whitespace-only strings', () => {
+      expect(isValidUrlPath('')).to.equal(false);
+      expect(isValidUrlPath('   ')).to.equal(false);
+    });
+
+    it('rejects paths with an embedded http(s) scheme', () => {
+      expect(isValidUrlPath('/brandshttps://www.coca-colacompany.com/brands')).to.equal(false);
+      expect(isValidUrlPath('/foohttp://bar')).to.equal(false);
+      expect(isValidUrlPath('/HTTPS://x')).to.equal(false);
+    });
+
+    it('rejects URLs containing raw or encoded quote characters', () => {
+      expect(isValidUrlPath('https://example.com/%2522')).to.equal(false);
+      expect(isValidUrlPath('https://example.com/%22')).to.equal(false);
+      expect(isValidUrlPath('/foo"bar')).to.equal(false);
+      expect(isValidUrlPath("/foo'bar")).to.equal(false);
+    });
+
+    it('rejects URLs with trailing commas', () => {
+      expect(isValidUrlPath('https://example.com/),')).to.equal(false);
+      expect(isValidUrlPath('/foo,')).to.equal(false);
+    });
+
+    it('rejects URLs the URL constructor cannot parse', () => {
+      expect(isValidUrlPath('http://[invalid')).to.equal(false);
     });
   });
 

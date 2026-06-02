@@ -452,6 +452,41 @@ export function toPathOnly(maybeUrl, baseUrl) {
   }
 }
 
+/**
+ * Conservative validity check for URLs surfaced from CDN logs. Bot impersonators
+ * that pass the user-agent regex sometimes request malformed paths (e.g.
+ * `/brandshttps://...`, `/),`, `/%2522`). Those add noise to the 404 opportunity
+ * without being actionable, so we drop them before building suggestions.
+ */
+export function isValidUrlPath(url) {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    // eslint-disable-next-line no-new
+    new URL(trimmed, 'https://example.com');
+  } catch {
+    return false;
+  }
+
+  if (/.+https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+  if (/["']|%2[27]|%252[27]/i.test(trimmed)) {
+    return false;
+  }
+  if (/,$/.test(trimmed)) {
+    return false;
+  }
+
+  return true;
+}
+
 export const SPREADSHEET_COLUMNS = [
   'Agent Type',
   'User Agent',
