@@ -42,10 +42,8 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
     try {
-      // Only live rules drive classification. Customer-deleted rules are
-      // soft-deleted (status='deleted') by the customer-edit API and must be
-      // excluded here. Requires the 20260602140944 data-service migration that
-      // adds the `status` column — deploy that migration before this filter.
+      // Exclude customer-soft-deleted rules. Requires data-service migration
+      // 20260602140944 (adds `status`) to deploy before this filter.
       // eslint-disable-next-line no-await-in-loop
       const [categoryResult, pageTypeResult] = await Promise.all([
         postgrestClient
