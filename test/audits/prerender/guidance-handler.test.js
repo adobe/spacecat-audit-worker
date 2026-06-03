@@ -1040,7 +1040,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   describe('Prompts field — preserve-or-update logic', () => {
     it('should store new prompts when Mystique returns them', async () => {
       const newPrompts = [
-        { question: 'What is prerendering?', category: 'SEO', topic: 'Performance', region: '' },
+        {
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'What is prerendering?', type: 'Branded',
+          topic: 'Performance', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
       ];
       mockFetchSuccess({
         opportunityId: 'opportunity-123',
@@ -1067,7 +1071,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     });
 
     it('should preserve existing prompts when Mystique returns empty prompts array', async () => {
-      const existingPrompts = [{ question: 'Old question?', category: 'SEO', topic: 'Content', region: '' }];
+      const existingPrompts = [{
+        id: 'prompt-uuid-old', origin: 'ai', source: 'audit',
+        prompt: 'Old question?', type: 'Non-Branded',
+        topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+      }];
       mockSuggestions[0].getData.returns({
         url: 'https://example.com/page1',
         aiSummary: 'Previous summary',
@@ -1099,7 +1107,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     });
 
     it('should preserve existing prompts when Mystique omits the prompts field', async () => {
-      const existingPrompts = [{ question: 'Existing?', category: 'SEO', topic: 'Content', region: '' }];
+      const existingPrompts = [{
+        id: 'prompt-uuid-existing', origin: 'ai', source: 'audit',
+        prompt: 'Existing?', type: 'Non-Branded',
+        topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+      }];
       mockSuggestions[0].getData.returns({
         url: 'https://example.com/page1',
         aiSummary: 'Previous summary',
@@ -1164,8 +1176,16 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
     it('should log suggestionsWithPrompts and totalPromptCount in metrics', async () => {
       const prompts = [
-        { question: 'Q1?', category: 'SEO', topic: 'Content', region: '' },
-        { question: 'Q2?', category: 'SEO', topic: 'Content', region: '' },
+        {
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'Q1?', type: 'Branded',
+          topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
+        {
+          id: 'prompt-uuid-2', origin: 'ai', source: 'audit',
+          prompt: 'Q2?', type: 'Non-Branded',
+          topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
       ];
 
       mockFetchSuccess({

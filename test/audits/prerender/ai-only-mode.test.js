@@ -795,7 +795,11 @@ describe('Prerender AI-Only Mode', () => {
         url: 'https://example.com/page1',
         isDomainWide: false,
         scrapeJobId: 'test-scrape-job',
-        prompts: [{ question: 'What is prerendering?', category: 'SEO' }],
+        prompts: [{
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'What is prerendering?', type: 'Branded',
+          topic: 'Performance', category: 'SEO', intent: 'Informational', regions: ['US'],
+        }],
       });
 
       const result = await importTopPages(context);

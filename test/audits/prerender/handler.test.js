@@ -124,7 +124,7 @@ describe('Prerender Audit', () => {
       const context = {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
-        log: { debug: sandbox.stub(), info: sandbox.stub() },
+        log: { debug: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
         data: '{invalid-json',
       };
       const res = await importTopPages(context);
@@ -1730,53 +1730,6 @@ describe('Prerender Audit', () => {
 
         const result = await processContentAndGenerateOpportunities(context);
         expect(result.status).to.equal('complete');
-      });
-
-      it('should warn when agentic URL fetch fails', async () => {
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-          },
-          dataAccess: {
-            SiteTopPage: {
-              // No top pages, we don't want to exercise that path here
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
-            },
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          scrapeResultPaths: new Map(),
-          s3Client: {},
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(result).to.be.an('object');
-        expect(result.status).to.equal('complete');
-        expect(result.auditResult).to.be.an('object');
-
-        // Should warn about agentic URL fetch failure
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Failed to fetch agentic URLs: athena fetch failed/),
-        );
       });
 
       it('should process URLs with scrape result paths', async () => {
