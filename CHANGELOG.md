@@ -1,3 +1,10 @@
+## [1.459.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.0...v1.459.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **rum-config-refresh:** add www. prefix fallback for domain key lookup ([#2597](https://github.com/adobe/spacecat-audit-worker/issues/2597)) ([0e2bfeb](https://github.com/adobe/spacecat-audit-worker/commit/0e2bfeb9a645d89e6d8054ba9ae82ed3b4946304))
+
 # [1.459.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.1...v1.459.0) (2026-06-03)
 
 
