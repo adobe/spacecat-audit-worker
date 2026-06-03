@@ -1387,7 +1387,9 @@ export async function processOpportunityAndSuggestions(
   });
 
   // Mark per-URL suggestions covered by deployed path suggestions
-  await markSuggestionsAsCoveredByPaths(opportunity, context);
+  if (pathSuggestionsEnabled) {
+    await markSuggestionsAsCoveredByPaths(opportunity, context);
+  }
 
   log.info(`${LOG_PREFIX}
     prerender_suggestions_sync_metrics:

@@ -4429,7 +4429,7 @@ describe('Prerender Audit', () => {
       expect(findPreservablePathStub.notCalled).to.be.true;
       expect(buildPathTypeSuggestionsStub.notCalled).to.be.true;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      expect(markSuggestionsStub).to.have.been.calledOnce;
+      expect(markSuggestionsStub.notCalled).to.be.true;
     });
 
     it('runs path suggestions when pathSuggestionsEnabled=true', async () => {
