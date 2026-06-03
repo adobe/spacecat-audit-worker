@@ -319,11 +319,85 @@ export function generateReportingPeriods(referenceDate = new Date(), weekOffsets
 // PROCESSING RESULTS
 // ============================================================================
 
+/**
+ * Conservative validity check for URLs surfaced from CDN logs. Bot impersonators
+ * that pass the user-agent regex sometimes request malformed paths (e.g.
+ * `/brandshttps://...`, `/),`, `/%2522`). Those add noise to the 404 opportunity
+ * without being actionable, so we drop them before building suggestions.
+ *
+ * Tracked stopgap: the right long-term fix is upstream UA / IP-fingerprint
+ * hardening so impersonators are rejected before ingestion. See LLMO-5282.
+ *
+ * Rejects:
+ *   - non-strings / empty / whitespace
+ *   - URLs the `URL` constructor cannot parse
+ *   - non-http(s) schemes (javascript:, data:, etc.)
+ *   - leading characters Excel re-interprets as formulas (`= + - @`)
+ *   - paths with an http(s) scheme glued to a path segment (`/foohttps://bar`),
+ *     while still allowing query-embedded schemes (`/redirect?to=https://...`)
+ *   - paths containing double-encoded quote characters (`%2522`, `%2527`)
+ *   - paths whose final non-whitespace char is a comma or semicolon
+ */
+export function isValidUrlPath(url) {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  // Excel / Sheets / Calc treat a leading =, +, -, @ as a formula. URLs
+  // beginning with those characters get re-interpreted on open and have been
+  // used for exfiltration via WEBSERVICE/HYPERLINK. Reject at the validity
+  // boundary so we don't have to remember to sentinel them at every sink.
+  if (/^[=+\-@]/.test(trimmed)) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed, 'https://example.com');
+  } catch {
+    return false;
+  }
+
+  // The base in the constructor lets relative paths parse; restrict the
+  // resulting protocol so javascript:, data:, file:, etc. are rejected even
+  // when supplied as absolute URLs.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  // Embedded http(s):// glued to a path segment (e.g. `/brandshttps://...`).
+  // The negative class before the scheme keeps legitimate query-embedded
+  // URLs like `/redirect?to=https://example.com` allowed.
+  if (/[^/?&=#]https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+
+  // Double-encoded quote characters never appear in legitimate browser or
+  // crawler URLs. Raw and single-encoded quotes can legitimately occur in
+  // paths like `/products/o'reilly` so we leave those alone.
+  if (/%2522|%2527/i.test(trimmed)) {
+    return false;
+  }
+
+  // Trailing comma / semicolon catches copy-paste fragments like `/foo),`
+  // or `/foo];` without rejecting legitimate Wikipedia-style `/foo_(disambig)`.
+  if (/[,;]$/.test(trimmed)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function processErrorPagesResults(results) {
   if (!results || results.length === 0) {
     return {
       totalErrors: 0,
       errorPages: [],
+      droppedUrls: [],
       summary: {
         uniqueUrls: 0,
         uniqueUserAgents: 0,
@@ -332,11 +406,24 @@ export function processErrorPagesResults(results) {
     };
   }
 
+  // Filter malformed URLs at the data boundary so `errorPages`, the per-status
+  // categorization, the Excel export, the opportunity sync, and the Mystique
+  // payload all share one consistent view.
+  const errorPages = [];
+  const droppedUrls = [];
+  results.forEach((row) => {
+    if (isValidUrlPath(row.url)) {
+      errorPages.push(row);
+    } else {
+      droppedUrls.push(row.url);
+    }
+  });
+
   const statusCodes = {};
   const uniqueUrls = new Set();
   const uniqueUserAgents = new Set();
 
-  results.forEach((row) => {
+  errorPages.forEach((row) => {
     const totalRequestsParsed = parseInt(row.total_requests, 10);
     // eslint-disable-next-line no-param-reassign
     row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
@@ -350,7 +437,8 @@ export function processErrorPagesResults(results) {
 
   return {
     totalErrors,
-    errorPages: results,
+    errorPages,
+    droppedUrls,
     summary: {
       uniqueUrls: uniqueUrls.size,
       uniqueUserAgents: uniqueUserAgents.size,
@@ -523,52 +611,68 @@ export async function downloadExistingCdnSheet(
 }
 
 /**
- * Matches error data with existing CDN data and enriches it
- * @param {Array} errors - Error data from Athena
- * @param {Array} cdnData - Existing CDN data from sheet
- * @param {string} baseUrl - Base URL for path conversion
- * @returns {Array} - Enriched error data with CDN fields
+ * Collapses Athena rows (one per URL × user_agent) into one entry per URL.
+ * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
+ * yields a single Suggestion with both arrays populated.
+ *
+ * @param {Array<Object>} errors - Categorized error rows.
+ * @returns {Array<Object>} One entry per unique URL with aggregated metrics.
  */
-export function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
-  const enrichedErrors = [];
+export function groupErrorsByUrl(errors) {
+  const urlMap = new Map();
 
-  errors.forEach((error) => {
-    const errorUrl = toPathOnly(error.url, baseUrl);
-    const errorUserAgent = error.user_agent;
-    const match = cdnData.find((cdnRow) => {
-      let cdnUrl;
-      if (cdnRow.url === '/') {
-        cdnUrl = '/';
-      } else {
-        cdnUrl = cdnRow.url || '';
-      }
-
-      const urlMatch = errorUrl === cdnUrl
-        || errorUrl.includes(cdnUrl)
-        || cdnUrl.includes(errorUrl);
-
-      const userAgentMatch = cdnRow.user_agent_display === errorUserAgent
-        || (cdnRow.user_agent_display && errorUserAgent
-          && cdnRow.user_agent_display.toLowerCase().includes(errorUserAgent.toLowerCase()))
-        || (errorUserAgent && cdnRow.user_agent_display
-          && errorUserAgent.toLowerCase().includes(cdnRow.user_agent_display.toLowerCase()));
-
-      return urlMatch && userAgentMatch;
-    });
-
-    if (match) {
-      enrichedErrors.push({
-        agent_type: match.agent_type,
-        user_agent_display: match.user_agent_display,
-        number_of_hits: error.total_requests || match.number_of_hits,
-        avg_ttfb_ms: match.avg_ttfb_ms,
-        country_code: match.country_code,
-        url: errorUrl,
-        product: match.product,
-        category: match.category,
-      });
+  for (const error of errors) {
+    const { url } = error;
+    let entry = urlMap.get(url);
+    if (!entry) {
+      entry = {
+        url,
+        httpStatus: error.status,
+        hitCount: 0,
+        agentTypes: new Set(),
+        userAgents: new Set(),
+        avgTtfb: error.avg_ttfb_ms,
+        countryCode: error.country_code,
+        product: error.product,
+        category: error.category,
+      };
+      urlMap.set(url, entry);
     }
-  });
+    entry.hitCount += (error.total_requests ?? 0);
+    if (error.agent_type) {
+      entry.agentTypes.add(error.agent_type);
+    }
+    if (error.user_agent) {
+      entry.userAgents.add(error.user_agent);
+    }
+  }
 
-  return enrichedErrors;
+  return Array.from(urlMap.values()).map((entry) => ({
+    ...entry,
+    agentTypes: [...entry.agentTypes],
+    userAgents: [...entry.userAgents],
+  }));
+}
+
+/**
+ * Parses a period identifier 'wWW-YYYY' (case-insensitive, zero-padded week)
+ * into the Monday of that ISO week (UTC). Returns epoch for unrecognised
+ * inputs so unknown periods are treated as stale.
+ */
+export function parsePeriodIdentifier(periodIdentifier) {
+  const match = /^w(\d{2})-(\d{4})$/i.exec(periodIdentifier);
+  if (!match) {
+    return new Date(0);
+  }
+  const weekNum = parseInt(match[1], 10);
+  const year = parseInt(match[2], 10);
+
+  // ISO 8601: Jan 4 is always in week 1.
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+  const target = new Date(week1Monday);
+  target.setUTCDate(week1Monday.getUTCDate() + (weekNum - 1) * 7);
+  return target;
 }

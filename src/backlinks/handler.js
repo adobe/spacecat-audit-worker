@@ -21,11 +21,13 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
+  isHtmlContentType,
+  isSoft404Body,
   urlsMatch,
 } from '../utils/url-utils.js';
 import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-client.js';
@@ -39,6 +41,12 @@ const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
 const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
 
+// Matches <meta name="robots" content="...noindex..."> in both attribute orderings.
+const NOINDEX_META_RE = [
+  /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i,
+  /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots["']/i,
+];
+
 function getEnvBool(env, key, defaultValue) {
   if (env?.[key] === undefined) {
     return defaultValue;
@@ -49,6 +57,71 @@ function getEnvBool(env, key, defaultValue) {
 function getEnvInt(env, key, defaultValue) {
   const value = Number.parseInt(env?.[key], 10);
   return Number.isFinite(value) ? value : defaultValue;
+}
+
+/**
+ * Detects whether a 2xx response is actually a soft 404.
+ * Checks (in order): X-Robots-Tag noindex header, <meta robots noindex>, body text patterns.
+ *
+ * @param {Response} response - Fetch response (must be ok/2xx).
+ * @param {string} url - The URL that was fetched (used for logging only).
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} True if the page appears to be a soft 404.
+ */
+async function isSoft404(response, url, log) {
+  // 1. X-Robots-Tag: noindex header (no body read needed)
+  const robotsHeader = response.headers?.get?.('x-robots-tag') ?? '';
+  if (robotsHeader.toLowerCase().includes('noindex')) {
+    log.info(`Backlink ${url} is a soft 404 (X-Robots-Tag: noindex)`);
+    return true;
+  }
+
+  // 2 & 3. Body-based signals — only for HTML responses
+  const contentType = response.headers?.get?.('content-type') ?? '';
+  if (!isHtmlContentType(contentType)) {
+    return false;
+  }
+
+  let body;
+  try {
+    body = await response.text();
+  /* c8 ignore next 3 - Defensive: response body read rarely fails */
+  } catch {
+    return false;
+  }
+
+  // 2. <meta name="robots" content="noindex">
+  if (NOINDEX_META_RE.some((re) => re.test(body))) {
+    log.info(`Backlink ${url} is a soft 404 (noindex meta tag)`);
+    return true;
+  }
+
+  // 3. Body text patterns (strips tags, multilingual)
+  if (isSoft404Body(body)) {
+    log.info(`Backlink ${url} is a soft 404 (body pattern matched)`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Returns true when url_to is on a subdomain that differs from the site's base URL hostname.
+ * www and bare domain are treated as equivalent (both are normalised via stripWWW).
+ *
+ * @param {string} urlTo - The broken backlink target URL.
+ * @param {string} siteBaseURL - The site's canonical base URL.
+ * @returns {boolean}
+ */
+function isOnDifferentSubdomain(urlTo, siteBaseURL) {
+  try {
+    const siteHostname = stripWWW(new URL(prependSchema(siteBaseURL)).hostname).toLowerCase();
+    const backlinkHostname = stripWWW(new URL(prependSchema(urlTo)).hostname).toLowerCase();
+    return backlinkHostname !== siteHostname;
+  /* c8 ignore next 3 - Defensive: URL parsing rarely fails with well-formed base URLs */
+  } catch {
+    return false;
+  }
 }
 
 async function filterOutValidBacklinks(backlinks, log) {
@@ -68,11 +141,14 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-    if (!response.ok && response.status !== 404
-      && response.status >= 400 && response.status < 500) {
-      log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+    if (!response.ok) {
+      if (response.status !== 404 && response.status >= 400 && response.status < 500) {
+        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+      }
+      return true;
     }
-    return !response.ok;
+    // 2xx — verify the page is not a soft 404
+    return isSoft404(response, backlink.url_to, log);
   };
 
   const backlinkStatuses = [];
@@ -190,7 +266,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       }
     };
 
-    const filteredBacklinks = result?.backlinks?.filter((backlink) => {
+    const excludedFilteredBacklinks = result?.backlinks?.filter((backlink) => {
       if (!excludedURLs || excludedURLs.length === 0) {
         return true;
       }
@@ -200,6 +276,17 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
         const normalizedExcluded = normalizeUrl(excludedUrl);
         return normalizedBacklink === normalizedExcluded;
       });
+    });
+
+    // Drop backlinks whose target belongs to a different subdomain than the audited site.
+    // www and the bare domain are treated as the same host and are never filtered.
+    const siteBaseURL = site.getBaseURL();
+    const filteredBacklinks = excludedFilteredBacklinks?.filter((backlink) => {
+      if (isOnDifferentSubdomain(backlink.url_to, siteBaseURL)) {
+        log.debug(`Excluding backlink ${backlink.url_to}: different subdomain from ${siteBaseURL}`);
+        return false;
+      }
+      return true;
     });
 
     return {
@@ -276,17 +363,11 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping suggestions generation');
-  }
-
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
-    log.info('Auto-suggest is disabled for site');
-    throw new Error('Auto-suggest is disabled for site');
   }
 
   // Check if there are broken backlinks BEFORE creating opportunity
@@ -294,6 +375,14 @@ export const generateSuggestionData = async (context) => {
     || !Array.isArray(auditResult.brokenBacklinks)
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+
+    await resolveOpportunityIfNoIssues(
+      site.getId(),
+      Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+      dataAccess,
+      log,
+    );
+
     return {
       status: 'complete',
     };

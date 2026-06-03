@@ -608,7 +608,7 @@ describe('CDN Analysis Handler', () => {
       expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NOT NULL");
       expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
       expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
-      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|sitemap)')");
+      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
 
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");

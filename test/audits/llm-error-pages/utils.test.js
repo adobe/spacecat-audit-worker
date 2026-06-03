@@ -28,8 +28,10 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   toPathOnly,
+  isValidUrlPath,
   downloadExistingCdnSheet,
-  matchErrorsWithCdnData,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
   EXCLUDED_URL_SUFFIXES,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
@@ -1043,6 +1045,76 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
+  describe('isValidUrlPath', () => {
+    it('accepts well-formed absolute URLs', () => {
+      expect(isValidUrlPath('https://example.com/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('https://example.com/foo?x=1')).to.equal(true);
+    });
+
+    it('accepts well-formed relative paths', () => {
+      expect(isValidUrlPath('/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('/foo/bar?x=1&y=2')).to.equal(true);
+      expect(isValidUrlPath('/wiki/Article_(disambiguation)')).to.equal(true);
+    });
+
+    it("accepts legitimate paths containing apostrophes (e.g. /products/o'reilly)", () => {
+      expect(isValidUrlPath("/products/o'reilly")).to.equal(true);
+      expect(isValidUrlPath("/authors/o'brien")).to.equal(true);
+    });
+
+    it('accepts query-embedded schemes (e.g. /redirect?to=https://...)', () => {
+      expect(isValidUrlPath('/redirect?to=https://example.com')).to.equal(true);
+      expect(isValidUrlPath('/auth/callback?return=https://example.com/x')).to.equal(true);
+      expect(isValidUrlPath('/share?url=https://other.com')).to.equal(true);
+    });
+
+    it('rejects non-string inputs', () => {
+      expect(isValidUrlPath(null)).to.equal(false);
+      expect(isValidUrlPath(undefined)).to.equal(false);
+      expect(isValidUrlPath(42)).to.equal(false);
+      expect(isValidUrlPath({})).to.equal(false);
+    });
+
+    it('rejects empty and whitespace-only strings', () => {
+      expect(isValidUrlPath('')).to.equal(false);
+      expect(isValidUrlPath('   ')).to.equal(false);
+    });
+
+    it('rejects non-http(s) schemes (javascript:, data:, file:)', () => {
+      expect(isValidUrlPath('javascript:alert(1)')).to.equal(false);
+      expect(isValidUrlPath('data:text/html,<script>alert(1)</script>')).to.equal(false);
+      expect(isValidUrlPath('file:///etc/passwd')).to.equal(false);
+    });
+
+    it('rejects URLs starting with characters Excel treats as formulas', () => {
+      expect(isValidUrlPath('=WEBSERVICE("https://evil")')).to.equal(false);
+      expect(isValidUrlPath('+1234')).to.equal(false);
+      expect(isValidUrlPath('-foo')).to.equal(false);
+      expect(isValidUrlPath('@import')).to.equal(false);
+    });
+
+    it('rejects paths with an embedded http(s) scheme glued to a path segment', () => {
+      expect(isValidUrlPath('/brandshttps://www.coca-colacompany.com/brands')).to.equal(false);
+      expect(isValidUrlPath('/foohttp://bar')).to.equal(false);
+      expect(isValidUrlPath('/aHTTPS://x')).to.equal(false);
+    });
+
+    it('rejects URLs containing double-encoded quote characters', () => {
+      expect(isValidUrlPath('https://example.com/%2522')).to.equal(false);
+      expect(isValidUrlPath('https://example.com/foo%2527bar')).to.equal(false);
+    });
+
+    it('rejects URLs with trailing comma or semicolon', () => {
+      expect(isValidUrlPath('https://example.com/),')).to.equal(false);
+      expect(isValidUrlPath('/foo,')).to.equal(false);
+      expect(isValidUrlPath('/foo];')).to.equal(false);
+    });
+
+    it('rejects URLs the URL constructor cannot parse', () => {
+      expect(isValidUrlPath('http://[invalid')).to.equal(false);
+    });
+  });
+
   // ============================================================================
   // Additional coverage tests for missing functions
   // ============================================================================
@@ -1181,7 +1253,8 @@ describe('LLM Error Pages Utils', () => {
 
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(18);
-      expect(processed.errorPages).to.equal(results);
+      expect(processed.errorPages).to.deep.equal(results);
+      expect(processed.droppedUrls).to.deep.equal([]);
       expect(processed.summary.uniqueUrls).to.equal(2);
       expect(processed.summary.uniqueUserAgents).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ 404: 15, 403: 3 });
@@ -1192,6 +1265,7 @@ describe('LLM Error Pages Utils', () => {
       expect(processed).to.deep.equal({
         totalErrors: 0,
         errorPages: [],
+        droppedUrls: [],
         summary: {
           uniqueUrls: 0,
           uniqueUserAgents: 0,
@@ -1216,6 +1290,23 @@ describe('LLM Error Pages Utils', () => {
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
+    });
+
+    it('drops malformed URLs from errorPages, reports them in droppedUrls, and excludes them from totals', () => {
+      const results = [
+        { url: '/legit', total_requests: '5', status: '404', user_agent: 'bot' },
+        { url: '/brandshttps://example.com/x', total_requests: '7', status: '404', user_agent: 'bot' },
+        { url: '/foo,', total_requests: '3', status: '403', user_agent: 'bot' },
+      ];
+      const processed = processErrorPagesResults(results);
+      expect(processed.errorPages).to.have.lengthOf(1);
+      expect(processed.errorPages[0].url).to.equal('/legit');
+      expect(processed.droppedUrls).to.deep.equal([
+        '/brandshttps://example.com/x',
+        '/foo,',
+      ]);
+      expect(processed.totalErrors).to.equal(5);
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 5 });
     });
   });
 
@@ -1429,277 +1520,67 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
-  describe('matchErrorsWithCdnData', () => {
-    it('should match errors with CDN data by URL and user agent', async () => {
+  describe('groupErrorsByUrl', () => {
+    it('collapses rows by URL, deduping agentTypes and userAgents', () => {
       const errors = [
         {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
+          url: '/p1', status: 404, total_requests: 10, agent_type: 'Chatbots', user_agent: 'ChatGPT', avg_ttfb_ms: 100, country_code: 'US', product: 'X', category: 'Y',
         },
         {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          total_requests: 50,
+          url: '/p1', status: 404, total_requests: 5, agent_type: 'Web search crawlers', user_agent: 'Perplexity',
+        },
+        {
+          url: '/p1', status: 404, total_requests: 3, agent_type: 'Chatbots', user_agent: 'ChatGPT',
+        },
+        {
+          url: '/p2', status: 404, total_requests: 7, agent_type: 'Chatbots', user_agent: 'Claude',
         },
       ];
 
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
+      const result = groupErrorsByUrl(errors);
 
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
+      expect(result).to.have.length(2);
+      const p1 = result.find((r) => r.url === '/p1');
+      expect(p1.hitCount).to.equal(18);
+      expect(p1.agentTypes).to.have.members(['Chatbots', 'Web search crawlers']);
+      expect(p1.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
+      expect(p1.avgTtfb).to.equal(100);
 
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        agent_type: 'Chatbot',
-        user_agent_display: 'ChatGPT',
-        number_of_hits: 100, // Uses error's total_requests
-        avg_ttfb_ms: 250,
-        country_code: 'US',
-        url: '/page1',
-        product: 'Product A',
-        category: 'Category X',
-      });
-      expect(result[1]).to.deep.equal({
-        agent_type: 'Search Engine',
-        user_agent_display: 'Perplexity',
-        number_of_hits: 50,
-        avg_ttfb_ms: 300,
-        country_code: 'UK',
-        url: '/page2',
-        product: 'Product B',
-        category: 'Category Y',
-      });
+      const p2 = result.find((r) => r.url === '/p2');
+      expect(p2.hitCount).to.equal(7);
+      expect(p2.userAgents).to.deep.equal(['Claude']);
     });
 
-    it('should handle partial URL matches', async () => {
-      const errors = [
-        {
-          url: '/page1/subpage',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/page1/subpage');
+    it('treats missing total_requests as 0 on first and subsequent rows', () => {
+      const result = groupErrorsByUrl([
+        { url: '/p', status: 404, agent_type: 'A', user_agent: 'U' },
+        { url: '/p', status: 404, agent_type: 'B', user_agent: 'V' },
+      ]);
+      expect(result[0].hitCount).to.equal(0);
     });
 
-    it('should handle partial user agent matches (case-insensitive)', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'chatgpt-user',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].user_agent_display).to.equal('ChatGPT');
-    });
-
-    it('should handle root path specially', async () => {
-      const errors = [
-        {
-          url: '/',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/');
-    });
-
-    it('should handle no matches and empty arrays', async () => {
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      // No matches found
-      const noMatchResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [{ url: '/different-page', user_agent_display: 'DifferentBot', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(noMatchResult).to.have.lengthOf(0);
-
-      // Empty errors array
-      const emptyErrorsResult = matchErrorsWithCdnData(
-        [],
-        [{ url: '/page1', user_agent_display: 'ChatGPT', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(emptyErrorsResult).to.have.lengthOf(0);
-
-      // Empty CDN data array
-      const emptyCdnResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [],
-        'https://example.com',
-      );
-      expect(emptyCdnResult).to.have.lengthOf(0);
-    });
-
-    it('should use error total_requests when available, CDN number_of_hits otherwise', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-        {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          // No total_requests
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0].number_of_hits).to.equal(100); // From error
-      expect(result[1].number_of_hits).to.equal(150); // From CDN
-    });
-
-    it('should handle CDN data with null or undefined URL', async () => {
-      const errors = [
-        {
-          url: '',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: null, // Null URL
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      // Should match because empty string matches empty string
-      expect(result).to.have.lengthOf(1);
+    it('returns empty array for empty input', () => {
+      expect(groupErrorsByUrl([])).to.deep.equal([]);
     });
   });
+
+  describe('parsePeriodIdentifier', () => {
+    it('parses w15-2026 to the Monday of ISO week 15, 2026', () => {
+      const d = parsePeriodIdentifier('w15-2026');
+      expect(d.getUTCFullYear()).to.equal(2026);
+      expect(d.getUTCDay()).to.equal(1); // Monday
+    });
+
+    it('returns epoch for unrecognised input', () => {
+      expect(parsePeriodIdentifier('not-a-period').getTime()).to.equal(0);
+      expect(parsePeriodIdentifier(undefined).getTime()).to.equal(0);
+    });
+
+    it('handles week 1 of a year correctly', () => {
+      const d = parsePeriodIdentifier('w01-2024');
+      expect(d.getUTCFullYear()).to.equal(2024);
+      expect(d.getUTCDay()).to.equal(1);
+    });
+  });
+
 });
