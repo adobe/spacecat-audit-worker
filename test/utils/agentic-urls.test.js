@@ -760,8 +760,8 @@ describe('agentic-urls', () => {
 
       await getAgenticHitsMapFromAthena(site, context);
 
-      // generateReportingPeriods called 4 times (offsets -1 through -4)
-      expect(mockGenerateReportingPeriods.callCount).to.equal(4);
+      // generateReportingPeriods called twice (offsets -4 and -1)
+      expect(mockGenerateReportingPeriods.callCount).to.equal(2);
       expect(mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery).to.have.been.calledOnce;
       const callArgs = mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery.firstCall.args[0];
       expect(callArgs).to.have.property('startDate');
