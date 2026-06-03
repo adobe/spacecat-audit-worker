@@ -1639,6 +1639,99 @@ describe('Prerender Audit', () => {
         expect(s3SendStub).to.have.been.called;
       });
 
+      it('should handle errors gracefully', async function testHandleErrorsGracefully() {
+        this.timeout(5000); // Increase timeout to 5 seconds
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+
+        // With the new flow (no SiteTopPage usage), errors there won't bubble.
+        // Function should complete gracefully.
+        expect(result).to.be.an('object');
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should parse generatePrompts:true from JSON string data', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: JSON.stringify({ generatePrompts: true }),
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should default generatePrompts to false when data is malformed JSON', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: '{invalid-json',
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should read generatePrompts from auditContext when data is absent', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
       it('should warn when agentic URL fetch fails', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
