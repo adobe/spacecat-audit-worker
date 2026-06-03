@@ -20,3 +20,14 @@ export const TOP_ORGANIC_URLS_LIMIT = 200;
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
 export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
+/**
+ * Maximum number of URLs shortlisted for a domain-wide RCV suggestion.
+ * These URLs are ranked by agentic-traffic × content-gain score and used
+ * to source the experiment prompts stored on the domain-wide suggestion.
+ */
+export const DOMAIN_WIDE_URL_SHORTLIST_LIMIT = 10;
+/**
+ * Hard cap on the total number of prompts stored on a domain-wide suggestion.
+ * Caps DRS experiment cost for the Impact Validation Engine pre/post cycle.
+ */
+export const DOMAIN_WIDE_MAX_PROMPTS = 100;
