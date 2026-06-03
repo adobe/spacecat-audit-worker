@@ -334,7 +334,7 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
  * - REJECTED suggestions remain REJECTED
- * - FIXED and OUTDATED suggestions transition to PENDING_VALIDATION or NEW (regression detected)
+ * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
  * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
  *   Recovers any suggestion that errored due to a transient or codefix-side bug
  *   once the underlying fix has shipped; pages that fail every run keep
@@ -356,11 +356,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
     return null; // Keep existing status
   }
 
-  // Handle FIXED and OUTDATED the same way - both indicate regressions
-  // when they reappear in audit results
-  if (currentStatus === SuggestionDataAccess.STATUSES.FIXED
-      || currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
-    log.warn(`${currentStatus} suggestion found in audit. Regression detected - reopening.`);
+  if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
+    log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
     const { isTBYB = false } = context;
     return (requiresValidation && !isTBYB)
