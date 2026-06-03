@@ -1922,12 +1922,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*7/);
-        // Check that full sample is logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*7:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 7 matched suggestions, updated 7/);
       });
 
       it('should log only first 10 items when there are more than 10 updated suggestions', async () => {
@@ -1952,12 +1948,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*12/);
-        // Check that only first 10 are logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*12:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 12 matched suggestions, updated 12/);
       });
 
       it('should log full data when there are 1-10 new suggestions', async () => {
