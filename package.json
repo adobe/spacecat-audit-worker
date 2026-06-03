@@ -176,9 +176,9 @@
     "@adobe/fetch": "4.3.0"
   },
   "lint-staged": {
-    "*.js": "eslint",
-    "*.ts": "eslint",
-    "*.cjs": "eslint"
+    "*.js": "eslint --fix",
+    "*.ts": "eslint --fix",
+    "*.cjs": "eslint --fix"
   },
   "nodemonConfig": {
     "exec": "node --inspect ./test/dev/server.mjs",
