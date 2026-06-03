@@ -1178,7 +1178,7 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
 
 /**
  * Builds a merge function for syncSuggestions that handles three suggestion types:
- * - Path-type: preserves edgeDeployed from existing data (metrics are refreshed)
+ * - Path-type: preserves edgeDeployed and coveredByDomainWide from existing data
  * - Domain-wide: replaces data entirely (preserves edgeDeployed via its own logic)
  * - Individual: merges new mapped data onto existing data
  *
@@ -1196,6 +1196,8 @@ export function buildMergeDataFunction(mapSuggestionDataFn) {
         ...newDataItem.data,
         ...(existingData?.edgeDeployed !== undefined
           && { edgeDeployed: existingData.edgeDeployed }),
+        ...(existingData?.coveredByDomainWide !== undefined
+          && { coveredByDomainWide: existingData.coveredByDomainWide }),
       };
     }
     // Domain-wide: replace data (preserves own edgeDeployed via its own logic)

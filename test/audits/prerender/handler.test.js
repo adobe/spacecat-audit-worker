@@ -9792,6 +9792,39 @@ describe('Prerender Audit', () => {
       expect(result.edgeDeployed).to.be.true;
     });
 
+    it('preserves coveredByDomainWide for path-type suggestions', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = {
+        coveredByDomainWide: 'dw-1',
+        score: 1.0,
+      };
+      const newDataItem = {
+        key: '/products/*|prerender',
+        data: {
+          allowedRegexPatterns: ['/products/*'],
+          score: 2.5,
+        },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.coveredByDomainWide).to.equal('dw-1');
+      expect(result.score).to.equal(2.5);
+    });
+
+    it('does not inject coveredByDomainWide when not present on existing data', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = { score: 1.0 };
+      const newDataItem = {
+        key: '/products/*|prerender',
+        data: { allowedRegexPatterns: ['/products/*'], score: 2.0 },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.coveredByDomainWide).to.be.undefined;
+    });
+
     it('does not inject edgeDeployed when not present on existing data for path-type', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = { score: 1.0 };
