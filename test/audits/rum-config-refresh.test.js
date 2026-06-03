@@ -317,6 +317,63 @@ describe('rum-config-refresh handler', () => {
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
       expect(context.log.warn).to.have.been.calledWithMatch('No domain key found');
     });
+
+    it('falls back to www.{domain} and sets hasDomainKey=true when bare domain has no key', async () => {
+      mockSite.getBaseURL.returns('https://example.com');
+      retrieveDomainkeyStub
+        .withArgs('example.com').rejects(new Error('404'))
+        .withArgs('www.example.com').resolves('domainkey-abc');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      sinon.assert.callOrder(
+        retrieveDomainkeyStub.withArgs('example.com'),
+        retrieveDomainkeyStub.withArgs('www.example.com'),
+      );
+      expect(mockConfig.updateRumConfig).to.have.been.calledWith(true);
+    });
+
+    it('does not try www.www.{domain} when baseURL already has www. prefix', async () => {
+      retrieveDomainkeyStub.resolves('domainkey-abc');
+
+      await handler.default({ siteId: SITE_ID }, context);
+
+      const calledDomains = retrieveDomainkeyStub.args.map(([d]) => d);
+      expect(calledDomains).not.to.include('www.www.example.com');
+      expect(calledDomains).to.include('www.example.com');
+      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
+    });
+
+    it('sets hasDomainKey=false when both bare and www. domain fail', async () => {
+      mockSite.getBaseURL.returns('https://example.com');
+      retrieveDomainkeyStub.rejects(new Error('404'));
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('example.com');
+      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
+      expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
+    });
+
+    it('includes www. fallback for overrideBaseURL when it has no www. prefix', async () => {
+      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://override.com' });
+      retrieveDomainkeyStub
+        .withArgs('override.com').rejects(new Error('404'))
+        .withArgs('www.override.com').resolves('domainkey-abc');
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      const body = await result.json();
+      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      sinon.assert.callOrder(
+        retrieveDomainkeyStub.withArgs('override.com'),
+        retrieveDomainkeyStub.withArgs('www.override.com'),
+      );
+    });
   });
 
   describe('save failure', () => {
