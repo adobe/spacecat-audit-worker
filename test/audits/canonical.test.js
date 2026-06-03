@@ -4793,6 +4793,98 @@ describe('Canonical URL Tests', () => {
         );
       });
 
+      it('should detect noindex when multiple meta robots tags are present', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/multi-meta',
+          finalUrl: 'https://example.com/multi-meta',
+          scrapeResult: {
+            canonical: {
+              exists: false, count: 0, href: null, inHead: false,
+            },
+            rawBody: createValidRawBody('<html><head><meta name="robots" content="follow"><meta name="googlebot" content="noindex"><title>Multi</title></head><body><p>First meta allows, second meta blocks — should still be skipped.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/multi-meta', 'scrapes/job-id/multi-meta/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/multi-meta - noindex page',
+        );
+      });
+
+      it('should not skip pages when meta robots tag has no content attribute', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/no-content-attr',
+          finalUrl: 'https://example.com/no-content-attr',
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/no-content-attr', inHead: true },
+            rawBody: createValidRawBody('<html><head><meta name="robots"><title>No content attr</title></head><body><p>Meta tag present but has no content attribute — should not be skipped.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/no-content-attr', 'scrapes/job-id/no-content-attr/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.not.have.been.calledWith(
+          sinon.match(/Skipping.*noindex/),
+        );
+      });
+
       it('should handle site with no getConfig in processScrapedContent gracefully', async () => {
         const scrapedContent = {
           url: 'https://example.com/page1',

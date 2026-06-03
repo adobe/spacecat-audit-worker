@@ -541,8 +541,9 @@ export async function processScrapedContent(context) {
       const rawBody = scrapedObject?.scrapeResult?.rawBody || '';
       if (rawBody) {
         const $page = cheerio.load(rawBody);
-        const robotsMeta = $page('meta[name="robots"], meta[name="googlebot"]').attr('content') || '';
-        if (robotsMeta.toLowerCase().includes('noindex')) {
+        const hasNoindex = $page('meta[name="robots"], meta[name="googlebot"]').toArray()
+          .some((el) => ($page(el).attr('content') || '').toLowerCase().includes('noindex'));
+        if (hasNoindex) {
           log.info(`[canonical] Skipping ${finalUrl} - noindex page`);
           return null;
         }
