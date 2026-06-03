@@ -1350,10 +1350,16 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
+  // Convert preserved path entities to { key, data } shape so buildKey/mergeDataFunction work
+  const preservedPathsForSync = preservablePaths.map((s) => ({
+    key: `${s.getData().allowedRegexPatterns?.[0]}|prerender`,
+    data: s.getData(),
+  }));
+
   const allSuggestions = [
     ...preRenderSuggestions,
     ...(domainWideSuggestion ? [domainWideSuggestion] : []),
-    ...preservablePaths,
+    ...preservedPathsForSync,
     ...newPathSuggestions,
   ];
 
