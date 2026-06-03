@@ -35,7 +35,6 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
-  PATH_TYPE_SUGGESTION_RANK,
   PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE,
   PATH_TYPE_METRICS_FIELDS,
 } from './utils/constants.js';
@@ -1371,10 +1370,7 @@ export async function processOpportunityAndSuggestions(
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
-      // eslint-disable-next-line no-nested-ternary, max-len
-      rank: suggestion.key && Array.isArray(suggestion.data?.allowedRegexPatterns) && !suggestion.data?.isDomainWide
-        ? PATH_TYPE_SUGGESTION_RANK
-        : (suggestion.key ? 999999 : 0),
+      rank: 0,
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,

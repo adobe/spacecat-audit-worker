@@ -2892,8 +2892,7 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.aiReadablePercent).to.be.a('number');
           expect(domainWideSuggestion.data.aiReadablePercent).to.equal(183);
 
-          // Verify high rank for appearing first
-          expect(domainWideSuggestion.rank).to.equal(999999);
+          expect(domainWideSuggestion.rank).to.equal(0);
         }
       });
 
@@ -3880,7 +3879,7 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
         expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
-        expect(mappedSuggestion).to.have.property('rank', 999999); // domain-wide ranks highest for ordering
+        expect(mappedSuggestion).to.have.property('rank', 0);
         expect(mappedSuggestion).to.have.property('data');
         expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
 
@@ -4487,7 +4486,7 @@ describe('Prerender Audit', () => {
       expect(markSuggestionsStub).to.have.been.calledOnce;
     });
 
-    it('assigns PATH_TYPE_SUGGESTION_RANK to path-type suggestions via mapNewSuggestion', async () => {
+    it('includes path-type suggestions in syncSuggestions newData via mapNewSuggestion', async () => {
       const pathSuggestion = {
         key: '/products/*|prerender',
         data: {
@@ -4553,7 +4552,7 @@ describe('Prerender Audit', () => {
       expect(pathItem).to.exist;
 
       const mapped = mapNewSuggestion(pathItem);
-      expect(mapped.rank).to.equal(100000); // PATH_TYPE_SUGGESTION_RANK
+      expect(mapped.rank).to.equal(0);
       expect(mapped.data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
