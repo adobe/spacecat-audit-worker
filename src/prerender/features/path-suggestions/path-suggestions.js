@@ -16,6 +16,7 @@ import {
   extractPathType,
   shouldPreservePathSuggestion,
   isEligibleStatus,
+  toPathname,
 } from '../../utils/utils.js';
 import { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
 
@@ -81,51 +82,31 @@ export async function buildPathTypeSuggestions(
     return isEligibleStatus(s.getStatus());
   });
 
-  const eligiblePathnames = new Set(
-    eligibleSuggestions.map((s) => {
-      try {
-        return new URL(s.getData().url).pathname.replace(/\/$/, '') || '/';
-      } catch {
-        return null;
+  const { eligiblePathnames, valuableByPathname } = eligibleSuggestions.reduce(
+    (acc, s) => {
+      const pathname = toPathname(s.getData().url);
+      if (pathname) {
+        acc.eligiblePathnames.add(pathname);
+        acc.valuableByPathname.set(pathname, s.getData().valuable ?? true);
       }
-    }).filter(Boolean),
-  );
-
-  const valuableByPathname = new Map(
-    eligibleSuggestions.map((s) => {
-      try {
-        const pathname = new URL(s.getData().url).pathname.replace(/\/$/, '') || '/';
-        return [pathname, s.getData().valuable ?? true];
-      } catch {
-        return null;
-      }
-    }).filter(Boolean),
+      return acc;
+    },
+    { eligiblePathnames: new Set(), valuableByPathname: new Map() },
   );
 
   // 3. Enrich preRenderSuggestions with agenticTraffic + valuable — only eligible URLs
   const baseUrl = site.getBaseURL().replace(/\/$/, '');
-  const enriched = preRenderSuggestions.filter((s) => {
-    try {
-      const pathname = new URL(s.url).pathname.replace(/\/$/, '') || '/';
-      return eligiblePathnames.has(pathname);
-    } catch {
-      return false;
-    }
-  }).map((s) => {
-    let pathname;
-    try {
-      pathname = new URL(s.url).pathname.replace(/\/$/, '') || '/';
-    /* c8 ignore next 3 */
-    } catch {
-      pathname = s.url;
-    }
-    return {
-      ...s,
-      agenticTraffic: agenticHitsMap.get(pathname) || 0,
-      /* c8 ignore next */
-      valuable: valuableByPathname.has(pathname) ? valuableByPathname.get(pathname) : true,
-    };
-  });
+  const enriched = preRenderSuggestions
+    .filter((s) => eligiblePathnames.has(toPathname(s.url)))
+    .map((s) => {
+      const pathname = toPathname(s.url);
+      return {
+        ...s,
+        agenticTraffic: agenticHitsMap.get(pathname) || 0,
+        valuable: valuableByPathname.has(pathname)
+          ? valuableByPathname.get(pathname) : true,
+      };
+    });
 
   // 4. Group by first path segment
   const groups = new Map();
