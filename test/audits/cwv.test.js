@@ -503,7 +503,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
-        getData: () => (suggestion.data),
+        // Return old data (different from new) so deepEqual detects change
+        getData: () => ({ ...suggestion.data, oldField: 'old value' }),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
         setUpdatedBy: sinon.stub().returnsThis(),

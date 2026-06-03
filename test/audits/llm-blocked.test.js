@@ -322,11 +322,12 @@ describe('LLM Blocked Audit', () => {
     expect(result.auditResult).to.equal(JSON.stringify(expectedResultsMap));
     expect(nock.pendingMocks()).to.have.lengthOf(0);
 
-    // Verify that existing suggestions were updated (not new ones added)
+    // Verify that existing suggestions were checked but not saved (same data, same status)
     expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
-    expect(existingSuggestions[0].setData).to.have.been.calledOnce;
-    expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
-    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    // Phase 1: With same robotsTxtHash (same data) and SKIPPED status unchanged, no save should occur
+    expect(existingSuggestions[0].setData).to.not.have.been.called;
+    expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
 
     // Verify that no new suggestions were added
     expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;

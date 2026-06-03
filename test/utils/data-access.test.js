@@ -888,11 +888,12 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that saveMany is called with the updated suggestion
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-      // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Phase 1: With no data changes and no status change, save should be skipped
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      // Verify that setData is NOT called when data hasn't changed
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      // Verify that skip log is called
+      expect(mockLogger.debug).to.have.been.calledWith(sinon.match(/Skipping update for suggestion/));
     });
 
     it('should preserve REJECTED status when data changes', async () => {
@@ -1392,7 +1393,8 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
+      // Phase 2: Updated log message includes status name
+      expect(mockLogger.warn).to.have.been.calledOnceWith('OUTDATED suggestion found in audit. Regression detected - reopening.');
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
         .calledOnceWith([existingSuggestions[0]]);
     });
