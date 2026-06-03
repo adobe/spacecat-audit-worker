@@ -1,3 +1,10 @@
+## [1.458.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.0...v1.458.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **csp:** skip backward-compatible CSP findings ([#2594](https://github.com/adobe/spacecat-audit-worker/issues/2594)) ([6050513](https://github.com/adobe/spacecat-audit-worker/commit/6050513be00c3435552fc07a738845fcaf46c641))
+
 # [1.458.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.1...v1.458.0) (2026-06-02)
 
 
