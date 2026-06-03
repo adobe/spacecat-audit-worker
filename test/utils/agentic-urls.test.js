@@ -181,7 +181,7 @@ describe('agentic-urls', () => {
         'https://www.example.com/page3',
       ]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://www.example.com',
       );
       expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
@@ -204,7 +204,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site site-123',
+        'Agentic URLs - Skipping Top Agentic URLs because cdn-logs-analysis is disabled for site site-123',
       );
       expect(mockGetCdnAwsRuntime).to.not.have.been.called;
       expect(mockGetS3Config).to.not.have.been.called;
@@ -221,7 +221,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Skipping Athena query because no configuration was found for site site-123',
+        'Agentic URLs - Skipping Top Agentic URLs because no configuration was found for site site-123',
       );
       expect(mockGetCdnAwsRuntime).to.not.have.been.called;
       expect(mockGetS3Config).to.not.have.been.called;
@@ -239,7 +239,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no rows for Top Agentic URLs. baseUrl=https://www.example.com',
       );
     });
 
@@ -253,7 +253,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no rows for Top Agentic URLs. baseUrl=https://www.example.com',
       );
     });
 
@@ -267,7 +267,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://www.example.com',
+        'Agentic URLs - Top Agentic URLs failed: Athena connection failed. baseUrl=https://www.example.com',
       );
     });
 
@@ -454,7 +454,7 @@ describe('agentic-urls', () => {
       // Should use finalUrl as-is without double-prepending https://
       expect(result).to.deep.equal(['https://www.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://www.example.com',
       );
     });
 
@@ -544,7 +544,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal(['https://override.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://override.example.com',
       );
     });
 
@@ -650,7 +650,7 @@ describe('agentic-urls', () => {
       expect(result.get('/products/hats')).to.equal(80);
       expect(result.get('/blog/post-1')).to.equal(50);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Executing Athena hits map query/),
+        sinon.match(/Executing Agentic Hits Map/),
       );
     });
 
@@ -709,7 +709,7 @@ describe('agentic-urls', () => {
       expect(result).to.be.instanceOf(Map);
       expect(result.size).to.equal(0);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/no rows for hits map/),
+        sinon.match(/no rows for Agentic Hits Map/),
       );
     });
 
@@ -748,7 +748,7 @@ describe('agentic-urls', () => {
       expect(result).to.be.instanceOf(Map);
       expect(result.size).to.equal(0);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Athena hits map fetch failed/),
+        sinon.match(/Agentic Hits Map failed/),
       );
     });
 
