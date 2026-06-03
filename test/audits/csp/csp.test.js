@@ -674,6 +674,48 @@ describe('CSP Post-processor', () => {
     expect(cspOpportunity.addSuggestions).to.not.have.been.called;
   });
 
+  it('should extract opportunity for a Crosswalk (AEM_CS) site with a valid hlxConfig', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [
+      {
+        severity: 'High',
+        description: 'No CSP found in enforcement mode',
+      },
+    ];
+    cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.AEM_CS;
+    cspSite.getHlxConfig = () => ({
+      hlxVersion: 5,
+      rso: { owner: 'myorg', site: 'mysite', ref: 'main' },
+    });
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
+      type: Audit.AUDIT_TYPES.SECURITY_CSP,
+    }));
+    expect(cspOpportunity.addSuggestions).to.have.been.calledOnce;
+  });
+
+  it('should not extract opportunity for AEM_CS site without a valid hlxConfig', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [
+      {
+        severity: 'High',
+        description: 'No CSP found in enforcement mode',
+      },
+    ];
+    cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.AEM_CS;
+    // empty rso: not actionable
+    cspSite.getHlxConfig = () => ({ hlxVersion: 5, rso: {} });
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+  });
+
   it('should not extract opportunity if audit failed', async () => {
     sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
     auditData.auditResult.csp = [
