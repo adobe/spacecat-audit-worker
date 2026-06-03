@@ -1,3 +1,15 @@
+# [1.459.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.1...v1.459.0) (2026-06-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2588](https://github.com/adobe/spacecat-audit-worker/issues/2588)) ([c3c1239](https://github.com/adobe/spacecat-audit-worker/commit/c3c123992d5cf73b2a743e04677966d252453df2))
+
+
+### Features
+
+* **csp:** run CSP audit for Crosswalk sites with valid hlxConfig ([#2595](https://github.com/adobe/spacecat-audit-worker/issues/2595)) ([0d37aee](https://github.com/adobe/spacecat-audit-worker/commit/0d37aeeb385250150f89d0958a4b168bfca66adc))
+
 ## [1.458.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.0...v1.458.1) (2026-06-03)
 
 
