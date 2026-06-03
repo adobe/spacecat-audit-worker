@@ -36,6 +36,8 @@ import {
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
   PATH_TYPE_SUGGESTION_RANK,
+  PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE,
+  PATH_TYPE_METRICS_FIELDS,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -1131,11 +1133,6 @@ async function prepareDomainWideAggregateSuggestion(
   };
 }
 
-const METRICS_REFRESH_CHUNK_SIZE = 25;
-const METRICS_FIELDS = [
-  'score', 'contentGainRatio', 'wordCountBefore', 'wordCountAfter', 'aiReadablePercent',
-];
-
 /**
  * Refreshes metrics on preserved path suggestions from freshly-built data,
  * keeping status and edgeDeployed untouched.  Saves in chunks via saveMany.
@@ -1153,7 +1150,7 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
       const currentData = existing.getData();
       const updatedData = { ...currentData };
       let changed = false;
-      for (const field of METRICS_FIELDS) {
+      for (const field of PATH_TYPE_METRICS_FIELDS) {
         if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
           updatedData[field] = p.data[field];
           changed = true;
@@ -1166,8 +1163,8 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
     }
   }
 
-  for (let i = 0; i < toSave.length; i += METRICS_REFRESH_CHUNK_SIZE) {
-    const chunk = toSave.slice(i, i + METRICS_REFRESH_CHUNK_SIZE);
+  for (let i = 0; i < toSave.length; i += PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE) {
+    const chunk = toSave.slice(i, i + PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE);
     // eslint-disable-next-line no-await-in-loop
     await dataAccess.Suggestion.saveMany(chunk);
   }
