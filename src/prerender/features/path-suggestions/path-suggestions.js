@@ -212,8 +212,12 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
       delete d.coveredByPattern;
       s.setData(d);
     });
-    await dataAccess.Suggestion.saveMany(stale);
-    log.info(`${LOG_PREFIX} Cleared ${stale.length} stale coveredByPattern references`);
+    try {
+      await dataAccess.Suggestion.saveMany(stale);
+      log.info(`${LOG_PREFIX} Cleared ${stale.length} stale coveredByPattern references`);
+    } catch (e) {
+      log.error(`${LOG_PREFIX} Failed to clear ${stale.length} stale coveredByPattern refs: ${e.message}`);
+    }
   }
 
   if (deployedPaths.length === 0) {
@@ -246,11 +250,15 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
     if (toCover.length > 0) {
       toCover.forEach((s) => s.setData({ ...s.getData(), coveredByPattern: pathId }));
-      // eslint-disable-next-line no-await-in-loop
-      await dataAccess.Suggestion.saveMany(toCover);
-      log.info(
-        `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
-      );
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await dataAccess.Suggestion.saveMany(toCover);
+        log.info(
+          `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
+        );
+      } catch (e) {
+        log.error(`${LOG_PREFIX} Failed to mark ${toCover.length} suggestions as covered by ${pathPat}: ${e.message}`);
+      }
     }
   }
 }
