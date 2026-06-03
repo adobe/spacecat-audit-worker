@@ -24,7 +24,6 @@ export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
 // Path-level prerender suggestion thresholds
 export const PATH_TYPE_MIN_URLS = 10;
 export const PATH_TYPE_MIN_VALUABLE_PCT = 33;
-export const PATH_TYPE_SUGGESTION_RANK = 100000;
 export const PATH_TYPE_SCORE_THRESHOLD = 2;
 export const PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE = 25;
 export const PATH_TYPE_METRICS_FIELDS = [
