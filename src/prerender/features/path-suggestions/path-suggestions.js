@@ -131,6 +131,7 @@ export async function buildPathTypeSuggestions(
       const aiReadableCount = urls.filter((u) => u.aiReadable === true).length;
       const aiReadablePercent = parseFloat(((aiReadableCount / urls.length) * 100).toFixed(1));
 
+      log.debug(`${LOG_PREFIX} Qualified path: ${pathPattern}, urls=${urls.length}, score=${score}`);
       results.push({
         key: `${pathPattern}|prerender`,
         data: {
