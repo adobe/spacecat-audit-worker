@@ -140,7 +140,7 @@ Example opportunity entry on the audit envelope:
 |---|---|---|
 | `ENOTFOUND`, `EAI_AGAIN` | `dns-failure` | "DNS lookup failed — may require corporate network or authentication" |
 | `ECONNREFUSED` | `connection-refused` | "Connection refused — may require corporate network or VPN" |
-| `ECONNRESET` | `connection-reset` | "Connection reset by remote server — may require authentication or corporate network" |
+| `ECONNRESET` | `connection-reset` | "Connection reset by remote server — server may be temporarily unavailable or rejecting connections" |
 | `ETIMEDOUT`, `UND_ERR_CONNECT_TIMEOUT` | `timeout` | "Request timed out — may require authentication or corporate network" |
 | `CERT_HAS_EXPIRED`, `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, etc. | `tls-error` | "TLS verification failed — server certificate may be misconfigured" |
 | anything else | `unreachable` | "Could not reach the URL — server may be temporarily unavailable" |
@@ -210,7 +210,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 ### Modify
 
 - `src/preflight/links-checks.js` — add `classifyNetworkError`, restructure the catch block, return new buckets from `runLinksChecks`
-- `src/preflight/handler.js` — emit the new `unverifiable-external-links` opportunity entry
+- `src/preflight/links.js` — emit the new `unverifiable-external-links` opportunity entry (this is where `broken-external-links` assembly lives today; the analogous new-bucket assembly goes here)
 - `test/preflight/links-checks.test.js` — new test cases for each error code category
 
 ### Add
@@ -233,7 +233,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 
 ### Task 2: Update `checkLinkStatus` to return categorized failure objects
 
-- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `code`, `message`, `urlTo`, `href`, and the spread of `toElementTargets(selectors)` (i.e. the `elements` array, matching the broken-link wire format). Note: the function returns `urlTo` internally; `handler.js` performs the `urlTo` → `url` rename when assembling the opportunity entry, same as for broken links today.
+- [ ] In the `catch (finalErr)` block of `checkLinkStatus`, call `classifyNetworkError(finalErr)` and return an object with `status: 0`, `category: 'unverifiable'`, `code`, `message`, `urlTo`, `href`, and the spread of `toElementTargets(selectors)` (i.e. the `elements` array, matching the broken-link wire format). Note: the function returns `urlTo` internally; `links.js` performs the `urlTo` → `url` rename when assembling the opportunity entry, same as for broken links today. **This enriched shape is returned unconditionally** — the feature flag (Task 5) is consulted by `runLinksChecks` when deciding how to bucket the result, not by `checkLinkStatus` when building it.
 - [ ] Preserve the existing log line; consider lowering severity from `info` to `debug` for `unverifiable` since these are now expected.
 - [ ] Update tests to assert the new return shape on each error code.
 
@@ -245,7 +245,7 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 
 ### Task 4: Emit the new opportunity entry in the handler
 
-- [ ] In `src/preflight/handler.js`, where the audit envelope is assembled, add a new opportunity object for `unverifiable-external-links` populated from `unverifiableExternalLinks`.
+- [ ] In `src/preflight/links.js`, where the `broken-external-links` opportunity entry is assembled today (lines ~183–188), add the analogous assembly for `unverifiable-external-links` populated from `unverifiableExternalLinks`.
 - [ ] Match the existing opportunity-object shape: `{ check, issue: [...] }` with per-link entries containing `url`, `seoImpact`, `seoRecommendation`, `elements`.
 - [ ] Update tests to assert the new opportunity appears in the envelope when unverifiable links are present, and is absent (or empty) when none are.
 
@@ -254,8 +254,8 @@ Default assumption (verify): the MFE iterates opportunities and renders by recog
 - [ ] Confirm MFE backward-compat behavior — see [Cross-repo coordination](#cross-repo-coordination-mfe-side).
 - [ ] If MFE handles unknown check types gracefully: skip flag.
 - [ ] If MFE errors on unknown check types: add `PREFLIGHT_LINKS_UNVERIFIABLE_ENABLED` env var, and make `runLinksChecks` consult it BEFORE splitting the buckets:
-  - When the flag is **on**: split as Task 3 describes — `unverifiableExternalLinks` becomes its own bucket; `handler.js` emits the new `unverifiable-external-links` opportunity entry.
-  - When the flag is **off**: skip the bucket split entirely in `links-checks.js`. The `catch (finalErr)` block in `checkLinkStatus` still calls `classifyNetworkError` for logging, but the returned object stays at the existing post-#2476 shape — `{ urlTo, href, status: 0, ...elements }` (no `issue` field on the return). The `issue: "Status 0"` string is assembled downstream in `links.js`; flag-off doesn't touch that path. The returned object goes into `brokenExternalLinks`. `handler.js` doesn't emit the new opportunity entry because `unverifiableExternalLinks` is empty. This restores post-#2476 behavior exactly.
+  - When the flag is **on**: split as Task 3 describes — `unverifiableExternalLinks` becomes its own bucket; `links.js` emits the new `unverifiable-external-links` opportunity entry.
+  - When the flag is **off**: `checkLinkStatus` still returns the enriched shape (with `category`, `code`, `message`) as described in Task 2 — it always enriches. `runLinksChecks` skips the bucket split: it routes every result with `category: 'unverifiable'` into `brokenExternalLinks` instead of `unverifiableExternalLinks`, and leaves `unverifiableExternalLinks` empty. `links.js` doesn't emit the new opportunity entry because `unverifiableExternalLinks` is empty. This restores post-#2476 behavior for the MFE exactly — the enriched fields travel internally but don't affect the wire format.
 - Rationale: the split happens at `links-checks.js`, before `handler.js` ever sees the buckets. Trying to merge them back in `handler.js` would be more invasive (and would still emit the new check type in the envelope even when flag-off, which the MFE may not handle). Gating at the producer is the cleaner fallback path.
 
 ### Task 6: Tests, lint, coverage
