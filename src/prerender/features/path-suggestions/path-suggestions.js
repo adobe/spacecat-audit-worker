@@ -10,16 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { getAgenticHitsMapFromAthena } from '../utils/agentic-urls.js';
-import {
-  PATH_TYPE_MIN_URLS,
-  PATH_TYPE_MIN_VALUABLE_PCT,
-  PATH_TYPE_SCORE_THRESHOLD,
-  PATH_TYPE_SUGGESTION_RANK,
-} from './utils/constants.js';
+import { getAgenticHitsMapFromAthena } from '../../../utils/agentic-urls.js';
+import { RcvPathQualificationStrategy } from './rcv-path-qualification-strategy.js';
 
-// Re-export so callers can reference without importing constants directly
-export { PATH_TYPE_SUGGESTION_RANK };
+// Re-export so callers can import strategy alongside suggestion functions
+export { RcvPathQualificationStrategy };
 
 const LOG_PREFIX = '[prerender][path-suggestions]';
 
@@ -55,60 +50,6 @@ export function extractPathType(url) {
     return parts.length > 0 ? `/${parts[0]}/*` : null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Qualification strategy that mirrors rcv-scoring-dashboard's computeScore formula exactly.
- * Pluggable: swap in any object with qualify(pathPattern, urls) → { qualifies, score, ... }
- */
-export class RcvPathQualificationStrategy {
-  constructor({
-    minUrls = PATH_TYPE_MIN_URLS,
-    minValuablePct = PATH_TYPE_MIN_VALUABLE_PCT,
-    scoreThreshold = PATH_TYPE_SCORE_THRESHOLD,
-  } = {}) {
-    this.minUrls = minUrls;
-    this.minValuablePct = minValuablePct;
-    this.scoreThreshold = scoreThreshold;
-  }
-
-  qualify(pathPattern, urls) {
-    if (urls.length < this.minUrls) {
-      return { qualifies: false, score: 0, reason: `urlCount ${urls.length} < minUrls ${this.minUrls}` };
-    }
-
-    const valuableCount = urls.filter((u) => u.valuable === true).length;
-    const valuablePercent = (valuableCount / urls.length) * 100;
-    if (valuablePercent < this.minValuablePct) {
-      return {
-        qualifies: false,
-        score: 0,
-        reason: `valuablePercent ${valuablePercent.toFixed(1)}% < minValuablePct ${this.minValuablePct}%`,
-      };
-    }
-
-    const totalAgenticTraffic = urls.reduce((sum, u) => sum + (u.agenticTraffic || 0), 0);
-    let weightedValuableTraffic = 0;
-    if (totalAgenticTraffic > 0) {
-      for (const u of urls) {
-        weightedValuableTraffic += (u.agenticTraffic / totalAgenticTraffic) * (u.valuable ? 1 : 0);
-      }
-    }
-    const avgContentGainRatio = urls.reduce((sum, u) => sum + (u.contentGainRatio || 0), 0)
-      / urls.length;
-    const score = parseFloat((weightedValuableTraffic + avgContentGainRatio).toFixed(4));
-
-    if (score < this.scoreThreshold) {
-      return { qualifies: false, score, reason: `score ${score} < scoreThreshold ${this.scoreThreshold}` };
-    }
-
-    return {
-      qualifies: true,
-      score,
-      valuableCount,
-      valuablePercent: parseFloat(valuablePercent.toFixed(1)),
-    };
   }
 }
 

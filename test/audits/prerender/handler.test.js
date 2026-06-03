@@ -4399,7 +4399,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions.js': {
+        '../../../src/prerender/features/path-suggestions/index.js': {
           findPreservablePathSuggestions: findPreservablePathStub,
           buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
@@ -4452,7 +4452,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions.js': {
+        '../../../src/prerender/features/path-suggestions/index.js': {
           findPreservablePathSuggestions: findPreservablePathStub,
           buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
@@ -4516,7 +4516,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions.js': {
+        '../../../src/prerender/features/path-suggestions/index.js': {
           findPreservablePathSuggestions: sinon.stub().resolves([]),
           buildPathTypeSuggestions: sinon.stub().resolves([pathSuggestion]),
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
@@ -4582,7 +4582,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions.js': {
+        '../../../src/prerender/features/path-suggestions/index.js': {
           findPreservablePathSuggestions: sinon.stub().resolves([preservedPath]),
           buildPathTypeSuggestions: sinon.stub().resolves([{
             key: '/products/*|prerender',

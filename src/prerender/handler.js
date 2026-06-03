@@ -26,7 +26,7 @@ import {
   buildPathTypeSuggestions,
   findPreservablePathSuggestions,
   markSuggestionsAsCoveredByPaths,
-} from './path-suggestions.js';
+} from './features/path-suggestions/index.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
