@@ -8416,7 +8416,7 @@ describe('Prerender Audit', () => {
       expect(newSuggestion1.getData().coveredByDomainWide).to.equal('dw-1');
       expect(newSuggestion2.getData().coveredByDomainWide).to.equal('dw-1');
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking 2 NEW suggestions as coveredByDomainWide/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking.*per-URL and.*path suggestions as coveredByDomainWide/));
     });
 
     it('should skip saveMany when no NEW suggestions exist', async () => {
@@ -8515,7 +8515,7 @@ describe('Prerender Audit', () => {
 
       expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
     });
 
     it('should skip saveMany when deployedAtEdgePathnames set is empty', async () => {
@@ -8552,7 +8552,7 @@ describe('Prerender Audit', () => {
 
       // deployedAtEdgePathnames is empty → ternary false branch → suggestionsToCover = []
       expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
     });
 
     it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
@@ -8690,7 +8690,7 @@ describe('Prerender Audit', () => {
 
       // The invalid URL won't match any deployed pathname, so it should NOT be marked
       expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions matched deployed URLs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
     });
 
     it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {

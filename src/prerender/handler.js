@@ -22,7 +22,8 @@ import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/a
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
-  isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname, isDomainWideSuggestionData,
+  isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname,
+  isDomainWideSuggestionData, isPathSuggestionData,
 } from './utils/utils.js';
 import {
   buildPathTypeSuggestions,
@@ -217,24 +218,33 @@ async function markDeployedUrlSuggestionsAsCovered(
     return;
   }
 
-  const suggestionsToCover = deployedAtEdgePathnames?.size > 0
+  // Mark per-URL suggestions whose pathnames are confirmed deployed at edge
+  const urlSuggestionsToCover = deployedAtEdgePathnames?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
       return deployedAtEdgePathnames.has(toPathname(data?.url)) && !data?.edgeDeployed;
     })
     : [];
 
-  if (suggestionsToCover.length === 0) {
-    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
+  // Mark path suggestions as covered by domain-wide (they're redundant while /* is active)
+  const pathSuggestionsToCover = newSuggestions.filter((s) => {
+    const data = s.getData();
+    return isPathSuggestionData(data) && !data?.edgeDeployed && !data?.coveredByDomainWide;
+  });
+
+  const allToCover = [...urlSuggestionsToCover, ...pathSuggestionsToCover];
+
+  if (allToCover.length === 0) {
+    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions to cover. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
 
-  suggestionsToCover.forEach((s) => {
+  allToCover.forEach((s) => {
     s.setData({ ...s.getData(), coveredByDomainWide: domainWideSuggestionId });
   });
 
-  log.info(`${LOG_PREFIX} All domain deployed: marking ${suggestionsToCover.length} NEW suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
-  await SuggestionDA.saveMany(suggestionsToCover);
+  log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
+  await SuggestionDA.saveMany(allToCover);
 }
 
 /**
@@ -1277,9 +1287,14 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
+  // Skip path suggestions if domain-wide is deployed — they're redundant under /*
+  const domainWideDeployed = cachedSuggestions.some(
+    (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
+  );
+
   let preservablePaths = [];
   let newPathSuggestions = [];
-  if (pathSuggestionsEnabled) {
+  if (pathSuggestionsEnabled && !domainWideDeployed) {
     preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
     const preservableByPattern = new Map(
       preservablePaths.map((s) => [s.getData().allowedRegexPatterns?.[0], s]),
@@ -1303,7 +1318,8 @@ export async function processOpportunityAndSuggestions(
       + `${newPathSuggestions.length} new. baseUrl=${auditUrl}, siteId=${auditData.siteId}`,
     );
   } else {
-    log.info(`${LOG_PREFIX} Path suggestions disabled for site ${auditData.siteId} — skipping`);
+    const reason = domainWideDeployed ? 'domain-wide is deployed' : 'not enabled';
+    log.info(`${LOG_PREFIX} Path suggestions skipped for site ${auditData.siteId} — ${reason}`);
   }
 
   // Build key function that handles both individual and domain-wide suggestions
