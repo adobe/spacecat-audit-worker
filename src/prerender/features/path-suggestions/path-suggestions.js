@@ -11,59 +11,18 @@
  */
 
 import { getAgenticHitsMapFromAthena } from '../../../utils/agentic-urls.js';
+import {
+  isPathSuggestionData,
+  extractPathType,
+  shouldPreservePathSuggestion,
+  isEligibleStatus,
+} from '../../utils/utils.js';
 import { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
 
 // Re-export so callers can import strategy alongside suggestion functions
-export { RcvPathQualificationStrategy };
+export { RcvPathQualificationStrategy, extractPathType };
 
 const LOG_PREFIX = '[prerender][path-suggestions]';
-
-/**
- * Detects a path-level suggestion by the presence of allowedRegexPatterns
- * without isDomainWide. No `pathType` field is stored on the suggestion.
- */
-function isPathSuggestionData(data) {
-  return Array.isArray(data?.allowedRegexPatterns) && !data?.isDomainWide;
-}
-
-// Statuses considered active/preservable for path suggestions
-const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
-// Statuses of per-URL suggestions eligible for path scoring
-const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
-
-/**
- * Extracts the first-segment path pattern from a URL.
- * e.g. https://example.com/products/shoes → '/products/*'
- * Returns null for root-level URLs or invalid URLs.
- *
- * Known limitation: for locale-prefixed sites (e.g. /en/products/..., /fr/blog/...),
- * this groups all content under the locale segment (/en/*, /fr/*) rather than the
- * semantic content type. The resulting path suggestion will be overly coarse.
- *
- * @param {string} url
- * @returns {string|null}
- */
-export function extractPathType(url) {
-  try {
-    const { pathname } = new URL(url);
-    const parts = pathname.split('/').filter(Boolean);
-    return parts.length > 0 ? `/${parts[0]}/*` : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Determines if an existing path suggestion should be preserved across re-audits.
- *
- * @param {Object} suggestion
- * @returns {boolean}
- */
-function shouldPreservePathSuggestion(suggestion) {
-  const status = suggestion.getStatus();
-  const data = suggestion.getData();
-  return PRESERVABLE_STATUSES.includes(status) || !!data?.edgeDeployed;
-}
 
 /**
  * Finds existing path suggestions that should be preserved (not overwritten).
@@ -119,7 +78,7 @@ export async function buildPathTypeSuggestions(
     if (isPathSuggestionData(d) || d?.isDomainWide) {
       return false;
     }
-    return ELIGIBLE_STATUSES.has(s.getStatus());
+    return isEligibleStatus(s.getStatus());
   });
 
   const eligiblePathnames = new Set(

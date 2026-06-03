@@ -109,6 +109,72 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
   };
 }
 
+// Statuses considered active/preservable for path suggestions
+const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
+// Statuses of per-URL suggestions eligible for path scoring
+const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
+
+/**
+ * Detects a path-level suggestion by the presence of allowedRegexPatterns
+ * without isDomainWide.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isPathSuggestionData(data) {
+  return Array.isArray(data?.allowedRegexPatterns) && !data?.isDomainWide;
+}
+
+/**
+ * Checks if a suggestion's data represents a domain-wide suggestion.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isDomainWideSuggestionData(data) {
+  return !!data?.isDomainWide;
+}
+
+/**
+ * Extracts the first-segment path pattern from a URL.
+ * e.g. https://example.com/products/shoes -> '/products/*'
+ * Returns null for root-level URLs or invalid URLs.
+ *
+ * @param {string} url
+ * @returns {string|null}
+ */
+export function extractPathType(url) {
+  try {
+    const { pathname } = new URL(url);
+    const parts = pathname.split('/').filter(Boolean);
+    return parts.length > 0 ? `/${parts[0]}/*` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Determines if an existing path suggestion should be preserved across re-audits.
+ *
+ * @param {Object} suggestion - Suggestion entity
+ * @returns {boolean}
+ */
+export function shouldPreservePathSuggestion(suggestion) {
+  const status = suggestion.getStatus();
+  const data = suggestion.getData();
+  return PRESERVABLE_STATUSES.includes(status) || !!data?.edgeDeployed;
+}
+
+/**
+ * Checks if a suggestion has an eligible status for path scoring.
+ *
+ * @param {string} status
+ * @returns {boolean}
+ */
+export function isEligibleStatus(status) {
+  return ELIGIBLE_STATUSES.has(status);
+}
+
 /**
  * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log

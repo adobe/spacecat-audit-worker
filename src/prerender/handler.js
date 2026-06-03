@@ -21,7 +21,9 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
+import {
+  isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname, isDomainWideSuggestionData,
+} from './utils/utils.js';
 import {
   buildPathTypeSuggestions,
   findPreservablePathSuggestions,
@@ -117,15 +119,6 @@ function isStickyBotBlocked(status) {
     return false;
   }
   return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
-}
-
-/**
- * Checks if a suggestion's data represents a domain-wide suggestion.
- * @param {Object} data - The suggestion data object.
- * @returns {boolean} True if this is a domain-wide suggestion.
- */
-function isDomainWideSuggestionData(data) {
-  return !!data?.isDomainWide;
 }
 
 /**
