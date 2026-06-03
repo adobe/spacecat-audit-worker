@@ -1133,9 +1133,7 @@ async function prepareDomainWideAggregateSuggestion(
 
 const METRICS_REFRESH_CHUNK_SIZE = 25;
 const METRICS_FIELDS = [
-  'urlCount', 'valuableCount', 'valuablePercent',
-  'avgContentGainRatio', 'totalWordCountBefore', 'totalWordCountAfter',
-  'totalAgenticTraffic', 'pathScore',
+  'score', 'contentGainRatio', 'wordCountBefore', 'wordCountAfter', 'aiReadablePercent',
 ];
 
 /**
@@ -1150,7 +1148,7 @@ const METRICS_FIELDS = [
 async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, dataAccess) {
   const toSave = [];
   for (const p of builtSuggestions) {
-    const existing = preservableByPattern.get(p.data.pathPattern);
+    const existing = preservableByPattern.get(p.data.allowedRegexPatterns?.[0]);
     if (existing) {
       const currentData = existing.getData();
       const updatedData = { ...currentData };
@@ -1294,7 +1292,9 @@ export async function processOpportunityAndSuggestions(
   let newPathSuggestions = [];
   if (pathSuggestionsEnabled) {
     preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
-    const preservableByPattern = new Map(preservablePaths.map((s) => [s.getData().pathPattern, s]));
+    const preservableByPattern = new Map(
+      preservablePaths.map((s) => [s.getData().allowedRegexPatterns?.[0], s]),
+    );
 
     const builtSuggestions = await buildPathTypeSuggestions(
       preRenderSuggestions,
@@ -1308,7 +1308,7 @@ export async function processOpportunityAndSuggestions(
     await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context.dataAccess);
 
     newPathSuggestions = builtSuggestions
-      .filter((p) => !preservableByPattern.has(p.data.pathPattern));
+      .filter((p) => !preservableByPattern.has(p.data.allowedRegexPatterns?.[0]));
     log.info(
       `${LOG_PREFIX} Path suggestions: ${preservablePaths.length} preserved, `
       + `${newPathSuggestions.length} new. baseUrl=${auditUrl}, siteId=${auditData.siteId}`,

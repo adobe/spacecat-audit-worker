@@ -4491,11 +4491,13 @@ describe('Prerender Audit', () => {
       const pathSuggestion = {
         key: '/products/*|prerender',
         data: {
-          pathPattern: '/products/*', pathScore: 2.5,
-          urlCount: 10, valuableCount: 8, valuablePercent: 80,
-          avgContentGainRatio: 2, totalWordCountBefore: 1000, totalWordCountAfter: 2000,
-          totalAgenticTraffic: 100, url: 'https://example.com/products/*',
+          url: 'https://example.com/products/*',
           allowedRegexPatterns: ['/products/*'],
+          score: 2.5,
+          contentGainRatio: 2,
+          wordCountBefore: 1000,
+          wordCountAfter: 2000,
+          aiReadablePercent: 80,
         },
       };
 
@@ -4556,7 +4558,7 @@ describe('Prerender Audit', () => {
     });
 
     it('refreshes metrics on preserved path suggestions via saveMany', async () => {
-      const savedData = { pathPattern: '/products/*', pathScore: 1, urlCount: 5, edgeDeployed: true };
+      const savedData = { allowedRegexPatterns: ['/products/*'], score: 1, contentGainRatio: 0.5, edgeDeployed: true };
       const preservedPath = {
         getId: () => 'path-sug-1',
         getStatus: () => 'NEW',
@@ -4586,9 +4588,12 @@ describe('Prerender Audit', () => {
           buildPathTypeSuggestions: sinon.stub().resolves([{
             key: '/products/*|prerender',
             data: {
-              allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', urlCount: 15, pathScore: 3,
-              valuableCount: 10, valuablePercent: 66.7, avgContentGainRatio: 2,
-              totalWordCountBefore: 1500, totalWordCountAfter: 3000, totalAgenticTraffic: 500,
+              allowedRegexPatterns: ['/products/*'],
+              score: 3,
+              contentGainRatio: 2,
+              wordCountBefore: 1500,
+              wordCountAfter: 3000,
+              aiReadablePercent: 75,
             },
           }]),
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
@@ -9696,34 +9701,31 @@ describe('Prerender Audit', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = {
         edgeDeployed: true,
-        pathPattern: '/old/*',
-        pathScore: 1.0,
+        score: 1.0,
       };
       const newDataItem = {
         key: '/products/*|prerender',
         data: {
           allowedRegexPatterns: ['/products/*'],
-          pathPattern: '/products/*',
-          pathScore: 2.5,
-          urlCount: 10,
+          score: 2.5,
+          contentGainRatio: 1.8,
         },
       };
 
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.allowedRegexPatterns).to.deep.equal(['/products/*']);
-      expect(result.pathPattern).to.equal('/products/*');
-      expect(result.pathScore).to.equal(2.5);
-      expect(result.urlCount).to.equal(10);
+      expect(result.score).to.equal(2.5);
+      expect(result.contentGainRatio).to.equal(1.8);
       expect(result.edgeDeployed).to.be.true;
     });
 
     it('does not inject edgeDeployed when not present on existing data for path-type', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
-      const existingData = { pathPattern: '/old/*' };
+      const existingData = { score: 1.0 };
       const newDataItem = {
         key: '/products/*|prerender',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', pathScore: 2.0 },
+        data: { allowedRegexPatterns: ['/products/*'], score: 2.0 },
       };
 
       const result = mergeFn(existingData, newDataItem);

@@ -244,28 +244,25 @@ export async function buildPathTypeSuggestions(
   for (const [pathPattern, urls] of groups) {
     const result = strategy.qualify(pathPattern, urls);
     if (result.qualifies) {
-      const { score, valuableCount, valuablePercent } = result;
-      const totalAgenticTraffic = urls.reduce((sum, u) => sum + (u.agenticTraffic || 0), 0);
-      const totalWordCountBefore = urls.reduce((sum, u) => sum + (u.wordCountBefore || 0), 0);
-      const totalWordCountAfter = urls.reduce((sum, u) => sum + (u.wordCountAfter || 0), 0);
-      const avgContentGainRatio = parseFloat(
+      const { score } = result;
+      const wordCountBefore = urls.reduce((sum, u) => sum + (u.wordCountBefore || 0), 0);
+      const wordCountAfter = urls.reduce((sum, u) => sum + (u.wordCountAfter || 0), 0);
+      const contentGainRatio = parseFloat(
         (urls.reduce((sum, u) => sum + (u.contentGainRatio || 0), 0) / urls.length).toFixed(2),
       );
+      const aiReadableCount = urls.filter((u) => u.aiReadable === true).length;
+      const aiReadablePercent = parseFloat(((aiReadableCount / urls.length) * 100).toFixed(1));
 
       results.push({
         key: `${pathPattern}|prerender`,
         data: {
           url: `${baseUrl}${pathPattern}`,
-          pathPattern,
           allowedRegexPatterns: [pathPattern],
-          urlCount: urls.length,
-          valuableCount,
-          valuablePercent,
-          avgContentGainRatio,
-          totalWordCountBefore,
-          totalWordCountAfter,
-          totalAgenticTraffic,
-          pathScore: score,
+          score,
+          contentGainRatio,
+          wordCountBefore,
+          wordCountAfter,
+          aiReadablePercent,
         },
       });
     } else {
@@ -273,7 +270,7 @@ export async function buildPathTypeSuggestions(
     }
   }
 
-  results.sort((a, b) => b.data.pathScore - a.data.pathScore);
+  results.sort((a, b) => b.data.score - a.data.score);
   log.info(`${LOG_PREFIX} Built ${results.length} path suggestions`);
   return results;
 }
@@ -331,7 +328,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
   );
 
   for (const pathSuggestion of deployedPaths) {
-    const pathPat = pathSuggestion.getData().pathPattern;
+    const pathPat = pathSuggestion.getData().allowedRegexPatterns?.[0];
     const prefix = pathPat.replace('/*', '');
     const pathId = pathSuggestion.getId();
 

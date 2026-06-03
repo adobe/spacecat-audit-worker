@@ -252,9 +252,9 @@ describe('Path Suggestions', () => {
 
     it('returns path suggestions in a preservable status', async () => {
       const suggestions = [
-        makeSuggestion({ id: 's1', status: 'NEW', data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*' } }),
-        makeSuggestion({ id: 's2', status: 'FIXED', data: { allowedRegexPatterns: ['/blog/*'], pathPattern: '/blog/*' } }),
-        makeSuggestion({ id: 's3', status: 'OUTDATED', data: { allowedRegexPatterns: ['/news/*'], pathPattern: '/news/*' } }),
+        makeSuggestion({ id: 's1', status: 'NEW', data: { allowedRegexPatterns: ['/products/*'] } }),
+        makeSuggestion({ id: 's2', status: 'FIXED', data: { allowedRegexPatterns: ['/blog/*'] } }),
+        makeSuggestion({ id: 's3', status: 'OUTDATED', data: { allowedRegexPatterns: ['/news/*'] } }),
         makeSuggestion({ id: 's4', status: 'NEW', data: { url: 'https://example.com/page' } }),
       ];
       const opportunity = makeOpportunity(suggestions);
@@ -266,7 +266,7 @@ describe('Path Suggestions', () => {
     it('returns suggestions with edgeDeployed regardless of status', async () => {
       const suggestions = [
         makeSuggestion({
-          id: 's1', status: 'OUTDATED', data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+          id: 's1', status: 'OUTDATED', data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
         }),
       ];
       const opportunity = makeOpportunity(suggestions);
@@ -336,7 +336,8 @@ describe('Path Suggestions', () => {
       const strategy = new RcvPathQualificationStrategy({ minUrls: 2, minValuablePct: 50, scoreThreshold: 0 });
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.urlCount).to.equal(2);
+      // 2 eligible URLs grouped into one path suggestion
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('excludes URLs with no existing DB suggestion', async () => {
@@ -371,8 +372,8 @@ describe('Path Suggestions', () => {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
 
       expect(results).to.have.length(2);
-      expect(results[0].data.pathScore).to.be.at.least(results[1].data.pathScore);
-      expect(results[0].data.pathPattern).to.equal('/products/*');
+      expect(results[0].data.score).to.be.at.least(results[1].data.score);
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('falls back gracefully when Athena fetch fails', async () => {
@@ -413,7 +414,8 @@ describe('Path Suggestions', () => {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
 
       expect(results).to.have.length(1);
-      expect(results[0].data.totalAgenticTraffic).to.be.greaterThan(0);
+      // Score should be higher than pure contentGainRatio since agentic traffic is nonzero
+      expect(results[0].data.score).to.be.greaterThan(1);
     });
 
     it('returns correct suggestion shape for a qualifying path', async () => {
@@ -432,13 +434,13 @@ describe('Path Suggestions', () => {
       const { key, data } = results[0];
       expect(key).to.equal('/products/*|prerender');
       expect(data.pathType).to.be.undefined;
-      expect(data.pathPattern).to.equal('/products/*');
       expect(data.url).to.equal(`${BASE_URL}/products/*`);
       expect(data.allowedRegexPatterns).to.deep.equal(['/products/*']);
-      expect(data.urlCount).to.equal(10);
-      expect(data.avgContentGainRatio).to.equal(2);
-      expect(data.totalWordCountBefore).to.equal(1000);
-      expect(data.totalWordCountAfter).to.equal(2000);
+      expect(data.score).to.be.a('number');
+      expect(data.contentGainRatio).to.equal(2);
+      expect(data.wordCountBefore).to.equal(1000);
+      expect(data.wordCountAfter).to.equal(2000);
+      expect(data.aiReadablePercent).to.be.a('number');
     });
 
     it('treats URL as valuable=true when not present in DB suggestion data', async () => {
@@ -457,7 +459,7 @@ describe('Path Suggestions', () => {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
       // With minValuablePct=0 and all default-true valuable, should qualify
-      expect(results[0].data.valuableCount).to.equal(1);
+      expect(results[0].data.score).to.be.a('number');
     });
 
     it('uses valuable field from DB suggestion when present (null → treated as false)', async () => {
@@ -471,10 +473,10 @@ describe('Path Suggestions', () => {
       const preRender = [{ url: validUrl, contentGainRatio: 2, wordCountBefore: 0, wordCountAfter: 0 }];
       const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
 
-      // null ?? true = true, so valuable=true → valuableCount=1
+      // null ?? true = true, so valuable=true → qualifies
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.valuableCount).to.equal(1);
+      expect(results[0].data.score).to.be.a('number');
     });
 
     it('handles undefined wordCountBefore/After gracefully via || 0 fallback', async () => {
@@ -488,8 +490,8 @@ describe('Path Suggestions', () => {
 
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.totalWordCountBefore).to.equal(0);
-      expect(results[0].data.totalWordCountAfter).to.equal(0);
+      expect(results[0].data.wordCountBefore).to.equal(0);
+      expect(results[0].data.wordCountAfter).to.equal(0);
     });
 
     it('handles undefined contentGainRatio via || 0 fallback in avgContentGainRatio reduce', async () => {
@@ -503,7 +505,7 @@ describe('Path Suggestions', () => {
 
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.avgContentGainRatio).to.equal(0);
+      expect(results[0].data.contentGainRatio).to.equal(0);
     });
 
     it('skips root-level URLs (no first path segment)', async () => {
@@ -538,7 +540,7 @@ describe('Path Suggestions', () => {
       // Only item-0 is eligible (item-1 is path, /* is isDomainWide)
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.urlCount).to.equal(1);
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('gracefully handles a DB suggestion with an invalid URL', async () => {
@@ -556,7 +558,7 @@ describe('Path Suggestions', () => {
       // Should not throw; invalid-URL suggestion is skipped silently
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       expect(results).to.have.length(1);
-      expect(results[0].data.urlCount).to.equal(1);
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('skips preRenderSuggestions with an invalid URL (filter catch branch)', async () => {
@@ -576,7 +578,7 @@ describe('Path Suggestions', () => {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
       // The invalid URL is filtered out; 1 valid URL qualifies with minUrls=1
       expect(results).to.have.length(1);
-      expect(results[0].data.urlCount).to.equal(1);
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
     it('triggers debug log and skips path when group does not qualify', async () => {
@@ -619,7 +621,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -638,7 +640,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -658,7 +660,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/prod/*'], pathPattern: '/prod/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/prod/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -677,7 +679,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -695,7 +697,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -714,7 +716,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: false },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: false },
       });
       // A URL suggestion with a stale coveredByPattern pointing to that path
       const urlSuggestion = makeSuggestion({
@@ -762,7 +764,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       const urlSuggestion = makeSuggestion({
         id: 'url-1',
@@ -780,7 +782,7 @@ describe('Path Suggestions', () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], pathPattern: '/products/*', edgeDeployed: true },
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
       // A URL suggestion with an invalid URL — triggers catch { return false }
       const invalidUrlSuggestion = makeSuggestion({
