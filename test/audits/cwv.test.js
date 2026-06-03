@@ -503,8 +503,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
-        // Return old data (different from new) so deepEqual detects change
-        getData: () => ({ ...suggestion.data, oldField: 'old value' }),
+        // Return old data with different pageviews so deepEqual detects change
+        getData: () => ({ ...suggestion.data, pageviews: (suggestion.data.pageviews || 0) - 1000 }),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
         setUpdatedBy: sinon.stub().returnsThis(),
