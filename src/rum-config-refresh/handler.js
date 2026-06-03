@@ -70,8 +70,17 @@ export default async function rumConfigRefresh(message, context) {
     return ok({ skipped: true, reason: 'malformed baseURL' });
   }
 
-  // override-first: overrideBaseURL is the site's canonical RUM domain when set
-  const domains = [...new Set([overrideHostname, baseHostname].filter(Boolean))];
+  // override-first: overrideBaseURL is the site's canonical RUM domain when set.
+  // For each candidate, also try the www. variant as a fallback — domain keys are
+  // frequently registered under www.{domain} even when the site's base URL is bare.
+  const withWwwFallback = (d) => (d && !d.startsWith('www.') ? `www.${d}` : null);
+
+  const domains = [...new Set([
+    overrideHostname,
+    withWwwFallback(overrideHostname),
+    baseHostname,
+    withWwwFallback(baseHostname),
+  ].filter(Boolean))];
 
   let hasDomainKey = false;
   let timeoutId;
