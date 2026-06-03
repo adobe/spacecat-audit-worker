@@ -1216,6 +1216,7 @@ export async function processOpportunityAndSuggestions(
   isPaid,
 ) {
   const { log, site } = context;
+  const pathSuggestionsEnabled = site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
 
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
@@ -1275,9 +1276,6 @@ export async function processOpportunityAndSuggestions(
       context,
     );
   }
-
-  // Path suggestions — opt-in per site via prerender.pathSuggestionsEnabled config
-  const pathSuggestionsEnabled = site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
 
   let preservablePaths = [];
   let newPathSuggestions = [];
