@@ -11,7 +11,7 @@
  */
 
 import { getAgenticHitsMapFromAthena } from '../../../utils/agentic-urls.js';
-import { RcvPathQualificationStrategy } from './rcv-path-qualification-strategy.js';
+import { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
 
 // Re-export so callers can import strategy alongside suggestion functions
 export { RcvPathQualificationStrategy };

@@ -14,20 +14,21 @@ import {
   PATH_TYPE_MIN_URLS,
   PATH_TYPE_MIN_VALUABLE_PCT,
   PATH_TYPE_SCORE_THRESHOLD,
-} from '../../utils/constants.js';
+} from '../../../utils/constants.js';
+import { PathQualificationStrategy } from './path-qualification-strategy.js';
 
 /**
  * Qualification strategy that mirrors rcv-scoring-dashboard's computeScore formula exactly.
- * Implements PathQualificationStrategy interface.
  *
- * @implements {PathQualificationStrategy}
+ * @extends PathQualificationStrategy
  */
-export class RcvPathQualificationStrategy {
+export class RcvPathQualificationStrategy extends PathQualificationStrategy {
   constructor({
     minUrls = PATH_TYPE_MIN_URLS,
     minValuablePct = PATH_TYPE_MIN_VALUABLE_PCT,
     scoreThreshold = PATH_TYPE_SCORE_THRESHOLD,
   } = {}) {
+    super();
     this.minUrls = minUrls;
     this.minValuablePct = minValuablePct;
     this.scoreThreshold = scoreThreshold;

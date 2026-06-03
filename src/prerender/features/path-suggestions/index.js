@@ -17,6 +17,6 @@ export {
   markSuggestionsAsCoveredByPaths,
 } from './path-suggestions.js';
 
-export { RcvPathQualificationStrategy } from './rcv-path-qualification-strategy.js';
+export { PathQualificationStrategy } from './strategies/path-qualification-strategy.js';
 
-export { assertValidStrategy } from './path-qualification-strategy.js';
+export { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
