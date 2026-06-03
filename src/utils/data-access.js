@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
+import { deepEqual, isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import {
   Opportunity as OpportunityDataAccess,
   Suggestion as SuggestionDataAccess,
@@ -334,7 +334,7 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
  * - REJECTED suggestions remain REJECTED
- * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
+ * - FIXED and OUTDATED suggestions transition to PENDING_VALIDATION or NEW (regression detected)
  * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
  *   Recovers any suggestion that errored due to a transient or codefix-side bug
  *   once the underlying fix has shipped; pages that fail every run keep
@@ -356,8 +356,11 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
     return null; // Keep existing status
   }
 
-  if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
-    log.warn('Outdated suggestion found in audit. Possible regression.');
+  // Handle FIXED and OUTDATED the same way - both indicate regressions
+  // when they reappear in audit results
+  if (currentStatus === SuggestionDataAccess.STATUSES.FIXED
+      || currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
+    log.warn(`${currentStatus} suggestion found in audit. Regression detected - reopening.`);
     const requiresValidation = Boolean(site?.requiresValidation);
     const { isTBYB = false } = context;
     return (requiresValidation && !isTBYB)
@@ -489,31 +492,45 @@ export async function syncSuggestions({
   }
 
   // Update existing suggestions - O(N) with Map lookup
+  // Phase 1: Only save suggestions where data or status actually changed
   const { Suggestion } = context.dataAccess;
-  const toUpdate = existingSuggestions
+  const toUpdate = [];
+
+  existingSuggestions
     .filter((existing) => {
       const existingKey = buildKey(existing.getData());
       return newDataKeys.has(existingKey);
+    })
+    .forEach((existing) => {
+      const existingKey = buildKey(existing.getData());
+      const newDataItem = newDataByKey.get(existingKey);
+      const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+      warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+
+      // Use the merge status function to determine if status should change
+      const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
+
+      // Check if data actually changed using deep equality
+      const dataChanged = !deepEqual(existing.getData(), mergedData);
+
+      // Only update if something actually changed
+      if (newStatus !== null || dataChanged) {
+        existing.setData(mergedData);
+        if (newStatus !== null) {
+          existing.setStatus(newStatus);
+        }
+        existing.setUpdatedBy('system');
+        toUpdate.push(existing);
+      } else {
+        log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);
+      }
     });
-
-  toUpdate.forEach((existing) => {
-    const existingKey = buildKey(existing.getData());
-    const newDataItem = newDataByKey.get(existingKey);
-    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
-    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
-    existing.setData(mergedData);
-
-    // Use the merge status function to determine if status should change
-    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
-    // null indicates to keep existing status
-    if (newStatus !== null) {
-      existing.setStatus(newStatus);
-    }
-    existing.setUpdatedBy('system');
-  });
 
   if (toUpdate.length > 0) {
     await Suggestion.saveMany(toUpdate);
+    log.info(`[syncSuggestions] Updated ${toUpdate.length} suggestions with actual changes`);
+  } else {
+    log.info('[syncSuggestions] No suggestions required updates');
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
