@@ -58,6 +58,7 @@ function createClusterMessage({
   portfolioMetrics = { totalSpend: 1000 },
   langfuseTraceId = 'trace-123',
   langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
+  extraBody,
 } = {}) {
   return {
     auditId: 'audit-id-123',
@@ -72,6 +73,7 @@ function createClusterMessage({
             langfuseTraceId,
             langfuseTraceUrl,
           },
+          ...(extraBody || {}),
         },
       }],
     },
@@ -351,6 +353,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.type).to.equal('ad-intent-mismatch');
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
+      expect(result.guidance).to.be.null;
     });
 
     it('creates correct title', () => {
@@ -373,7 +376,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.description).to.include('2 of 3 clusters show alignment gaps');
+      expect(result.description).to.include('2 of 3 clusters show significant alignment gaps');
       expect(result.description).to.include('~$1.0K/month');
     });
 
@@ -488,6 +491,63 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.misalignedClusters).to.equal(1);
     });
 
+    it('excludes good-aligned clusters from misalignedClusters count', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: 'good',
+          clusterMisalignedSpend: 0,
+        }),
+        makeCluster({
+          clusterId: 'c2',
+          recommendation: { type: 'audit_required' },
+          overallAlignmentScore: 'poor',
+          clusterMisalignedSpend: 500,
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.totalClusters).to.equal(2);
+      expect(result.data.misalignedClusters).to.equal(1);
+      expect(result.data.totalMisalignedSpend).to.equal(500);
+    });
+
+    it('counts poor-aligned clusters as misaligned', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: 'poor',
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.misalignedClusters).to.equal(1);
+    });
+
+    it('treats null overallAlignmentScore as not misaligned', () => {
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          recommendation: { type: 'modify_heading' },
+          overallAlignmentScore: null,
+        }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.misalignedClusters).to.equal(0);
+    });
+
     it('includes correct tags', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
@@ -561,6 +621,122 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       // c1 is failed so not counted as misaligned even though it has a recommendation
       expect(result.data.misalignedClusters).to.equal(1);
     });
+
+    it('passes resolvedPageHeading and pageTopics through to opportunity.data', () => {
+      const pageTopics = [
+        {
+          topic: 'Email API overview',
+          context: 'Overview of the SendGrid Email API and core capabilities.',
+          supportingQuote: 'Build with our extensible platforms for customers, workforce, and non-human identities.',
+          paragraphIndex: 5,
+        },
+        {
+          topic: 'Deliverability',
+          context: 'Deliverability features and analytics.',
+          supportingQuote: 'Real-time deliverability metrics and reputation monitoring.',
+          paragraphIndex: 12,
+        },
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({
+        extraBody: {
+          resolvedPageHeading: 'Fast, reliable email delivery',
+          pageTopics,
+        },
+      });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.resolvedPageHeading).to.equal('Fast, reliable email delivery');
+      expect(result.data.pageTopics).to.have.lengthOf(2);
+      expect(result.data.pageTopics[0]).to.deep.equal({
+        topic: 'Email API overview',
+        context: 'Overview of the SendGrid Email API and core capabilities.',
+        supportingQuote: 'Build with our extensible platforms for customers, workforce, and non-human identities.',
+        paragraphIndex: 5,
+      });
+      expect(result.data.pageTopics[1].topic).to.equal('Deliverability');
+      expect(result.data.pageTopics[1].paragraphIndex).to.equal(12);
+    });
+
+    it('defaults resolvedPageHeading to null and pageTopics to [] when fields are absent (old mystique)', () => {
+      const audit = createMockAudit();
+      // No extraBody — guidanceBody has neither resolvedPageHeading nor pageTopics
+      const message = createClusterMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.resolvedPageHeading).to.be.null;
+      expect(result.data.pageTopics).to.be.an('array').that.is.empty;
+    });
+
+    it('collapses explicit null pageTopics to [] (future regression guard)', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage({
+        extraBody: {
+          resolvedPageHeading: null,
+          pageTopics: null,
+        },
+      });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.resolvedPageHeading).to.be.null;
+      expect(result.data.pageTopics).to.be.an('array').that.is.empty;
+    });
+
+    it('preserves all existing opportunity.data keys when new fields are present', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 200 }),
+        makeCluster({ clusterId: 'c2', clusterMisalignedSpend: 50 }),
+      ];
+      const portfolioMetrics = { totalSpend: 5000, avgCpc: 2.5 };
+      const audit = createMockAudit();
+      const message = createClusterMessage({
+        clusterResults: clusters,
+        portfolioMetrics,
+        langfuseTraceId: 'trace-xyz',
+        langfuseTraceUrl: 'https://langfuse.example.com/trace/xyz',
+        extraBody: {
+          resolvedPageHeading: 'Headline',
+          pageTopics: [{
+            topic: 'T', context: 'C', supportingQuote: 'Q', paragraphIndex: 0,
+          }],
+        },
+      });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      // All existing data keys still present with expected values.
+      expect(result.data.url).to.equal(TEST_URL);
+      expect(result.data.page).to.equal(TEST_URL);
+      expect(result.data.portfolioMetrics).to.deep.equal(portfolioMetrics);
+      expect(result.data.hasConflictingHeadlineRecommendations).to.be.false;
+      expect(result.data.langfuseTraceId).to.equal('trace-xyz');
+      expect(result.data.langfuseTraceUrl).to.equal('https://langfuse.example.com/trace/xyz');
+      expect(result.data.totalClusters).to.equal(2);
+      expect(result.data.misalignedClusters).to.equal(1);
+      expect(result.data.totalMisalignedSpend).to.equal(250);
+      expect(result.data.dataSources).to.deep.equal(['Site', 'RUM', 'Page', 'SEO']);
+      // New fields present alongside.
+      expect(result.data.resolvedPageHeading).to.equal('Headline');
+      expect(result.data.pageTopics).to.have.lengthOf(1);
+    });
+
+    it('preserves opportunity.title and opportunity.guidance values from the existing branch', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage({
+        extraBody: {
+          resolvedPageHeading: 'Fast, reliable email delivery',
+          pageTopics: [],
+        },
+      });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
+      expect(result.guidance).to.be.null;
+    });
   });
 
   describe('mapClusterToSuggestion', () => {
@@ -610,6 +786,11 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
           overallAlignmentScore: 'fair',
           keywordAnalysis: [{ keyword: 'buy shoes', score: 0.5 }],
         }),
+        adAnalysis: {
+          isBranded: true,
+          intentType: 'navigational',
+          adPromise: 'Promotes the Twilio brand',
+        },
         rank: 2,
       };
 
@@ -626,6 +807,12 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.cluster.gapAnalysis).to.deep.equal({ severity: 'medium' });
       expect(result.data.cluster.overallAlignmentScore).to.equal('fair');
       expect(result.data.cluster.keywordAnalysis).to.deep.equal([{ keyword: 'buy shoes', score: 0.5 }]);
+      // adAnalysis passed through verbatim (spec B.3-(1))
+      expect(result.data.cluster.adAnalysis).to.deep.equal({
+        isBranded: true,
+        intentType: 'navigational',
+        adPromise: 'Promotes the Twilio brand',
+      });
     });
 
     it('lifts recommendation.type to recommendationType and removes type from nested object', () => {
@@ -676,6 +863,28 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.cluster.gapAnalysis).to.deep.equal({});
       expect(result.data.cluster.overallAlignmentScore).to.be.null;
       expect(result.data.cluster.keywordAnalysis).to.deep.equal([]);
+      // adAnalysis is undefined on rolling-deploy clusters (older mystique
+      // omits the key). Mapper MUST coerce to null. Spec B.3-(2).
+      expect(result.data.cluster).to.have.property('adAnalysis');
+      expect(result.data.cluster.adAnalysis).to.be.null;
+    });
+
+    it('preserves explicit null adAnalysis without coercion (spec B.3-(3))', () => {
+      // Mystique emits explicit null when the cluster lacks ad-copy signal
+      // (see spec Decision #3 — producer-internal threshold). The mapper MUST
+      // NOT coerce that null to `{}` because the UI relies on the null to
+      // hide the "What the ad promises" block.
+      const context = { site: { requiresValidation: false } };
+      const cluster = {
+        ...makeCluster(),
+        adAnalysis: null,
+        rank: 1,
+      };
+
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
+
+      expect(result.data.cluster).to.have.property('adAnalysis');
+      expect(result.data.cluster.adAnalysis).to.be.null;
     });
 
     it('uses rank from cluster', () => {

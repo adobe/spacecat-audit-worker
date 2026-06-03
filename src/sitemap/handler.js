@@ -10,6 +10,23 @@
  * governing permissions and limitations under the License.
  */
 
+// FUTURE CONSIDERATIONS FOR ENHANCEMENTS:
+//
+//  ** Audit Worker **
+//    * detect circular redirects
+//    * ensure "money pages" are entries in the sitemap.xml
+//    * detect duplicate entries
+//
+//  ** BackOffice UI **
+//    * bulk Delete ... especially for "rejected" status
+//    * display {50, 100} entries per page
+//    * add "statistics" page: show {how many sitemaps.xml files found, page URLs probed, ??}
+//
+//  ** Front End UI **
+//    * switch display to see all errors by type {"404" + "Redirect"} vs "per sitemap" file
+//    * enhance "redirect" codes by adding {303, 307, 308}
+//    * add new displays in the UI: {"circular redirect" detection, missing "money pages", ...}
+
 import {
   isArray,
 } from '@adobe/spacecat-shared-utils';
@@ -84,7 +101,7 @@ export async function findSitemap(inputUrl, log) {
   if (!siteMapUrlsResult.success) {
     /* c8 ignore start */
     const reasons = siteMapUrlsResult.reasons || [];
-    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason(s)`);
+    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason`);
     reasons.forEach((r, i) => {
       log?.error(`  reason ${i + 1}: error=${r.error ?? '(none)'}, value=${r.value ?? '(none)'}`);
     });
@@ -341,7 +358,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
     /* c8 ignore start */
     const wouldCreate = auditData.suggestions ?? [];
-    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
+    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestions would have been created for ${auditUrl}`);
     wouldCreate.forEach((s, i) => {
       log.info(`.... Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
     });

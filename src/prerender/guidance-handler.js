@@ -11,7 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidLLMOCustomer } from './utils/utils.js';
+import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
@@ -122,12 +122,15 @@ export default async function handler(message, context) {
 
     log.info(`${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
 
-    // Index updateable suggestions by URL for quick lookup
-    const suggestionsByUrl = new Map();
+    // Index updateable suggestions by pathname for domain-shift-safe lookup.
+    // When the preferred base URL changes (e.g. www.example.com → example.com),
+    // Mystique responses may use the new domain while stored suggestions still
+    // carry the old domain — keying by pathname ensures they still match.
+    const suggestionsByPathname = new Map();
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();
       if (dataObj?.url) {
-        suggestionsByUrl.set(dataObj.url, s);
+        suggestionsByPathname.set(toPathname(dataObj.url), s);
       }
     });
 
@@ -153,7 +156,7 @@ export default async function handler(message, context) {
         return;
       }
 
-      const existing = suggestionsByUrl.get(url);
+      const existing = suggestionsByPathname.get(toPathname(url));
       if (!existing) {
         log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;

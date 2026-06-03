@@ -744,14 +744,20 @@ export async function runAuditAndGenerateSuggestions(context) {
     projectedTrafficValue,
   });
 
-  // Generate AI suggestions for detected tags if auto-suggest enabled for site
+  // Call Genvar for AI suggestions whenever this audit path runs
+  // (enablement is handled at onboarding)
   log.info('[PRODUCT-METATAGS] Starting AI auto-suggest');
   const allTags = {
     detectedTags,
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
-  const updatedDetectedTags = await productMetatagsAutoSuggest(allTags, context, site);
+  const updatedDetectedTags = await productMetatagsAutoSuggest(
+    allTags,
+    context,
+    site,
+    { forceAutoSuggest: true },
+  );
   log.info(`[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: ${Object.keys(updatedDetectedTags || {}).length}`);
 
   const auditResult = buildProductMetatagsAuditResult(

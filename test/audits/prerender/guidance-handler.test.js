@@ -966,6 +966,49 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(Suggestion.saveMany).to.have.been.calledOnce;
     });
 
+    it('should fall back to raw URL when suggestion URL is not parseable', async () => {
+      // Use an invalid URL that will cause new URL() to throw
+      const invalidUrlSuggestion = {
+        getId: sinon.stub().returns('suggestion-invalid'),
+        getData: sinon.stub().returns({
+          url: 'not-a-valid-url',
+          isDomainWide: false,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([invalidUrlSuggestion]);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'not-a-valid-url',
+            aiSummary: 'Summary for invalid URL',
+            valuable: true,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // The invalid URL should still match via the catch fallback (raw string comparison)
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(invalidUrlSuggestion.setData).to.have.been.calledOnce;
+      const setDataArg = invalidUrlSuggestion.setData.firstCall.args[0];
+      expect(setDataArg.aiSummary).to.equal('Summary for invalid URL');
+    });
+
     it('should skip suggestions that do not match existing URLs', async () => {
       mockFetchSuccess({
         opportunityId: 'opportunity-123',

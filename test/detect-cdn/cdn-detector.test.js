@@ -593,7 +593,17 @@ describe('cdn-detector', () => {
     });
 
     it('accepts URL with scheme', async () => {
-      const result = await detectCdnFromDnsFallback('https://example.com/path');
+      const mockDns = {
+        promises: {
+          resolve: sinon.stub().rejects(Object.assign(new Error('ENODATA'), { code: 'ENODATA' })),
+          resolve4: sinon.stub().resolves(['192.0.2.1']),
+          reverse: sinon.stub().resolves(['ptr.example.net']),
+        },
+      };
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDns,
+      });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com/path');
       expect(result).to.have.property('cdn');
       expect(['unknown', 'Akamai', 'Cloudflare', 'Fastly', 'CloudFront']).to.include(result.cdn);
     });

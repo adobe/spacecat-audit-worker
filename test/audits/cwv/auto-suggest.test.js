@@ -105,6 +105,32 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.device_type).to.equal('mobile');
     });
 
+    it('should skip processing when CWV auto-suggest is disabled for the site', async () => {
+      const isAuditEnabledStub = sandbox.stub().resolves(false);
+      const { processAutoSuggest: processDisabled } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite: isAuditEnabledStub,
+        },
+      });
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      await processDisabled(context, opportunity, site);
+
+      expect(isAuditEnabledStub).to.have.been.calledOnce;
+      expect(opportunity.getSuggestions).to.not.have.been.called;
+      expect(sqsStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /CWV auto-suggest is disabled, skipping/,
+      );
+    });
+
     it('should include codeBucket and codePath when auto-fix is enabled', async () => {
       // Create a new instance with mocked getCodeInfo
       const getCodeInfoStub = sandbox.stub().resolves({
@@ -165,19 +191,17 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
     });
 
-    it('should NOT include codeBucket and codePath when auto-fix is disabled', async () => {
-      // Create a new instance with mocked getCodeInfo
+    it('should omit codeBucket and codePath when CWV auto-fix is disabled but auto-suggest is enabled', async () => {
       const getCodeInfoStub = sandbox.stub().resolves({
         codeBucket: 'test-bucket',
         codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
       });
 
-      // Mock isAuditEnabledForSite: auto-suggest enabled, auto-fix disabled
       const isAuditEnabledStub = sandbox.stub();
-      isAuditEnabledStub.onFirstCall().resolves(true); // auto-suggest enabled
-      isAuditEnabledStub.onSecondCall().resolves(false); // auto-fix disabled
+      isAuditEnabledStub.onFirstCall().resolves(true);
+      isAuditEnabledStub.onSecondCall().resolves(false);
 
-      const { processAutoSuggest: processWithoutAutoFix } = await esmock('../../../src/cwv/auto-suggest.js', {
+      const { processAutoSuggest: processAutoFixDisabled } = await esmock('../../../src/cwv/auto-suggest.js', {
         '../../../src/common/index.js': {
           isAuditEnabledForSite: isAuditEnabledStub,
         },
@@ -215,16 +239,69 @@ describe('CWV Auto-Suggest', () => {
         }]),
       };
 
-      await processWithoutAutoFix(context, opportunity, siteWithCode);
+      await processAutoFixDisabled(context, opportunity, siteWithCode);
+
+      expect(getCodeInfoStub).to.not.have.been.called;
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.type).to.equal('cwv');
+      expect(message.data).to.not.have.property('codeBucket');
+      expect(message.data).to.not.have.property('codePath');
+    });
+
+    it('should include codeBucket and codePath when site has code (auto-fix flag still checked locally)', async () => {
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const { processAutoSuggest: processWithCodeInfo } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite: sandbox.stub().resolves(true),
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: getCodeInfoStub,
+        },
+      });
+
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processWithCodeInfo(context, opportunity, siteWithCode);
 
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
 
       expect(message.data.type).to.equal('cwv');
-      expect(message.data.codeBucket).to.be.undefined;
-      expect(message.data.codePath).to.be.undefined;
-      // getCodeInfo should not be called when auto-fix is disabled
-      expect(getCodeInfoStub.called).to.be.false;
+      expect(message.data.codeBucket).to.equal('test-bucket');
+      expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
+      expect(getCodeInfoStub.called).to.be.true;
     });
 
     it('should skip group-type suggestions and only send URL-type suggestions', async () => {
@@ -266,9 +343,7 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.suggestionId).to.equal('sugg-url');
     });
 
-    it('should not send messages when feature toggle is disabled', async () => {
-      isAuditEnabledForSite.resolves(false);
-
+    it('sends messages when opportunity has URL-type suggestions (auto-fix flag still checked locally)', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
@@ -288,11 +363,10 @@ describe('CWV Auto-Suggest', () => {
 
       await processAutoSuggest(context, opportunity, site);
 
-      expect(sqsStub.called).to.be.false;
-      expect(context.log.info).to.have.been.calledWith('[audit-worker-cwv] siteId: test-site-id | baseURL: https://example.com | CWV auto-suggest is disabled, skipping');
+      expect(sqsStub.called).to.be.true;
     });
 
-    it('should not send messages for suggestions with existing guidance', async () => {
+    it('should not send messages when a code change is already available', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
@@ -305,6 +379,7 @@ describe('CWV Auto-Suggest', () => {
             type: 'url',
             url: 'https://example.com/page1',
             metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            isCodeChangeAvailable: true,
             issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
           }),
         }]),
@@ -313,6 +388,33 @@ describe('CWV Auto-Suggest', () => {
       await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
+    });
+
+    it('should send messages for NEW suggestions with guidance text but no code change yet (Bug 2 regression)', async () => {
+      // Bug 2: previously, populated issues[*].value blocked re-dispatch even
+      // when no code patch had ever succeeded. Now the dispatch decision is
+      // driven by isCodeChangeAvailable instead.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            // isCodeChangeAvailable not set / null — no successful patch yet
+            issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
     });
 
     it('should not send messages for non-NEW suggestions', async () => {
@@ -589,7 +691,7 @@ describe('CWV Auto-Suggest', () => {
   });
 
   describe('shouldSendAutoSuggestForSuggestion', () => {
-    it('should return true for NEW suggestion without guidance', () => {
+    it('should return true for NEW suggestion without a code change yet', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({ issues: [] }),
@@ -609,10 +711,11 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return false for NEW suggestion with guidance', () => {
+    it('should return false when isCodeChangeAvailable is true', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
+          isCodeChangeAvailable: true,
           issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
@@ -621,11 +724,13 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
 
-    it('should return true for NEW suggestion with empty guidance value', () => {
+    it('should return true when NEW with populated guidance text but no code change (Bug 2 regression)', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '' }],
+          // isCodeChangeAvailable not set — guidance text alone must not block
+          // re-dispatch, otherwise codefix retries are silently dropped forever.
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -633,11 +738,12 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true for NEW suggestion with whitespace-only guidance value', () => {
+    it('should return true when isCodeChangeAvailable is false', () => {
       const suggestion = {
         getStatus: () => 'NEW',
         getData: () => ({
-          issues: [{ type: 'lcp', value: '   ' }],
+          isCodeChangeAvailable: false,
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
         }),
       };
 
@@ -645,15 +751,10 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.true;
     });
 
-    it('should return true when some issues have empty guidance', () => {
+    it('should return true when data is null', () => {
       const suggestion = {
         getStatus: () => 'NEW',
-        getData: () => ({
-          issues: [
-            { type: 'lcp', value: '# LCP Optimization...' },
-            { type: 'cls', value: '' },
-          ],
-        }),
+        getData: () => null,
       };
 
       const result = shouldSendAutoSuggestForSuggestion(suggestion);

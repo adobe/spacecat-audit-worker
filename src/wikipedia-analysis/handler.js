@@ -22,6 +22,7 @@ const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|
 
 const MULTI_PART_TLD_PREFIXES = new Set([
   'co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'mil',
+  'bank', 'firm', 'gen', 'ind', 'res', 'nic',
 ]);
 
 /**
