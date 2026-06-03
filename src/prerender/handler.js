@@ -1172,6 +1172,8 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
       log.error(`${LOG_PREFIX} Failed to refresh metrics on ${toSave.length} preserved path suggestions: ${e.message}`);
     }
   }
+
+  log.debug(`${LOG_PREFIX} Metrics refreshed on ${toSave.length}/${preservableByPattern.size} preserved paths`);
 }
 
 /**
