@@ -141,6 +141,9 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   csp = flattenCSP(csp);
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] CSP information from lighthouse report: ${JSON.stringify(csp)}`);
 
+  // all modern browsers support `strict-dynamic` directive, we don't need related suggestions
+  csp = csp.filter((item) => !item.description?.includes('backward compatible'));
+
   csp.forEach((item) => {
     if (item.description && item.description.includes('nonces or hashes')) {
       // eslint-disable-next-line no-param-reassign
