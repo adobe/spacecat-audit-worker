@@ -888,7 +888,7 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Phase 1: With no data changes and no status change, save should be skipped
+      // With no data changes and no status change, save should be skipped
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
       // Verify that setData is NOT called when data hasn't changed
       expect(existingSuggestions[0].setData).to.not.have.been.called;

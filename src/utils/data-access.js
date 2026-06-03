@@ -489,40 +489,43 @@ export async function syncSuggestions({
   }
 
   // Update existing suggestions - O(N) with Map lookup
-  // Phase 1: Only save suggestions where data or status actually changed
+  // Only save suggestions where data or status actually changed
   const { Suggestion } = context.dataAccess;
   const toUpdate = [];
 
-  existingSuggestions
-    .filter((existing) => {
-      const existingKey = buildKey(existing.getData());
-      return newDataKeys.has(existingKey);
-    })
-    .forEach((existing) => {
-      const existingData = existing.getData();
-      const existingKey = buildKey(existingData);
-      const newDataItem = newDataByKey.get(existingKey);
-      const mergedData = mergeDataFunction(existingData, newDataItem);
-      warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+  // Filter matched suggestions once to avoid redundant buildKey() calls
+  const matchedSuggestions = existingSuggestions.filter((existing) => {
+    const existingKey = buildKey(existing.getData());
+    return newDataKeys.has(existingKey);
+  });
 
-      // Use the merge status function to determine if status should change
-      const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
+  matchedSuggestions.forEach((existing) => {
+    const existingData = existing.getData();
+    const existingKey = buildKey(existingData);
+    const newDataItem = newDataByKey.get(existingKey);
+    // mergeDataFunction must return a new object (not mutate existingData)
+    // for deepEqual comparison to work correctly
+    const mergedData = mergeDataFunction(existingData, newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
-      // Check if data actually changed using deep equality
-      const dataChanged = !deepEqual(existingData, mergedData);
+    // Use the merge status function to determine if status should change
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
 
-      // Only update if something actually changed
-      if (newStatus !== null || dataChanged) {
-        existing.setData(mergedData);
-        if (newStatus !== null) {
-          existing.setStatus(newStatus);
-        }
-        existing.setUpdatedBy('system');
-        toUpdate.push(existing);
-      } else {
-        log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);
+    // Check if data actually changed using deep equality
+    const dataChanged = !deepEqual(existingData, mergedData);
+
+    // Only update if something actually changed
+    if (newStatus !== null || dataChanged) {
+      existing.setData(mergedData);
+      if (newStatus !== null) {
+        existing.setStatus(newStatus);
       }
-    });
+      existing.setUpdatedBy('system');
+      toUpdate.push(existing);
+    } else {
+      log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);
+    }
+  });
 
   if (toUpdate.length > 0) {
     await Suggestion.saveMany(toUpdate);
@@ -530,7 +533,7 @@ export async function syncSuggestions({
   } else {
     log.info('[syncSuggestions] No suggestions required updates');
   }
-  log.debug(`Processed ${existingSuggestions.filter((e) => newDataKeys.has(buildKey(e.getData()))).length} matched suggestions, updated ${toUpdate.length}`);
+  log.debug(`Processed ${matchedSuggestions.length} matched suggestions, updated ${toUpdate.length}`);
 
   const defaultNewSuggestionStatus = newSuggestionStatus
     ?? ((requiresValidation && !isTBYB)
