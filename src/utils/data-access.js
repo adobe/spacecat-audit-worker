@@ -499,16 +499,17 @@ export async function syncSuggestions({
       return newDataKeys.has(existingKey);
     })
     .forEach((existing) => {
-      const existingKey = buildKey(existing.getData());
+      const existingData = existing.getData();
+      const existingKey = buildKey(existingData);
       const newDataItem = newDataByKey.get(existingKey);
-      const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+      const mergedData = mergeDataFunction(existingData, newDataItem);
       warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
       // Use the merge status function to determine if status should change
       const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
 
       // Check if data actually changed using deep equality
-      const dataChanged = !deepEqual(existing.getData(), mergedData);
+      const dataChanged = !deepEqual(existingData, mergedData);
 
       // Only update if something actually changed
       if (newStatus !== null || dataChanged) {
@@ -529,7 +530,7 @@ export async function syncSuggestions({
   } else {
     log.info('[syncSuggestions] No suggestions required updates');
   }
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
+  log.debug(`Processed ${existingSuggestions.filter((e) => newDataKeys.has(buildKey(e.getData()))).length} matched suggestions, updated ${toUpdate.length}`);
 
   const defaultNewSuggestionStatus = newSuggestionStatus
     ?? ((requiresValidation && !isTBYB)
