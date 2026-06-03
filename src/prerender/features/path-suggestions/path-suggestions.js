@@ -103,8 +103,7 @@ export async function buildPathTypeSuggestions(
       return {
         ...s,
         agenticTraffic: agenticHitsMap.get(pathname) || 0,
-        valuable: valuableByPathname.has(pathname)
-          ? valuableByPathname.get(pathname) : true,
+        valuable: valuableByPathname.get(pathname),
       };
     });
 

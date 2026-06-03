@@ -4625,6 +4625,77 @@ describe('Prerender Audit', () => {
       expect(saveManyStub).to.have.been.calledOnce;
       expect(saveManyStub.firstCall.args[0]).to.have.length(1);
     });
+
+    it('logs error when saveMany fails during metrics refresh', async () => {
+      const savedData = { allowedRegexPatterns: ['/products/*'], score: 1, contentGainRatio: 0.5, edgeDeployed: true };
+      const preservedPath = {
+        getId: () => 'path-sug-1',
+        getStatus: () => 'NEW',
+        getData: () => ({ ...savedData }),
+        setData: sinon.stub().callsFake((d) => { Object.assign(savedData, d); }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([preservedPath]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const saveManyStub = sinon.stub().rejects(new Error('DB write failed'));
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/features/path-suggestions/index.js': {
+          findPreservablePathSuggestions: sinon.stub().resolves([preservedPath]),
+          buildPathTypeSuggestions: sinon.stub().resolves([{
+            key: '/products/*|prerender',
+            data: {
+              allowedRegexPatterns: ['/products/*'],
+              score: 3,
+              contentGainRatio: 2,
+              wordCountBefore: 1500,
+              wordCountAfter: 3000,
+              aiReadablePercent: 75,
+            },
+          }]),
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/products/item-1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const logStubs = { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+      const context = {
+        log: logStubs,
+        dataAccess: { Suggestion: { saveMany: saveManyStub } },
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ get: () => true }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(logStubs.error).to.have.been.calledWith(
+        sinon.match(/Failed to refresh metrics on.*preserved path suggestions/),
+      );
+    });
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
@@ -8392,13 +8463,14 @@ describe('Prerender Audit', () => {
       };
     };
 
-    it('should set coveredByDomainWide on NEW suggestions when domain is fully deployed at edge', async () => {
+    it('should set coveredByDomainWide on NEW per-URL and path suggestions when domain is deployed', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newSuggestion1 = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
       const newSuggestion2 = buildSuggestionWithSetData('s2', { url: 'https://example.com/page1' });
+      const pathSuggestion = buildSuggestionWithSetData('ps1', { allowedRegexPatterns: ['/products/*'], score: 2.5 });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2]);
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2, pathSuggestion]);
 
       const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
       const context = buildContext(sandbox, {
@@ -8415,6 +8487,7 @@ describe('Prerender Audit', () => {
       expect(saveManyStub).to.have.been.calledOnce;
       expect(newSuggestion1.getData().coveredByDomainWide).to.equal('dw-1');
       expect(newSuggestion2.getData().coveredByDomainWide).to.equal('dw-1');
+      expect(pathSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking.*per-URL and.*path suggestions as coveredByDomainWide/));
     });

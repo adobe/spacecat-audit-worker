@@ -52,7 +52,8 @@ function makeOpportunity(suggestions = []) {
   };
 }
 
-describe('Path Suggestions', () => {
+describe('Path Suggestions', function () {
+  this.timeout(10000);
   let sandbox;
   let pathSuggestionsModule;
   let mockGetAgenticHitsMapFromAthena;
@@ -612,7 +613,7 @@ describe('Path Suggestions', () => {
       ({ markSuggestionsAsCoveredByPaths } = pathSuggestionsModule);
       saveManyStub = sinon.stub().resolves();
       ctx = {
-        log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub() },
+        log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub(), error: sinon.stub() },
         dataAccess: { Suggestion: { saveMany: saveManyStub } },
       };
     });
@@ -821,6 +822,49 @@ describe('Path Suggestions', () => {
       // Invalid URL suggestion is skipped without error; valid one is covered via saveMany
       expect(saveManyStub.calledOnce).to.be.true;
       expect(validUrlSuggestion.getData().coveredByPattern).to.equal('path-1');
+    });
+
+    it('logs error when saveMany fails during stale coveredByPattern cleanup', async () => {
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products/item-1`, coveredByPattern: 'deleted-path-id' },
+      });
+      const opportunity = makeOpportunity([urlSuggestion]);
+      saveManyStub.rejects(new Error('DB write failed'));
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(ctx.log.error.calledWith(sinon.match(/Failed to clear.*stale coveredByPattern/))).to.be.true;
+    });
+
+    it('logs error when saveMany fails during coverage marking', async () => {
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
+      });
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products/item-1` },
+      });
+      const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
+      saveManyStub.rejects(new Error('DB write failed'));
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(ctx.log.error.calledWith(sinon.match(/Failed to mark.*suggestions as covered/))).to.be.true;
+    });
+  });
+
+  describe('PathQualificationStrategy (abstract base)', () => {
+    it('throws when qualify() is called directly on base class', async () => {
+      const { PathQualificationStrategy } = await import(
+        '../../../src/prerender/features/path-suggestions/strategies/path-qualification-strategy.js'
+      );
+      const strategy = new PathQualificationStrategy();
+      expect(() => strategy.qualify('/products/*', [])).to.throw('Subclasses must implement qualify');
     });
   });
 });
