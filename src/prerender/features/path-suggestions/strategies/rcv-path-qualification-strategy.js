@@ -67,8 +67,7 @@ export class RcvPathQualificationStrategy extends PathQualificationStrategy {
     return {
       qualifies: true,
       score,
-      valuableCount,
-      valuablePercent: parseFloat(valuablePercent.toFixed(1)),
+      contentGainRatio: parseFloat(avgContentGainRatio.toFixed(2)),
     };
   }
 }

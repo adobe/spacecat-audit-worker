@@ -125,12 +125,9 @@ export async function buildPathTypeSuggestions(
   for (const [pathPattern, urls] of groups) {
     const result = strategy.qualify(pathPattern, urls);
     if (result.qualifies) {
-      const { score } = result;
+      const { score, contentGainRatio } = result;
       const wordCountBefore = urls.reduce((sum, u) => sum + (u.wordCountBefore || 0), 0);
       const wordCountAfter = urls.reduce((sum, u) => sum + (u.wordCountAfter || 0), 0);
-      const contentGainRatio = parseFloat(
-        (urls.reduce((sum, u) => sum + (u.contentGainRatio || 0), 0) / urls.length).toFixed(2),
-      );
       const aiReadableCount = urls.filter((u) => u.aiReadable === true).length;
       const aiReadablePercent = parseFloat(((aiReadableCount / urls.length) * 100).toFixed(1));
 
