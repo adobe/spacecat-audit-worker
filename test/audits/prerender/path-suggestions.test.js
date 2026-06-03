@@ -636,6 +636,25 @@ describe('Path Suggestions', () => {
       expect(urlSuggestion.getData().coveredByPattern).to.equal('path-1');
     });
 
+    it('marks the exact root segment URL (e.g. /products with no trailing slash)', async () => {
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
+      });
+      const urlSuggestion = makeSuggestion({
+        id: 'url-1',
+        status: 'NEW',
+        data: { url: `${BASE_URL}/products` },
+      });
+      const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.equal('path-1');
+    });
+
     it('does not mark suggestion if path prefix does not match', async () => {
       const pathSuggestion = makeSuggestion({
         id: 'path-1',

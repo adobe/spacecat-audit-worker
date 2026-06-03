@@ -242,7 +242,8 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
         return false;
       }
       try {
-        return new URL(d.url).pathname.startsWith(`${prefix}/`);
+        const p = new URL(d.url).pathname;
+        return p === prefix || p.startsWith(`${prefix}/`);
       } catch {
         return false;
       }
