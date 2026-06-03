@@ -37,7 +37,6 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
-  PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE,
   PATH_TYPE_METRICS_FIELDS,
 } from './utils/constants.js';
 
@@ -1127,14 +1126,15 @@ async function prepareDomainWideAggregateSuggestion(
 
 /**
  * Refreshes metrics on preserved path suggestions from freshly-built data,
- * keeping status and edgeDeployed untouched.  Saves in chunks via saveMany.
+ * keeping status and edgeDeployed untouched.
  *
  * @param {Array} builtSuggestions - Freshly scored path suggestions ({ data })
  * @param {Map} preservableByPattern - pathPattern → existing suggestion entity
- * @param {Object} dataAccess - Data-access layer (Suggestion.saveMany)
+ * @param {Object} context - Audit context (dataAccess, log)
  * @returns {Promise<void>}
  */
-async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, dataAccess) {
+async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context) {
+  const { dataAccess, log } = context;
   const toSave = [];
   for (const p of builtSuggestions) {
     const existing = preservableByPattern.get(p.data.allowedRegexPatterns?.[0]);
@@ -1155,10 +1155,12 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
     }
   }
 
-  for (let i = 0; i < toSave.length; i += PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE) {
-    const chunk = toSave.slice(i, i + PATH_TYPE_METRICS_REFRESH_CHUNK_SIZE);
-    // eslint-disable-next-line no-await-in-loop
-    await dataAccess.Suggestion.saveMany(chunk);
+  if (toSave.length > 0) {
+    try {
+      await dataAccess.Suggestion.saveMany(toSave);
+    } catch (e) {
+      log.error(`${LOG_PREFIX} Failed to refresh metrics on ${toSave.length} preserved path suggestions: ${e.message}`);
+    }
   }
 }
 
@@ -1294,7 +1296,7 @@ export async function processOpportunityAndSuggestions(
     );
 
     // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
-    await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context.dataAccess);
+    await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context);
 
     newPathSuggestions = builtSuggestions
       .filter((p) => !preservableByPattern.has(p.data.allowedRegexPatterns?.[0]));
