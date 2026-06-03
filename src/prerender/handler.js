@@ -1221,7 +1221,7 @@ export async function processOpportunityAndSuggestions(
   context,
   isPaid,
 ) {
-  const { log } = context;
+  const { log, site } = context;
 
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
@@ -1283,7 +1283,7 @@ export async function processOpportunityAndSuggestions(
   }
 
   // Path suggestions — opt-in per site via prerender.pathSuggestionsEnabled config
-  const pathSuggestionsEnabled = context.site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
+  const pathSuggestionsEnabled = site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
 
   let preservablePaths = [];
   let newPathSuggestions = [];
@@ -1296,7 +1296,7 @@ export async function processOpportunityAndSuggestions(
     const builtSuggestions = await buildPathTypeSuggestions(
       preRenderSuggestions,
       opportunity,
-      context.site,
+      site,
       context,
       { suggestions: cachedSuggestions },
     );
