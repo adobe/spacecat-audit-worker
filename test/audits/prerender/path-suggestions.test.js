@@ -924,6 +924,102 @@ describe('Path Suggestions', function () {
 
       expect(ctx.log.error.calledWith(sinon.match(/Failed to mark.*suggestions as covered/))).to.be.true;
     });
+
+    // ── coveredByDomainWide on path suggestions ───────────────────────────────
+
+    it('marks NEW path suggestions as coveredByDomainWide when domain-wide is deployed', async () => {
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: true },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'] },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(pathSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
+      expect(saveManyStub.calledOnce).to.be.true;
+    });
+
+    it('does not mark path suggestions when domain-wide is NOT deployed', async () => {
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: false },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'] },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(pathSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(saveManyStub.notCalled).to.be.true;
+    });
+
+    it('does not re-mark path suggestions already set as coveredByDomainWide', async () => {
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: true },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], coveredByDomainWide: 'dw-1' },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.notCalled).to.be.true;
+    });
+
+    it('does not mark edgeDeployed path suggestions as coveredByDomainWide', async () => {
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: true },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(pathSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(saveManyStub.notCalled).to.be.true;
+    });
+
+    it('logs error when saveMany fails while marking path suggestions as coveredByDomainWide', async () => {
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: true },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'] },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+      saveManyStub.rejects(new Error('DB write failed'));
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(ctx.log.error.calledWith(sinon.match(/Failed to mark.*path suggestions as coveredByDomainWide/))).to.be.true;
+    });
   });
 
   describe('PathQualificationStrategy (abstract base)', () => {

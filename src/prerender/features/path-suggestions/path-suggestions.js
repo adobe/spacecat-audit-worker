@@ -13,6 +13,7 @@
 import { getAgenticHitsMapFromAthena } from '../../../utils/agentic-urls.js';
 import {
   isPathSuggestionData,
+  isDomainWideSuggestionData,
   extractPathType,
   shouldPreservePathSuggestion,
   isEligibleStatus,
@@ -163,6 +164,9 @@ export async function buildPathTypeSuggestions(
  * `coveredByDomainWide` which is reserved for domain-wide coverage. Rollback handlers
  * in the shared client clear only their own field.
  *
+ * Also marks NEW path suggestions as `coveredByDomainWide` when a domain-wide suggestion
+ * is deployed — path-level rules are redundant while domain-wide (/*) is active.
+ *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} context - Audit context (must include dataAccess for bulk saves)
  * @returns {Promise<void>}
@@ -199,46 +203,74 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
     }
   }
 
-  if (deployedPaths.length === 0) {
-    return;
-  }
+  // Mark per-URL suggestions covered by each deployed path suggestion
+  if (deployedPaths.length > 0) {
+    const newSuggestions = suggestions.filter(
+      (s) => s.getStatus() === 'NEW'
+        && !isPathSuggestionData(s.getData())
+        && !s.getData()?.isDomainWide
+        && !s.getData()?.edgeDeployed,
+    );
 
-  const newSuggestions = suggestions.filter(
-    (s) => s.getStatus() === 'NEW'
-      && !isPathSuggestionData(s.getData())
-      && !s.getData()?.isDomainWide
-      && !s.getData()?.edgeDeployed,
-  );
+    for (const pathSuggestion of deployedPaths) {
+      const pathPat = pathSuggestion.getData().allowedRegexPatterns?.[0];
+      const prefix = pathPat.replace('/*', '');
+      const pathId = pathSuggestion.getId();
 
-  for (const pathSuggestion of deployedPaths) {
-    const pathPat = pathSuggestion.getData().allowedRegexPatterns?.[0];
-    const prefix = pathPat.replace('/*', '');
-    const pathId = pathSuggestion.getId();
+      const toCover = newSuggestions.filter((s) => {
+        const d = s.getData();
+        if (d?.coveredByPattern || d?.coveredByDomainWide) {
+          return false;
+        }
+        try {
+          const p = new URL(d.url).pathname;
+          return p === prefix || p.startsWith(`${prefix}/`);
+        } catch {
+          return false;
+        }
+      });
 
-    const toCover = newSuggestions.filter((s) => {
-      const d = s.getData();
-      if (d?.coveredByPattern || d?.coveredByDomainWide) {
-        return false;
-      }
-      try {
-        const p = new URL(d.url).pathname;
-        return p === prefix || p.startsWith(`${prefix}/`);
-      } catch {
-        return false;
-      }
-    });
-
-    if (toCover.length > 0) {
-      toCover.forEach((s) => s.setData({ ...s.getData(), coveredByPattern: pathId }));
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await dataAccess.Suggestion.saveMany(toCover);
-        log.info(
-          `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
-        );
-      } catch (e) {
-        log.error(`${LOG_PREFIX} Failed to mark ${toCover.length} suggestions as covered by ${pathPat}: ${e.message}`);
+      if (toCover.length > 0) {
+        toCover.forEach((s) => s.setData({ ...s.getData(), coveredByPattern: pathId }));
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await dataAccess.Suggestion.saveMany(toCover);
+          log.info(
+            `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
+          );
+        } catch (e) {
+          log.error(`${LOG_PREFIX} Failed to mark ${toCover.length} suggestions as covered by ${pathPat}: ${e.message}`);
+        }
       }
     }
+  }
+
+  // Mark NEW path suggestions as coveredByDomainWide when domain-wide is deployed.
+  // Path-level rules are redundant while the domain-wide /* rule is active.
+  const deployedDomainWide = suggestions.find(
+    (s) => isDomainWideSuggestionData(s.getData()) && !!s.getData().edgeDeployed,
+  );
+  if (!deployedDomainWide) {
+    return;
+  }
+  const domainWideId = deployedDomainWide.getId();
+  const pathsToCoverByDomainWide = suggestions.filter((s) => {
+    const d = s.getData();
+    return isPathSuggestionData(d)
+      && s.getStatus() === 'NEW'
+      && !d.edgeDeployed
+      && !d.coveredByDomainWide;
+  });
+  if (pathsToCoverByDomainWide.length === 0) {
+    return;
+  }
+  pathsToCoverByDomainWide.forEach(
+    (s) => s.setData({ ...s.getData(), coveredByDomainWide: domainWideId }),
+  );
+  try {
+    await dataAccess.Suggestion.saveMany(pathsToCoverByDomainWide);
+    log.info(`${LOG_PREFIX} Marked ${pathsToCoverByDomainWide.length} path suggestions as coveredByDomainWide=${domainWideId}`);
+  } catch (e) {
+    log.error(`${LOG_PREFIX} Failed to mark ${pathsToCoverByDomainWide.length} path suggestions as coveredByDomainWide: ${e.message}`);
   }
 }
