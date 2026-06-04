@@ -1,3 +1,10 @@
+## [1.459.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.4...v1.459.5) (2026-06-04)
+
+
+### Bug Fixes
+
+* **preflight:** detect broken links rewritten by AEM cq-LinkChecker (SITES-46032) ([#2603](https://github.com/adobe/spacecat-audit-worker/issues/2603)) ([2d69f14](https://github.com/adobe/spacecat-audit-worker/commit/2d69f14d923b9427eb14b04cf43901f250446535))
+
 ## [1.459.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.3...v1.459.4) (2026-06-04)
 
 
