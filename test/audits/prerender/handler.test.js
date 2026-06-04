@@ -2962,6 +2962,67 @@ describe('Prerender Audit', () => {
         }
       });
 
+      it('should scope domain-wide allowedRegexPatterns and pathPattern to site subpath', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opportunity-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(false),
+            mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+            toPathname: (url) => { try { return new URL(url).pathname; } catch { return url; } },
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site-id',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://nba.com/timberwolves/roster',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 300,
+            }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: { Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) } },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://nba.com/timberwolves', auditData, context, false,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const { newData } = syncSuggestionsStub.firstCall.args[0];
+        const dw = newData.find((item) => item.data?.isDomainWide === true);
+
+        expect(dw, 'domain-wide suggestion must exist').to.exist;
+        expect(dw.data.pathPattern).to.equal('/timberwolves/*');
+        expect(dw.data.allowedRegexPatterns).to.deep.equal(['/timberwolves/*']);
+        // Verify the pattern works as a regex for both pathname and full URL
+        const re = new RegExp(dw.data.allowedRegexPatterns[0]);
+        expect(re.test('/timberwolves/roster')).to.be.true;
+        expect(re.test('/timberwolves')).to.be.true;
+        expect(re.test('/other-page')).to.be.false;
+        expect(re.test('https://nba.com/timberwolves/roster')).to.be.true;
+        expect(re.test('https://nba.com/other-page')).to.be.false;
+      });
+
       it('should use constant key for domain-wide aggregate suggestion to ensure uniqueness', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
