@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -308,6 +308,19 @@ export async function runAuditAndSendToMystique(context) {
               );
 
               opportunityMap[code] = opportunity;
+
+              // Temporary: hide newly-created Opps from the UI until it is updated to
+              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
+              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
+              // the UI ships support for these types, drop this block and bulk-flip any
+              // accumulated IGNORED rows back to NEW.
+              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
+                opportunity.setStatus(Oppty.STATUSES.IGNORED);
+                opportunity.setUpdatedBy('system');
+                await opportunity.save();
+                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
+              }
+
               existingSuggestions = await opportunity.getSuggestions();
 
               await syncSuggestions({
