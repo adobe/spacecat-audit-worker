@@ -781,7 +781,9 @@ describe('Path Suggestions', function () {
       expect(saveManyStub.notCalled).to.be.true;
     });
 
-    it('does not re-mark suggestions already covered by domain-wide', async () => {
+    it('also sets coveredByPattern when suggestion already has coveredByDomainWide', async () => {
+      // Both fields are independent — a per-URL suggestion should hold both locks
+      // so rollback of either deployment alone does not prematurely resurface it.
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
@@ -796,7 +798,9 @@ describe('Path Suggestions', function () {
 
       await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(saveManyStub.notCalled).to.be.true;
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(urlSuggestion.getData().coveredByPattern).to.equal('path-1');
+      expect(urlSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
     });
 
     it('self-heals: clears stale coveredByPattern refs to undeployed path suggestions', async () => {

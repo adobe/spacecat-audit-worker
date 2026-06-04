@@ -219,7 +219,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
       const toCover = newSuggestions.filter((s) => {
         const d = s.getData();
-        if (d?.coveredByPattern || d?.coveredByDomainWide) {
+        if (d?.coveredByPattern) {
           return false;
         }
         try {
