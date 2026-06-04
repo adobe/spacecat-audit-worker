@@ -1639,6 +1639,81 @@ describe('Prerender Audit', () => {
         expect(s3SendStub).to.have.been.called;
       });
 
+      it('should forward generatePrompts:true to Mystique SQS message in normal audit path', async () => {
+        const sendMessageStub = sandbox.stub().resolves();
+        const convertToOpportunityStub = sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'test-site-id',
+        });
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: async () => ({
+              needsPrerender: true,
+              contentGainRatio: 0.8,
+              wordCountBefore: 10,
+              wordCountAfter: 200,
+            }),
+          },
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const url = 'https://example.com/page1';
+        const scrapeResultPaths = new Map([[url, '/path/to/result']]);
+
+        // Return HTML for .html S3 keys; NoSuchKey for JSON; resolve for PutObject
+        const s3SendStub = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand') {
+            if (cmd.input.Key.endsWith('.html')) {
+              return Promise.resolve({
+                Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+              });
+            }
+            return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+          }
+          return Promise.resolve({}); // PutObjectCommand (uploadStatusSummaryToS3)
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+            getRegion: () => 'US',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          sqs: { sendMessage: sendMessageStub },
+          s3Client: { send: s3SendStub },
+          log: {
+            info: sandbox.stub(), debug: sandbox.stub(),
+            warn: sandbox.stub(), error: sandbox.stub(),
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue',
+          },
+          scrapeResultPaths,
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(sendMessageStub).to.have.been.called;
+        const sqsPayload = sendMessageStub.getCall(0).args[1];
+        expect(sqsPayload.data.generatePrompts).to.equal(true);
+      });
+
       it('should handle errors gracefully', async function testHandleErrorsGracefully() {
         this.timeout(5000); // Increase timeout to 5 seconds
         const context = {

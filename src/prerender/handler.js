@@ -890,7 +890,6 @@ export async function importTopPages(context) {
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
     auditContext: {
-      ...auditContext,
       ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
         ? { urls: auditContext.urls }
         : {}),
@@ -947,7 +946,6 @@ export async function submitForScraping(context) {
         pageLoadTimeout: 20000,
         storagePrefix: AUDIT_TYPE,
       },
-      // Forward generatePrompts so it survives in auditContext for Step 3
       auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
     };
   }
@@ -1056,7 +1054,6 @@ export async function submitForScraping(context) {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
     },
-    // Forward generatePrompts so it survives in auditContext for Step 3
     auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   };
 }
