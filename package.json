@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.459.0",
+  "version": "1.459.1",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -176,9 +176,9 @@
     "@adobe/fetch": "4.3.0"
   },
   "lint-staged": {
-    "*.js": "eslint",
-    "*.ts": "eslint",
-    "*.cjs": "eslint"
+    "*.js": "eslint --fix",
+    "*.ts": "eslint --fix",
+    "*.cjs": "eslint --fix"
   },
   "nodemonConfig": {
     "exec": "node --inspect ./test/dev/server.mjs",
