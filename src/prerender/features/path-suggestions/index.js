@@ -15,6 +15,8 @@ export {
   findPreservablePathSuggestions,
   buildPathTypeSuggestions,
   markSuggestionsAsCoveredByPaths,
+  refreshPreservedPathMetrics,
+  mergePathSuggestionData,
 } from './path-suggestions.js';
 
 export { PathQualificationStrategy } from './strategies/path-qualification-strategy.js';

@@ -29,6 +29,8 @@ import {
   buildPathTypeSuggestions,
   findPreservablePathSuggestions,
   markSuggestionsAsCoveredByPaths,
+  refreshPreservedPathMetrics,
+  mergePathSuggestionData,
 } from './features/path-suggestions/index.js';
 import {
   CONTENT_GAIN_THRESHOLD,
@@ -38,7 +40,6 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
-  PATH_TYPE_METRICS_FIELDS,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -1135,48 +1136,6 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
- * Refreshes metrics on preserved path suggestions from freshly-built data,
- * keeping status and edgeDeployed untouched.
- *
- * @param {Array} builtSuggestions - Freshly scored path suggestions ({ data })
- * @param {Map} preservableByPattern - pathPattern → existing suggestion entity
- * @param {Object} context - Audit context (dataAccess, log)
- * @returns {Promise<void>}
- */
-async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context) {
-  const { dataAccess, log } = context;
-  const toSave = [];
-  for (const p of builtSuggestions) {
-    const existing = preservableByPattern.get(p.data.allowedRegexPatterns?.[0]);
-    if (existing) {
-      const currentData = existing.getData();
-      const updatedData = { ...currentData };
-      let changed = false;
-      for (const field of PATH_TYPE_METRICS_FIELDS) {
-        if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
-          updatedData[field] = p.data[field];
-          changed = true;
-        }
-      }
-      if (changed) {
-        existing.setData(updatedData);
-        toSave.push(existing);
-      }
-    }
-  }
-
-  if (toSave.length > 0) {
-    try {
-      await dataAccess.Suggestion.saveMany(toSave);
-    } catch (e) {
-      log.error(`${LOG_PREFIX} Failed to refresh metrics on ${toSave.length} preserved path suggestions: ${e.message}`);
-    }
-  }
-
-  log.debug(`${LOG_PREFIX} Metrics refreshed on ${toSave.length}/${preservableByPattern.size} preserved paths`);
-}
-
-/**
  * Builds a merge function for syncSuggestions that handles three suggestion types:
  * - Path-type: preserves edgeDeployed and coveredByDomainWide from existing data
  * - Domain-wide: replaces data entirely (preserves edgeDeployed via its own logic)
@@ -1187,18 +1146,9 @@ async function refreshPreservedPathMetrics(builtSuggestions, preservableByPatter
  */
 export function buildMergeDataFunction(mapSuggestionDataFn) {
   return (existingData, newDataItem) => {
-    // Path-type: preserve edgeDeployed (coveredByPattern is set post-sync by
-    // markSuggestionsAsCoveredByPaths and only applies to per-URL suggestions)
-    const isPath = newDataItem.key && Array.isArray(newDataItem.data?.allowedRegexPatterns)
-      && !newDataItem.data?.isDomainWide;
-    if (isPath) {
-      return {
-        ...newDataItem.data,
-        ...(existingData?.edgeDeployed !== undefined
-          && { edgeDeployed: existingData.edgeDeployed }),
-        ...(existingData?.coveredByDomainWide !== undefined
-          && { coveredByDomainWide: existingData.coveredByDomainWide }),
-      };
+    // Path-type: preserve edgeDeployed and coveredByDomainWide across re-scoring
+    if (newDataItem.key && isPathSuggestionData(newDataItem.data)) {
+      return mergePathSuggestionData(existingData, newDataItem.data);
     }
     // Domain-wide: replace data (preserves own edgeDeployed via its own logic)
     if (newDataItem.key) {

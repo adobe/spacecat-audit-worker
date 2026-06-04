@@ -19,6 +19,7 @@ import {
   isEligibleStatus,
   toPathname,
 } from '../../utils/utils.js';
+import { PATH_TYPE_METRICS_FIELDS } from '../../utils/constants.js';
 import { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
 
 // Re-export so callers can import strategy alongside suggestion functions
@@ -277,4 +278,63 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
   } catch (e) {
     log.error(`${LOG_PREFIX} Failed to mark ${pathsToCoverByDomainWide.length} path suggestions as coveredByDomainWide: ${e.message}`);
   }
+}
+
+/**
+ * Refreshes metrics on preserved path suggestions from freshly-built data,
+ * keeping status and edgeDeployed untouched.
+ *
+ * @param {Array} builtSuggestions - Freshly scored path suggestions ({ data })
+ * @param {Map} preservableByPattern - pathPattern → existing suggestion entity
+ * @param {Object} context - Audit context (dataAccess, log)
+ * @returns {Promise<void>}
+ */
+export async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context) {
+  const { dataAccess, log } = context;
+  const toSave = [];
+  for (const p of builtSuggestions) {
+    const existing = preservableByPattern.get(p.data.allowedRegexPatterns?.[0]);
+    if (existing) {
+      const currentData = existing.getData();
+      const updatedData = { ...currentData };
+      let changed = false;
+      for (const field of PATH_TYPE_METRICS_FIELDS) {
+        if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
+          updatedData[field] = p.data[field];
+          changed = true;
+        }
+      }
+      if (changed) {
+        existing.setData(updatedData);
+        toSave.push(existing);
+      }
+    }
+  }
+
+  if (toSave.length > 0) {
+    try {
+      await dataAccess.Suggestion.saveMany(toSave);
+    } catch (e) {
+      log.error(`${LOG_PREFIX} Failed to refresh metrics on ${toSave.length} preserved path suggestions: ${e.message}`);
+    }
+  }
+
+  log.debug(`${LOG_PREFIX} Metrics refreshed on ${toSave.length}/${preservableByPattern.size} preserved paths`);
+}
+
+/**
+ * Merges new path suggestion data onto existing data, preserving edgeDeployed and
+ * coveredByDomainWide so that deployment state survives re-scoring across audit runs.
+ *
+ * @param {Object} existingData - Currently stored suggestion data
+ * @param {Object} newData - Freshly scored suggestion data
+ * @returns {Object} Merged data object
+ */
+export function mergePathSuggestionData(existingData, newData) {
+  return {
+    ...newData,
+    ...(existingData?.edgeDeployed !== undefined && { edgeDeployed: existingData.edgeDeployed }),
+    ...(existingData?.coveredByDomainWide !== undefined
+      && { coveredByDomainWide: existingData.coveredByDomainWide }),
+  };
 }
