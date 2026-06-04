@@ -496,10 +496,10 @@ async function compareHtmlContent(url, context) {
   const isErrorPage = !!metadata?.isErrorPage;
 
   if (isErrorPage) {
-    log.warn(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
+    log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
     return {
       url,
-      error: true,
+      error: false,
       needsPrerender: false,
       isErrorPage: true,
       hasScrapeMetadata,

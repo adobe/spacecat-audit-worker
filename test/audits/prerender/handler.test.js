@@ -6800,8 +6800,9 @@ describe('Prerender Audit', () => {
         expect(analyzeHtmlStub.called).to.be.false;
         expect(result.auditResult.results[0].isErrorPage).to.be.true;
         expect(result.auditResult.results[0].needsPrerender).to.be.false;
-        const warnMessages = context.log.warn.args.map((call) => call[0]);
-        expect(warnMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
+        expect(result.auditResult.results[0].error).to.be.false;
+        const infoMessages = context.log.info.args.map((call) => call[0]);
+        expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
       });
 
       it('should build S3 path without path segment for root URLs', async () => {
