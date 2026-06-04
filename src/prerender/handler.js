@@ -499,7 +499,7 @@ async function compareHtmlContent(url, context) {
     log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
     return {
       url,
-      error: false,
+      error: true,
       needsPrerender: false,
       isErrorPage: true,
       hasScrapeMetadata,

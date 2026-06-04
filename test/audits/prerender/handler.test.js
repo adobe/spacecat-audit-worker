@@ -6800,7 +6800,7 @@ describe('Prerender Audit', () => {
         expect(analyzeHtmlStub.called).to.be.false;
         expect(result.auditResult.results[0].isErrorPage).to.be.true;
         expect(result.auditResult.results[0].needsPrerender).to.be.false;
-        expect(result.auditResult.results[0].error).to.be.false;
+        expect(result.auditResult.results[0].error).to.be.true;
         const infoMessages = context.log.info.args.map((call) => call[0]);
         expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
       });
