@@ -264,14 +264,16 @@ function buildStatusFilter(statuses) {
 
 async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [], statuses = [],
+    periods, startDate, endDate, databaseName, tableName, site, limit,
+    excludedUrlSuffixes = [], statuses = [],
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters, site);
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const start = startDate ?? periods.weeks[periods.weeks.length - 1].startDate;
+  const end = endDate ?? periods.weeks[periods.weeks.length - 1].endDate;
   const whereClause = buildWhereClause(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    [buildDateFilter(start, end)],
     siteFilters,
   );
 
@@ -298,8 +300,8 @@ async function createTopUrlsQueryWithLimit(options) {
 }
 
 /**
- * Builds a SQL query that returns url + total_hits over a multi-week window.
- * Used by getAgenticHitsMapFromAthena for path-level suggestion scoring.
+ * Builds a SQL query that returns url + total_hits over a custom date window.
+ * Delegates to createTopUrlsQueryWithLimit with explicit startDate/endDate.
  *
  * @param {Object} options
  * @param {Object} options.startDate - Earliest date of the window (inclusive)
@@ -311,27 +313,8 @@ async function createTopUrlsQueryWithLimit(options) {
  * @param {Array<string>} [options.excludedUrlSuffixes]
  * @returns {Promise<string>} SQL query string
  */
-async function createTopUrlsWithHitsQuery(options) {
-  const {
-    startDate, endDate, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
-  } = options;
-
-  const filters = site.getConfig().getLlmoCdnlogsFilter();
-  const siteFilters = buildSiteFilters(filters, site);
-  const whereClause = buildWhereClause(
-    [buildDateFilter(startDate, endDate)],
-    siteFilters,
-  );
-
-  const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
-
-  return loadSql('top-agentic-urls-by-limit', {
-    databaseName,
-    tableName,
-    whereClause,
-    limit,
-    excludedUrlSuffixesFilter,
-  });
+function createTopUrlsWithHitsQuery(options) {
+  return createTopUrlsQueryWithLimit(options);
 }
 
 export const weeklyBreakdownQueries = {
