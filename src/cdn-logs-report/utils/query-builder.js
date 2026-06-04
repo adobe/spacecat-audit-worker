@@ -325,7 +325,7 @@ async function createTopUrlsWithHitsQuery(options) {
 
   const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
 
-  return loadSql('top-agentic-urls-with-hits', {
+  return loadSql('top-agentic-urls-by-limit', {
     databaseName,
     tableName,
     whereClause,
