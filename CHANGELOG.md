@@ -1,3 +1,10 @@
+## [1.459.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.1...v1.459.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* prompt generation as part of RCV audit flow ([#2309](https://github.com/adobe/spacecat-audit-worker/issues/2309)) ([4159538](https://github.com/adobe/spacecat-audit-worker/commit/4159538db6119b408c1e41ab10166da9df64ada0))
+
 ## [1.459.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.0...v1.459.1) (2026-06-03)
 
 
