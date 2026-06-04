@@ -704,4 +704,167 @@ describe('preflight/links-checks - runLinksChecks', () => {
       ]);
     });
   });
+
+  // ── cq-LinkChecker broken link detection ──────────────────────────────────
+  describe('cq-LinkChecker broken link detection', () => {
+    it('reports a same-origin cq-LinkChecker--invalid image as a broken internal link without probing', async () => {
+      const html = `
+        <p>
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/missing.html">
+          Missing page
+          <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+        </p>
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(result.auditResult.brokenInternalLinks[0].status).to.equal(404);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    });
+
+    it('reports a cross-origin cq-LinkChecker--invalid image as a broken external link', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: https://external.example.com/gone">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/gone');
+      expect(result.auditResult.brokenExternalLinks[0].status).to.equal(404);
+    });
+
+    it('resolves a bare relative href correctly against pageUrl', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: microt.com">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/microt.com');
+    });
+
+    it('resolves an absolute content path against pageUrl origin', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/this-page-does-not-exist.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/this-page-does-not-exist.html');
+    });
+
+    it('reports both a probed broken link and a cq-LinkChecker broken link on the same page', async () => {
+      fetchStub.resolves(makeResponse(404));
+      const html = `
+        <a href="https://external.example.com/probe-me">probe this</a>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/aem-broken.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/probe-me');
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/aem-broken.html');
+    });
+
+    it('ignores cq-LinkChecker--prefix image that does not have cq-LinkChecker--invalid class', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('ignores cq-LinkChecker--invalid image whose alt does not match the expected pattern', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="some other text">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('does not report a cq-LinkChecker--invalid image inside an excludedElementClasses subtree', async () => {
+      const html = `
+        <div class="skip-me">
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/excluded.html">
+        </div>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/included.html">
+      `;
+      const result = await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['skip-me'] },
+      );
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/included.html');
+    });
+
+    it('makes no fetch calls for cq-LinkChecker-sourced broken links', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/a.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/b.html">
+      `;
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('silently skips a cq-LinkChecker--invalid image whose alt contains an unparseable URL', async () => {
+      // http://[invalid triggers a URL parse error (malformed IPv6 literal)
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: http://[invalid">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/valid.html');
+    });
+
+    it('skips non-HTTP schemes (mailto:, tel:) to match the checkLinkStatus protocol guard', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: mailto:noreply@example.com">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: tel:+15550001234">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/real-broken.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/real-broken.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('deduplicates multiple cq-LinkChecker images pointing to the same URL', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+  });
 });
