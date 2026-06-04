@@ -19,6 +19,4 @@ export {
   mergePathSuggestionData,
 } from './path-suggestions.js';
 
-export { PathQualificationStrategy } from './strategies/path-qualification-strategy.js';
-
-export { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
+export { createRcvQualifier } from './strategies/rcv-path-qualification-strategy.js';

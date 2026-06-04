@@ -15,37 +15,34 @@ import {
   PATH_TYPE_MIN_VALUABLE_PCT,
   PATH_TYPE_SCORE_THRESHOLD,
 } from '../../../utils/constants.js';
-import { PathQualificationStrategy } from './path-qualification-strategy.js';
 
 /**
- * Qualification strategy that mirrors rcv-scoring-dashboard's computeScore formula exactly.
+ * Creates a path qualification function using the rcv-scoring-dashboard formula.
+ * Returns a qualify(pathPattern, urls) function bound to the given thresholds.
  *
- * @extends PathQualificationStrategy
+ * @param {Object} [options]
+ * @param {number} [options.minUrls]
+ * @param {number} [options.minValuablePct]
+ * @param {number} [options.scoreThreshold]
+ * @returns {Function} qualify(pathPattern, urls) → { qualifies, score, reason? }
  */
-export class RcvPathQualificationStrategy extends PathQualificationStrategy {
-  constructor({
-    minUrls = PATH_TYPE_MIN_URLS,
-    minValuablePct = PATH_TYPE_MIN_VALUABLE_PCT,
-    scoreThreshold = PATH_TYPE_SCORE_THRESHOLD,
-  } = {}) {
-    super();
-    this.minUrls = minUrls;
-    this.minValuablePct = minValuablePct;
-    this.scoreThreshold = scoreThreshold;
-  }
-
-  qualify(pathPattern, urls) {
-    if (urls.length < this.minUrls) {
-      return { qualifies: false, score: 0, reason: `urlCount ${urls.length} < minUrls ${this.minUrls}` };
+export function createRcvQualifier({
+  minUrls = PATH_TYPE_MIN_URLS,
+  minValuablePct = PATH_TYPE_MIN_VALUABLE_PCT,
+  scoreThreshold = PATH_TYPE_SCORE_THRESHOLD,
+} = {}) {
+  return function qualify(pathPattern, urls) {
+    if (urls.length < minUrls) {
+      return { qualifies: false, score: 0, reason: `urlCount ${urls.length} < minUrls ${minUrls}` };
     }
 
     const valuableCount = urls.filter((u) => u.valuable === true).length;
     const valuablePercent = (valuableCount / urls.length) * 100;
-    if (valuablePercent < this.minValuablePct) {
+    if (valuablePercent < minValuablePct) {
       return {
         qualifies: false,
         score: 0,
-        reason: `valuablePercent ${valuablePercent.toFixed(1)}% < minValuablePct ${this.minValuablePct}%`,
+        reason: `valuablePercent ${valuablePercent.toFixed(1)}% < minValuablePct ${minValuablePct}%`,
       };
     }
 
@@ -60,8 +57,8 @@ export class RcvPathQualificationStrategy extends PathQualificationStrategy {
       / urls.length;
     const score = parseFloat((weightedValuableTraffic + avgContentGainRatio).toFixed(4));
 
-    if (score < this.scoreThreshold) {
-      return { qualifies: false, score, reason: `score ${score} < scoreThreshold ${this.scoreThreshold}` };
+    if (score < scoreThreshold) {
+      return { qualifies: false, score, reason: `score ${score} < scoreThreshold ${scoreThreshold}` };
     }
 
     return {
@@ -69,5 +66,5 @@ export class RcvPathQualificationStrategy extends PathQualificationStrategy {
       score,
       contentGainRatio: parseFloat(avgContentGainRatio.toFixed(2)),
     };
-  }
+  };
 }

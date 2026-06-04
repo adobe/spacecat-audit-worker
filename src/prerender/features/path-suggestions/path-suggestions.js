@@ -20,10 +20,9 @@ import {
   toPathname,
 } from '../../utils/utils.js';
 import { PATH_TYPE_METRICS_FIELDS } from '../../utils/constants.js';
-import { RcvPathQualificationStrategy } from './strategies/rcv-path-qualification-strategy.js';
+import { createRcvQualifier } from './strategies/rcv-path-qualification-strategy.js';
 
-// Re-export so callers can import strategy alongside suggestion functions
-export { RcvPathQualificationStrategy, extractPathType };
+export { extractPathType, createRcvQualifier };
 
 const LOG_PREFIX = '[prerender][path-suggestions]';
 
@@ -54,8 +53,7 @@ export async function findPreservablePathSuggestions(opportunity, log, suggestio
  * @param {Object} site - SpaceCat site entity
  * @param {Object} context - Audit context (log, etc.)
  * @param {Object} [options] - Optional overrides
- * @param {Object} [options.strategy] - Qualification strategy
- *   (default: RcvPathQualificationStrategy)
+ * @param {Function} [options.qualify] - qualify(pathPattern, urls) function (default: rcv scorer)
  * @param {Array} [options.suggestions] - Pre-fetched suggestions (avoids redundant DB call)
  * @returns {Promise<Array>} Array of { key, data } path suggestion objects
  */
@@ -64,7 +62,7 @@ export async function buildPathTypeSuggestions(
   opportunity,
   site,
   context,
-  { strategy = new RcvPathQualificationStrategy(), suggestions } = {},
+  { qualify = createRcvQualifier(), suggestions } = {},
 ) {
   const { log } = context;
 
@@ -125,7 +123,7 @@ export async function buildPathTypeSuggestions(
   // 5. Qualify and score each path group
   const results = [];
   for (const [pathPattern, urls] of groups) {
-    const result = strategy.qualify(pathPattern, urls);
+    const result = qualify(pathPattern, urls);
     if (result.qualifies) {
       const { score, contentGainRatio } = result;
       const wordCountBefore = urls.reduce((sum, u) => sum + (u.wordCountBefore || 0), 0);
