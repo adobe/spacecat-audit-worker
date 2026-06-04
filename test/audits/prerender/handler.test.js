@@ -1644,6 +1644,7 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves({
           getId: () => 'opportunity-123',
           getSiteId: () => 'test-site-id',
+          getSuggestions: sandbox.stub().resolves([]),
         });
         const syncSuggestionsStub = sandbox.stub().resolves();
 

@@ -577,9 +577,9 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
  * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
- * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
  *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
+ * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
 async function sendPrerenderGuidanceRequestToMystique(
