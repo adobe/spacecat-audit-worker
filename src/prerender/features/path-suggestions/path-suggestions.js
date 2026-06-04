@@ -212,6 +212,7 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
         && !s.getData()?.edgeDeployed,
     );
 
+    const allToCover = [];
     for (const pathSuggestion of deployedPaths) {
       const pathPat = pathSuggestion.getData().allowedRegexPatterns?.[0];
       const prefix = pathPat.replace('/*', '');
@@ -232,15 +233,18 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
       if (toCover.length > 0) {
         toCover.forEach((s) => s.setData({ ...s.getData(), coveredByPattern: pathId }));
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          await dataAccess.Suggestion.saveMany(toCover);
-          log.info(
-            `${LOG_PREFIX} Path ${pathPat}: marked ${toCover.length} suggestions as coveredByPattern=${pathId}`,
-          );
-        } catch (e) {
-          log.error(`${LOG_PREFIX} Failed to mark ${toCover.length} suggestions as covered by ${pathPat}: ${e.message}`);
-        }
+        log.info(
+          `${LOG_PREFIX} Path ${pathPat}: marking ${toCover.length} suggestions as coveredByPattern=${pathId}`,
+        );
+        allToCover.push(...toCover);
+      }
+    }
+
+    if (allToCover.length > 0) {
+      try {
+        await dataAccess.Suggestion.saveMany(allToCover);
+      } catch (e) {
+        log.error(`${LOG_PREFIX} Failed to mark ${allToCover.length} suggestions as coveredByPattern: ${e.message}`);
       }
     }
   }

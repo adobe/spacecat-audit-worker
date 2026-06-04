@@ -14,6 +14,10 @@
  * Base class for path qualification strategies.
  * Subclasses must implement `qualify(pathPattern, urls)`.
  *
+ * Currently has one concrete implementation (RcvPathQualificationStrategy).
+ * Additional strategies (e.g. traffic-only, content-quality-only) are planned
+ * for future PRs to allow per-site or per-org strategy selection.
+ *
  * @abstract
  */
 export class PathQualificationStrategy {

@@ -220,9 +220,10 @@ export async function getAgenticHitsMapFromAthena(
     label: 'Agentic Hits Map',
     emptyValue: new Map(),
     buildQuery: async (s3Config) => {
-      // 4-week window: from 4 weeks ago to 1 week ago
-      const { startDate } = generateReportingPeriods(new Date(), -4).weeks[0];
-      const { endDate } = generateReportingPeriods(new Date(), -1).weeks[0];
+      // 4-week window: from the start of 4 weeks ago to the end of 1 week ago
+      const now = new Date();
+      const { startDate } = generateReportingPeriods(now, -4).weeks[0];
+      const { endDate } = generateReportingPeriods(now, -1).weeks[0];
 
       return weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
         startDate,

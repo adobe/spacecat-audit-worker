@@ -111,7 +111,12 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
 
 // Statuses considered active/preservable for path suggestions
 const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
-// Statuses of per-URL suggestions eligible for path scoring
+// Statuses of per-URL suggestions eligible for path scoring.
+// FIXED is intentionally included: a FIXED URL was edge-deployed individually.
+// Scoring over both NEW and FIXED lets us suggest a path rule (e.g. /products/*)
+// that consolidates those individual deployments into a single pattern, reducing
+// operational overhead and ensuring new URLs under the same path are covered
+// automatically — even when many of the contributing URLs are already resolved.
 const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
 
 /**
