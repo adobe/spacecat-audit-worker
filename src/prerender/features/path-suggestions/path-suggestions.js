@@ -96,6 +96,7 @@ export async function buildPathTypeSuggestions(
 
   // 3. Enrich preRenderSuggestions with agenticTraffic + valuable — only eligible URLs
   const baseUrl = site.getBaseURL().replace(/\/$/, '');
+  const { origin } = new URL(baseUrl);
   const enriched = preRenderSuggestions
     .filter((s) => eligiblePathnames.has(toPathname(s.url)))
     .map((s) => {
@@ -107,10 +108,10 @@ export async function buildPathTypeSuggestions(
       };
     });
 
-  // 4. Group by first path segment
+  // 4. Group by first path segment (relative to site base URL)
   const groups = new Map();
   for (const s of enriched) {
-    const pt = extractPathType(s.url);
+    const pt = extractPathType(s.url, baseUrl);
     if (pt) {
       if (!groups.has(pt)) {
         groups.set(pt, []);
@@ -134,7 +135,7 @@ export async function buildPathTypeSuggestions(
       results.push({
         key: `${pathPattern}|prerender`,
         data: {
-          url: `${baseUrl}${pathPattern}`,
+          url: `${origin}${pathPattern}`,
           allowedRegexPatterns: [pathPattern],
           score,
           contentGainRatio,

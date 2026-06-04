@@ -112,6 +112,31 @@ describe('Path Suggestions', function () {
     it('returns null for an empty string', () => {
       expect(extractPathType('')).to.be.null;
     });
+
+    // ── with baseUrl (path-prefix site) ─────────────────────────────────────
+
+    it('strips base path prefix and returns first remaining segment', () => {
+      expect(extractPathType('https://nba.com/kings/products/test', 'https://nba.com/kings'))
+        .to.equal('/kings/products/*');
+    });
+
+    it('strips base path prefix for a single sub-segment', () => {
+      expect(extractPathType('https://nba.com/kings/schedule', 'https://nba.com/kings'))
+        .to.equal('/kings/schedule/*');
+    });
+
+    it('returns null when URL is the base URL root (no further segment)', () => {
+      expect(extractPathType('https://nba.com/kings/', 'https://nba.com/kings')).to.be.null;
+    });
+
+    it('returns null when URL equals the base URL with no trailing slash', () => {
+      expect(extractPathType('https://nba.com/kings', 'https://nba.com/kings')).to.be.null;
+    });
+
+    it('ignores baseUrl when it has only root pathname', () => {
+      expect(extractPathType('https://example.com/products/shoes', 'https://example.com/'))
+        .to.equal('/products/*');
+    });
   });
 
   // ─── RcvPathQualificationStrategy ─────────────────────────────────────────
@@ -599,6 +624,49 @@ describe('Path Suggestions', function () {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, ctxWithDebugStub, { strategy });
       expect(results).to.have.length(0);
       expect(ctxWithDebugStub.log.debug.calledWith(sinon.match(/Skipping path/))).to.be.true;
+    });
+
+    it('handles site with a path-prefix base URL (strips base path before grouping)', async () => {
+      const pathBaseUrl = 'https://nba.com/kings';
+      const urls = Array.from({ length: 5 }, (_, i) => `${pathBaseUrl}/products/item-${i}`);
+      const existingSuggestions = urls.map((url, i) => makeSuggestion({
+        id: `es-${i}`, status: 'NEW', data: { url, valuable: true },
+      }));
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite({ baseURL: pathBaseUrl });
+      const preRender = urls.map((url) => ({
+        url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200,
+      }));
+      const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
+      expect(results).to.have.length(1);
+      // Pattern is absolute (origin-relative), prefix stripped before first-segment extraction
+      expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/kings/products/*']);
+      // URL uses origin only — no double-prefix
+      expect(results[0].data.url).to.equal('https://nba.com/kings/products/*');
+      expect(results[0].key).to.equal('/kings/products/*|prerender');
+    });
+
+    it('differentiates path groups under a shared base path prefix', async () => {
+      const pathBaseUrl = 'https://nba.com/kings';
+      const productsUrls = Array.from({ length: 5 }, (_, i) => `${pathBaseUrl}/products/item-${i}`);
+      const scheduleUrls = Array.from({ length: 5 }, (_, i) => `${pathBaseUrl}/schedule/game-${i}`);
+      const allUrls = [...productsUrls, ...scheduleUrls];
+      const existingSuggestions = allUrls.map((url, i) => makeSuggestion({
+        id: `es-${i}`, status: 'NEW', data: { url, valuable: true },
+      }));
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite({ baseURL: pathBaseUrl });
+      const preRender = allUrls.map((url) => ({
+        url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200,
+      }));
+      const strategy = new RcvPathQualificationStrategy({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { strategy });
+      expect(results).to.have.length(2);
+      const patterns = results.map((r) => r.data.allowedRegexPatterns[0]).sort();
+      expect(patterns).to.deep.equal(['/kings/products/*', '/kings/schedule/*']);
     });
   });
 
