@@ -61,8 +61,9 @@ describe('Prerender Audit', () => {
   describe('Import Top Pages', () => {
     it('should build a top-pages import job payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
       };
       const res = await importTopPages(context);
       expect(res).to.deep.equal({
@@ -70,13 +71,15 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
         fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: false },
       });
     });
 
     it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
         auditContext: {
           urls: [
             'https://example.com/page-1',
@@ -95,8 +98,37 @@ describe('Prerender Audit', () => {
             'https://example.com/page-1',
             'https://example.com/page-2',
           ],
+          generatePrompts: false,
         },
       });
+    });
+
+    it('should forward generatePrompts:true from data string into auditContext', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
+        data: JSON.stringify({ generatePrompts: true }),
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: true },
+      });
+    });
+
+    it('should default generatePrompts to false when data is malformed JSON', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+        data: '{invalid-json',
+      };
+      const res = await importTopPages(context);
+      expect(res.auditContext).to.deep.equal({ generatePrompts: false });
     });
   });
   describe('HTML Analysis', () => {
@@ -1597,12 +1629,90 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result).to.be.an('object');
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
         expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
         // createScrapeForbiddenOpportunity was called (not syncSuggestions)
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(syncSuggestionsStub).to.not.have.been.called;
         // uploadStatusSummaryToS3 was called (S3 PutObject written)
         expect(s3SendStub).to.have.been.called;
+      });
+
+      it('should forward generatePrompts:true to Mystique SQS message in normal audit path', async () => {
+        const sendMessageStub = sandbox.stub().resolves();
+        const convertToOpportunityStub = sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'test-site-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: async () => ({
+              needsPrerender: true,
+              contentGainRatio: 0.8,
+              wordCountBefore: 10,
+              wordCountAfter: 200,
+            }),
+          },
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const url = 'https://example.com/page1';
+        const scrapeResultPaths = new Map([[url, '/path/to/result']]);
+
+        // Return HTML for .html S3 keys; NoSuchKey for JSON; resolve for PutObject
+        const s3SendStub = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand') {
+            if (cmd.input.Key.endsWith('.html')) {
+              return Promise.resolve({
+                Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+              });
+            }
+            return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+          }
+          return Promise.resolve({}); // PutObjectCommand (uploadStatusSummaryToS3)
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+            getRegion: () => 'US',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          sqs: { sendMessage: sendMessageStub },
+          s3Client: { send: s3SendStub },
+          log: {
+            info: sandbox.stub(), debug: sandbox.stub(),
+            warn: sandbox.stub(), error: sandbox.stub(),
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue',
+          },
+          scrapeResultPaths,
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(sendMessageStub).to.have.been.called;
+        const sqsPayload = sendMessageStub.getCall(0).args[1];
+        expect(sqsPayload.data.generatePrompts).to.equal(true);
       });
 
       it('should handle errors gracefully', async function testHandleErrorsGracefully() {
@@ -1634,6 +1744,68 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should parse generatePrompts:true from JSON string data', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: JSON.stringify({ generatePrompts: true }),
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should default generatePrompts to false when data is malformed JSON', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: '{invalid-json',
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should read generatePrompts from auditContext when data is absent', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
       });
 
       it('should process URLs with scrape result paths', async () => {
