@@ -1,3 +1,24 @@
+## [1.459.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.3...v1.459.4) (2026-06-04)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** default new bucket-specific Opps to IGNORED ([#2602](https://github.com/adobe/spacecat-audit-worker/issues/2602)) ([1a43401](https://github.com/adobe/spacecat-audit-worker/commit/1a434014700ecd13f258f4d86225d0942183e947)), closes [#2461](https://github.com/adobe/spacecat-audit-worker/issues/2461)
+
+## [1.459.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.2...v1.459.3) (2026-06-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2598](https://github.com/adobe/spacecat-audit-worker/issues/2598)) ([8d92bb0](https://github.com/adobe/spacecat-audit-worker/commit/8d92bb0cc9e6e569e34bb008635b3c67e602ebea))
+
+## [1.459.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.1...v1.459.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* prompt generation as part of RCV audit flow ([#2309](https://github.com/adobe/spacecat-audit-worker/issues/2309)) ([4159538](https://github.com/adobe/spacecat-audit-worker/commit/4159538db6119b408c1e41ab10166da9df64ada0))
+
 ## [1.459.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.0...v1.459.1) (2026-06-03)
 
 
