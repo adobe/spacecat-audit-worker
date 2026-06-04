@@ -195,6 +195,42 @@ describe('RunnerAudit', () => {
     );
   });
 
+  it('forwards auditContext (including onDemand) to isAuditDisabledForSite', async () => {
+    const runner = sandbox.stub().resolves({
+      auditResult: { success: true },
+      fullAuditRef: 'https://example.com',
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
+    const { instance, site } = buildInstance(runner, persister);
+
+    const context = {
+      log: {
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      dataAccess: {},
+      invocation: {},
+    };
+
+    await instance.run(
+      {
+        type: 'reddit-analysis',
+        siteId: 'site-1',
+        auditContext: { onDemand: true, slackContext: { channelId: 'C' } },
+      },
+      context,
+    );
+
+    expect(isAuditDisabledForSite).to.have.been.calledWith(
+      'reddit-analysis',
+      site,
+      context,
+      sinon.match({ onDemand: true }),
+    );
+  });
+
   it('wraps runner failures with a descriptive error', async () => {
     const runner = sandbox.stub().rejects(new Error('runner boom'));
     const persister = sandbox.stub();

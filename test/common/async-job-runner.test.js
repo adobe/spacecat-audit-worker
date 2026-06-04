@@ -138,6 +138,38 @@ describe('Job-based Step-Audit Tests', () => {
     });
   });
 
+  it('does NOT skip when auditContext.onDemand is true even if site not in handler enabled-list', async () => {
+    configuration.isHandlerEnabledForSite.returns(false);
+
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ foo: 'bar' }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ baz: 'qux' }))
+      .build();
+
+    const job = createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    runner.jobProvider = async () => job;
+
+    context.sqs.sendMessage = context.sqs.sendMessage || sandbox.stub();
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: { onDemand: true },
+    };
+
+    const result = await runner.run(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWithMatch(/On-demand audit content-audit/);
+    expect(context.log.info).to.not.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+    expect(job.setStatus).to.not.have.been.calledWith('CANCELLED');
+  });
+
   it('executes first step and sends continuation message', async () => {
     const runner = new AuditBuilder()
       .withAsyncJob()

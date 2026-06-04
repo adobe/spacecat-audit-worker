@@ -163,6 +163,30 @@ describe('Step-based Audit Tests', () => {
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
+    it('does NOT skip when auditContext.onDemand is true even if site not in handler enabled-list', async () => {
+      configuration.isHandlerEnabledForSite.returns(false);
+      nock('https://space.cat').get('/').reply(200, 'Success');
+
+      const onDemandMessage = {
+        ...message,
+        auditContext: { onDemand: true },
+      };
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const result = await audit.run(onDemandMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.info).to.have.been.calledWithMatch(/On-demand audit content-audit/);
+      expect(context.log.info).to.not.have.been.calledWithMatch(/disabled for site.*skipping/);
+      expect(context.dataAccess.Audit.create).to.have.been.called;
+    });
+
     it('executes first step and creates audit record', async () => {
       nock('https://space.cat')
         .get('/')

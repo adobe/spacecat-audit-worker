@@ -47,7 +47,27 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
   }
 }
 
-export async function isAuditEnabledForSite(type, site, context) {
+/**
+ * Returns true if the audit type is enabled for the site.
+ *
+ * Entitlement (productCodes + site enrollment) is ALWAYS enforced.
+ *
+ * The final `configuration.isHandlerEnabledForSite` check (the "enabled-list" gate
+ * managed via the legacy `audit enable/disable` flow) can be bypassed by passing
+ * `auditContext.onDemand === true` (or string `"true"`). This bypass is intended for
+ * one-off Slack `run audit` invocations, where users expect the audit to run regardless
+ * of whether the site appears in the handler's enabled-list — without mutating that list.
+ *
+ * Scheduled / API-triggered audits MUST NOT set `onDemand`; they continue to honor the
+ * enabled-list gate.
+ *
+ * @param {string} type - Audit type
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with dataAccess, log
+ * @param {Object} [auditContext] - Optional audit context; supports `onDemand` bypass flag
+ * @returns {Promise<boolean>}
+ */
+export async function isAuditEnabledForSite(type, site, context, auditContext = {}) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
@@ -67,6 +87,14 @@ export async function isAuditEnabledForSite(type, site, context) {
     return false;
   }
 
+  // On-demand bypass: skip the handler enabled-list check (entitlement already enforced above).
+  // Driven exclusively by an explicit `auditContext.onDemand` flag set by the Slack
+  // `run audit` command. Scheduled / API triggers do not set this flag.
+  if (auditContext?.onDemand === true || auditContext?.onDemand === 'true') {
+    context.log.info(`On-demand audit ${type} for site ${site.getId()}: bypassing handler enabled-list check (entitlement still enforced)`);
+    return true;
+  }
+
   return configuration.isHandlerEnabledForSite(type, site);
 }
 
@@ -76,7 +104,7 @@ export async function isAuditEnabledForSite(type, site, context) {
  *
  * MUST remain a strict boolean inverse of `isAuditEnabledForSite`. Do not add additional
  * conditions here — keep all entitlement / configuration logic centralized in
- * `isAuditEnabledForSite` so both helpers stay in sync.
+ * `isAuditEnabledForSite` so both helpers stay in sync (including the `onDemand` bypass).
  *
  * Note on gating granularity: this helper checks the audit-TYPE key (e.g. `meta-tags`,
  * `security-csp`). Finer-grained sub-feature gates (e.g. `*-auto-suggest`, `*-auto-fix`)
@@ -89,10 +117,11 @@ export async function isAuditEnabledForSite(type, site, context) {
  * @param {string} type - Audit type
  * @param {Object} site - Site object
  * @param {Object} context - Context with dataAccess, log
+ * @param {Object} [auditContext] - Optional audit context; supports `onDemand` bypass flag
  * @returns {Promise<boolean>} True if audit should be skipped (disabled or not entitled)
  */
-export async function isAuditDisabledForSite(type, site, context) {
-  const enabled = await isAuditEnabledForSite(type, site, context);
+export async function isAuditDisabledForSite(type, site, context, auditContext = {}) {
+  const enabled = await isAuditEnabledForSite(type, site, context, auditContext);
   return !enabled;
 }
 
