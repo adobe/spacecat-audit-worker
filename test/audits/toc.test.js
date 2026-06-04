@@ -3075,6 +3075,29 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(result).to.have.lengthOf(3);
         expect(result.map((r) => r.text)).to.deep.equal(['Coverage Options', 'Section One', 'Section Two']);
       });
+      it('excludes headings whose entire text is an unrendered template placeholder', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">PlayStation</h1>'
+          + '<h2 id="b">PS5 Games</h2>'
+          + '<h2 id="c" class="txt-style-{STYLE} txt-block-title__title">{TITLE}</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['PlayStation', 'PS5 Games']);
+      });
+      it('does not exclude headings that merely contain curly braces alongside other text', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">Welcome to {Brand}</h1>'
+          + '<h2 id="b">{TITLE} and more</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Welcome to {Brand}', '{TITLE} and more']);
+      });
     });
 
     describe('tocArrayToHast', () => {
