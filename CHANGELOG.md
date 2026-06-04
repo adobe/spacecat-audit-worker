@@ -1,3 +1,29 @@
+## [1.459.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.0...v1.459.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **rum-config-refresh:** add www. prefix fallback for domain key lookup ([#2597](https://github.com/adobe/spacecat-audit-worker/issues/2597)) ([0e2bfeb](https://github.com/adobe/spacecat-audit-worker/commit/0e2bfeb9a645d89e6d8054ba9ae82ed3b4946304))
+
+# [1.459.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.1...v1.459.0) (2026-06-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2588](https://github.com/adobe/spacecat-audit-worker/issues/2588)) ([c3c1239](https://github.com/adobe/spacecat-audit-worker/commit/c3c123992d5cf73b2a743e04677966d252453df2))
+
+
+### Features
+
+* **csp:** run CSP audit for Crosswalk sites with valid hlxConfig ([#2595](https://github.com/adobe/spacecat-audit-worker/issues/2595)) ([0d37aee](https://github.com/adobe/spacecat-audit-worker/commit/0d37aeeb385250150f89d0958a4b168bfca66adc))
+
+## [1.458.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.0...v1.458.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **csp:** skip backward-compatible CSP findings ([#2594](https://github.com/adobe/spacecat-audit-worker/issues/2594)) ([6050513](https://github.com/adobe/spacecat-audit-worker/commit/6050513be00c3435552fc07a738845fcaf46c641))
+
 # [1.458.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.1...v1.458.0) (2026-06-02)
 
 
