@@ -26,7 +26,11 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Array} Array of suggestion DTOs ready for addition
  */
 
-function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId, requiresValidation) {
+function mapMystiqueSuggestionsToSuggestionDTOs(
+  mystiquesuggestions,
+  opportunityId,
+  requiresValidation,
+) {
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
