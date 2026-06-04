@@ -493,6 +493,22 @@ async function compareHtmlContent(url, context) {
   // Track if scrape.json exists and if it indicates 403
   const hasScrapeMetadata = metadata !== null;
   const scrapeForbidden = metadata?.error?.statusCode === 403;
+  const isErrorPage = !!metadata?.isErrorPage;
+
+  if (isErrorPage) {
+    log.warn(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
+    return {
+      url,
+      error: true,
+      needsPrerender: false,
+      isErrorPage: true,
+      hasScrapeMetadata,
+      scrapeForbidden,
+      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
+      scrapeError: metadata?.error,
+    };
+  }
 
   try {
     // Validate HTML data availability
