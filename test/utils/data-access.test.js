@@ -3683,6 +3683,69 @@ describe('data-access', () => {
         sinon.match(/Skipping update for suggestion.*no changes detected/),
       );
     });
+
+    it('should use default merge when mergeDataFunction is not provided', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Old' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Old' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'New' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeDataFunction provided - should use default spread merge
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should update using default merge ({ ...existingData, ...newDataItem })
+      expect(existingSuggestion.setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
+    it('should handle error with no error message gracefully', async () => {
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.getType.returns('broken-backlinks');
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [
+          { item: { url: '/page1' } }, // No error field
+        ],
+        createdItems: [],
+        length: 0,
+      });
+
+      let error;
+      try {
+        await syncSuggestionsWithPublishDetection({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey: (d) => d.url,
+          mapNewSuggestion: (d) => ({ data: d }),
+          isIssueFixedWithAISuggestion: () => false,
+          buildFixEntityPayload: () => ({}),
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.exist;
+      expect(error.message).to.include('Unknown error');
+    });
   });
 
   describe('warnOnInvalidSuggestionData', () => {
