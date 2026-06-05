@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-disable no-await-in-loop */
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -23,15 +22,120 @@ import {
   getS3Config,
   getCdnAwsRuntime,
 } from '../utils/cdn-utils.js';
-import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
-import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 import { runAgenticDbExports } from './utils/agentic-db-export.js';
-import {
-  runDailyReferralExport,
-} from './referral-daily-export.js';
+import { runDailyReferralExport } from './referral-daily-export.js';
+
+/**
+ * Picks the single week offset used to sample CDN logs for pattern generation.
+ * An explicit weekOffset wins; otherwise the previous full week on Mondays,
+ * else the current week.
+ */
+function resolvePatternWeekOffset(auditContext) {
+  if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
+    return auditContext.weekOffset;
+  }
+  return new Date().getUTCDay() === 1 ? -1 : 0;
+}
+
+/**
+ * Weekly (non-daily) step: refresh the agentic URL classification rules and sync
+ * them to the database. The weekly SharePoint .xlsx reports were retired once the
+ * dashboards moved to PostgreSQL, so this is the only remaining weekly work.
+ *
+ * @returns {Promise<{ agenticReportHasData: boolean }>} whether agentic data was found
+ */
+async function generateAgenticPatterns({
+  site,
+  context,
+  s3Client,
+  athenaClient,
+  s3Config,
+  agenticReportConfig,
+  auditContext,
+}) {
+  const { log } = context;
+
+  if (!agenticReportConfig
+    || !(await pathHasData(s3Client, agenticReportConfig.aggregatedLocation))) {
+    log.info('No agentic report data found - skipping patterns generation');
+    return { agenticReportHasData: false };
+  }
+
+  // Pattern generation queries Athena, so ensure the database exists first.
+  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+  await athenaClient.execute(
+    sqlDb,
+    s3Config.databaseName,
+    `[Athena Query] Create database ${s3Config.databaseName}`,
+  );
+
+  const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+  const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
+    && (existingPatterns?.topicPatterns?.length || 0) > 0;
+
+  if (existingPatterns?.error) {
+    log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
+  } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
+    log.info('Agentic URL classification rules not found or stale, generating DB rules...');
+    const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
+    const configCategories = await getConfigCategories(site, context);
+
+    await generatePatternsWorkbook({
+      site,
+      context,
+      athenaClient,
+      s3Config: { ...s3Config, tableName: agenticReportConfig.tableName },
+      periods,
+      configCategories,
+      existingPatterns,
+    });
+  }
+
+  return { agenticReportHasData: true };
+}
+
+/**
+ * Runs the daily referral DB export, returning a failure marker instead of throwing
+ * so a referral problem never blocks the rest of the audit.
+ */
+async function runReferralExport({
+  site,
+  context,
+  s3Client,
+  athenaClient,
+  s3Config,
+  referralReportConfig,
+  auditContext,
+}) {
+  const siteId = site.getId();
+  if (!referralReportConfig) {
+    context.log.debug(`Skipping daily referral export for ${siteId}: referral report config not found`);
+    return undefined;
+  }
+
+  try {
+    return await runDailyReferralExport({
+      athenaClient,
+      s3Client,
+      s3Config,
+      site,
+      context,
+      reportConfig: referralReportConfig,
+      ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
+    });
+  } catch (error) {
+    context.log.error(`Failed daily referral export for site ${siteId}: ${error.message}`, error);
+    return {
+      enabled: true,
+      success: false,
+      siteId,
+      error: error.message,
+    };
+  }
+}
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
@@ -44,12 +148,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const { s3Client } = awsRuntime;
   const s3Config = getS3Config(site, context);
   log.debug(`Starting CDN logs report audit for ${url}`);
-  const sharepointClient = isDailyDateRun
-    ? null
-    : await createLLMOSharepointClient(
-      context,
-      auditContext?.sharepointOptions,
-    );
+
   const athenaClient = awsRuntime.createAthenaClient(
     s3Config.getAthenaTempLocation(),
     {
@@ -57,109 +156,25 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       maxPollAttempts: 250,
     },
   );
-  const siteId = site.getId();
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, siteId);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, site.getId());
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
   const referralReportConfig = reportConfigs.find((config) => config.name === 'referral');
 
-  const results = [];
-  const reportsToPublish = [];
+  // 1. Weekly step — refresh agentic classification rules in the DB (no SharePoint).
   let agenticReportHasData = false;
   if (!isDailyDateRun) {
-    for (const reportConfig of reportConfigs) {
-      // eslint-disable-next-line no-await-in-loop
-      if (!(await pathHasData(s3Client, reportConfig.aggregatedLocation))) {
-        log.info(`No data found for ${reportConfig.name} report - skipping`);
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      if (reportConfig.name === 'agentic') {
-        agenticReportHasData = true;
-      }
-
-      if (results.length === 0) {
-        // eslint-disable-next-line no-await-in-loop
-        const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
-        // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
-      }
-
-      const isMonday = new Date().getUTCDay() === 1;
-      // If weekOffset is not provided, run for both week 0 and -1 on Monday and
-      // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
-      let weekOffsets;
-      if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
-        weekOffsets = [auditContext.weekOffset];
-      } else if (isMonday) {
-        weekOffsets = [-1, 0];
-      } else {
-        weekOffsets = [0];
-      }
-
-      let existingPatterns;
-      if (reportConfig.name === 'agentic') {
-        existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
-        const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
-          && (existingPatterns?.topicPatterns?.length || 0) > 0;
-
-        if (existingPatterns?.error) {
-          log.info(`Skipping fresh patterns generation for ${siteId}; DB rule fetch failed`);
-        } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
-          log.info('Agentic URL classification rules not found or stale, generating DB rules...');
-          const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
-          const configCategories = await getConfigCategories(site, context);
-
-          const generatedPatterns = await generatePatternsWorkbook({
-            site,
-            context,
-            athenaClient,
-            s3Config: {
-              ...s3Config,
-              tableName: reportConfig.tableName,
-            },
-            periods,
-            configCategories,
-            existingPatterns,
-          });
-          if (generatedPatterns) {
-            existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
-          }
-        }
-      }
-
-      log.debug(`Running weekly report: ${reportConfig.name}...`);
-
-      for (const weekOffset of weekOffsets) {
-        // eslint-disable-next-line no-await-in-loop
-        const result = await runWeeklyReport({
-          athenaClient,
-          s3Config,
-          reportConfig,
-          log,
-          site,
-          sharepointClient,
-          weekOffset,
-          context,
-          ...(reportConfig.name === 'agentic' ? { remotePatterns: existingPatterns } : {}),
-        });
-
-        if (result.success && result.uploadResult) {
-          reportsToPublish.push(result.uploadResult);
-        }
-
-        results.push({
-          name: reportConfig.name,
-          table: reportConfig.tableName,
-          database: s3Config.databaseName,
-          customer: s3Config.siteName,
-          success: result.success,
-          weekOffset,
-        });
-      }
-    }
+    ({ agenticReportHasData } = await generateAgenticPatterns({
+      site,
+      context,
+      s3Client,
+      athenaClient,
+      s3Config,
+      agenticReportConfig,
+      auditContext,
+    }));
   }
 
+  // 2. Daily agentic export — feeds PostgreSQL.
   const agenticDbExportResult = await runAgenticDbExports({
     athenaClient,
     s3Client,
@@ -171,43 +186,21 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     agenticReportHasData,
   });
 
-  let dailyReferralExport;
-  if (!isWeeklyOnlyRun && !isCategoriesUpdateRun) {
-    if (!referralReportConfig) {
-      log.debug(`Skipping daily referral export for ${siteId}: referral report config not found`);
-    } else {
-      try {
-        dailyReferralExport = await runDailyReferralExport({
-          athenaClient,
-          s3Client,
-          s3Config,
-          site,
-          context,
-          reportConfig: referralReportConfig,
-          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
-        });
-      } catch (error) {
-        context.log.error(`Failed daily referral export for site ${siteId}: ${error.message}`, error);
-        dailyReferralExport = {
-          enabled: true,
-          success: false,
-          siteId,
-          error: error.message,
-        };
-      }
-    }
-  }
+  // 3. Daily referral export — feeds PostgreSQL (skipped on weekly-only / categories-update runs).
+  const dailyReferralExport = (!isWeeklyOnlyRun && !isCategoriesUpdateRun)
+    ? await runReferralExport({
+      site,
+      context,
+      s3Client,
+      athenaClient,
+      s3Config,
+      referralReportConfig,
+      auditContext,
+    })
+    : undefined;
 
-  // Batch publish all uploaded reports using bulk API
-  if (reportsToPublish.length > 0) {
-    try {
-      await bulkPublishToAdminHlx(reportsToPublish, log);
-    } catch (error) {
-      log.error('Failed to bulk publish reports:', error);
-    }
-  }
-
-  const auditResult = [...results];
+  // 4. Assemble the audit result from the DB export outcomes.
+  const auditResult = [];
   if (agenticDbExportResult.dailyAgenticExport?.batchId) {
     auditResult.push({
       name: 'agentic-db-export',

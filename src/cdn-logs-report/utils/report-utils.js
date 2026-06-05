@@ -11,7 +11,6 @@
  */
 
 import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
-import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
   'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
@@ -170,21 +169,4 @@ export async function getConfigCategories(site, context) {
     log.warn(`Failed to fetch config categories: ${error.message}`);
     return [];
   }
-}
-
-export async function saveExcelReportForBatch({
-  workbook,
-  outputLocation,
-  log,
-  sharepointClient,
-  filename,
-}) {
-  const buffer = await workbook.xlsx.writeBuffer();
-
-  if (sharepointClient) {
-    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-    return { filename, outputLocation };
-  }
-
-  return null;
 }
