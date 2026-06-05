@@ -1872,6 +1872,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
   let mockGetAuditData;
   let mockCreateAssistiveOppty;
   let mockSyncSuggestions;
+  let mockResolveOpportunityIfNoIssues;
   let mockIsAuditEnabledForSite;
   let createAccessibilityIndividualOpportunities;
 
@@ -1879,6 +1880,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
     sandbox = sinon.createSandbox();
     mockSite = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getId: sandbox.stub().returns('test-site'),
     };
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
@@ -1943,6 +1945,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
     });
 
     mockSyncSuggestions = sandbox.stub().resolves();
+    mockResolveOpportunityIfNoIssues = sandbox.stub().resolves();
 
     // Fix: Mock all dependencies before importing the module under test
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
@@ -1964,6 +1967,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
+        resolveOpportunityIfNoIssues: mockResolveOpportunityIfNoIssues,
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
@@ -2047,6 +2051,20 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.status).to.equal('NO_OPPORTUNITIES');
     expect(result.message).to.equal('No accessibility issues found in tracked categories');
     expect(result.data).to.deep.equal([]);
+    // SITES-40450: resolve any stale NEW opportunity for every tracked a11y type
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledTwice;
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledWith(
+      'test-site',
+      'a11y-assistive',
+      mockContext.dataAccess,
+      mockContext.log,
+    );
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledWith(
+      'test-site',
+      'a11y-usability',
+      mockContext.dataAccess,
+      mockContext.log,
+    );
   });
 
   it('should handle errors during opportunity creation', async () => {
