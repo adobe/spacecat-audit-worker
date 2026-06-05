@@ -1048,10 +1048,12 @@ export async function syncSuggestionsWithPublishDetection({
 
   // Step 6: Mark disappeared suggestions as OUTDATED
   await handleOutdatedSuggestions({
-    disappearedSuggestions,
+    context,
+    existingSuggestions,
+    newDataKeys,
+    buildKey,
     statusToSetForOutdated,
     scrapedUrlsSet,
-    log,
   });
 }
 
