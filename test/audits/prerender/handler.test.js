@@ -6806,6 +6806,52 @@ describe('Prerender Audit', () => {
         expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
       });
 
+      it('should NOT skip HTML comparison when isErrorPage is false in scrape.json', async () => {
+        const scrapeMetadata = { isErrorPage: false, status: 'SUCCESS' };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const analyzeHtmlStub = sandbox.stub().resolves({
+          needsPrerender: false,
+          contentGainRatio: 0,
+          wordCountBefore: 10,
+          wordCountAfter: 10,
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: analyzeHtmlStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // isErrorPage: false must not trigger the early-exit guard — analysis should run
+        expect(analyzeHtmlStub.called).to.be.true;
+        expect(result.auditResult.results[0]).to.not.have.property('isErrorPage');
+      });
+
       it('should set both isErrorPage and scrapeForbidden when metadata has both flags', async () => {
         const scrapeMetadata = {
           isErrorPage: true,
