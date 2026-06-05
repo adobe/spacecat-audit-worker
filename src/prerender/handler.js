@@ -501,8 +501,6 @@ async function compareHtmlContent(url, context) {
     scrapeError: metadata?.error,
   };
 
-  // Single early-exit block for all metadata-driven skip conditions.
-  // Adding a new signal (e.g. geoBlocked, botServed) is one line here — no extra return shape.
   // error: true keeps URL out of scrapedUrlsSet so syncSuggestions won't resolve its suggestions.
   if (metadata?.isErrorPage) {
     log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
