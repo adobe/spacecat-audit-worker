@@ -89,6 +89,7 @@ describe('Prerender AI-Only Mode', () => {
         getId: sandbox.stub().returns('site-123'),
         getBaseURL: sandbox.stub().returns('https://example.com'),
         getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getRegion: sandbox.stub().returns(''),
       },
       dataAccess: mockDataAccess,
       env: {
@@ -734,6 +735,139 @@ describe('Prerender AI-Only Mode', () => {
       // Should proceed to normal import flow (not ai-only mode)
       expect(result).to.exist;
       expect(result.mode).to.be.undefined;
+    });
+  });
+
+  describe('generatePrompts flag in SQS payload', () => {
+    it('should include generatePrompts:false in SQS message by default', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(false);
+    });
+
+    it('should include generatePrompts:true in SQS message when flag is set', async () => {
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+
+    it('should treat generatePrompts as truthy when provided as string "true"', async () => {
+      // The Slack keyword parser passes values as strings (generatePrompts:true → "true")
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: 'true',
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      // !!parsedData.generatePrompts → !!'true' → true
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+  });
+
+  describe('hasPrompts flag per suggestion in SQS payload', () => {
+    it('should set hasPrompts:false for suggestions without existing prompts', async () => {
+      // Default mock suggestions have no prompts field
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      message.data.suggestions.forEach((s) => {
+        expect(s.hasPrompts).to.equal(false);
+      });
+    });
+
+    it('should set hasPrompts:true for suggestions that already have prompts', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [{
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'What is prerendering?', type: 'Branded',
+          topic: 'Performance', category: 'SEO', intent: 'Informational', regions: ['US'],
+        }],
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const s2 = message.data.suggestions.find((s) => s.url === 'https://example.com/page2');
+      expect(s1.hasPrompts).to.equal(true);
+      expect(s2.hasPrompts).to.equal(false);
+    });
+
+    it('should set hasPrompts:false for suggestions with empty prompts array', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [], // Empty — no prompts yet
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(s1.hasPrompts).to.equal(false);
+    });
+  });
+
+  describe('siteRegion in SQS payload', () => {
+    it('should include empty siteRegion when site has no region configured', async () => {
+      // Default mock site returns '' from getRegion
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('');
+    });
+
+    it('should include siteRegion from site config when available', async () => {
+      context.site.getRegion = sandbox.stub().returns('US');
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('US');
+    });
+
+    it('should default to empty string when site.getRegion returns null', async () => {
+      context.site.getRegion = sandbox.stub().returns(null);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('');
+    });
+  });
+
+  describe('batchIndex and totalBatches in SQS payload', () => {
+    it('should include batchIndex:0 and totalBatches:1 in SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.batchIndex).to.equal(0);
+      expect(message.data.totalBatches).to.equal(1);
     });
   });
 
