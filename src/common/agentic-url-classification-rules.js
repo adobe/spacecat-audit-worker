@@ -20,6 +20,9 @@ function normalizeRuleRows(rows = []) {
     name: row.name,
     regex: row.regex,
     sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
+    source: row.source ?? 'ai',
+    sample_urls: Array.isArray(row.sample_urls) ? row.sample_urls : [],
+    derivation_method: row.derivation_method ?? null,
   }));
 }
 
@@ -39,18 +42,22 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
     try {
+      // Exclude customer-soft-deleted rules. Requires data-service migration
+      // 20260602140944 (adds `status`) to deploy before this filter.
       // eslint-disable-next-line no-await-in-loop
       const [categoryResult, pageTypeResult] = await Promise.all([
         postgrestClient
           .from('agentic_url_category_rules')
-          .select('name,regex,sort_order')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
+          .eq('status', 'active')
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),
         postgrestClient
           .from('agentic_url_page_type_rules')
-          .select('name,regex,sort_order')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
           .eq('site_id', siteId)
+          .eq('status', 'active')
           .order('sort_order', { ascending: true })
           .order('name', { ascending: true }),
       ]);
