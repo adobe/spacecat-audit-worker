@@ -672,6 +672,25 @@ describe('Path Suggestions', function () {
       expect(results[0].data.contentGainRatio).to.equal(5);
     });
 
+    it('keeps first entry when duplicate pathname has equal contentGainRatio', async () => {
+      const url = `${BASE_URL}/products/item-0`;
+      const existingSuggestions = makeExistingSuggestions([url], 'NEW');
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite();
+
+      // Same contentGainRatio — first entry should win (existing is not replaced)
+      const preRender = [
+        { url, contentGainRatio: 3, wordCountBefore: 100, wordCountAfter: 200 },
+        { url, contentGainRatio: 3, wordCountBefore: 999, wordCountAfter: 999 },
+      ];
+      const qualify = createRcvQualifier({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
+      expect(results).to.have.length(1);
+      expect(results[0].data.wordCountBefore).to.equal(100);
+      expect(results[0].data.wordCountAfter).to.equal(200);
+    });
+
     it('does not inflate group metrics when duplicate pathnames are present', async () => {
       const urls = Array.from({ length: 5 }, (_, i) => `${BASE_URL}/products/item-${i}`);
       const existingSuggestions = makeExistingSuggestions(urls, 'NEW');
