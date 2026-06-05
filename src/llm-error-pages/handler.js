@@ -453,6 +453,84 @@ export async function runAuditAndSendToMystique(context) {
 
             await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
             log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+
+            // Phase 3 dual-publish: also emit the new observation:llm-broken-urls
+            // message that feeds the Mysticat blackboard cascade in mystique
+            // (LlmBrokenUrlsIngestionTask → o_llm_broken_urls → verifier →
+            // alternatives → projector). The legacy guidance:llm-error-pages
+            // message above continues to feed the old crew flow during shadow
+            // validation; Phase 4 cutover removes that block.
+            //
+            // Feature-flagged so this PR can land safely before mystique's
+            // ingestion dispatcher (PR #2490) and projector (PR #200) merge.
+            // With the flag off, behaviour is unchanged.
+            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true') {
+              if (!messageBaseUrl) {
+                log.warn('[LLM-ERROR-PAGES] No baseURL available — skipping observation:llm-broken-urls publish');
+              } else {
+                // Re-group by URL only (existing consolidateErrorsByUrl keys by
+                // url+provider so the same URL appears once per provider). The
+                // observation wire format wants ONE entry per URL with all
+                // user-agent providers unioned.
+                //
+                // Reads the consolidated shape `totalRequests` + `rawUserAgents`
+                // produced by `consolidateErrorsByUrl`. The real pipeline
+                // always passes through that function before reaching here.
+                const byUrl = new Map();
+                sorted404.forEach((errorPage) => {
+                  const path = toPathOnly(errorPage.url, messageBaseUrl);
+                  const fullUrl = new URL(path, messageBaseUrl).toString();
+                  const entryHits = Number(errorPage.totalRequests) || 0;
+                  const entryUas = errorPage.rawUserAgents || [];
+                  const existing = byUrl.get(fullUrl);
+                  if (existing) {
+                    existing.hits += entryHits;
+                    entryUas.forEach((ua) => existing.userAgents.add(ua));
+                  } else {
+                    byUrl.set(fullUrl, {
+                      hits: entryHits,
+                      userAgents: new Set(entryUas),
+                    });
+                  }
+                });
+
+                const observationUrls = Array.from(byUrl.entries()).map(([fullUrl, v]) => ({
+                  url: fullUrl,
+                  hits: v.hits,
+                  // Cap defensively to match mystique's per-URL limit (50)
+                  // and per-string length (512). Audit-worker normalizes UAs
+                  // so the count is typically <10, but defense in depth keeps
+                  // a hostile log record from blowing up the SQS body.
+                  userAgents: Array.from(v.userAgents)
+                    .slice(0, 50)
+                    .map((ua) => String(ua).slice(0, 512)),
+                  // No per-URL latest-timestamp aggregate in the current
+                  // Athena SQL; period end is the most accurate signal we
+                  // can extract without changing the query. Tracked as a
+                  // follow-up if higher fidelity is needed downstream.
+                  lastSeen: endDate.toISOString(),
+                }));
+
+                const observationMessage = {
+                  type: 'observation:llm-broken-urls',
+                  siteId: site.getId(),
+                  auditId: audit?.getId() || null,
+                  baseURL: messageBaseUrl,
+                  deliveryType: site?.getDeliveryType?.() || null,
+                  time: new Date().toISOString(),
+                  data: {
+                    period: {
+                      start: startDate.toISOString(),
+                      end: endDate.toISOString(),
+                    },
+                    urls: observationUrls,
+                  },
+                };
+
+                await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, observationMessage);
+                log.info(`[LLM-ERROR-PAGES] Sent observation:llm-broken-urls with ${observationUrls.length} URLs to Mystique blackboard`);
+              }
+            }
           } else {
             log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
           }
