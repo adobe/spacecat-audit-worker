@@ -1167,7 +1167,7 @@ async function prepareDomainWideAggregateSuggestion(
 /**
  * Builds a merge function for syncSuggestions that handles three suggestion types:
  * - Path-type: preserves edgeDeployed and coveredByDomainWide from existing data
- * - Domain-wide: replaces data entirely (preserves edgeDeployed via its own logic)
+ * - Domain-wide: replaces data entirely (preserves edgeDeployed if already set)
  * - Individual: merges new mapped data onto existing data
  *
  * @param {Function} mapSuggestionDataFn - Maps raw suggestion to stored data shape
@@ -1179,9 +1179,13 @@ export function buildMergeDataFunction(mapSuggestionDataFn) {
     if (newDataItem.key && isPathSuggestionData(newDataItem.data)) {
       return mergePathSuggestionData(existingData, newDataItem.data);
     }
-    // Domain-wide: replace data (preserves own edgeDeployed via its own logic)
+    // Domain-wide: replace data, but preserve edgeDeployed if already set
     if (newDataItem.key) {
-      return { ...newDataItem.data };
+      const edgeDeployed = existingData?.edgeDeployed;
+      return {
+        ...newDataItem.data,
+        ...(edgeDeployed !== undefined && { edgeDeployed }),
+      };
     }
     // Individual suggestions: merge with existing
     return {

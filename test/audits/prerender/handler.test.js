@@ -10010,7 +10010,7 @@ describe('Prerender Audit', () => {
       expect(result.edgeDeployed).to.be.undefined;
     });
 
-    it('replaces data entirely for domain-wide suggestions', () => {
+    it('replaces data but preserves edgeDeployed for domain-wide suggestions', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = { oldField: 'should-disappear', edgeDeployed: true };
       const newDataItem = {
@@ -10020,7 +10020,25 @@ describe('Prerender Audit', () => {
 
       const result = mergeFn(existingData, newDataItem);
 
-      expect(result).to.deep.equal({ isDomainWide: true, newField: 'value' });
+      expect(result.isDomainWide).to.be.true;
+      expect(result.newField).to.equal('value');
+      expect(result.edgeDeployed).to.be.true;
+      expect(result.oldField).to.be.undefined;
+    });
+
+    it('does not inject edgeDeployed when not present on existing data for domain-wide suggestions', () => {
+      const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
+      const existingData = { oldField: 'should-disappear' };
+      const newDataItem = {
+        key: 'domain-wide-aggregate|prerender',
+        data: { isDomainWide: true, newField: 'value' },
+      };
+
+      const result = mergeFn(existingData, newDataItem);
+
+      expect(result.isDomainWide).to.be.true;
+      expect(result.newField).to.equal('value');
+      expect(result.edgeDeployed).to.be.undefined;
       expect(result.oldField).to.be.undefined;
     });
 
