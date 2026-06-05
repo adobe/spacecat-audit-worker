@@ -53,60 +53,6 @@ export const EXCLUDED_URL_SUFFIXES = [
 ];
 
 /**
- * Shared Athena setup and execution. Handles configuration guards, AWS client
- * creation, query execution, empty-result detection, and error handling.
- *
- * @param {Object} site
- * @param {Object} context
- * @param {Object} options
- * @param {function} options.buildQuery - (s3Config, athenaClient) => Promise<string>
- * @param {function} options.parseResults - (rows, baseUrl) => T
- * @param {*} options.emptyValue - Value returned on early exit or error
- * @param {string} options.label - Log label for this query type
- * @returns {Promise<T>}
- */
-async function runAthenaQuery(site, context, {
-  buildQuery, parseResults, emptyValue, label,
-}) {
-  const { log } = context;
-  const baseUrl = getPreferredBaseUrl(site, context);
-
-  try {
-    const configuration = await context.dataAccess.Configuration.findLatest();
-    if (!configuration) {
-      log.warn(`Agentic URLs - Skipping ${label} because no configuration was found for site ${site.getId()}`);
-      return emptyValue;
-    }
-    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
-      log.info(`Agentic URLs - Skipping ${label} because cdn-logs-analysis is disabled for site ${site.getId()}`);
-      return emptyValue;
-    }
-
-    const awsRuntime = getCdnAwsRuntime(site, context);
-    const s3Config = getS3Config(site, context);
-    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
-    const query = await buildQuery(s3Config);
-
-    log.info(`Agentic URLs - Executing ${label}... baseUrl=${baseUrl}`);
-    const results = await athenaClient.query(
-      query,
-      s3Config.databaseName,
-      `[Athena Query] ${label}`,
-    );
-
-    if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Agentic URLs - Athena returned no rows for ${label}. baseUrl=${baseUrl}`);
-      return emptyValue;
-    }
-
-    return parseResults(results, baseUrl);
-  } catch (e) {
-    log?.warn?.(`Agentic URLs - ${label} failed: ${e.message}. baseUrl=${baseUrl}`);
-    return emptyValue;
-  }
-}
-
-/**
  * Shared Athena execution logic for top agentic URL queries.
  * @param {Object} site
  * @param {Object} context
@@ -118,51 +64,73 @@ async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
   const { log } = context;
   const baseUrl = getPreferredBaseUrl(site, context);
 
-  return runAthenaQuery(site, context, {
-    label: 'Top Agentic URLs',
-    emptyValue: [],
-    buildQuery: async (s3Config) => {
-      const periods = generateReportingPeriods();
-      const oneWeekPeriods = { weeks: [periods.weeks[0]] };
-      return weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
-        periods: oneWeekPeriods,
-        databaseName: s3Config.databaseName,
-        tableName: s3Config.tableName,
-        site,
-        limit,
-        excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
-        statuses,
-      });
-    },
-    parseResults: (results) => {
-      let resolvedBaseUrl = baseUrl;
-      try {
-        // eslint-disable-next-line no-new
-        new URL(baseUrl);
-      } catch {
-        log.warn(`Agentic URLs - Invalid baseUrl: ${baseUrl}, cannot construct absolute URLs`);
-        resolvedBaseUrl = null;
-      }
+  try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
 
-      const topUrls = results
-        .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
-        .map((row) => {
-          const path = row.url;
-          if (path.startsWith('http://') || path.startsWith('https://')) {
-            return path;
-          }
-          if (resolvedBaseUrl) {
-            return new URL(path, resolvedBaseUrl).toString();
-          }
-          return null;
-        })
-        .filter((url) => url !== null);
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
+    const periods = generateReportingPeriods();
+    const oneWeekPeriods = { weeks: [periods.weeks[0]] };
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
+    const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
+      periods: oneWeekPeriods,
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      site,
+      limit,
+      excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+      statuses,
+    });
+    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
+    const results = await athenaClient.query(
+      query,
+      s3Config.databaseName,
+      '[Athena Query] Top Agentic URLs',
+    );
 
-      log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
-      log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
-      return topUrls;
-    },
-  });
+    if (!Array.isArray(results) || results.length === 0) {
+      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${baseUrl}`);
+      return [];
+    }
+
+    let resolvedBaseUrl = baseUrl;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(baseUrl);
+    } catch {
+      log.warn(`Agentic URLs - Invalid baseUrl: ${baseUrl}, cannot construct absolute URLs`);
+      resolvedBaseUrl = null;
+    }
+
+    const topUrls = results
+      .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
+      .map((row) => {
+        const path = row.url;
+        if (path.startsWith('http://') || path.startsWith('https://')) {
+          return path;
+        }
+        if (resolvedBaseUrl) {
+          return new URL(path, resolvedBaseUrl).toString();
+        }
+        return null;
+      })
+      .filter((url) => url !== null);
+
+    log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
+    return topUrls;
+  } catch (e) {
+    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    return [];
+  }
 }
 
 /**
@@ -215,44 +183,69 @@ export async function getAgenticHitsMapFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
+  const baseUrl = getPreferredBaseUrl(site, context);
 
-  return runAthenaQuery(site, context, {
-    label: 'Agentic Hits Map',
-    emptyValue: new Map(),
-    buildQuery: async (s3Config) => {
-      // 4-week window: from the start of 4 weeks ago to the end of 1 week ago
-      const now = new Date();
-      const { startDate } = generateReportingPeriods(now, -4).weeks[0];
-      const { endDate } = generateReportingPeriods(now, -1).weeks[0];
+  try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping agentic hits map because no configuration was found for site ${site.getId()}`);
+      return new Map();
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping agentic hits map because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return new Map();
+    }
 
-      return weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
-        startDate,
-        endDate,
-        databaseName: s3Config.databaseName,
-        tableName: s3Config.tableName,
-        site,
-        limit,
-        excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
-      });
-    },
-    parseResults: (results, baseUrl) => {
-      const hitsMap = new Map();
-      for (const row of results) {
-        if (typeof row?.url === 'string' && row.url.length > 0) {
-          try {
-            const rawPath = row.url.startsWith('http://') || row.url.startsWith('https://')
-              ? new URL(row.url).pathname
-              : row.url;
-            const pathname = rawPath.replace(/\/$/, '') || '/';
-            const hits = parseInt(row.total_hits, 10) || 0;
-            hitsMap.set(pathname, (hitsMap.get(pathname) || 0) + hits);
-          } catch {
-            // skip unparseable rows
-          }
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
+
+    // 4-week window: from the start of 4 weeks ago to the end of 1 week ago
+    const now = new Date();
+    const { startDate } = generateReportingPeriods(now, -4).weeks[0];
+    const { endDate } = generateReportingPeriods(now, -1).weeks[0];
+
+    const query = await weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
+      startDate,
+      endDate,
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      site,
+      limit,
+      excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+    });
+
+    log.info(`Agentic URLs - Executing Athena query for agentic hits map... baseUrl=${baseUrl}`);
+    const results = await athenaClient.query(
+      query,
+      s3Config.databaseName,
+      '[Athena Query] Agentic Hits Map',
+    );
+
+    if (!Array.isArray(results) || results.length === 0) {
+      log.warn(`Agentic URLs - Athena returned no rows for agentic hits map. baseUrl=${baseUrl}`);
+      return new Map();
+    }
+
+    const hitsMap = new Map();
+    for (const row of results) {
+      if (typeof row?.url === 'string' && row.url.length > 0) {
+        try {
+          const rawPath = row.url.startsWith('http://') || row.url.startsWith('https://')
+            ? new URL(row.url).pathname
+            : row.url;
+          const pathname = rawPath.replace(/\/$/, '') || '/';
+          const hits = parseInt(row.total_hits, 10) || 0;
+          hitsMap.set(pathname, (hitsMap.get(pathname) || 0) + hits);
+        } catch {
+          // skip unparseable rows
         }
       }
-      log.info(`Agentic URLs - Built hits map with ${hitsMap.size} pathnames. baseUrl=${baseUrl}`);
-      return hitsMap;
-    },
-  });
+    }
+    log.info(`Agentic URLs - Built hits map with ${hitsMap.size} pathnames. baseUrl=${baseUrl}`);
+    return hitsMap;
+  } catch (e) {
+    log?.warn?.(`Agentic URLs - Agentic hits map fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    return new Map();
+  }
 }
