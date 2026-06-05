@@ -490,24 +490,24 @@ async function compareHtmlContent(url, context) {
 
   const { serverSideHtml, clientSideHtml, metadata } = scrapedData;
 
-  // Track if scrape.json exists and if it indicates 403
-  const hasScrapeMetadata = metadata !== null;
-  const scrapeForbidden = metadata?.error?.statusCode === 403;
-  const isErrorPage = !!metadata?.isErrorPage;
+  // Fields derived from scrape.json, shared across all return paths
+  const scrapeContext = {
+    url,
+    hasScrapeMetadata: metadata !== null,
+    scrapeForbidden: metadata?.error?.statusCode === 403,
+    isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+    usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
+    /* c8 ignore next */
+    scrapeError: metadata?.error,
+  };
 
-  if (isErrorPage) {
+  // Single early-exit block for all metadata-driven skip conditions.
+  // Adding a new signal (e.g. geoBlocked, botServed) is one line here — no extra return shape.
+  // error: true keeps URL out of scrapedUrlsSet so syncSuggestions won't resolve its suggestions.
+  if (metadata?.isErrorPage) {
     log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
     return {
-      url,
-      // error: true keeps URL out of scrapedUrlsSet, preventing syncSuggestions from resolving
-      error: true,
-      needsPrerender: false,
-      isErrorPage: true,
-      hasScrapeMetadata,
-      scrapeForbidden,
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
-      scrapeError: metadata?.error,
+      ...scrapeContext, error: true, needsPrerender: false, isErrorPage: true,
     };
   }
 
@@ -525,28 +525,10 @@ async function compareHtmlContent(url, context) {
 
     log.debug(`${LOG_PREFIX} Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
-    return {
-      url,
-      ...analysis,
-      hasScrapeMetadata, // Track if scrape.json exists on S3
-      scrapeForbidden, // Track if original scrape was forbidden (403)
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml, // From scrape.json
-      /* c8 ignore next */
-      scrapeError: metadata?.error, // Include error details from scrape.json
-    };
+    return { ...scrapeContext, ...analysis };
   } catch (error) {
     log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
-    return {
-      url,
-      error: true,
-      needsPrerender: false,
-      hasScrapeMetadata,
-      scrapeForbidden,
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
-      scrapeError: metadata?.error,
-    };
+    return { ...scrapeContext, error: true, needsPrerender: false };
   }
 }
 
