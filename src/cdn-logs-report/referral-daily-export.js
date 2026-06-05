@@ -18,11 +18,6 @@ import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, IMPORTER_BUCKET_REGION } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 
-// The referral CSV is always written to the importer bucket (S3_IMPORTER_BUCKET_NAME),
-// which lives in us-east-1 (IMPORTER_BUCKET_REGION). The injected CDN S3 client is
-// regionalized to the site's CDN region, so reusing it triggers S3 PermanentRedirect (301)
-// for non-us-east-1 sites. Always talk to the importer bucket through a us-east-1 client.
-
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
   'pageviews', 'referrer', 'utm_source', 'utm_medium', 'tracking_param',
@@ -219,6 +214,7 @@ export async function runDailyReferralExport({
   }
 
   const messageGroupId = `referral_traffic_cdn:${siteId}`;
+  // Importer bucket is us-east-1, not the site's CDN region; reusing the CDN client 301s.
   const s3Client = new S3Client({ region: IMPORTER_BUCKET_REGION });
 
   try {

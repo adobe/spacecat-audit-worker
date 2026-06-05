@@ -24,8 +24,6 @@ use(sinonChai);
 describe('referral daily export', function referralDailyExportTests() {
   this.timeout(10000);
   let sandbox;
-  // runDailyReferralExport now builds its own us-east-1 S3 client; tests assert on
-  // this shared mock, which the mocked S3Client constructor returns.
   let s3ClientMock;
   let S3ClientStub;
 

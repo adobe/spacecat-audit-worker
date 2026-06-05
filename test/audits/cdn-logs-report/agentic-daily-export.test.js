@@ -450,7 +450,6 @@ describe('agentic daily export', () => {
 
     expect(athenaClient.execute).to.not.have.been.called;
     expect(athenaClient.query).to.not.have.been.called;
-    // No importer-bucket S3 client is even constructed on early exit.
     expect(S3ClientStub).to.not.have.been.called;
   });
 
@@ -711,7 +710,6 @@ describe('agentic daily export', () => {
     })).to.be.rejectedWith('Athena unavailable');
 
     expect(athenaClient.query).to.not.have.been.called;
-    // No importer-bucket S3 client is even constructed on early exit.
     expect(S3ClientStub).to.not.have.been.called;
   });
 });

@@ -16,11 +16,6 @@ import { loadSql, IMPORTER_BUCKET_REGION } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
 
-// The agentic bundle is always written to the importer bucket (S3_IMPORTER_BUCKET_NAME),
-// which lives in us-east-1 (IMPORTER_BUCKET_REGION). The injected CDN S3 client is
-// regionalized to the site's CDN region, so reusing it triggers S3 PermanentRedirect (301)
-// for non-us-east-1 sites. Always talk to the importer bucket through a us-east-1 client.
-
 export function getPreviousUtcDate(referenceDate = new Date()) {
   const previous = new Date(referenceDate);
   previous.setUTCDate(previous.getUTCDate() - 1);
@@ -264,6 +259,7 @@ export async function runDailyAgenticExport({
   const keyPrefix = getAgenticBundleKeyPrefix(site.getId(), trafficDate, bundleId);
   const bundleUri = `s3://${bundleBucket}/${keyPrefix}`;
   const uploadedFiles = buildBundleFileKeys(keyPrefix);
+  // Importer bucket is us-east-1, not the site's CDN region; reusing the CDN client 301s.
   const s3Client = new S3Client({ region: IMPORTER_BUCKET_REGION });
   let dispatch;
 

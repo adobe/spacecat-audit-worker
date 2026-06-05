@@ -13,10 +13,7 @@
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
-// The agentic + referral daily exports write to the importer bucket
-// (S3_IMPORTER_BUCKET_NAME), which lives in us-east-1. Their S3 client must be
-// pinned to this region regardless of the site's CDN bucket region, otherwise
-// S3 returns PermanentRedirect (301). Shared so new export types don't drift.
+// Region of the importer bucket (S3_IMPORTER_BUCKET_NAME) the daily exports write to.
 export const IMPORTER_BUCKET_REGION = 'us-east-1';
 
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
