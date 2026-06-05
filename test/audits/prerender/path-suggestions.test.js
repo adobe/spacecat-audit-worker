@@ -753,6 +753,88 @@ describe('Path Suggestions', function () {
     });
   });
 
+  // ─── refreshPreservedPathMetrics ─────────────────────────────────────────
+
+  describe('refreshPreservedPathMetrics', () => {
+    let refreshPreservedPathMetrics;
+    let saveManyStub;
+    let ctx;
+
+    beforeEach(() => {
+      ({ refreshPreservedPathMetrics } = pathSuggestionsModule);
+      saveManyStub = sinon.stub().resolves();
+      ctx = {
+        log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub(), error: sinon.stub() },
+        dataAccess: { Suggestion: { saveMany: saveManyStub } },
+      };
+    });
+
+    it('logs start info and updates changed metrics on preserved path suggestions', async () => {
+      const existing = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], score: 0.5, contentGainRatio: 1.0 },
+      });
+      const preservableByPattern = new Map([['/products/*', existing]]);
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 } }];
+
+      await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
+
+      expect(ctx.log.info.calledWith(sinon.match(/Refreshing metrics on 1 preserved path/))).to.be.true;
+      expect(ctx.log.info.calledWith(sinon.match(/Refreshing metrics for preserved path \/products\/\*/))).to.be.true;
+      expect(ctx.log.info.calledWith(sinon.match(/Metrics refreshed on 1\/1/))).to.be.true;
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(existing.getData().score).to.equal(0.9);
+      expect(existing.getData().contentGainRatio).to.equal(2.5);
+    });
+
+    it('logs debug when no metric fields changed for a preserved path', async () => {
+      const existing = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 },
+      });
+      const preservableByPattern = new Map([['/products/*', existing]]);
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 } }];
+
+      await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
+
+      expect(ctx.log.debug.calledWith(sinon.match(/No metric changes for preserved path \/products\/\*/))).to.be.true;
+      expect(saveManyStub.called).to.be.false;
+      expect(ctx.log.info.calledWith(sinon.match(/Metrics refreshed on 0\/1/))).to.be.true;
+    });
+
+    it('does nothing when builtSuggestions has no matching preserved path', async () => {
+      const existing = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], score: 0.5 },
+      });
+      const preservableByPattern = new Map([['/products/*', existing]]);
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/blog/*'], score: 0.9 } }];
+
+      await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
+
+      expect(saveManyStub.called).to.be.false;
+      expect(ctx.log.info.calledWith(sinon.match(/Metrics refreshed on 0\/1/))).to.be.true;
+    });
+
+    it('logs error when saveMany fails', async () => {
+      const existing = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], score: 0.5 },
+      });
+      const preservableByPattern = new Map([['/products/*', existing]]);
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9 } }];
+      saveManyStub.rejects(new Error('DB write failed'));
+
+      await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
+
+      expect(ctx.log.error.calledWith(sinon.match(/Failed to refresh metrics on 1 preserved path/))).to.be.true;
+    });
+  });
+
   // ─── markSuggestionsAsCoveredByPaths ─────────────────────────────────────
 
   describe('markSuggestionsAsCoveredByPaths', () => {

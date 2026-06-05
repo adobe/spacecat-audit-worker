@@ -297,9 +297,11 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
  */
 export async function refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context) {
   const { dataAccess, log } = context;
+  log.info(`${LOG_PREFIX} Refreshing metrics on ${preservableByPattern.size} preserved path suggestion(s) from ${builtSuggestions.length} freshly-built suggestion(s)`);
   const toSave = [];
   for (const p of builtSuggestions) {
-    const existing = preservableByPattern.get(p.data.allowedRegexPatterns?.[0]);
+    const pathPattern = p.data.allowedRegexPatterns?.[0];
+    const existing = preservableByPattern.get(pathPattern);
     if (existing) {
       const currentData = existing.getData();
       const updatedData = { ...currentData };
@@ -311,8 +313,11 @@ export async function refreshPreservedPathMetrics(builtSuggestions, preservableB
         }
       }
       if (changed) {
+        log.info(`${LOG_PREFIX} Refreshing metrics for preserved path ${pathPattern}: ${PATH_TYPE_METRICS_FIELDS.filter((f) => p.data[f] !== undefined && p.data[f] !== currentData[f]).map((f) => `${f}=${currentData[f]}→${p.data[f]}`).join(', ')}`);
         existing.setData(updatedData);
         toSave.push(existing);
+      } else {
+        log.debug(`${LOG_PREFIX} No metric changes for preserved path ${pathPattern}`);
       }
     }
   }
@@ -325,7 +330,7 @@ export async function refreshPreservedPathMetrics(builtSuggestions, preservableB
     }
   }
 
-  log.debug(`${LOG_PREFIX} Metrics refreshed on ${toSave.length}/${preservableByPattern.size} preserved paths`);
+  log.info(`${LOG_PREFIX} Metrics refreshed on ${toSave.length}/${preservableByPattern.size} preserved path suggestion(s)`);
 }
 
 /**
