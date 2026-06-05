@@ -384,6 +384,7 @@ describe('agentic daily export', () => {
   });
 
   it('fails before Athena or S3 work when the analytics queue is missing', async () => {
+    const S3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
@@ -398,6 +399,9 @@ describe('agentic daily export', () => {
           trafficRows: [],
           classificationRows: [],
         }),
+      },
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
       },
     });
 
@@ -446,6 +450,8 @@ describe('agentic daily export', () => {
 
     expect(athenaClient.execute).to.not.have.been.called;
     expect(athenaClient.query).to.not.have.been.called;
+    // No importer-bucket S3 client is even constructed on early exit.
+    expect(S3ClientStub).to.not.have.been.called;
   });
 
   it('cleans up uploaded files when analytics dispatch fails', async () => {
@@ -642,6 +648,7 @@ describe('agentic daily export', () => {
   });
 
   it('propagates Athena database setup failures without touching S3', async () => {
+    const S3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
@@ -656,6 +663,9 @@ describe('agentic daily export', () => {
           trafficRows: [],
           classificationRows: [],
         }),
+      },
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
       },
     });
 
@@ -701,5 +711,7 @@ describe('agentic daily export', () => {
     })).to.be.rejectedWith('Athena unavailable');
 
     expect(athenaClient.query).to.not.have.been.called;
+    // No importer-bucket S3 client is even constructed on early exit.
+    expect(S3ClientStub).to.not.have.been.called;
   });
 });
