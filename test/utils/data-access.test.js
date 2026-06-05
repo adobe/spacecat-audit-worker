@@ -3624,7 +3624,9 @@ describe('data-access', () => {
       mockOpportunity.getSuggestions.resolves([existingSuggestion]);
 
       // Create a merge status function that returns a new status
-      const mergeStatusFunction = sinon.stub().returns(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+      const mergeStatusFunction = sinon.stub().returns(
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+      );
 
       await syncSuggestionsWithPublishDetection({
         context,
