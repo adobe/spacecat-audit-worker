@@ -52,5 +52,17 @@ describe('Prerender subpath-utils', () => {
     it('accepts base url without protocol prefix', () => {
       expect(isUrlUnderSiteBase('https://nba.com/kings/players.html', 'nba.com/kings')).to.be.true;
     });
+
+    it('returns false when url hostname differs from base hostname', () => {
+      expect(isUrlUnderSiteBase('https://sub.nba.com/kings/players.html', 'https://nba.com/kings')).to.be.false;
+    });
+
+    it('returns false when url is from a different domain sharing the same path prefix', () => {
+      expect(isUrlUnderSiteBase('https://other.com/kings/players.html', 'https://nba.com/kings')).to.be.false;
+    });
+
+    it('returns true for www-variant url when base is root domain (hostname check skipped for root)', () => {
+      expect(isUrlUnderSiteBase('https://www.nba.com/page.html', 'https://nba.com')).to.be.true;
+    });
   });
 });

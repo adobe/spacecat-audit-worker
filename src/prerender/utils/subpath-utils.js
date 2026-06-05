@@ -22,13 +22,23 @@ export function getSitePathPattern(baseUrl) {
 
 export function isUrlUnderSiteBase(url, baseUrl) {
   try {
-    const targetPath = new URL(url).pathname;
+    const parsedTarget = new URL(url);
     const resolvedBase = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
-    const basePath = new URL(resolvedBase).pathname.replace(/\/+$/, '');
+    const parsedBase = new URL(resolvedBase);
+
+    const targetPath = parsedTarget.pathname;
+    const basePath = parsedBase.pathname.replace(/\/+$/, '');
 
     if (basePath === '' || basePath === '/') {
       return true;
     }
+
+    // Only enforce hostname match for subpath sites — root-domain bases accept any hostname
+    // (e.g. www-variant URLs that will be rebased by the caller).
+    if (parsedTarget.hostname !== parsedBase.hostname) {
+      return false;
+    }
+
     return targetPath === basePath || targetPath.startsWith(`${basePath}/`);
   } catch {
     return false;

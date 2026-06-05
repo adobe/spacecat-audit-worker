@@ -57,14 +57,8 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => {
-  try {
-    const { pathname } = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`);
-    const label = pathname.length > 1 ? 'All Subpath URLs' : 'All Domain URLs';
-    return `${baseUrl}/* (${label})`;
-  /* c8 ignore next 3 - Defensive catch: new URL() cannot throw given the http-prefix guard */
-  } catch {
-    return `${baseUrl}/* (All Domain URLs)`;
-  }
+  const label = getSitePathPattern(baseUrl) === '/*' ? 'All Domain URLs' : 'All Subpath URLs';
+  return `${baseUrl}/* (${label})`;
 };
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
