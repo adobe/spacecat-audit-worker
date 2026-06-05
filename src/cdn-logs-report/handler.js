@@ -158,7 +158,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const agenticDbExportResult = await runAgenticDbExports({
     athenaClient,
-    s3Client,
     s3Config,
     site,
     context,
@@ -175,7 +174,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       try {
         dailyReferralExport = await runDailyReferralExport({
           athenaClient,
-          s3Client,
           s3Config,
           site,
           context,
