@@ -1,3 +1,10 @@
+# [1.461.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.460.0...v1.461.0) (2026-06-05)
+
+
+### Features
+
+* **prerender:** skip HTML comparison for error/maintenance pages ([#2601](https://github.com/adobe/spacecat-audit-worker/issues/2601)) ([95e55c0](https://github.com/adobe/spacecat-audit-worker/commit/95e55c0db07144ee1d95fec365ef1ec728270ffb)), closes [spacecat-content-scraper#TBD](https://github.com/spacecat-content-scraper/issues/TBD)
+
 # [1.460.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.5...v1.460.0) (2026-06-05)
 
 
