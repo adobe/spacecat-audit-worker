@@ -1,3 +1,10 @@
+## [1.461.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.1...v1.461.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** pin daily export S3 client to correct region (PermanentRedirect) ([#2609](https://github.com/adobe/spacecat-audit-worker/issues/2609)) ([b234174](https://github.com/adobe/spacecat-audit-worker/commit/b234174e22a1a96248bfba950757240a44d091f9))
+
 ## [1.461.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.0...v1.461.1) (2026-06-05)
 
 
