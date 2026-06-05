@@ -691,6 +691,47 @@ describe('Path Suggestions', function () {
       expect(results[0].data.wordCountAfter).to.equal(200);
     });
 
+    it('treats undefined contentGainRatio as 0 when comparing duplicates (new entry undefined)', async () => {
+      const url = `${BASE_URL}/products/item-0`;
+      const existingSuggestions = makeExistingSuggestions([url], 'NEW');
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite();
+
+      // First entry has a real ratio; second has undefined → ?? 0 → loses comparison
+      const preRender = [
+        { url, contentGainRatio: 3, wordCountBefore: 100, wordCountAfter: 200 },
+        { url, contentGainRatio: undefined, wordCountBefore: 999, wordCountAfter: 999 },
+      ];
+      const qualify = createRcvQualifier({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
+      expect(results).to.have.length(1);
+      // First entry wins — undefined contentGainRatio treated as 0
+      expect(results[0].data.wordCountBefore).to.equal(100);
+      expect(results[0].data.wordCountAfter).to.equal(200);
+    });
+
+    it('treats undefined contentGainRatio as 0 when comparing duplicates (existing entry undefined)', async () => {
+      const url = `${BASE_URL}/products/item-0`;
+      const existingSuggestions = makeExistingSuggestions([url], 'NEW');
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite();
+
+      // First entry has undefined ratio → stored as existing with contentGainRatio=undefined
+      // Second has defined ratio → existing.contentGainRatio ?? 0 = 0, new > 0 → second wins
+      const preRender = [
+        { url, contentGainRatio: undefined, wordCountBefore: 50, wordCountAfter: 100 },
+        { url, contentGainRatio: 3, wordCountBefore: 200, wordCountAfter: 400 },
+      ];
+      const qualify = createRcvQualifier({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
+      expect(results).to.have.length(1);
+      // Second entry wins — existing had undefined (treated as 0), new has 3
+      expect(results[0].data.wordCountBefore).to.equal(200);
+      expect(results[0].data.wordCountAfter).to.equal(400);
+    });
+
     it('does not inflate group metrics when duplicate pathnames are present', async () => {
       const urls = Array.from({ length: 5 }, (_, i) => `${BASE_URL}/products/item-${i}`);
       const existingSuggestions = makeExistingSuggestions(urls, 'NEW');
