@@ -94,19 +94,27 @@ export async function buildPathTypeSuggestions(
     { eligiblePathnames: new Set(), valuableByPathname: new Map() },
   );
 
-  // 3. Enrich preRenderSuggestions with agenticTraffic + valuable — only eligible URLs
+  // 3. Enrich preRenderSuggestions with agenticTraffic + valuable — only eligible URLs.
+  // Deduplicate by pathname (keeping highest contentGainRatio) to avoid inflating group
+  // metrics when the scraper returns multiple entries for the same path.
   const baseUrl = site.getBaseURL().replace(/\/$/, '');
   const { origin } = new URL(baseUrl);
-  const enriched = preRenderSuggestions
-    .filter((s) => eligiblePathnames.has(toPathname(s.url)))
-    .map((s) => {
-      const pathname = toPathname(s.url);
-      return {
+  const enrichedByPathname = preRenderSuggestions.reduce((acc, s) => {
+    const pathname = toPathname(s.url);
+    if (!eligiblePathnames.has(pathname)) {
+      return acc;
+    }
+    const existing = acc.get(pathname);
+    if (!existing || (s.contentGainRatio ?? 0) > (existing.contentGainRatio ?? 0)) {
+      acc.set(pathname, {
         ...s,
         agenticTraffic: agenticHitsMap.get(pathname) || 0,
         valuable: valuableByPathname.get(pathname),
-      };
-    });
+      });
+    }
+    return acc;
+  }, new Map());
+  const enriched = [...enrichedByPathname.values()];
 
   // 4. Group by first path segment (relative to site base URL)
   const groups = new Map();

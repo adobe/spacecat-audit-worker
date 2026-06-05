@@ -650,6 +650,47 @@ describe('Path Suggestions', function () {
       const patterns = results.map((r) => r.data.allowedRegexPatterns[0]).sort();
       expect(patterns).to.deep.equal(['/kings/products/*', '/kings/schedule/*']);
     });
+
+    it('deduplicates preRenderSuggestions by pathname, keeping highest contentGainRatio', async () => {
+      const url = `${BASE_URL}/products/item-0`;
+      const existingSuggestions = makeExistingSuggestions([url], 'NEW');
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite();
+
+      // Same pathname submitted twice — second has higher contentGainRatio
+      const preRender = [
+        { url, contentGainRatio: 1, wordCountBefore: 50, wordCountAfter: 100 },
+        { url, contentGainRatio: 5, wordCountBefore: 200, wordCountAfter: 400 },
+      ];
+      const qualify = createRcvQualifier({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
+      expect(results).to.have.length(1);
+      // Only one URL in the group after dedup
+      expect(results[0].data.wordCountBefore).to.equal(200);
+      expect(results[0].data.wordCountAfter).to.equal(400);
+      expect(results[0].data.contentGainRatio).to.equal(5);
+    });
+
+    it('does not inflate group metrics when duplicate pathnames are present', async () => {
+      const urls = Array.from({ length: 5 }, (_, i) => `${BASE_URL}/products/item-${i}`);
+      const existingSuggestions = makeExistingSuggestions(urls, 'NEW');
+      const opportunity = makeOpportunity(existingSuggestions);
+      const site = makeSite();
+
+      // Each URL appears twice in preRenderSuggestions
+      const preRender = [
+        ...urls.map((url) => ({ url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200 })),
+        ...urls.map((url) => ({ url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200 })),
+      ];
+      const qualify = createRcvQualifier({ minUrls: 1, minValuablePct: 0, scoreThreshold: 0 });
+
+      const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
+      expect(results).to.have.length(1);
+      // wordCountBefore/After should reflect 5 unique URLs, not 10 duplicated entries
+      expect(results[0].data.wordCountBefore).to.equal(500);
+      expect(results[0].data.wordCountAfter).to.equal(1000);
+    });
   });
 
   // ─── markSuggestionsAsCoveredByPaths ─────────────────────────────────────
