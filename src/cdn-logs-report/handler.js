@@ -14,7 +14,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  getConfigCategories,
 } from './utils/report-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
@@ -78,10 +77,9 @@ async function generateAgenticPatterns({
 
   if (existingPatterns?.error) {
     log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
-  } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
-    log.info('Agentic URL classification rules not found or stale, generating DB rules...');
+  } else if (!hasExistingPatterns) {
+    log.info('Agentic URL classification rules not found, generating DB rules...');
     const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
-    const configCategories = await getConfigCategories(site, context);
 
     await generatePatternsWorkbook({
       site,
@@ -89,7 +87,6 @@ async function generateAgenticPatterns({
       athenaClient,
       s3Config: { ...s3Config, tableName: agenticReportConfig.tableName },
       periods,
-      configCategories,
       existingPatterns,
     });
   }

@@ -62,7 +62,6 @@ describe('CDN Logs Report Handler', function test() {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: (...a) => mocks.loadSql(...a),
         generateReportingPeriods: (...a) => mocks.generateReportingPeriods(...a),
-        getConfigCategories: (...a) => mocks.getConfigCategories(...a),
       },
       '../../../src/common/agentic-url-classification-rules.js': {
         fetchAgenticUrlClassificationRules: (...a) => mocks.fetchAgenticUrlClassificationRules(...a),
@@ -96,7 +95,6 @@ describe('CDN Logs Report Handler', function test() {
     // pattern regeneration), and both daily DB exports succeed with a batchId.
     mocks.loadSql = sandbox.stub().resolves('SELECT 1');
     mocks.generateReportingPeriods = sandbox.stub().returns({ weeks: [], periodIdentifier: 'w01-2026' });
-    mocks.getConfigCategories = sandbox.stub().resolves(['Category A']);
     mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves(EXISTING_RULES);
     mocks.generatePatternsWorkbook = sandbox.stub().resolves(true);
     mocks.pathHasData = sandbox.stub().resolves(true);
@@ -197,7 +195,7 @@ describe('CDN Logs Report Handler', function test() {
   });
 
   describe('patterns generation (weekly step)', () => {
-    it('regenerates DB rules when none exist yet', async () => {
+    it('regenerates DB rules when none exist yet (non-Monday → current week)', async () => {
       mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
       const clock = sinon.useFakeTimers({ now: new Date('2025-01-07'), toFake: ['Date'] }); // Tuesday
 
@@ -208,9 +206,23 @@ describe('CDN Logs Report Handler', function test() {
       }
 
       expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
-      expect(mocks.getConfigCategories).to.have.been.calledOnce;
       // Non-Monday with no explicit weekOffset → current week (offset 0).
       expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, 0);
+    });
+
+    it('regenerates DB rules on Mondays using the previous full week offset', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-06'), toFake: ['Date'] }); // Monday
+
+      try {
+        await runAudit({});
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      // Monday with no explicit weekOffset → previous full week (offset -1).
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -1);
     });
 
     it('regenerates DB rules when only one rule table is populated', async () => {
@@ -220,20 +232,6 @@ describe('CDN Logs Report Handler', function test() {
       await runAudit({ weekOffset: 0 });
 
       expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
-    });
-
-    it('regenerates DB rules when categories were updated, even if rules exist', async () => {
-      const clock = sinon.useFakeTimers({ now: new Date('2025-01-06'), toFake: ['Date'] }); // Monday
-
-      try {
-        await runAudit({ categoriesUpdated: true });
-      } finally {
-        clock.restore();
-      }
-
-      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
-      // Monday with no explicit weekOffset → previous full week (offset -1).
-      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -1);
     });
 
     it('uses the explicit weekOffset for pattern sampling when provided', async () => {
