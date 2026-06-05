@@ -1372,6 +1372,13 @@ export async function processOpportunityAndSuggestions(
     ...newPathSuggestions,
   ];
 
+  // Exclude OUTDATED path suggestions from the sync view so they remain OUTDATED and a fresh
+  // NEW suggestion is created for the re-discovered path. Matching an OUTDATED path suggestion
+  // would silently transition it back to NEW without creating a fresh record.
+  const suggestionsForSync = cachedSuggestions.filter(
+    (s) => !(isPathSuggestionData(s.getData()) && s.getStatus() === Suggestion.STATUSES.OUTDATED),
+  );
+
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
@@ -1385,6 +1392,7 @@ export async function processOpportunityAndSuggestions(
     }),
     scrapedUrlsSet,
     mergeDataFunction: buildMergeDataFunction(mapSuggestionData),
+    existingSuggestions: suggestionsForSync,
   });
 
   // Mark per-URL suggestions covered by deployed path suggestions

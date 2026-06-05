@@ -3414,6 +3414,91 @@ describe('Prerender Audit', () => {
         expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
 
+      it('should exclude OUTDATED path suggestions from existingSuggestions so they stay OUTDATED and a fresh NEW is created', async () => {
+        const outdatedPathSuggestion = {
+          getId: () => 'path-outdated-1',
+          getStatus: () => 'OUTDATED',
+          getData: () => ({
+            allowedRegexPatterns: ['/products/*'],
+            url: 'https://example.com/products',
+            score: 0.6,
+          }),
+        };
+        const newPathSuggestion = {
+          getId: () => 'path-new-1',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            allowedRegexPatterns: ['/blog/*'],
+            url: 'https://example.com/blog',
+            score: 0.8,
+          }),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([outdatedPathSuggestion, newPathSuggestion]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://example.com/products/item',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION',
+                SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED',
+              },
+            },
+          },
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getHandlerConfig: () => ({ pathSuggestionsEnabled: false }),
+            }),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const { existingSuggestions } = syncSuggestionsStub.firstCall.args[0];
+
+        // OUTDATED path suggestion must be excluded so it stays OUTDATED and
+        // a new NEW suggestion gets created for the re-discovered path
+        expect(existingSuggestions.map((s) => s.getId())).to.not.include('path-outdated-1');
+        // NEW path suggestion must be kept so it is updated in place
+        expect(existingSuggestions.map((s) => s.getId())).to.include('path-new-1');
+      });
+
       it('should normalize scrapedUrlsSet to pathname so domain-shifted suggestions are correctly outdated', async () => {
         const mockOpportunity = {
           getId: () => 'test-opp-id',
