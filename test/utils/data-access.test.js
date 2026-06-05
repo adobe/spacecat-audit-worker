@@ -3684,6 +3684,44 @@ describe('data-access', () => {
       );
     });
 
+    it('should use custom merge when mergeDataFunction is provided', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Old', count: 5 },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Old', count: 5 }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'New', count: 3 }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      const customMerge = sinon.stub().callsFake((existing, newItem) => ({
+        ...existing,
+        ...newItem,
+        count: existing.count + newItem.count, // Custom merge logic
+      }));
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeDataFunction: customMerge,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should use custom merge function
+      expect(customMerge).to.have.been.calledOnce;
+      expect(existingSuggestion.setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
     it('should use default merge when mergeDataFunction is not provided', async () => {
       const existingSuggestion = {
         id: 'suggestion-1',
