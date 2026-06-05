@@ -1474,6 +1474,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
           : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+        ...(result.isErrorPage && { isErrorPage: true }),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
       };
     });

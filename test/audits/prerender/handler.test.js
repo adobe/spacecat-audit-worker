@@ -7059,6 +7059,42 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages[1]).to.not.have.property('scrapeError');
     });
 
+    it('should include isErrorPage in status when result is an error page, omit it otherwise', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 2,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/maintenance',
+              error: true,
+              needsPrerender: false,
+              isErrorPage: true,
+            },
+            {
+              url: 'https://example.com/real-page',
+              error: false,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/maintenance');
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].isErrorPage).to.be.true;
+
+      expect(uploadedData.pages[1].url).to.equal('https://example.com/real-page');
+      expect(uploadedData.pages[1]).to.not.have.property('isErrorPage');
+    });
+
     it('should skip upload when auditResult is missing', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
