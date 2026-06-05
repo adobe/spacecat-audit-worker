@@ -57,41 +57,52 @@ async function generateAgenticPatterns({
 }) {
   const { log } = context;
 
-  if (!agenticReportConfig
-    || !(await pathHasData(s3Client, agenticReportConfig.aggregatedLocation))) {
-    log.info('No agentic report data found - skipping patterns generation');
+  if (!agenticReportConfig) {
+    log.info('No agentic report config found - skipping patterns generation');
     return { agenticReportHasData: false };
   }
 
-  // Pattern generation queries Athena, so ensure the database exists first.
-  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
-  await athenaClient.execute(
-    sqlDb,
-    s3Config.databaseName,
-    `[Athena Query] Create database ${s3Config.databaseName}`,
-  );
+  try {
+    if (!(await pathHasData(s3Client, agenticReportConfig.aggregatedLocation))) {
+      log.info('No agentic report data found - skipping patterns generation');
+      return { agenticReportHasData: false };
+    }
 
-  const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
-  const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
-    && (existingPatterns?.topicPatterns?.length || 0) > 0;
+    // Pattern generation queries Athena, so ensure the database exists first.
+    const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+    await athenaClient.execute(
+      sqlDb,
+      s3Config.databaseName,
+      `[Athena Query] Create database ${s3Config.databaseName}`,
+    );
 
-  if (existingPatterns?.error) {
-    log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
-  } else if (!hasExistingPatterns) {
-    log.info('Agentic URL classification rules not found, generating DB rules...');
-    const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
+    const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+    const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
+      && (existingPatterns?.topicPatterns?.length || 0) > 0;
 
-    await generatePatternsWorkbook({
-      site,
-      context,
-      athenaClient,
-      s3Config: { ...s3Config, tableName: agenticReportConfig.tableName },
-      periods,
-      existingPatterns,
-    });
+    if (existingPatterns?.error) {
+      log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
+    } else if (!hasExistingPatterns) {
+      log.info('Agentic URL classification rules not found, generating DB rules...');
+      const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
+
+      await generatePatternsWorkbook({
+        site,
+        context,
+        athenaClient,
+        s3Config: { ...s3Config, tableName: agenticReportConfig.tableName },
+        periods,
+        existingPatterns,
+      });
+    }
+
+    return { agenticReportHasData: true };
+  } catch (error) {
+    // Patterns generation is best-effort: a transient Athena/DB failure here must
+    // not block the daily agentic/referral DB exports, which do not depend on it.
+    log.error(`Agentic patterns generation failed for ${site.getId()}: ${error.message}`, error);
+    return { agenticReportHasData: false };
   }
-
-  return { agenticReportHasData: true };
 }
 
 /**

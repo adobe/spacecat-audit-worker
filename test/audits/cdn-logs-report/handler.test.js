@@ -261,8 +261,27 @@ describe('CDN Logs Report Handler', function test() {
       expect(mocks.pathHasData).to.not.have.been.called;
       expect(athenaClient.execute).to.not.have.been.called;
       expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('No agentic report data found - skipping patterns generation');
+      expect(context.log.info).to.have.been.calledWith('No agentic report config found - skipping patterns generation');
       expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(false);
+    });
+
+    it('contains patterns failures so the daily exports still run', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      athenaClient.execute = sandbox.stub().rejects(new Error('athena down'));
+
+      const result = await runAudit({});
+
+      expect(context.log.error).to.have.been.calledWith(
+        'Agentic patterns generation failed for test-site: athena down',
+        sinon.match.instanceOf(Error),
+      );
+      // patterns failure is swallowed → daily exports still run
+      expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(false);
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.auditResult).to.deep.equal([
+        { name: 'agentic-db-export', batchId: 'agentic-batch' },
+        { name: 'referral-db-export', batchId: 'referral-batch' },
+      ]);
     });
 
     it('skips the weekly step when the agentic aggregate has no data', async () => {
