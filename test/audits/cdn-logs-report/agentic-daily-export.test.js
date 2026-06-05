@@ -71,6 +71,11 @@ describe('agentic daily export', () => {
       }),
     };
 
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+    const S3ClientStub = sandbox.stub().returns(s3Client);
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE IF NOT EXISTS test_db'),
@@ -79,6 +84,9 @@ describe('agentic daily export', () => {
         weeklyBreakdownQueries: queryBuilder,
       },
       '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': mapper,
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
+      },
       uuid: {
         v4: () => 'batch-123',
       },
@@ -87,9 +95,6 @@ describe('agentic daily export', () => {
     const athenaClient = {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([{ raw: true }]),
-    };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
     };
     const context = {
       env: {
@@ -118,7 +123,6 @@ describe('agentic daily export', () => {
 
     const result = await module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'spacecat-dev-cdn-logs-aggregates-us-east-1',
         databaseName: 'cdn_logs_example',
@@ -139,6 +143,7 @@ describe('agentic daily export', () => {
       'cdn_logs_example',
       '[Athena Query] agentic_daily_flat_data',
     );
+    expect(S3ClientStub).to.have.been.calledOnceWith({ region: 'us-east-1' });
     expect(s3Client.send).to.have.been.calledTwice;
     expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
     expect(s3Client.send.secondCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
@@ -400,13 +405,9 @@ describe('agentic daily export', () => {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([]),
     };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
 
     await expect(module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -445,10 +446,14 @@ describe('agentic daily export', () => {
 
     expect(athenaClient.execute).to.not.have.been.called;
     expect(athenaClient.query).to.not.have.been.called;
-    expect(s3Client.send).to.not.have.been.called;
   });
 
   it('cleans up uploaded files when analytics dispatch fails', async () => {
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+    const S3ClientStub = sandbox.stub().returns(s3Client);
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
@@ -485,21 +490,19 @@ describe('agentic daily export', () => {
           }],
         }),
       },
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
+      },
       uuid: {
         v4: () => 'batch-123',
       },
     });
-
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
 
     await expect(module.runDailyAgenticExport({
       athenaClient: {
         execute: sandbox.stub().resolves(),
         query: sandbox.stub().resolves([]),
       },
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -535,11 +538,20 @@ describe('agentic daily export', () => {
       referenceDate: new Date('2026-04-01T10:00:00Z'),
     })).to.be.rejectedWith('SQS unavailable');
 
+    expect(S3ClientStub).to.have.been.calledOnceWith({ region: 'us-east-1' });
     expect(s3Client.send).to.have.callCount(3);
     expect(s3Client.send.lastCall.args[0].constructor.name).to.equal('DeleteObjectsCommand');
   });
 
   it('cleans up uploaded files when an S3 upload fails', async () => {
+    const s3Client = {
+      send: sandbox.stub(),
+    };
+    s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
+    s3Client.send.onCall(1).resolves({});
+    s3Client.send.onCall(2).resolves({});
+    const S3ClientStub = sandbox.stub().returns(s3Client);
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
@@ -576,24 +588,19 @@ describe('agentic daily export', () => {
           }],
         }),
       },
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
+      },
       uuid: {
         v4: () => 'batch-123',
       },
     });
-
-    const s3Client = {
-      send: sandbox.stub(),
-    };
-    s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
-    s3Client.send.onCall(1).resolves({});
-    s3Client.send.onCall(2).resolves({});
 
     await expect(module.runDailyAgenticExport({
       athenaClient: {
         execute: sandbox.stub().resolves(),
         query: sandbox.stub().resolves([]),
       },
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -629,6 +636,7 @@ describe('agentic daily export', () => {
       referenceDate: new Date('2026-04-01T10:00:00Z'),
     })).to.be.rejectedWith('S3 upload failed');
 
+    expect(S3ClientStub).to.have.been.calledOnceWith({ region: 'us-east-1' });
     expect(s3Client.send).to.have.callCount(3);
     expect(s3Client.send.lastCall.args[0].constructor.name).to.equal('DeleteObjectsCommand');
   });
@@ -655,13 +663,9 @@ describe('agentic daily export', () => {
       execute: sandbox.stub().rejects(new Error('Athena unavailable')),
       query: sandbox.stub().resolves([]),
     };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
 
     await expect(module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -697,6 +701,5 @@ describe('agentic daily export', () => {
     })).to.be.rejectedWith('Athena unavailable');
 
     expect(athenaClient.query).to.not.have.been.called;
-    expect(s3Client.send).to.not.have.been.called;
   });
 });

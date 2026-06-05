@@ -158,7 +158,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const agenticDbExportResult = await runAgenticDbExports({
     athenaClient,
-    s3Client,
     s3Config,
     site,
     context,
