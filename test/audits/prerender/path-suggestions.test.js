@@ -1191,4 +1191,113 @@ describe('Path Suggestions', function () {
     });
   });
 
+  // ─── resolvePathSuggestions ───────────────────────────────────────────────
+
+  describe('resolvePathSuggestions', () => {
+    let resolvePathSuggestions;
+    let saveManyStub;
+    let ctx;
+    let site;
+
+    beforeEach(() => {
+      ({ resolvePathSuggestions } = pathSuggestionsModule);
+      saveManyStub = sinon.stub().resolves();
+      ctx = {
+        log: { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub(), error: sinon.stub() },
+        dataAccess: { Suggestion: { saveMany: saveManyStub } },
+      };
+      site = makeSite();
+    });
+
+    it('returns empty arrays and logs skip reason when pathSuggestionsEnabled is false', async () => {
+      const opportunity = makeOpportunity([]);
+      const result = await resolvePathSuggestions({
+        pathSuggestionsEnabled: false,
+        domainWideDeployed: false,
+        preRenderSuggestions: [],
+        opportunity,
+        site,
+        context: ctx,
+        cachedSuggestions: [],
+        auditUrl: BASE_URL,
+        siteId: 'site-1',
+      });
+
+      expect(result.preservablePaths).to.deep.equal([]);
+      expect(result.newPathSuggestions).to.deep.equal([]);
+      expect(ctx.log.info.calledWith(sinon.match(/not enabled/))).to.be.true;
+    });
+
+    it('returns empty arrays and logs skip reason when domainWideDeployed is true', async () => {
+      const opportunity = makeOpportunity([]);
+      const result = await resolvePathSuggestions({
+        pathSuggestionsEnabled: true,
+        domainWideDeployed: true,
+        preRenderSuggestions: [],
+        opportunity,
+        site,
+        context: ctx,
+        cachedSuggestions: [],
+        auditUrl: BASE_URL,
+        siteId: 'site-1',
+      });
+
+      expect(result.preservablePaths).to.deep.equal([]);
+      expect(result.newPathSuggestions).to.deep.equal([]);
+      expect(ctx.log.info.calledWith(sinon.match(/domain-wide is deployed/))).to.be.true;
+    });
+
+    it('returns new path suggestions when enabled and no preserved paths', async () => {
+      const urls = Array.from({ length: 5 }, (_, i) => `${BASE_URL}/products/item-${i}`);
+      const cachedSuggestions = urls.map((url, i) => makeSuggestion({
+        id: `s-${i}`, status: 'NEW', data: { url, valuable: true },
+      }));
+      const opportunity = makeOpportunity(cachedSuggestions);
+      const preRenderSuggestions = urls.map((url) => ({
+        url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200,
+      }));
+
+      const result = await resolvePathSuggestions({
+        pathSuggestionsEnabled: true,
+        domainWideDeployed: false,
+        preRenderSuggestions,
+        opportunity,
+        site,
+        context: ctx,
+        cachedSuggestions,
+        auditUrl: BASE_URL,
+        siteId: 'site-1',
+      });
+
+      expect(result.preservablePaths).to.deep.equal([]);
+      expect(result.newPathSuggestions).to.be.an('array');
+      expect(ctx.log.info.calledWith(sinon.match(/Path suggestions:/))).to.be.true;
+    });
+
+    it('preserves existing deployed path suggestions and excludes them from new', async () => {
+      const preserved = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
+      });
+      const cachedSuggestions = [preserved];
+      const opportunity = makeOpportunity(cachedSuggestions);
+
+      const result = await resolvePathSuggestions({
+        pathSuggestionsEnabled: true,
+        domainWideDeployed: false,
+        preRenderSuggestions: [],
+        opportunity,
+        site,
+        context: ctx,
+        cachedSuggestions,
+        auditUrl: BASE_URL,
+        siteId: 'site-1',
+      });
+
+      expect(result.preservablePaths).to.have.length(1);
+      expect(result.newPathSuggestions).to.deep.equal([]);
+    });
+  });
+
 });
