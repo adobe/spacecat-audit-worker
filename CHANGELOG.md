@@ -1,3 +1,10 @@
+# [1.460.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.5...v1.460.0) (2026-06-05)
+
+
+### Features
+
+* **cdn-logs-report:** decouple URL classification from LLMO customer config (LLMO-4748) ([#2539](https://github.com/adobe/spacecat-audit-worker/issues/2539)) ([b1b690c](https://github.com/adobe/spacecat-audit-worker/commit/b1b690cecd17e0dbae59b11a43820dc860ab9782))
+
 ## [1.459.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.4...v1.459.5) (2026-06-04)
 
 
