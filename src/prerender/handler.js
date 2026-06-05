@@ -28,6 +28,7 @@ import {
   normalizePathnameWithQuery,
   toPathname,
 } from './utils/utils.js';
+import { getSitePathPattern, isUrlUnderSiteBase } from './utils/subpath-utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -55,7 +56,18 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
-const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
+const getDomainWideSuggestionUrl = (baseUrl) => {
+  try {
+    const { pathname } = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`);
+    const label = pathname.length > 1 ? 'All Subpath URLs' : 'All Domain URLs';
+    return `${baseUrl}/* (${label})`;
+  /* c8 ignore next 3 - Defensive catch: new URL() cannot throw given the http-prefix guard */
+  } catch {
+    return `${baseUrl}/* (All Domain URLs)`;
+  }
+};
+
+const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
 /**
  * Reads and parses the site's status.json from S3.
@@ -301,7 +313,11 @@ async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT)
     const { SiteTopPage } = dataAccess || {};
     if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, limit);
+      const baseUrl = site.getBaseURL();
+      topPagesUrls = (topPages || [])
+        .map((p) => p.getUrl())
+        .filter((url) => !baseUrl || isUrlUnderSiteBase(url, baseUrl))
+        .slice(0, limit);
     }
   } catch (error) {
     log.warn(`${LOG_PREFIX} Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
@@ -1165,10 +1181,11 @@ async function prepareDomainWideAggregateSuggestion(
   );
 
   // Create domain-wide path pattern(s) for allowList
-  // The allowList in metaconfig expects glob patterns (e.g., "/*")
-  const allowedRegexPatterns = ['/*'];
+  // The allowList in metaconfig expects glob patterns (e.g., "/*" or "/kings/*")
+  const pathPattern = getSitePathPattern(baseUrl);
+  const allowedRegexPatterns = [pathPattern];
 
-  // This applies to ALL URLs in the domain
+  // This applies to ALL URLs in the domain (or subpath for subpath sites)
   // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
     url: getDomainWideSuggestionUrl(baseUrl),
@@ -1179,7 +1196,7 @@ async function prepareDomainWideAggregateSuggestion(
     // Domain-wide configuration metadata
     isDomainWide: true,
     allowedRegexPatterns,
-    pathPattern: '/*',
+    pathPattern,
   };
 
   log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
