@@ -6798,11 +6798,55 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(analyzeHtmlStub.called).to.be.false;
+        expect(result.auditResult.results[0].url).to.equal('https://example.com/page1');
         expect(result.auditResult.results[0].isErrorPage).to.be.true;
         expect(result.auditResult.results[0].needsPrerender).to.be.false;
         expect(result.auditResult.results[0].error).to.be.true;
         const infoMessages = context.log.info.args.map((call) => call[0]);
         expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
+      });
+
+      it('should set both isErrorPage and scrapeForbidden when metadata has both flags', async () => {
+        const scrapeMetadata = {
+          isErrorPage: true,
+          error: { statusCode: 403, message: 'Forbidden' },
+        };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        const page = result.auditResult.results[0];
+        expect(page.url).to.equal('https://example.com/page1');
+        expect(page.isErrorPage).to.be.true;
+        expect(page.needsPrerender).to.be.false;
+        expect(page.error).to.be.true;
+        // scrapeError is preserved in cleanResults (only hasScrapeMetadata and scrapeForbidden are stripped)
+        expect(page.scrapeError).to.deep.equal({ statusCode: 403, message: 'Forbidden' });
       });
 
       it('should build S3 path without path segment for root URLs', async () => {
