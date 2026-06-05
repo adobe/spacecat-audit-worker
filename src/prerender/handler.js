@@ -499,6 +499,7 @@ async function compareHtmlContent(url, context) {
     log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
     return {
       url,
+      // error: true keeps URL out of scrapedUrlsSet, preventing syncSuggestions from resolving
       error: true,
       needsPrerender: false,
       isErrorPage: true,
