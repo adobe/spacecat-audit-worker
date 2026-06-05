@@ -174,7 +174,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       try {
         dailyReferralExport = await runDailyReferralExport({
           athenaClient,
-          s3Client,
           s3Config,
           site,
           context,

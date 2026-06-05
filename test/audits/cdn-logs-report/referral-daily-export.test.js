@@ -24,9 +24,15 @@ use(sinonChai);
 describe('referral daily export', function referralDailyExportTests() {
   this.timeout(10000);
   let sandbox;
+  // runDailyReferralExport now builds its own us-east-1 S3 client; tests assert on
+  // this shared mock, which the mocked S3Client constructor returns.
+  let s3ClientMock;
+  let S3ClientStub;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    s3ClientMock = { send: sandbox.stub().resolves({}) };
+    S3ClientStub = sandbox.stub().callsFake(() => s3ClientMock);
   });
 
   afterEach(() => {
@@ -82,6 +88,9 @@ describe('referral daily export', function referralDailyExportTests() {
           ...queryBuilderOverrides,
         },
       },
+      '@aws-sdk/client-s3': {
+        S3Client: S3ClientStub,
+      },
     });
   }
 
@@ -104,7 +113,7 @@ describe('referral daily export', function referralDailyExportTests() {
         pageviews: 5,
       }]),
     };
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
     const context = makeContext();
     const site = makeSite();
 
@@ -128,6 +137,7 @@ describe('referral daily export', function referralDailyExportTests() {
       'cdn_db',
       '[Athena Query] referral_daily_flat_data',
     );
+    expect(S3ClientStub).to.have.been.calledOnceWith({ region: 'us-east-1' });
     expect(s3Client.send).to.have.been.calledOnce;
     expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-importer-bucket');
     expect(s3Client.send.firstCall.args[0].input.Key).to.equal(
@@ -204,7 +214,7 @@ describe('referral daily export', function referralDailyExportTests() {
     const classifyStub = sandbox.stub().returns({ type: 'paid', category: 'search', vendor: 'google' });
     const module = await loadModule(classifyStub);
 
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
     const context = makeContext();
 
     const result = await module.runDailyReferralExport({
@@ -260,7 +270,7 @@ describe('referral daily export', function referralDailyExportTests() {
       date: '2026-03-31',
       region: 'US',
     };
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -289,7 +299,7 @@ describe('referral daily export', function referralDailyExportTests() {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'claude' });
     const module = await loadModule(classifyStub);
 
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -323,7 +333,7 @@ describe('referral daily export', function referralDailyExportTests() {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
 
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -358,7 +368,7 @@ describe('referral daily export', function referralDailyExportTests() {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
 
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -423,7 +433,7 @@ describe('referral daily export', function referralDailyExportTests() {
 
   it('propagates Athena failures without touching S3', async () => {
     const module = await loadModule(sandbox.stub());
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await expect(module.runDailyReferralExport({
       athenaClient: {
@@ -444,7 +454,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('cleans up uploaded CSV when SQS dispatch fails', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await expect(module.runDailyReferralExport({
       athenaClient: {
@@ -478,7 +488,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('cleans up uploaded CSV when S3 upload itself fails', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub() };
+    const s3Client = s3ClientMock;
     s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
     s3Client.send.onCall(1).resolves({});
 
@@ -545,7 +555,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('handles null/missing optional row fields gracefully', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: null });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -586,7 +596,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('includes actual referrer and UTM values in CSV output', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -623,7 +633,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('normalizes mixed-date rows to the same group key', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     const sharedFields = {
       host: 'www.example.com',
@@ -663,7 +673,7 @@ describe('referral daily export', function referralDailyExportTests() {
     classifyStub.onCall(0).returns({ type: 'earned', category: 'llm', vendor: undefined });
     classifyStub.onCall(1).returns({ type: 'earned', category: 'llm', vendor: '' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     const sharedFields = {
       host: 'www.example.com',
@@ -701,7 +711,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('handles trailing slash in baseURL without producing a double-slash URL', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
@@ -769,7 +779,7 @@ describe('referral daily export', function referralDailyExportTests() {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
 
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {

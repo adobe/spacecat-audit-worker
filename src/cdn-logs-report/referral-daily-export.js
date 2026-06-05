@@ -12,11 +12,17 @@
 
 /* eslint-disable camelcase */
 import { createHash } from 'crypto';
-import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
+
+// The referral CSV is always written to the importer bucket (S3_IMPORTER_BUCKET_NAME),
+// which lives in us-east-1. The injected CDN S3 client is regionalized to the site's CDN
+// region, so reusing it triggers S3 PermanentRedirect (301) for non-us-east-1 sites.
+// Always talk to the importer bucket through a dedicated us-east-1 client.
+const REFERRAL_EXPORT_S3_REGION = 'us-east-1';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
@@ -142,7 +148,6 @@ export const testHelpers = {
 
 export async function runDailyReferralExport({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -215,6 +220,7 @@ export async function runDailyReferralExport({
   }
 
   const messageGroupId = `referral_traffic_cdn:${siteId}`;
+  const s3Client = new S3Client({ region: REFERRAL_EXPORT_S3_REGION });
 
   try {
     await s3Client.send(new PutObjectCommand({
