@@ -302,11 +302,15 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.dailyReferralExport).to.equal(undefined);
     });
 
-    it('skips the referral export on categories-update runs', async () => {
+    it('runs the referral export on categories-update runs (no longer gated)', async () => {
       const result = await runAudit({ date: '2026-04-01T00:00:00Z', categoriesUpdated: true });
 
-      expect(mocks.runDailyReferralExport).to.not.have.been.called;
-      expect(result.dailyReferralExport).to.equal(undefined);
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        batchId: 'referral-batch',
+      });
     });
 
     it('skips the referral export when the referral config is missing', async () => {

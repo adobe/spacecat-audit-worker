@@ -142,7 +142,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const isDailyDateRun = Boolean(auditContext?.date);
   const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined
     && auditContext?.weekOffset !== null;
-  const isCategoriesUpdateRun = auditContext?.categoriesUpdated === true;
 
   const awsRuntime = getCdnAwsRuntime(site, context);
   const { s3Client } = awsRuntime;
@@ -186,8 +185,8 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     agenticReportHasData,
   });
 
-  // 3. Daily referral export — feeds PostgreSQL (skipped on weekly-only / categories-update runs).
-  const dailyReferralExport = (!isWeeklyOnlyRun && !isCategoriesUpdateRun)
+  // 3. Daily referral export — feeds PostgreSQL (skipped on weekly-only runs).
+  const dailyReferralExport = !isWeeklyOnlyRun
     ? await runReferralExport({
       site,
       context,
