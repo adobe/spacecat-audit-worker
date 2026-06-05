@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  getConfigCategories,
 } from './utils/report-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
@@ -38,7 +37,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const isDailyDateRun = Boolean(auditContext?.date);
   const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined
     && auditContext?.weekOffset !== null;
-  const isCategoriesUpdateRun = auditContext?.categoriesUpdated === true;
 
   const awsRuntime = getCdnAwsRuntime(site, context);
   const { s3Client } = awsRuntime;
@@ -105,10 +103,9 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
         if (existingPatterns?.error) {
           log.info(`Skipping fresh patterns generation for ${siteId}; DB rule fetch failed`);
-        } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
-          log.info('Agentic URL classification rules not found or stale, generating DB rules...');
+        } else if (!hasExistingPatterns) {
+          log.info('Agentic URL classification rules not found, generating DB rules...');
           const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
-          const configCategories = await getConfigCategories(site, context);
 
           const generatedPatterns = await generatePatternsWorkbook({
             site,
@@ -119,7 +116,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
               tableName: reportConfig.tableName,
             },
             periods,
-            configCategories,
             existingPatterns,
           });
           if (generatedPatterns) {
@@ -172,7 +168,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   });
 
   let dailyReferralExport;
-  if (!isWeeklyOnlyRun && !isCategoriesUpdateRun) {
+  if (!isWeeklyOnlyRun) {
     if (!referralReportConfig) {
       log.debug(`Skipping daily referral export for ${siteId}: referral report config not found`);
     } else {
