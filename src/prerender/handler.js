@@ -525,6 +525,7 @@ async function compareHtmlContent(url, context) {
 
     log.debug(`${LOG_PREFIX} Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
+    // analysis fields intentionally override scrapeContext on key collision
     return { ...scrapeContext, ...analysis };
   } catch (error) {
     log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);

@@ -6847,6 +6847,8 @@ describe('Prerender Audit', () => {
         expect(page.error).to.be.true;
         // scrapeError is preserved in cleanResults (only hasScrapeMetadata and scrapeForbidden are stripped)
         expect(page.scrapeError).to.deep.equal({ statusCode: 403, message: 'Forbidden' });
+        // scrapeForbidden is stripped from cleanResults but contributes to the aggregate count
+        expect(result.auditResult.scrapeForbiddenCount).to.equal(1);
       });
 
       it('should build S3 path without path segment for root URLs', async () => {
