@@ -268,6 +268,10 @@ async function createTopUrlsQueryWithLimit(options) {
     excludedUrlSuffixes = [], statuses = [],
   } = options;
 
+  if (!startDate && !periods?.weeks?.length) {
+    throw new Error('createTopUrlsQueryWithLimit: either periods or startDate/endDate is required');
+  }
+
   const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters, site);
   const start = startDate ?? periods.weeks[periods.weeks.length - 1].startDate;

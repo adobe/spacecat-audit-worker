@@ -414,6 +414,16 @@ describe('CDN Logs Query Builder', () => {
       }
     });
 
+    it('throws when neither periods nor startDate/endDate is provided', async () => {
+      const options = createMockOptions({ periods: undefined, limit: 10 });
+      let err;
+      try {
+        await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(options);
+      } catch (e) { err = e; }
+      expect(err).to.be.instanceOf(Error);
+      expect(err.message).to.match(/either periods or startDate\/endDate is required/);
+    });
+
     it('creates query without excluded URL suffixes filter when not provided', async () => {
       const customOptions = createMockOptions({
         limit: 50,
