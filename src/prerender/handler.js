@@ -1309,11 +1309,25 @@ export async function processOpportunityAndSuggestions(
     log.info(`${LOG_PREFIX} Path suggestions skipped for site ${auditData.siteId} — ${reason}`);
   }
 
-  // Build key function that handles both individual and domain-wide suggestions
+  // Build key function that handles both individual and domain-wide suggestions.
+  // Must produce the same key for both new wrapper objects ({ key, data }) and existing
+  // DB suggestion data (s.getData()) so syncSuggestions can match them correctly.
   const buildKey = (data) => {
-    // Domain-wide suggestion has a special key field
+    // New wrapper objects carry an explicit key field (path and domain-wide suggestions)
     if (data.key) {
       return data.key;
+    }
+    // Existing path suggestion stored in DB — reconstruct the key from allowedRegexPatterns
+    // so it matches the wrapper key used when the suggestion was first created.
+    if (isPathSuggestionData(data)) {
+      const pattern = data.allowedRegexPatterns?.[0];
+      if (pattern) {
+        return `${pattern}|prerender`;
+      }
+    }
+    // Existing domain-wide suggestion stored in DB — use the fixed constant key
+    if (isDomainWideSuggestionData(data)) {
+      return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Key on pathname only so that domain shifts (e.g. after page-citability migration
     // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate

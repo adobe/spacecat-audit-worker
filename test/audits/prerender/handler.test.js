@@ -3401,8 +3401,17 @@ describe('Prerender Audit', () => {
         expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
         expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
 
-        // Domain-wide suggestions (with a `key` field) pass through unchanged
+        // Wrapper objects with an explicit key pass through unchanged
         expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
+        expect(buildKey({ key: '/products/*|prerender', data: {} })).to.equal('/products/*|prerender');
+
+        // Existing path suggestion stored in DB (has allowedRegexPatterns, no key field)
+        // must produce the same key as the wrapper used when syncing — prevents duplicates on re-audit
+        expect(buildKey({ allowedRegexPatterns: ['/products/*'], url: 'https://example.com/products' })).to.equal('/products/*|prerender');
+        expect(buildKey({ allowedRegexPatterns: ['/blog/*'], url: 'https://example.com/blog' })).to.equal('/blog/*|prerender');
+
+        // Existing domain-wide suggestion stored in DB must use the fixed constant key
+        expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
 
       it('should normalize scrapedUrlsSet to pathname so domain-shifted suggestions are correctly outdated', async () => {
