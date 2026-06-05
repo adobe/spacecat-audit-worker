@@ -345,6 +345,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       };
 
       context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
         bulkUpdateStatus: sandbox.stub(),
         saveMany: sinon.stub().resolves(),
       };

@@ -1131,6 +1131,49 @@ describe('Backlinks Tests', function () {
       expect(statusStub).to.have.been.calledOnce;
       expect(statusStub.firstCall.args[1]).to.equal('NEW');
     });
+
+    it('excludes suggestions without getStatus from the NEW count (optional chaining branch)', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+
+      context.site = { ...contextSite };
+
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves([
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'new-1',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              url_from: 'https://from.com/1',
+              url_to: 'https://example.com',
+            }),
+          },
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'no-status-1',
+            getData: () => ({
+              url_from: 'https://from.com/2',
+              url_to: 'https://example.com',
+            }),
+          },
+        ]);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
+
+      await generateSuggestionData(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    });
   });
 
   describe('generateSuggestionData - Bright Data integration', () => {

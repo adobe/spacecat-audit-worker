@@ -204,4 +204,13 @@ describe('sendLowSuggestionCountAlert', () => {
     const text = JSON.stringify(getPostedBody().blocks);
     expect(text).to.include('fallback-site-id');
   });
+
+  it('handles null auditType by falling back to empty string via sanitizeForSlack', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    await sendLowSuggestionCountAlert(site, null, 0, makeContext());
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const body = getPostedBody();
+    expect(body).to.exist;
+  });
 });

@@ -474,7 +474,7 @@ export const generateSuggestionData = async (context) => {
   ).flat();
 
   const newSuggestionCount = suggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.NEW,
+    (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
   ).length;
   await sendLowSuggestionCountAlert(
     site,
