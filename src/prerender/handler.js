@@ -26,10 +26,8 @@ import {
   isDomainWideSuggestionData, isPathSuggestionData,
 } from './utils/utils.js';
 import {
-  buildPathTypeSuggestions,
-  findPreservablePathSuggestions,
+  resolvePathSuggestions,
   markSuggestionsAsCoveredByPaths,
-  refreshPreservedPathMetrics,
   mergePathSuggestionData,
 } from './features/path-suggestions/index.js';
 import {
@@ -1279,35 +1277,17 @@ export async function processOpportunityAndSuggestions(
     (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
   );
 
-  let preservablePaths = [];
-  let newPathSuggestions = [];
-  if (pathSuggestionsEnabled && !domainWideDeployed) {
-    preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
-    const preservableByPattern = new Map(
-      preservablePaths.map((s) => [s.getData().allowedRegexPatterns?.[0], s]),
-    );
-
-    const builtSuggestions = await buildPathTypeSuggestions(
-      preRenderSuggestions,
-      opportunity,
-      site,
-      context,
-      { suggestions: cachedSuggestions },
-    );
-
-    // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
-    await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context);
-
-    newPathSuggestions = builtSuggestions
-      .filter((p) => !preservableByPattern.has(p.data.allowedRegexPatterns?.[0]));
-    log.info(
-      `${LOG_PREFIX} Path suggestions: ${preservablePaths.length} preserved, `
-      + `${newPathSuggestions.length} new. baseUrl=${auditUrl}, siteId=${auditData.siteId}`,
-    );
-  } else {
-    const reason = domainWideDeployed ? 'domain-wide is deployed' : 'not enabled';
-    log.info(`${LOG_PREFIX} Path suggestions skipped for site ${auditData.siteId} — ${reason}`);
-  }
+  const { preservablePaths, newPathSuggestions } = await resolvePathSuggestions({
+    pathSuggestionsEnabled,
+    domainWideDeployed,
+    preRenderSuggestions,
+    opportunity,
+    site,
+    context,
+    cachedSuggestions,
+    auditUrl,
+    siteId: auditData.siteId,
+  });
 
   // Build key function that handles both individual and domain-wide suggestions.
   // Must produce the same key for both new wrapper objects ({ key, data }) and existing

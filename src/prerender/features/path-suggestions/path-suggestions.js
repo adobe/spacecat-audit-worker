@@ -334,6 +334,68 @@ export async function refreshPreservedPathMetrics(builtSuggestions, preservableB
 }
 
 /**
+ * Resolves path suggestions for an audit run.
+ * Skips if path suggestions are disabled or domain-wide is deployed.
+ * Otherwise, preserves existing suggestions and builds new ones.
+ *
+ * @param {Object} params
+ * @param {boolean} params.pathSuggestionsEnabled
+ * @param {boolean} params.domainWideDeployed
+ * @param {Array} params.preRenderSuggestions - Raw audit results
+ * @param {Object} params.opportunity - SpaceCat opportunity entity
+ * @param {Object} params.site - SpaceCat site entity
+ * @param {Object} params.context - Audit context (log, dataAccess, etc.)
+ * @param {Array} params.cachedSuggestions - Pre-fetched suggestions
+ * @param {string} params.auditUrl - Audit URL (for logging)
+ * @param {string} params.siteId - Site ID (for logging)
+ * @returns {Promise<{ preservablePaths: Array, newPathSuggestions: Array }>}
+ */
+export async function resolvePathSuggestions({
+  pathSuggestionsEnabled,
+  domainWideDeployed,
+  preRenderSuggestions,
+  opportunity,
+  site,
+  context,
+  cachedSuggestions,
+  auditUrl,
+  siteId,
+}) {
+  const { log } = context;
+
+  if (!pathSuggestionsEnabled || domainWideDeployed) {
+    const reason = domainWideDeployed ? 'domain-wide is deployed' : 'not enabled';
+    log.info(`${LOG_PREFIX} Path suggestions skipped for site ${siteId} — ${reason}`);
+    return { preservablePaths: [], newPathSuggestions: [] };
+  }
+
+  // eslint-disable-next-line max-len
+  const preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
+  const preservableByPattern = new Map(
+    preservablePaths.map((s) => [s.getData().allowedRegexPatterns?.[0], s]),
+  );
+
+  const builtSuggestions = await buildPathTypeSuggestions(
+    preRenderSuggestions,
+    opportunity,
+    site,
+    context,
+    { suggestions: cachedSuggestions },
+  );
+
+  // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
+  await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, context);
+
+  const newPathSuggestions = builtSuggestions
+    .filter((p) => !preservableByPattern.has(p.data.allowedRegexPatterns?.[0]));
+  log.info(
+    `${LOG_PREFIX} Path suggestions: ${preservablePaths.length} preserved, `
+    + `${newPathSuggestions.length} new. baseUrl=${auditUrl}, siteId=${siteId}`,
+  );
+  return { preservablePaths, newPathSuggestions };
+}
+
+/**
  * Merges new path suggestion data onto existing data, preserving edgeDeployed and
  * coveredByDomainWide so that deployment state survives re-scoring across audit runs.
  *

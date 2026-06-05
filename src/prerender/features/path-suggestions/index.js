@@ -14,6 +14,7 @@ export {
   extractPathType,
   findPreservablePathSuggestions,
   buildPathTypeSuggestions,
+  resolvePathSuggestions,
   markSuggestionsAsCoveredByPaths,
   refreshPreservedPathMetrics,
   mergePathSuggestionData,
