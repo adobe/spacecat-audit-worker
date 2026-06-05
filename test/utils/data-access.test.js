@@ -3544,6 +3544,69 @@ describe('data-access', () => {
         sinon.match(/\.\.\. and 2 more errors/),
       );
     });
+
+    it('should handle FIXED suggestion with no ID gracefully', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => null, // No ID
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should not create regression since we can't check Fix entities without ID
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should handle getFixEntitiesBySuggestionId failure gracefully', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      // Simulate getFixEntitiesBySuggestionId throwing an error
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId = sinon.stub()
+        .rejects(new Error('Database connection failed'));
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should log the error and continue without creating regression
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Failed to check fix entities for suggestion suggestion-1/),
+      );
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
   });
 
   describe('warnOnInvalidSuggestionData', () => {
