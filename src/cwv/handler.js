@@ -10,12 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { buildCWVAuditResult } from './cwv-audit-result.js';
 import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
 import { processAutoSuggest } from './auto-suggest.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -54,13 +55,20 @@ export async function collectCWVDataAndImportCode(context) {
  * @returns {Promise<Object>} Status object with 'complete' status
  */
 export async function syncOpportunityAndSuggestionsStep(context) {
-  const { site, log } = context;
+  const { site, log, dataAccess } = context;
+  const { Suggestion } = dataAccess;
   const siteId = site.getId();
 
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
 
   const opportunity = await syncOpportunitiesAndSuggestions(context);
   await processAutoSuggest(context, opportunity, site);
+
+  const newSuggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+  await sendLowSuggestionCountAlert(site, Audit.AUDIT_TYPES.CWV, newSuggestions.length, context);
 
   return {
     status: 'complete',

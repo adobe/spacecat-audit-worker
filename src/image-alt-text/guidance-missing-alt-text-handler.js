@@ -15,6 +15,7 @@ import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/space
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 import { persistAuditStatusWithFreshRead } from './handler.js';
 import { ALT_TEXT_PROCESSING_ERROR_TAG } from './constants.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -254,6 +255,12 @@ export default async function handler(message, context) {
       >= updatedOpportunityData.mystiqueResponsesExpected) {
       altTextOppty.setLastAuditedAt(new Date().toISOString());
       log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Setting lastAuditedAt.`);
+
+      const allSuggestions = await altTextOppty.getSuggestions();
+      const newSuggestionCount = allSuggestions.filter(
+        (s) => s.getStatus() === SuggestionModel.STATUSES.NEW,
+      ).length;
+      await sendLowSuggestionCountAlert(site, AUDIT_TYPE, newSuggestionCount, context);
     }
 
     await altTextOppty.save();
