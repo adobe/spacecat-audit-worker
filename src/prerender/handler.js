@@ -1213,7 +1213,7 @@ export async function processOpportunityAndSuggestions(
   isPaid,
 ) {
   const { log, site } = context;
-  const pathSuggestionsEnabled = site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
+  const pathSuggestionsEnabled = site?.getConfig?.()?.getHandlerConfig?.('prerender')?.pathSuggestionsEnabled ?? false;
 
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;

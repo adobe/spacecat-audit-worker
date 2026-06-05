@@ -38,7 +38,7 @@ function makeSite({ baseURL = BASE_URL, configValue = null } = {}) {
     getId: () => 'site-1',
     getBaseURL: () => baseURL,
     getConfig: () => ({
-      get: (key) => (key === 'prerender.pathSuggestionsEnabled' ? configValue : null),
+      getHandlerConfig: () => ({ pathSuggestionsEnabled: configValue }),
       getLlmoCdnlogsFilter: () => null,
     }),
   };

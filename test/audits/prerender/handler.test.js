@@ -4592,7 +4592,7 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
         site: {
           getId: () => 'test-site',
-          getConfig: () => ({ get: () => false }),
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: false }) }),
         },
       };
 
@@ -4646,7 +4646,7 @@ describe('Prerender Audit', () => {
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ get: () => true }),
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: true }) }),
         },
       };
 
@@ -4710,7 +4710,7 @@ describe('Prerender Audit', () => {
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ get: () => true }),
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: true }) }),
         },
       };
 
@@ -4787,7 +4787,7 @@ describe('Prerender Audit', () => {
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ get: () => true }),
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: true }) }),
         },
       };
 
@@ -4858,7 +4858,7 @@ describe('Prerender Audit', () => {
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ get: () => true }),
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: true }) }),
         },
       };
 
