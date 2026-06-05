@@ -3607,6 +3607,80 @@ describe('data-access', () => {
       );
       expect(mockOpportunity.addSuggestions).to.not.have.been.called;
     });
+
+    it('should update suggestion when status changes', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Title' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Title' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Title' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      // Create a merge status function that returns a new status
+      const mergeStatusFunction = sinon.stub().returns(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeStatusFunction,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should update because status changed (even though data is the same)
+      expect(existingSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
+    it('should skip update when neither data nor status changed', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Title' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Title' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Title' }]; // Same data
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      // Merge status function returns null (no status change)
+      const mergeStatusFunction = sinon.stub().returns(null);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeStatusFunction,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should not update because nothing changed
+      expect(existingSuggestion.setData).to.not.have.been.called;
+      expect(existingSuggestion.setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping update for suggestion.*no changes detected/),
+      );
+    });
   });
 
   describe('warnOnInvalidSuggestionData', () => {
