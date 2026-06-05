@@ -4568,8 +4568,7 @@ describe('Prerender Audit', () => {
       };
       const syncSuggestionsStub = sinon.stub().resolves();
       const markSuggestionsStub = sinon.stub().resolves();
-      const findPreservablePathStub = sinon.stub().resolves([]);
-      const buildPathTypeSuggestionsStub = sinon.stub().resolves([]);
+      const resolvePathSuggestionsStub = sinon.stub().resolves({ preservablePaths: [], newPathSuggestions: [] });
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -4582,8 +4581,7 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
         '../../../src/prerender/features/path-suggestions/index.js': {
-          findPreservablePathSuggestions: findPreservablePathStub,
-          buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
+          resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
       });
@@ -4608,8 +4606,8 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-      expect(findPreservablePathStub.notCalled).to.be.true;
-      expect(buildPathTypeSuggestionsStub.notCalled).to.be.true;
+      expect(resolvePathSuggestionsStub).to.have.been.calledOnce;
+      expect(resolvePathSuggestionsStub.firstCall.args[0]).to.include({ pathSuggestionsEnabled: false });
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(markSuggestionsStub.notCalled).to.be.true;
     });
@@ -4621,8 +4619,7 @@ describe('Prerender Audit', () => {
       };
       const syncSuggestionsStub = sinon.stub().resolves();
       const markSuggestionsStub = sinon.stub().resolves();
-      const findPreservablePathStub = sinon.stub().resolves([]);
-      const buildPathTypeSuggestionsStub = sinon.stub().resolves([]);
+      const resolvePathSuggestionsStub = sinon.stub().resolves({ preservablePaths: [], newPathSuggestions: [] });
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -4635,8 +4632,7 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
         '../../../src/prerender/features/path-suggestions/index.js': {
-          findPreservablePathSuggestions: findPreservablePathStub,
-          buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
+          resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
       });
@@ -4662,8 +4658,8 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-      expect(findPreservablePathStub).to.have.been.calledOnce;
-      expect(buildPathTypeSuggestionsStub).to.have.been.calledOnce;
+      expect(resolvePathSuggestionsStub).to.have.been.calledOnce;
+      expect(resolvePathSuggestionsStub.firstCall.args[0]).to.include({ pathSuggestionsEnabled: true });
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(markSuggestionsStub).to.have.been.calledOnce;
     });
@@ -4699,8 +4695,10 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
         '../../../src/prerender/features/path-suggestions/index.js': {
-          findPreservablePathSuggestions: sinon.stub().resolves([]),
-          buildPathTypeSuggestions: sinon.stub().resolves([pathSuggestion]),
+          resolvePathSuggestions: sinon.stub().resolves({
+            preservablePaths: [],
+            newPathSuggestions: [pathSuggestion],
+          }),
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
       });
@@ -4738,21 +4736,22 @@ describe('Prerender Audit', () => {
       expect(mapped.data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
-    it('refreshes metrics on preserved path suggestions via saveMany', async () => {
-      const savedData = { allowedRegexPatterns: ['/products/*'], score: 1, contentGainRatio: 0.5, edgeDeployed: true };
+    it('passes preserved paths and new suggestions through to syncSuggestions', async () => {
       const preservedPath = {
         getId: () => 'path-sug-1',
         getStatus: () => 'NEW',
-        getData: () => ({ ...savedData }),
-        setData: sinon.stub().callsFake((d) => { Object.assign(savedData, d); }),
+        getData: () => ({ allowedRegexPatterns: ['/products/*'], score: 1, edgeDeployed: true }),
+      };
+      const newPathSuggestion = {
+        key: '/blog/*|prerender',
+        data: { allowedRegexPatterns: ['/blog/*'], score: 3, contentGainRatio: 2 },
       };
 
       const mockOpportunity = {
         getId: () => 'opp-1',
-        getSuggestions: sinon.stub().resolves([preservedPath]),
+        getSuggestions: sinon.stub().resolves([]),
       };
       const syncSuggestionsStub = sinon.stub().resolves();
-      const saveManyStub = sinon.stub().resolves();
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -4765,18 +4764,10 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
         '../../../src/prerender/features/path-suggestions/index.js': {
-          findPreservablePathSuggestions: sinon.stub().resolves([preservedPath]),
-          buildPathTypeSuggestions: sinon.stub().resolves([{
-            key: '/products/*|prerender',
-            data: {
-              allowedRegexPatterns: ['/products/*'],
-              score: 3,
-              contentGainRatio: 2,
-              wordCountBefore: 1500,
-              wordCountAfter: 3000,
-              aiReadablePercent: 75,
-            },
-          }]),
+          resolvePathSuggestions: sinon.stub().resolves({
+            preservablePaths: [preservedPath],
+            newPathSuggestions: [newPathSuggestion],
+          }),
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
       });
@@ -4793,7 +4784,6 @@ describe('Prerender Audit', () => {
 
       const context = {
         log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-        dataAccess: { Suggestion: { saveMany: saveManyStub } },
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
@@ -4803,26 +4793,19 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-      // saveMany should have been called to refresh metrics on the preserved path
-      expect(saveManyStub).to.have.been.calledOnce;
-      expect(saveManyStub.firstCall.args[0]).to.have.length(1);
+      // syncSuggestions should include the new path suggestion in newData
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const { newData } = syncSuggestionsStub.firstCall.args[0];
+      expect(newData.find((item) => item.key === '/blog/*|prerender')).to.exist;
     });
 
-    it('logs error when saveMany fails during metrics refresh', async () => {
-      const savedData = { allowedRegexPatterns: ['/products/*'], score: 1, contentGainRatio: 0.5, edgeDeployed: true };
-      const preservedPath = {
-        getId: () => 'path-sug-1',
-        getStatus: () => 'NEW',
-        getData: () => ({ ...savedData }),
-        setData: sinon.stub().callsFake((d) => { Object.assign(savedData, d); }),
-      };
-
+    it('handler completes successfully when resolvePathSuggestions is called', async () => {
       const mockOpportunity = {
         getId: () => 'opp-1',
-        getSuggestions: sinon.stub().resolves([preservedPath]),
+        getSuggestions: sinon.stub().resolves([]),
       };
       const syncSuggestionsStub = sinon.stub().resolves();
-      const saveManyStub = sinon.stub().rejects(new Error('DB write failed'));
+      const resolvePathSuggestionsStub = sinon.stub().resolves({ preservablePaths: [], newPathSuggestions: [] });
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -4835,18 +4818,7 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
         '../../../src/prerender/features/path-suggestions/index.js': {
-          findPreservablePathSuggestions: sinon.stub().resolves([preservedPath]),
-          buildPathTypeSuggestions: sinon.stub().resolves([{
-            key: '/products/*|prerender',
-            data: {
-              allowedRegexPatterns: ['/products/*'],
-              score: 3,
-              contentGainRatio: 2,
-              wordCountBefore: 1500,
-              wordCountAfter: 3000,
-              aiReadablePercent: 75,
-            },
-          }]),
+          resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
       });
@@ -4861,10 +4833,8 @@ describe('Prerender Audit', () => {
         },
       };
 
-      const logStubs = { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
       const context = {
-        log: logStubs,
-        dataAccess: { Suggestion: { saveMany: saveManyStub } },
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
         site: {
           getId: () => 'test-site',
           getBaseURL: () => 'https://example.com',
@@ -4874,9 +4844,8 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-      expect(logStubs.error).to.have.been.calledWith(
-        sinon.match(/Failed to refresh metrics on.*preserved path suggestions/),
-      );
+      expect(resolvePathSuggestionsStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
     });
   });
 

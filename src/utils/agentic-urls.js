@@ -67,11 +67,11 @@ async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
   try {
     const configuration = await context.dataAccess.Configuration.findLatest();
     if (!configuration) {
-      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      log.warn(`Agentic URLs - Skipping Top Agentic URLs because no configuration was found for site ${site.getId()}`);
       return [];
     }
     if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
-      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      log.info(`Agentic URLs - Skipping Top Agentic URLs because cdn-logs-analysis is disabled for site ${site.getId()}`);
       return [];
     }
 
@@ -89,7 +89,7 @@ async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
       excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
       statuses,
     });
-    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Executing Top Agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
@@ -97,7 +97,7 @@ async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
     );
 
     if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${baseUrl}`);
+      log.warn(`Agentic URLs - Athena returned no rows for Top Agentic URLs. baseUrl=${baseUrl}`);
       return [];
     }
 
@@ -128,7 +128,7 @@ async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
     log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
     return topUrls;
   } catch (e) {
-    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    log?.warn?.(`Agentic URLs - Top Agentic URLs failed: ${e.message}. baseUrl=${baseUrl}`);
     return [];
   }
 }
@@ -215,7 +215,7 @@ export async function getAgenticHitsMapFromAthena(
       excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
     });
 
-    log.info(`Agentic URLs - Executing Athena query for agentic hits map... baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Executing Agentic Hits Map... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
@@ -223,7 +223,7 @@ export async function getAgenticHitsMapFromAthena(
     );
 
     if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Agentic URLs - Athena returned no rows for agentic hits map. baseUrl=${baseUrl}`);
+      log.warn(`Agentic URLs - Athena returned no rows for Agentic Hits Map. baseUrl=${baseUrl}`);
       return new Map();
     }
 
@@ -245,7 +245,7 @@ export async function getAgenticHitsMapFromAthena(
     log.info(`Agentic URLs - Built hits map with ${hitsMap.size} pathnames. baseUrl=${baseUrl}`);
     return hitsMap;
   } catch (e) {
-    log?.warn?.(`Agentic URLs - Agentic hits map fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    log?.warn?.(`Agentic URLs - Agentic Hits Map failed: ${e.message}. baseUrl=${baseUrl}`);
     return new Map();
   }
 }
