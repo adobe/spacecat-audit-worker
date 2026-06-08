@@ -738,6 +738,11 @@ describe('Wikipedia Analysis Handler', () => {
       expect(extractBrandFromUrl('https://www.brand-jp.com')).to.equal('brand');
     });
 
+    it('should not leave a dangling delimiter after stripping a fused market suffix', () => {
+      expect(extractBrandFromUrl('https://www.brand-usa.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand_global.com')).to.equal('brand');
+    });
+
     it('should NOT strip two-letter country codes fused into the brand name', () => {
       // Regression: "adobe" ends in "be" (Belgium) but is a whole brand.
       expect(extractBrandFromUrl('https://www.adobe.com')).to.equal('adobe');

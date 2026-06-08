@@ -28,8 +28,9 @@ const MARKET_SUFFIXES_RE = /(?:usa|global|international|worldwide)$/i;
 // clearly delimited token (e.g. "walmart-uk" -> "walmart"). Stripping them when
 // they are fused to the brand word corrupts legitimate names — "adobe" -> "ado",
 // "garmin" -> "garm", "mercedes" -> "merced", "fiat" -> "fi", "linkedin" ->
-// "linked" — so we require a separator (-, _, .) immediately before the code.
-const COUNTRY_CODE_SUFFIX_RE = /[-_.](?:us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za)$/i;
+// "linked" — so we require a separator immediately before the code. `name` is a
+// single hostname segment (already split on '.'), so only -, _ can occur here.
+const COUNTRY_CODE_SUFFIX_RE = /[-_](?:us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za)$/i;
 
 const MULTI_PART_TLD_PREFIXES = new Set([
   'co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'mil',
@@ -192,7 +193,8 @@ function extractBrandFromUrl(baseURL) {
 
     const stripped = name
       .replace(MARKET_SUFFIXES_RE, '')
-      .replace(COUNTRY_CODE_SUFFIX_RE, '');
+      .replace(COUNTRY_CODE_SUFFIX_RE, '')
+      .replace(/[-_]$/, ''); // tidy a delimiter left dangling by suffix removal (e.g. "brand-usa" -> "brand")
 
     return stripped || name;
   } catch {
