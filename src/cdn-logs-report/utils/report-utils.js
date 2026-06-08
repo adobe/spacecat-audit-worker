@@ -13,6 +13,9 @@
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
+// Region of the importer bucket (S3_IMPORTER_BUCKET_NAME) the daily exports write to.
+export const IMPORTER_BUCKET_REGION = 'us-east-1';
+
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
   'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
   'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',

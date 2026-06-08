@@ -82,7 +82,6 @@ function getDateBasedReferenceDate(auditContext, siteId, context) {
 
 async function runAgenticDbExportForReferenceDate({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -93,7 +92,6 @@ async function runAgenticDbExportForReferenceDate({
   try {
     return await runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,
@@ -113,7 +111,6 @@ async function runAgenticDbExportForReferenceDate({
 
 async function runDateBasedAgenticDbExport({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -126,7 +123,6 @@ async function runDateBasedAgenticDbExport({
   return {
     dailyAgenticExport: await runAgenticDbExportForReferenceDate({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,
@@ -256,7 +252,6 @@ async function queueWeeklyAgenticDbExports({
 
 export async function runAgenticDbExports({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -273,7 +268,6 @@ export async function runAgenticDbExports({
   if (!hasWeekOffset(auditContext)) {
     return runDateBasedAgenticDbExport({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,

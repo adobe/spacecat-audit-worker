@@ -6761,6 +6761,142 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
 
+      it('should skip HTML comparison and not create suggestion when isErrorPage is true in scrape.json', async () => {
+        const scrapeMetadata = { isErrorPage: true, status: 'SUCCESS' };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const analyzeHtmlStub = sandbox.stub();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: analyzeHtmlStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(analyzeHtmlStub.called).to.be.false;
+        expect(result.auditResult.results[0].url).to.equal('https://example.com/page1');
+        expect(result.auditResult.results[0].isErrorPage).to.be.true;
+        expect(result.auditResult.results[0].needsPrerender).to.be.false;
+        expect(result.auditResult.results[0].error).to.be.true;
+        const infoMessages = context.log.info.args.map((call) => call[0]);
+        expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
+      });
+
+      it('should NOT skip HTML comparison when isErrorPage is false in scrape.json', async () => {
+        const scrapeMetadata = { isErrorPage: false, status: 'SUCCESS' };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const analyzeHtmlStub = sandbox.stub().resolves({
+          needsPrerender: false,
+          contentGainRatio: 0,
+          wordCountBefore: 10,
+          wordCountAfter: 10,
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: analyzeHtmlStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // isErrorPage: false must not trigger the early-exit guard — analysis should run
+        expect(analyzeHtmlStub.called).to.be.true;
+        expect(result.auditResult.results[0]).to.not.have.property('isErrorPage');
+      });
+
+      it('should set both isErrorPage and scrapeForbidden when metadata has both flags', async () => {
+        const scrapeMetadata = {
+          isErrorPage: true,
+          error: { statusCode: 403, message: 'Forbidden' },
+        };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        const page = result.auditResult.results[0];
+        expect(page.url).to.equal('https://example.com/page1');
+        expect(page.isErrorPage).to.be.true;
+        expect(page.needsPrerender).to.be.false;
+        expect(page.error).to.be.true;
+        // scrapeError is preserved in cleanResults (only hasScrapeMetadata and scrapeForbidden are stripped)
+        expect(page.scrapeError).to.deep.equal({ statusCode: 403, message: 'Forbidden' });
+        // scrapeForbidden is stripped from cleanResults but contributes to the aggregate count
+        expect(result.auditResult.scrapeForbiddenCount).to.equal(1);
+      });
+
       it('should build S3 path without path segment for root URLs', async () => {
         const getObjectFromKeyStub = sinon.stub();
         getObjectFromKeyStub.resolves(null);
@@ -7013,6 +7149,42 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages[1].url).to.equal('https://example.com/success-page');
       expect(uploadedData.pages[1].scrapingStatus).to.equal('success');
       expect(uploadedData.pages[1]).to.not.have.property('scrapeError');
+    });
+
+    it('should include isErrorPage in status when result is an error page, omit it otherwise', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 2,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/maintenance',
+              error: true,
+              needsPrerender: false,
+              isErrorPage: true,
+            },
+            {
+              url: 'https://example.com/real-page',
+              error: false,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/maintenance');
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].isErrorPage).to.be.true;
+
+      expect(uploadedData.pages[1].url).to.equal('https://example.com/real-page');
+      expect(uploadedData.pages[1]).to.not.have.property('isErrorPage');
     });
 
     it('should skip upload when auditResult is missing', async () => {

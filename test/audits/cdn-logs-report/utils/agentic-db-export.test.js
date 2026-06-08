@@ -27,7 +27,6 @@ describe('agentic DB export orchestration', () => {
   function createArgs(overrides = {}) {
     return {
       athenaClient: {},
-      s3Client: {},
       s3Config: { databaseName: 'cdn_logs_example' },
       site: {
         getId: () => 'site-1',
