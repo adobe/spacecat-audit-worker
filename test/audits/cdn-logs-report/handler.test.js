@@ -417,7 +417,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: 0 }),
       );
 
       expect(fetchRulesStub).to.have.been.calledOnce;
@@ -439,7 +439,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: 0 }),
       );
 
       expect(fetchRulesStub).to.have.been.calledOnce;
@@ -471,7 +471,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: 0 }),
       );
 
       expect(fetchRulesStub).to.have.been.calledTwice;
@@ -499,7 +499,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: -1 }),
       );
 
       expect(fetchRulesStub).to.have.been.calledTwice;
@@ -652,7 +652,7 @@ describe('CDN Logs Report Handler', function test() {
           'https://example.com',
           context,
           site,
-          createAuditContext(sandbox, { categoriesUpdated: false }),
+          createAuditContext(sandbox, {}),
         );
       } finally {
         clock.restore();
@@ -971,26 +971,6 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(mocks.runDailyReferralExport.firstCall.args[0].referenceDate.toISOString())
         .to.equal('2026-04-01T10:00:00.000Z');
-    });
-
-    it('skips daily referral export for category-refresh agentic DB fanout messages', async () => {
-      mocks.runDailyAgenticExport = sandbox.stub().resolves({ enabled: true, success: true });
-      mocks.runDailyReferralExport = sandbox.stub().resolves({ enabled: true, success: true });
-
-      const result = await handler.runner(
-        'https://example.com',
-        context,
-        site,
-        createAuditContext(sandbox, {
-          date: '2026-04-01T00:00:00.000Z',
-          refreshAgenticDailyExport: true,
-          categoriesUpdated: true,
-          sourceWeekOffset: -1,
-        }),
-      );
-
-      expect(mocks.runDailyReferralExport).to.not.have.been.called;
-      expect(result.dailyReferralExport).to.equal(undefined);
     });
 
     it('runs daily referral export for BYOCDN other agentic DB fanout messages', async () => {

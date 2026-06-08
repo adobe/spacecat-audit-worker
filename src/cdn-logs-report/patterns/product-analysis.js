@@ -12,10 +12,17 @@
 /* c8 ignore start */
 import { prompt } from './prompt.js';
 
+// Code-level safety net; the concentrate prompt's ≤6 isn't strictly enforced.
+const MAX_CATEGORIES_HARD_CAP = 12;
+
+// Cap per classification call: the model echoes every path back, so larger
+// batches overflow the output-token cap and truncate the JSON. Chunks run in
+// parallel and their results are concatenated.
+const PATHS_PER_CLASSIFY_CHUNK = 75;
+
 async function concentrateProducts(
   pathProductArray,
   context,
-  configCategories = [],
   maxCategories = 6,
 ) {
   const { log } = context;
@@ -26,13 +33,6 @@ async function concentrateProducts(
 
   // Extract unique product names for concentration
   const uniqueProducts = [...new Set(pathProductArray.map((item) => item.product))];
-  const configCategoryCount = configCategories.length;
-
-  // If we have config categories and enough products, prioritize them
-  if (configCategoryCount >= 3) {
-    log.info('Config categories >= 3: Using config categories only, no concentration needed');
-    return { paths: pathProductArray, usage: null };
-  }
 
   if (uniqueProducts.length <= 1) {
     return {
@@ -41,9 +41,7 @@ async function concentrateProducts(
     }; // No need to concentrate if only one or no products
   }
 
-  const hasConfigCategories = configCategories.length > 0;
-
-  let systemPrompt = `You are an expert content categorization specialist focused on AGGRESSIVE GROUPING and SIMPLIFICATION of products into main categories.
+  const systemPrompt = `You are an expert content categorization specialist focused on AGGRESSIVE GROUPING and SIMPLIFICATION of products into main categories.
 
 TASK: Reduce the product list to ${maxCategories} or fewer main categories by:
 1. Finding the MAIN umbrella category for each product (tennis, basketball, golf, etc.)
@@ -92,48 +90,9 @@ INSTRUCTIONS:
    - Focus on the most important products that drive business value
    - Use descriptive but appropriately broad category names
    - Keep "unknown" as standalone if present
-   - Prioritize grouping less important products into broader categories to stay within the 5-6 limit
+   - Prioritize grouping less important products into broader categories to stay within the ${maxCategories} limit
 
-VALIDATION STEP: Before returning your answer, count the unique category names (not including "unknown"). If you have more than ${maxCategories}, you MUST revise and group more categories together!`;
-
-  if (hasConfigCategories) {
-    const isExactMatch = maxCategories === configCategories.length;
-
-    systemPrompt += `
-
-## CRITICAL: PRESERVE CONFIG CATEGORIES
-The following categories are provided by the user and MUST be preserved EXACTLY as-is in your output:
-${configCategories.map((cat) => `- ${cat}`).join('\n')}
-
-RULES for config categories:
-1. If a product name matches a config category EXACTLY, map it to itself (preserve it)
-2. If a product is a variant of a config category (e.g., "product-x-2024" when "product-x" is config), map it to the config category
-3. NEVER rename or change config categories - they are fixed and cannot be modified
-4. ${isExactMatch ? 'ONLY map products that are TRULY RELEVANT to these config categories. SKIP/OMIT products that don\'t belong to any of these categories - do NOT force them into a category!' : `CREATE additional categories for products that DON'T match config categories. Target: ${maxCategories} total categories (${configCategories.length} config + ${maxCategories - configCategories.length} new)`}
-5. Config categories are already optimized - treat them as immutable
-6. Look for keywords, themes, or related terms to map products to config categories (e.g., "category-x-accessories", "category-x-parts" → "category-x")
-7. ${isExactMatch ? 'If a product is unrelated to ANY config category, simply DON\'T include it in the output. The user only cares about these specific categories.' : 'DO NOT map unrelated products to config categories just to avoid creating new ones - create new categories when products are genuinely different!'}
-
-Example (Config Categories: ${configCategories.length}, Target: ${maxCategories}):
-Config categories: ${isExactMatch ? '["category-a", "category-b", "category-c"]' : '["product-x", "product-y"]'}
-Input: ${isExactMatch ? '["category-a-item1", "category-a-item2", "category-b-item1", "category-b-accessories", "category-c-variant", "unrelated-item1", "unrelated-item2"]' : '["product-x", "product-x-2024", "product-x-pro", "product-z", "product-w", "service-m"]'}
-Output: {
-  ${isExactMatch ? `"category-a-item1": "category-a",        ← Maps to category-a config
-  "category-a-item2": "category-a",        ← Maps to category-a config
-  "category-b-item1": "category-b",        ← Maps to category-b config
-  "category-b-accessories": "category-b",  ← Maps to category-b config
-  "category-c-variant": "category-c"       ← Maps to category-c config
-  (Note: "unrelated-item1" and "unrelated-item2" are OMITTED - not relevant to any config category)` : `"product-x": "product-x",              ← Preserve config category exactly
-  "product-x-2024": "product-x",         ← Variant maps to config category
-  "product-x-pro": "product-x",          ← Variant maps to config category
-  "product-y": "product-y",              ← Preserve config category
-  "product-z": "services",               ← Create new category for unrelated products
-  "product-w": "tools",                  ← Create new category
-  "service-m": "services"                ← Group with similar products`}
-}`;
-  }
-
-  systemPrompt += `
+VALIDATION STEP: Before returning your answer, count the unique category names (not including "unknown"). If you have more than ${maxCategories}, you MUST revise and group more categories together!
 
 RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 
@@ -152,17 +111,15 @@ Example output:
   "unknown": "unknown"
 }
 
-CRITICAL: Group related products under ONE main category. Remove version numbers and model variations!`;
+CRITICAL: Group related products under ONE main category. Remove version numbers and model variations!
+
+ANTI-CATCH-ALL RULE: No single category may bundle more than 5 different product names into one alternation. If you have 6+ distinct products that share no real umbrella (e.g. analytics + marketo + audience-manager + target + campaigns), keep them as SEPARATE categories — do not invent a fake umbrella like "marketing" or "experience-cloud" that lumps them together. Customers want per-product traffic, not a "marketing" bucket.`;
 
   const userPrompt = `Products to concentrate:
-${JSON.stringify(uniqueProducts)}
-${hasConfigCategories ? `\n\nCONFIG CATEGORIES (must preserve exactly):\n${JSON.stringify(configCategories)}` : ''}`;
+${JSON.stringify(uniqueProducts)}`;
 
   try {
     log.info('Concentrating products into categories');
-    if (hasConfigCategories) {
-      log.info(`Config categories to preserve: ${configCategories.join(', ')}`);
-    }
     const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const mapping = JSON.parse(promptResponse.content);
@@ -182,14 +139,13 @@ ${hasConfigCategories ? `\n\nCONFIG CATEGORIES (must preserve exactly):\n${JSON.
   }
 }
 
-async function deriveProductsForPaths(domain, paths, context, configCategories = []) {
+async function classifyPathChunk(domain, paths, context) {
   const { log } = context;
-  const hasConfigCategories = configCategories.length > 0;
 
-  let systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and map them to categories for Athena SQL analytics.
+  const systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and map them to categories for Athena SQL analytics.
 
 ## OBJECTIVE
-Classify each URL path by mapping it to the most relevant category${hasConfigCategories ? ' from the user-provided categories' : ''}.
+Classify each URL path by mapping it to the most relevant category.
 
 ## ANALYTICAL THINKING PROCESS
 
@@ -214,45 +170,26 @@ For each URL, ask:
 3. "Is this clearly related to a specific category?" → Map it to that category
 4. "If no clear match, is this business-relevant?" → Map to "other" or "unknown"
 
-### STEP 4: EXAMPLES
-Example A: "/products/analytics-platform/features" (categories: ["analytics", "cloud", "ai"])
-- Thinking: Contains "analytics" keyword → maps to "analytics"
+### STEP 4: EXAMPLES (discover categories from URL structure)
+Example A: "/products/analytics-platform/features"
+- Thinking: "/products/" + "analytics-platform" → main keyword is "analytics"
 - Result: product = "analytics"
 
-Example B: "/solutions/cloud/pricing" (categories: ["analytics", "cloud", "ai"])
-- Thinking: Contains "cloud" keyword → maps to "cloud"
+Example B: "/solutions/cloud/pricing"
+- Thinking: "/solutions/" + "cloud" → main keyword is "cloud"
 - Result: product = "cloud"
 
-Example C: "/blog/design-tips" (categories: ["analytics", "cloud", "ai"])
-- Thinking: Generic content, no category match → maps to "other"
-- Result: product = "other"
+Example C: "/products/photoshop/tutorials"
+- Thinking: "photoshop" is a distinct product offering
+- Result: product = "photoshop"
 
-Example D: "/docs/machine-learning/guide" (categories: ["analytics", "cloud", "ai"])
-- Thinking: "machine-learning" related to "ai" → maps to "ai"
-- Result: product = "ai"`;
+Example D: "/blog/design-tips"
+- Thinking: Generic content under /blog/, no business offering → "unknown"
+- Result: product = "unknown"
 
-  if (hasConfigCategories) {
-    systemPrompt += `
-
-## CRITICAL: USER-PROVIDED CATEGORIES (HIGHEST PRIORITY)
-The following categories MUST be used for classification. Try to map as many URLs as possible to these categories:
-${configCategories.map((cat) => `- ${cat}`).join('\n')}
-
-STRICT RULES:
-1. **First priority**: Look for EXACT keyword matches in the URL path (case-insensitive)
-2. **Second priority**: Look for RELATED terms or PARTIAL matches (e.g., "ai" matches "artificial-intelligence", "ml", "machine-learning")
-3. **Third priority**: Look at URL structure and context to infer the category
-4. **Fallback**: If a URL is completely unrelated to ANY provided category, use "other"
-5. **MAXIMIZE mapping**: Be generous in mapping URLs to provided categories - if there's any reasonable connection, use it
-6. **Keywords to look for**: Category name itself, related terms, synonyms, abbreviations, product variants
-7. **Do NOT invent new categories**: Only use the provided categories or "other"
-
-Example mapping strategies:
-- Category "photoshop" → matches "/products/photoshop", "/photoshop-features", "/ps-tools", "/photo-editing"
-- Category "analytics" → matches "/analytics", "/data-insights", "/reporting", "/metrics"
-- Category "cloud" → matches "/cloud", "/aws", "/hosting", "/infrastructure"`;
-  } else {
-    systemPrompt += `
+Example E: "/docs/machine-learning/guide"
+- Thinking: "machine-learning" is the offering being documented → "ai" or "machine-learning"
+- Result: product = "machine-learning"
 
 ### STEP 5: NAMING STANDARDIZATION & OUTPUT RULES
 - **Format**: Lowercase, hyphenated (e.g., "marketing-automation" not "Marketing_Automation")
@@ -261,10 +198,7 @@ Example mapping strategies:
 - **Consistency**: Same product = same name across all paths
 - **Business focus**: Only classify business offerings (products/services/solutions)
 - **Exclusions**: Use "unknown" for generic content (blog, support, about, legal, careers, contact, press, investors)
-- **Domain-agnostic**: Work for any industry (tech, retail, healthcare, finance, etc.)`;
-  }
-
-  systemPrompt += `
+- **Domain-agnostic**: Work for any industry (tech, retail, healthcare, finance, etc.)
 
 ## RESPONSE FORMAT
 Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
@@ -281,8 +215,9 @@ Return ONLY valid JSON with this exact structure. Do NOT include markdown format
 - NO markdown formatting (no code blocks)
 - NO explanations or comments
 - NO line breaks inside strings
-- Properly escape special characters in strings (use backslashes for escaping)
-- Use double quotes, not single quotes
+- Do NOT use backslash escapes inside the regex strings — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text (use a char class like [.] if you ever need a literal dot)
+- Use double quotes to delimit JSON strings, not single quotes
+- Do NOT put quotes INSIDE a regex. Alternation branches are bare words: write (discover|decouvrir), never ('discover'|'decouvrir') — quote characters never appear in URL paths and match nothing
 - Ensure all strings are properly closed
 - Return ONLY the JSON object
 
@@ -292,7 +227,6 @@ Return ONLY valid JSON with this exact structure. Do NOT include markdown format
 - ONLY return the JSON object, nothing else`;
 
   const userPrompt = `Domain: ${domain}
-${hasConfigCategories ? `\nPriority Categories: ${JSON.stringify(configCategories)}` : ''}
 
 URL Paths:
 ${JSON.stringify(paths, null, 2)}`;
@@ -326,6 +260,41 @@ ${JSON.stringify(paths, null, 2)}`;
     log.error(`Failed to extract products: ${error.message}`);
     return { paths: createDefaultPaths(), usage: null };
   }
+}
+
+async function deriveProductsForPaths(domain, paths, context) {
+  const { log } = context;
+
+  // Small sites stay a single call.
+  if (paths.length <= PATHS_PER_CLASSIFY_CHUNK) {
+    return classifyPathChunk(domain, paths, context);
+  }
+
+  const chunks = [];
+  for (let i = 0; i < paths.length; i += PATHS_PER_CLASSIFY_CHUNK) {
+    chunks.push(paths.slice(i, i + PATHS_PER_CLASSIFY_CHUNK));
+  }
+  log.info(`Classifying ${paths.length} paths in ${chunks.length} chunks of ≤${PATHS_PER_CLASSIFY_CHUNK}`);
+
+  // Parallel; a failed chunk degrades to "unknown" for its own paths only.
+  const results = await Promise.all(
+    chunks.map((chunk) => classifyPathChunk(domain, chunk, context)),
+  );
+
+  const mergedPaths = [];
+  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let sawUsage = false;
+  for (const result of results) {
+    mergedPaths.push(...result.paths);
+    if (result.usage) {
+      sawUsage = true;
+      usage.prompt_tokens += result.usage.prompt_tokens || 0;
+      usage.completion_tokens += result.usage.completion_tokens || 0;
+      usage.total_tokens += result.usage.total_tokens || 0;
+    }
+  }
+
+  return { paths: mergedPaths, usage: sawUsage ? usage : null };
 }
 
 function groupPathsByProduct(pathProductArray) {
@@ -381,6 +350,10 @@ Example 4 - Category "Support" with URLs: ["/help", "/faq", "/contact-us"]
 Pattern: (?i)(help|faq|contact)
 Explanation: Match the actual keywords found in support URLs
 
+Example 5 - Category "Cruiser" with URLs: ["/products/mens-cruiser-jersey", "/products/womens-cruiser-tee", "/products/cruiser-hoodie"]
+Pattern: (?i)(cruiser)
+Explanation: The distinguishing keyword sits in the MIDDLE of the slug. Match just that keyword so it is found anywhere in the path. Do NOT write (?i)products.(cruiser) — the section prefix ("products") plus a wildcard anchors the keyword to the front of the slug, but the keyword is mid-slug, so it matches nothing.
+
 CRITICAL: Do NOT use the category name in the pattern unless it actually appears in the URLs!
 
 ## SLASH HANDLING
@@ -388,14 +361,14 @@ CRITICAL: Do NOT use the category name in the pattern unless it actually appears
 - Focus on KEYWORD MATCHING, not strict slash positioning
 - DON'T require slashes before/after keywords: use (?i)(keyword) not (?i)/keyword/ or (?i)/(keyword)/
 - The pattern should match keywords wherever they appear in the path
+- DON'T prefix the keyword with the section name and a wildcard (e.g. NOT (?i)products.(cruiser)). E-commerce slugs often place the distinguishing keyword in the MIDDLE of the slug — like /products/mens-cruiser-jersey — so match the bare keyword (cruiser) and let it be found anywhere
 
 ## POSIX REGEX REQUIREMENTS (for Amazon Athena)
 - Start with (?i) for case-insensitive matching
 - NO lookahead (?=) or lookbehind (?<=)
-- NO non-capturing groups (?:)
 - Use alternation (|) for multiple options
 - Use ? for optional, * for zero-or-more
-- Escape special chars: \\., \\-, \\+, \\?, \\*, \\(, \\), etc.
+- DO NOT use backslash escapes (no \\., \\-, etc.) — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text; use a char class like [.] for a literal dot.
 - Keep patterns SIMPLE: Focus on keyword matching without requiring specific slash positions
 
 ## OUTPUT FORMAT
@@ -409,8 +382,9 @@ Return ONLY valid JSON. No markdown, no code blocks, no explanations, no line br
 - NO markdown formatting (no code blocks)
 - NO explanations or comments
 - NO line breaks inside strings
-- Properly escape special characters in strings
-- Use double quotes, not single quotes
+- Do NOT use backslash escapes inside the regex strings — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text (use a char class like [.] for a literal dot)
+- Use double quotes to delimit JSON strings, not single quotes
+- Do NOT put quotes INSIDE a regex. Alternation branches are bare words: write (discover|decouvrir), never ('discover'|'decouvrir') — quote characters never appear in URL paths and match nothing
 - Ensure all strings are properly closed
 - Return ONLY the JSON object
 
@@ -462,7 +436,7 @@ Generate simple regex patterns for each category that can match these URLs and s
   }
 }
 
-export async function analyzeProducts(domain, paths, context, configCategories = []) {
+export async function analyzeProducts(domain, paths, context) {
   const { log } = context;
   const totalTokenUsage = {
     prompt_tokens: 0,
@@ -471,59 +445,34 @@ export async function analyzeProducts(domain, paths, context, configCategories =
   };
 
   log.info(`Starting product analysis for domain: ${domain}`);
-  const configCategoryCount = configCategories.length;
-
-  if (configCategoryCount > 0) {
-    log.info(`Using ${configCategoryCount} config categories with priority`);
-  }
 
   try {
-    // Step 1: Classify paths - if config categories exist, map to them; otherwise use LLM
-    const pathClassifications = await deriveProductsForPaths(
-      domain,
-      paths,
-      context,
-      configCategories,
-    );
-
-    // Track token usage from path classification
+    // Step 1: classify each URL into a category
+    const pathClassifications = await deriveProductsForPaths(domain, paths, context);
     if (pathClassifications.usage) {
       totalTokenUsage.prompt_tokens += pathClassifications.usage.prompt_tokens || 0;
       totalTokenUsage.completion_tokens += pathClassifications.usage.completion_tokens || 0;
       totalTokenUsage.total_tokens += pathClassifications.usage.total_tokens || 0;
     }
 
-    // Step 2: Apply category logic
-    let concentratedClassifications;
-
-    if (configCategoryCount > 0) {
-      // Config categories provided - use them strictly, no additional LLM concentration needed
-      log.info(`Config categories provided (${configCategoryCount}): Using strict mapping to config categories + "other" for unmatched`);
-      // URLs are already mapped to config categories or "other" by deriveProductsForPaths
-      concentratedClassifications = pathClassifications;
-    } else {
-      // No config categories - use LLM to generate and concentrate categories
-      log.info('No config categories: Using LLM generation and concentration (max 6 categories)');
-      concentratedClassifications = await concentrateProducts(
-        pathClassifications.paths,
-        context,
-        [],
-        6, // Max 6 LLM-only categories
-      );
-
-      // Track token usage from concentration step
-      if (concentratedClassifications.usage) {
-        totalTokenUsage.prompt_tokens += concentratedClassifications.usage.prompt_tokens || 0;
-        totalTokenUsage.completion_tokens
-          += concentratedClassifications.usage.completion_tokens || 0;
-        totalTokenUsage.total_tokens += concentratedClassifications.usage.total_tokens || 0;
-      }
+    // Step 2: concentrate to ≤12 umbrella categories (12 keeps multi-vertical
+    // sites granular instead of collapsing into one mega-bucket).
+    log.info('Concentrating classifications into ≤12 umbrella categories');
+    const concentratedClassifications = await concentrateProducts(
+      pathClassifications.paths,
+      context,
+      MAX_CATEGORIES_HARD_CAP,
+    );
+    if (concentratedClassifications.usage) {
+      totalTokenUsage.prompt_tokens += concentratedClassifications.usage.prompt_tokens || 0;
+      totalTokenUsage.completion_tokens
+        += concentratedClassifications.usage.completion_tokens || 0;
+      totalTokenUsage.total_tokens += concentratedClassifications.usage.total_tokens || 0;
     }
 
+    // Step 3: generate keyword regex per category
     const groupedPaths = groupPathsByProduct(concentratedClassifications.paths);
     const regexPatterns = await deriveRegexesForProducts(domain, groupedPaths, context);
-
-    // Track token usage from regex generation
     if (regexPatterns.usage) {
       totalTokenUsage.prompt_tokens += regexPatterns.usage.prompt_tokens || 0;
       totalTokenUsage.completion_tokens += regexPatterns.usage.completion_tokens || 0;
@@ -532,26 +481,22 @@ export async function analyzeProducts(domain, paths, context, configCategories =
 
     const combinedPatterns = regexPatterns.patterns;
 
-    // Remove "unknown", "unclassified" and "other" keys if they exist
+    // Remove noise keys
     delete combinedPatterns.unknown;
     delete combinedPatterns.unclassified;
     delete combinedPatterns.other;
 
-    log.info(`Completed product analysis for domain: ${domain}`);
+    // Hard cap — drop trailing entries if the LLM exceeded the soft limit.
+    const allNames = Object.keys(combinedPatterns);
+    if (allNames.length > MAX_CATEGORIES_HARD_CAP) {
+      log.info(`Capping ${allNames.length} → ${MAX_CATEGORIES_HARD_CAP} categories (hard cap)`);
+      allNames.slice(MAX_CATEGORIES_HARD_CAP).forEach((n) => {
+        delete combinedPatterns[n];
+      });
+    }
 
     const finalCategories = Object.keys(combinedPatterns);
     log.info(`Final categories (${finalCategories.length}): ${finalCategories.join(', ')}`);
-
-    // Log category breakdown if config categories were provided
-    if (configCategoryCount > 0) {
-      const matchedConfig = finalCategories.filter((c) => configCategories.includes(c));
-      const extraCategories = finalCategories.filter((c) => !configCategories.includes(c));
-      log.info(`├─ Matched config categories (${matchedConfig.length}): ${matchedConfig.join(', ') || 'none'}`);
-      if (extraCategories.length > 0) {
-        log.info(`└─ Additional LLM categories (${extraCategories.length}): ${extraCategories.join(', ')}`);
-      }
-    }
-
     log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {
