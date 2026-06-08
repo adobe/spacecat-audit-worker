@@ -14,7 +14,6 @@ import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils'
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
-import { buildExcludedUrlSuffixesFilter } from '../cdn-logs-report/utils/query-builder.js';
 
 // ============================================================================
 // CONSTANTS
@@ -30,15 +29,6 @@ export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
 // Maximum rows returned per status code (404, 403, 5xx) in a single Athena query.
 // Each status is capped independently so no single status can dominate results.
 export const ROWS_PER_STATUS = 300;
-
-// URL suffixes excluded from the audit — static assets that LLM bots
-// sometimes emit but that don't represent actionable error pages.
-export const EXCLUDED_URL_SUFFIXES = [
-  // Images
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp',
-  // Documents
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf',
-];
 
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
@@ -217,7 +207,6 @@ export async function buildLlmErrorPagesQuery(options) {
     databaseName,
     tableName,
     whereClause,
-    excludedUrlSuffixesFilter: buildExcludedUrlSuffixesFilter(EXCLUDED_URL_SUFFIXES),
     // user-agent labeling and classification
     userAgentDisplay: buildUserAgentDisplaySQL(),
     agentTypeClassification: buildAgentTypeClassificationSQL(),
