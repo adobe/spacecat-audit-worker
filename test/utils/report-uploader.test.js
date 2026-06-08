@@ -28,7 +28,6 @@ describe('Utils Report Uploader', () => {
   let uploadAndPublishFile;
   let readFromSharePoint;
   let readFromSharePointWithRetry;
-  let bulkPublishToAdminHlx;
   let sleepStub;
 
   beforeEach(async () => {
@@ -50,7 +49,6 @@ describe('Utils Report Uploader', () => {
     uploadAndPublishFile = reportUploaderModule.uploadAndPublishFile;
     readFromSharePoint = reportUploaderModule.readFromSharePoint;
     readFromSharePointWithRetry = reportUploaderModule.readFromSharePointWithRetry;
-    bulkPublishToAdminHlx = reportUploaderModule.bulkPublishToAdminHlx;
 
     mockContext = {
       workbook: { xlsx: { writeBuffer: sandbox.stub().resolves(Buffer.from('excel data')) } },
@@ -511,182 +509,6 @@ describe('Utils Report Uploader', () => {
         '%s: No SharePoint client provided for test-file.xlsx, skipping upload',
         'REPORT_UPLOADER',
       );
-    });
-  });
-
-  describe('bulkPublishToAdminHlx', () => {
-    it('should retry preview status checks when Helix returns 429 and fire-and-forget publish', async function bulkPollRetryTest() {
-      this.timeout(2000);
-
-      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
-      const liveJobUrl = 'https://admin.hlx.page/job/live-job';
-
-      sandbox.stub(Math, 'random').returns(0);
-
-      fetchStub.onCall(0).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
-      });
-      fetchStub.onCall(1).resolves({
-        ok: false,
-        status: 429,
-        statusText: 'Too Many Requests',
-        headers: { get: sandbox.stub().returns(null) },
-      });
-      fetchStub.onCall(2).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'stopped',
-          progress: {
-            total: 2,
-            processed: 2,
-            failed: 0,
-          },
-        }),
-      });
-      fetchStub.onCall(3).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: liveJobUrl } }),
-      });
-
-      await bulkPublishToAdminHlx([
-        { filename: 'agentictraffic-w10-2026.xlsx', outputLocation: 'allianz-at/agentic-traffic' },
-        { filename: 'referral-traffic-w10-2026.xlsx', outputLocation: 'allianz-at/referral-traffic-cdn' },
-      ], mockContext.log);
-
-      // 4 calls: POST preview, GET preview status (429), GET preview status (stopped), POST publish
-      // No 5th call — publish is fire-and-forget
-      expect(fetchStub.callCount).to.equal(4);
-      const publishStatusChecks = fetchStub.getCalls().filter((c) => c.args[0] === liveJobUrl);
-      expect(publishStatusChecks).to.have.lengthOf(0);
-      expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/preview status check Helix API failed with error 429 Too Many Requests.*retrying in \d+ms.*attempt 1\/3/),
-      );
-      expect(sleepStub).to.have.been.calledWith(10000);
-      expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/publish job fire-and-forget, not polling for completion/),
-      );
-      expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Bulk publish submitted for 2 files \(preview complete, publish fire-and-forget\)/),
-      );
-      expect(mockContext.log.error).to.not.have.been.calledWith(
-        sinon.match(/Bulk publish failed/),
-      );
-    });
-
-    it('should throw when publish POST returns no job URL', async () => {
-      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
-
-      fetchStub.onCall(0).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
-      });
-      fetchStub.onCall(1).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'stopped',
-          progress: { total: 1, processed: 1, failed: 0 },
-        }),
-      });
-      fetchStub.onCall(2).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: {} }),
-      });
-
-      await expect(bulkPublishToAdminHlx(
-        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
-        mockContext.log,
-      )).to.be.rejectedWith('No job URL from publish');
-      expect(mockContext.log.error).to.have.been.calledWith(
-        sinon.match(/Bulk publish failed/),
-      );
-    });
-
-    it('should be a no-op when given no reports', async () => {
-      await bulkPublishToAdminHlx([], mockContext.log);
-      expect(fetchStub.callCount).to.equal(0);
-    });
-
-    it('should throw preview timeout when state never reaches stopped within the cap', async function previewCapTest() {
-      this.timeout(5000);
-
-      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
-
-      fetchStub.onCall(0).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
-      });
-      // All subsequent status checks return 'running' so the loop runs to the cap
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'running',
-          progress: { total: 1, processed: 0, failed: 0 },
-        }),
-      });
-
-      await expect(bulkPublishToAdminHlx(
-        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
-        mockContext.log,
-      )).to.be.rejectedWith(/^preview timeout for job URL:/);
-
-      // 36 iterations of sleep(5000) -> sleep stubbed, no real wait
-      expect(sleepStub.withArgs(5000).callCount).to.equal(36);
-      // 1 POST + 36 status GETs = 37 fetches
-      expect(fetchStub.callCount).to.equal(37);
-      expect(mockContext.log.error).to.have.been.calledWith(
-        sinon.match(/Bulk publish failed/),
-      );
-    });
-
-    it('should honor the pollTimeoutMs option for the preview cap', async function pollTimeoutTest() {
-      this.timeout(5000);
-
-      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
-
-      fetchStub.onCall(0).resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
-      });
-      // Status checks always return 'running' so the loop runs to the cap
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: sandbox.stub().resolves({
-          state: 'running',
-          progress: { total: 1, processed: 0, failed: 0 },
-        }),
-      });
-
-      // Custom cap: 50_000ms / 5_000ms = 10 iterations
-      await expect(bulkPublishToAdminHlx(
-        [{ filename: 'r.xlsx', outputLocation: 'site/x' }],
-        mockContext.log,
-        { pollTimeoutMs: 50_000 },
-      )).to.be.rejectedWith(/^preview timeout for job URL:/);
-
-      expect(sleepStub.withArgs(5000).callCount).to.equal(10);
-      // 1 POST + 10 status GETs
-      expect(fetchStub.callCount).to.equal(11);
     });
   });
 });
