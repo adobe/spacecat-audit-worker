@@ -108,6 +108,7 @@ Audits persist structured findings as `Opportunity` + `Suggestion` records in th
 | `athena-client.js` | Athena query execution |
 | `bright-data-client.js` | Bright Data web scraping |
 | `psi-client.js` | Google PageSpeed Insights API |
+| `plg-suggestion-alert.js` | Slack alert when a PLG audit surfaces fewer than threshold new suggestions |
 
 ---
 

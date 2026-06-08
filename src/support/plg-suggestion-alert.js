@@ -15,7 +15,7 @@ import { fetch } from '@adobe/spacecat-shared-utils';
 const SLACK_API = 'https://slack.com/api/chat.postMessage';
 const PRODUCT_CODE_ASO = 'ASO';
 const TIER_PLG = 'PLG';
-export const PLG_SUGGESTION_THRESHOLD = 3;
+export const DEFAULT_PLG_SUGGESTION_THRESHOLD = 3;
 
 /**
  * Escapes mrkdwn control characters and truncates to prevent injection
@@ -113,7 +113,11 @@ export async function sendLowSuggestionCountAlert(site, auditType, suggestionCou
     return;
   }
 
-  if (suggestionCount >= PLG_SUGGESTION_THRESHOLD) {
+  const threshold = Number.isFinite(Number(env?.PLG_SUGGESTION_THRESHOLD))
+    ? Number(env.PLG_SUGGESTION_THRESHOLD)
+    : DEFAULT_PLG_SUGGESTION_THRESHOLD;
+
+  if (suggestionCount >= threshold) {
     return;
   }
 
@@ -124,13 +128,14 @@ export async function sendLowSuggestionCountAlert(site, auditType, suggestionCou
     }
 
     const siteBaseURL = sanitizeForSlack(site.getBaseURL?.() ?? site.getId());
+    const safeSiteId = sanitizeForSlack(site.getId());
     const safeAuditType = sanitizeForSlack(auditType);
 
     const message = ':warning: *Low Suggestion Count for PLG Site*\n\n'
       + `• *Site:* \`${siteBaseURL}\`\n`
-      + `• *Site ID:* \`${site.getId()}\`\n`
+      + `• *Site ID:* \`${safeSiteId}\`\n`
       + `• *Audit Type:* \`${safeAuditType}\`\n`
-      + `• *New Suggestions:* \`${suggestionCount}\` (threshold: ${PLG_SUGGESTION_THRESHOLD})`;
+      + `• *New Suggestions:* \`${suggestionCount}\` (threshold: ${threshold})`;
 
     await postSlackMessage(channelId, message, token);
   } catch (alertError) {

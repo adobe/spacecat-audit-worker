@@ -24,7 +24,7 @@ describe('sendLowSuggestionCountAlert', () => {
 
   let fetchStub;
   let sendLowSuggestionCountAlert;
-  let PLG_SUGGESTION_THRESHOLD;
+  let DEFAULT_PLG_SUGGESTION_THRESHOLD;
 
   const CHANNEL_ID = 'C_AUDIT_CHANNEL';
   const BOT_TOKEN = 'xoxb-test-token';
@@ -63,7 +63,7 @@ describe('sendLowSuggestionCountAlert', () => {
       json: async () => ({ ok: true }),
     });
 
-    ({ sendLowSuggestionCountAlert, PLG_SUGGESTION_THRESHOLD } = await esmock(
+    ({ sendLowSuggestionCountAlert, DEFAULT_PLG_SUGGESTION_THRESHOLD } = await esmock(
       '../../src/support/plg-suggestion-alert.js',
       { '@adobe/spacecat-shared-utils': { fetch: fetchStub } },
     ));
@@ -99,19 +99,34 @@ describe('sendLowSuggestionCountAlert', () => {
     expect(text).to.include('example.com');
     expect(text).to.include('broken-backlinks');
     expect(text).to.include('1');
-    expect(text).to.include(String(PLG_SUGGESTION_THRESHOLD));
+    expect(text).to.include(String(DEFAULT_PLG_SUGGESTION_THRESHOLD));
   });
 
   it('does not send when suggestion count equals the threshold', async () => {
     const site = makeSite([makeEnrollment('ASO', 'PLG')]);
-    await sendLowSuggestionCountAlert(site, 'cwv', PLG_SUGGESTION_THRESHOLD, makeContext());
+    await sendLowSuggestionCountAlert(site, 'cwv', DEFAULT_PLG_SUGGESTION_THRESHOLD, makeContext());
     expect(fetchStub).to.not.have.been.called;
   });
 
   it('does not send when suggestion count exceeds the threshold', async () => {
     const site = makeSite([makeEnrollment('ASO', 'PLG')]);
-    await sendLowSuggestionCountAlert(site, 'cwv', PLG_SUGGESTION_THRESHOLD + 5, makeContext());
+    await sendLowSuggestionCountAlert(site, 'cwv', DEFAULT_PLG_SUGGESTION_THRESHOLD + 5, makeContext());
     expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('respects PLG_SUGGESTION_THRESHOLD env var override', async () => {
+    // default threshold is 3; count=4 would not fire — but with env override of 5, count=4 fires
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext({ env: { PLG_SUGGESTION_THRESHOLD: '5' } });
+    await sendLowSuggestionCountAlert(site, 'cwv', 4, context);
+    expect(fetchStub).to.have.been.calledOnce;
+  });
+
+  it('falls back to default threshold when PLG_SUGGESTION_THRESHOLD env var is not a number', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext({ env: { PLG_SUGGESTION_THRESHOLD: 'invalid' } });
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, context);
+    expect(fetchStub).to.have.been.calledOnce;
   });
 
   it('does nothing when SLACK_BOT_TOKEN is missing', async () => {
