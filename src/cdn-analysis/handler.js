@@ -33,6 +33,14 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+// cdn-logs-report dispatch knobs. The base delay gives the cdn-logs-analysis
+// sub-audits time to finish before the matching report runs; the per-day stagger
+// then spreads the reports out instead of firing them all at the SQS max at once.
+// Both are capped at the SQS DelaySeconds hard limit.
+const SQS_MAX_DELAY_SECONDS = 900;
+const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
+const CDN_LOGS_REPORT_STAGGER_SECONDS = 30;
+
 const pad2 = (n) => String(n).padStart(2, '0');
 
 function isValidAuditContext(auditContext) {
@@ -203,11 +211,16 @@ async function triggerSubAudits(context, site, detectedDays) {
   }
 
   // One date-based cdn-logs-report per detected day. cdn-logs-report exports the
-  // day BEFORE auditContext.date, so send day + 1 as the reference. Delayed 900s
-  // so the analysis sub-audits above have time to finish first.
-  for (const dayKey of detectedDays) {
+  // day BEFORE auditContext.date, so send day + 1 as the reference. Delayed by a
+  // base wait (so the analysis sub-audits above have time to finish) plus a per-day
+  // stagger, capped at the SQS max, so the reports don't all fire at once.
+  for (const [index, dayKey] of [...detectedDays].entries()) {
     const [year, month, day] = dayKey.split('/').map(Number);
     const reportDate = new Date(Date.UTC(year, month - 1, day + 1)).toISOString();
+    const delaySeconds = Math.min(
+      CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_REPORT_STAGGER_SECONDS),
+      SQS_MAX_DELAY_SECONDS,
+    );
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(auditQueue, {
@@ -216,8 +229,8 @@ async function triggerSubAudits(context, site, detectedDays) {
       auditContext: {
         date: reportDate,
       },
-    }, null, 900);
-    log.info(`Triggered cdn-logs-report for siteId=${siteId} date=${reportDate}`);
+    }, null, delaySeconds);
+    log.info(`Triggered cdn-logs-report for siteId=${siteId} date=${reportDate} delay=${delaySeconds}s`);
   }
 }
 

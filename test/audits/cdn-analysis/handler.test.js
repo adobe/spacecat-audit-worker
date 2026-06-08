@@ -565,22 +565,21 @@ describe('CDN Analysis Handler', () => {
         }),
       );
 
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'test-audit-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-        null,
-        900,
-      );
-
-      // One date-based report per detected day (06/14, 06/15), sent as day + 1.
+      // One date-based report per detected day (06/14, 06/15), sent as day + 1,
+      // with a staggered delay: base 800 + index * 30, capped at the SQS max (900).
       const reportCalls = context.sqs.sendMessage.getCalls()
         .filter((call) => call.args[1].type === 'cdn-logs-report');
       expect(reportCalls).to.have.length(2);
-      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.have.members([
+      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.deep.equal([
         '2025-06-15T00:00:00.000Z',
         '2025-06-16T00:00:00.000Z',
       ]);
-      reportCalls.forEach((c) => expect(c.args[1].auditContext).to.have.all.keys('date'));
+      expect(reportCalls.map((c) => c.args[3])).to.deep.equal([800, 830]);
+      reportCalls.forEach((c) => {
+        expect(c.args[0]).to.equal('test-audit-queue');
+        expect(c.args[2]).to.equal(null);
+        expect(c.args[1].auditContext).to.have.all.keys('date');
+      });
     });
 
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {
@@ -1088,6 +1087,8 @@ describe('CDN Analysis Handler', () => {
         '2025-06-11T00:00:00.000Z',
         '2025-06-12T00:00:00.000Z',
       ]);
+      // Staggered delays: base 800 + index * 30.
+      expect(reportCalls.map((c) => c.args[3])).to.deep.equal([800, 830, 860]);
     });
 
     it('should skip provider when no raw data exists', async () => {
