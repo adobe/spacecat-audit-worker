@@ -364,6 +364,29 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
+    it('logs a sample of malformed URLs filtered upstream in processErrorPagesResults', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          { user_agent: 'ChatGPT', url: '/legit-page', status: 404, total_requests: 10 },
+        ],
+        droppedUrls: [
+          '/brandshttps://example.com/brands',
+          '/),',
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 10 } },
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].categorizedResults[404]).to.have.lengthOf(1);
+      expect(result.auditResult[0].categorizedResults[404][0].url).to.equal('/legit-page');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Filtered 2 malformed URL\(s\); sample: \[.*brandshttps.*\]/),
+      );
+    });
+
     it('should produce two weeks when run on a Monday without weekOffset', async () => {
       const monday = new Date('2025-08-18T12:00:00Z'); // Monday
       const clock = sinon.useFakeTimers(monday.getTime());
@@ -1434,6 +1457,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       || sandbox.stub().callsFake((url, audit, ctx, mapper, type) => Promise.resolve({
         getId: () => `opp-${type}`,
         getType: () => type,
+        getStatus: () => 'NEW',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
         getSuggestions: sandbox.stub().resolves(overrides.existingSuggestionsByType?.[type] || []),
       }));
     const mockSyncSuggestions = overrides.syncSuggestions || sandbox.stub().resolves();
@@ -1441,6 +1468,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+        Opportunity: { STATUSES: { NEW: 'NEW', IGNORED: 'IGNORED' } },
       },
       '@adobe/spacecat-shared-tier-client': { default: {} },
       '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
@@ -1663,6 +1691,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const oldOpp = {
       getId: () => 'opp-404',
       getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([sugWithoutPeriod, sugWithTerminal]),
     };
     const { handler, mockConvertToOpportunity } = await buildHandler(sandbox, {
@@ -1686,6 +1718,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const opp = {
       getId: () => 'opp-404',
       getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([stale]),
     };
     const { handler } = await buildHandler(sandbox, {
@@ -1738,6 +1774,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+        Opportunity: { STATUSES: { NEW: 'NEW', IGNORED: 'IGNORED' } },
       },
       '@adobe/spacecat-shared-tier-client': { default: {} },
       '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
@@ -1751,7 +1788,13 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       '../../../src/common/audit-utils.js': { default: {} },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'opp-404', getType: () => 't', getSuggestions: sandbox.stub().resolves([]),
+          getId: () => 'opp-404',
+          getType: () => 't',
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
         }),
       },
       '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
@@ -1844,6 +1887,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const oppFor404 = {
       getId: () => 'opp-llm-error-pages-404',
       getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([justSynced]),
     };
     const { handler } = await buildHandler(sandbox, {
@@ -1852,6 +1899,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
         return Promise.resolve({
           getId: () => `opp-${type}`,
           getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
           getSuggestions: sandbox.stub().resolves([]),
         });
       }),
@@ -1876,6 +1927,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     const opp = {
       getId: () => 'opp-llm-error-pages-404',
       getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([sugWithNullData]),
     };
     const { handler } = await buildHandler(sandbox, {
@@ -1904,6 +1959,86 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     sandbox.restore();
   });
 
+  it('flips newly-created Opp status from NEW to IGNORED (pending UI support)', async () => {
+    const sandbox = sinon.createSandbox();
+    const setStatus = sandbox.stub();
+    const setUpdatedBy = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    const newlyCreatedOpp = {
+      getId: () => 'opp-new',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus,
+      setUpdatedBy,
+      save,
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(newlyCreatedOpp);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(setStatus).to.have.been.calledOnceWith('IGNORED');
+    expect(setUpdatedBy).to.have.been.calledOnceWith('system');
+    expect(save).to.have.been.calledOnce;
+    expect(ctx.log.info).to.have.been.calledWithMatch(
+      /Marked new opportunity opp-new as IGNORED/,
+    );
+    sandbox.restore();
+  });
+
+  it('does not flip status on Opps that are already non-NEW (e.g. APPROVED, IGNORED)', async () => {
+    const sandbox = sinon.createSandbox();
+    const setStatus = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    // Simulate an Opp that was previously created and the user manually set to APPROVED.
+    // convertToOpportunity filters by NEW so in practice it would create a fresh NEW Opp,
+    // but this proves the guard is in place if a non-NEW Opp ever flows through.
+    const alreadyManaged = {
+      getId: () => 'opp-managed',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'APPROVED',
+      setStatus,
+      setUpdatedBy: sandbox.stub(),
+      save,
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(alreadyManaged);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(setStatus).to.not.have.been.called;
+    expect(save).to.not.have.been.called;
+    sandbox.restore();
+  });
+
   it('one bucket failure does not block the other two (per-bucket isolation)', async () => {
     const sandbox = sinon.createSandbox();
     const convertStub = sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
@@ -1913,6 +2048,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       return Promise.resolve({
         getId: () => `opp-${type}`,
         getType: () => type,
+        getStatus: () => 'NEW',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
         getSuggestions: sandbox.stub().resolves([]),
       });
     });

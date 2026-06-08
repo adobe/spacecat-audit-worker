@@ -55,6 +55,26 @@ export function buildKey(data) {
   return key;
 }
 
+/**
+ * Determines whether the CSP opportunity applies to a site.
+ *
+ * The opportunity targets Edge Delivery (helix) sites. These are normally
+ * flagged with the AEM_EDGE delivery type, but some Crosswalk environments are
+ * labelled AEM_CS while still being edge-delivered. Those sites carry a valid
+ * hlxConfig (an rso identifying the backing repo), so accept them as well.
+ *
+ * @param {Object} site - The site object.
+ * @returns {boolean} True if the CSP opportunity should be evaluated.
+ */
+export function isCspApplicable(site) {
+  if (site.getDeliveryType() === Site.DELIVERY_TYPES.AEM_EDGE) {
+    return true;
+  }
+
+  const hlxConfig = site.getHlxConfig?.();
+  return Boolean(hlxConfig?.rso?.owner && hlxConfig?.rso?.site);
+}
+
 function flattenCSP(csp) {
   return csp.flatMap((item) => {
     if (item.subItems?.items) {
@@ -129,8 +149,9 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     return { ...auditData };
   }
 
-  // this opportunity is only relevant for aem_edge delivery type at the moment
-  if (site.getDeliveryType() !== Site.DELIVERY_TYPES.AEM_EDGE) {
+  // this opportunity is only relevant for edge-delivered (helix) sites: either
+  // the AEM_EDGE delivery type or a Crosswalk site (e.g. AEM_CS) with a valid hlxConfig
+  if (!isCspApplicable(site)) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
     return { ...auditData };
   }
@@ -140,6 +161,9 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   // flatten the subitems
   csp = flattenCSP(csp);
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] CSP information from lighthouse report: ${JSON.stringify(csp)}`);
+
+  // all modern browsers support `strict-dynamic` directive, we don't need related suggestions
+  csp = csp.filter((item) => !item.description?.includes('backward compatible'));
 
   csp.forEach((item) => {
     if (item.description && item.description.includes('nonces or hashes')) {

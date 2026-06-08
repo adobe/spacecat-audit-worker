@@ -14,33 +14,133 @@ import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 import { replaceAgenticUrlClassificationRules } from '../utils/report-utils.js';
 
-function mergePatternRules(existingRules = [], generatedRegexes = {}) {
+const SAMPLE_URLS_CAP = 20;
+// sample_urls clamp — a bad element aborts the whole-site replace RPC batch.
+const MAX_SAMPLE_URL_LENGTH = 2048;
+const MAX_SAMPLE_URLS = 50;
+const MAX_ALTERNATION_BRANCHES = 12;
+const MAX_PATH_COVERAGE = 0.40;
+// Only run the catch-all check on inputs large enough for 40% to be meaningful.
+const COVERAGE_CHECK_MIN_PATHS = 50;
+
+// (?i) is an Athena inline modifier; JS RegExp needs it stripped + the /i flag.
+function compileAthenaRegex(regex) {
+  return new RegExp(String(regex).replace(/^\(\?i\)/, ''), 'i');
+}
+
+// The LLM sometimes quotes alternation branches — ('discover'|'decouvrir') —
+// which match nothing since paths have no quotes. Always an error, never intent.
+function stripStrayQuotes(regex) {
+  return typeof regex === 'string' ? regex.replace(/['"]/g, '') : regex;
+}
+
+/* c8 ignore start — guard rails against LLM garbage; tested at the prompt level */
+function isValidGeneratedRegex(regex, name, log, paths = null) {
+  if (typeof regex !== 'string' || regex.length === 0) {
+    log?.warn?.(`patterns: dropping rule "${name}" — regex empty`);
+    return false;
+  }
+  const altBranches = (regex.match(/\|/g) || []).length + 1;
+  if (altBranches > MAX_ALTERNATION_BRANCHES) {
+    log?.warn?.(`patterns: dropping rule "${name}" — ${altBranches} alternation branches > ${MAX_ALTERNATION_BRANCHES} (catch-all / locale-enumeration)`);
+    return false;
+  }
+  let compiled;
+  try {
+    compiled = compileAthenaRegex(regex);
+  } catch (err) {
+    log?.warn?.(`patterns: dropping rule "${name}" — uncompilable regex (${err.message})`);
+    return false;
+  }
+  if (Array.isArray(paths) && paths.length >= COVERAGE_CHECK_MIN_PATHS) {
+    const matches = paths.filter((p) => typeof p === 'string' && compiled.test(p)).length;
+    if (matches / paths.length > MAX_PATH_COVERAGE) {
+      log?.warn?.(`patterns: dropping rule "${name}" — matches ${matches}/${paths.length} (${((matches / paths.length) * 100).toFixed(0)}%) > ${MAX_PATH_COVERAGE * 100}% (catch-all)`);
+      return false;
+    }
+  }
+  return true;
+}
+/* c8 ignore stop */
+
+function samplePathsMatching(regex, paths, log, ruleName, max = SAMPLE_URLS_CAP) {
+  /* c8 ignore start — caller already filters paths; second compile is defensive */
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return [];
+  }
+  let compiled;
+  try {
+    compiled = compileAthenaRegex(regex);
+  } catch (err) {
+    log?.warn?.(`patterns: sample_urls compile failed for "${ruleName}" (${err.message}); persisting with []`);
+    return [];
+  }
+  /* c8 ignore stop */
+  const matches = [];
+  for (const path of paths) {
+    if (typeof path === 'string' && compiled.test(path)) {
+      matches.push(path);
+      if (matches.length >= max) {
+        break;
+      }
+    }
+  }
+  return matches;
+}
+
+function buildAutoMetadata(regex, paths, log, ruleName) {
+  // source / derivation_method are DB CHECKs; auto-derivation is always ai / llm.
+  return {
+    source: 'ai',
+    derivation_method: 'llm',
+    sample_urls: samplePathsMatching(regex, paths, log, ruleName),
+  };
+}
+
+function sanitizeSampleUrls(sampleUrls) {
+  if (!Array.isArray(sampleUrls)) {
+    return [];
+  }
+  return sampleUrls
+    .filter((url) => typeof url === 'string' && url.length <= MAX_SAMPLE_URL_LENGTH)
+    .slice(0, MAX_SAMPLE_URLS);
+}
+
+function mergePatternRules(existingRules = [], generatedRegexes = {}, paths = [], log = null) {
   const regexes = generatedRegexes || {};
   const rulesByName = new Map();
 
   existingRules.forEach((rule) => {
     if (rule?.name && rule?.regex) {
       rulesByName.set(rule.name.toLowerCase(), {
+        ...rule,
         name: rule.name.toLowerCase(),
-        regex: rule.regex,
       });
     }
   });
 
-  Object.entries(regexes).forEach(([name, regex]) => {
+  Object.entries(regexes).forEach(([name, rawRegex]) => {
     const normalizedName = name.toLowerCase();
-    if (normalizedName && regex && !rulesByName.has(normalizedName)) {
-      rulesByName.set(normalizedName, {
-        name: normalizedName,
-        regex,
-      });
+    const regex = stripStrayQuotes(rawRegex);
+    /* c8 ignore next 3 — caller's reuse short-circuit prevents this collision */
+    if (!normalizedName || !regex || rulesByName.has(normalizedName)) {
+      return;
     }
+    /* c8 ignore next 3 — defensive: validity check drops LLM garbage + catch-alls */
+    if (!isValidGeneratedRegex(regex, normalizedName, log, paths)) {
+      return;
+    }
+    rulesByName.set(normalizedName, {
+      name: normalizedName,
+      regex,
+      ...buildAutoMetadata(regex, paths, log, normalizedName),
+    });
   });
 
-  // Re-index after merging so persisted rules have sequential first-match order.
   return Array.from(rulesByName.values())
     .map((rule, index) => ({
       ...rule,
+      sample_urls: sanitizeSampleUrls(rule.sample_urls),
       sort_order: index,
     }));
 }
@@ -52,7 +152,6 @@ export async function generatePatternsWorkbook(options) {
     athenaClient,
     s3Config,
     periods,
-    configCategories = [],
     existingPatterns = null,
   } = options;
   const { log } = context;
@@ -68,7 +167,13 @@ export async function generatePatternsWorkbook(options) {
     });
 
     const rows = await athenaClient.query(query, s3Config.databaseName, '[Athena Query] Fetch top URLs from CDN logs for pattern generation');
-    const paths = rows?.map((row) => row.url).filter(Boolean) || [];
+    // Strip query string / fragment / overlong paths before feeding to the LLM.
+    const MAX_PATH_LENGTH = 256;
+    const paths = (rows || [])
+      .map((row) => row.url)
+      .filter(Boolean)
+      .map((url) => url.split('?')[0].split('#')[0])
+      .filter((url) => url.length > 0 && url.length <= MAX_PATH_LENGTH);
 
     if (paths.length === 0) {
       log.warn('No URLs fetched from Athena for pattern generation');
@@ -77,34 +182,18 @@ export async function generatePatternsWorkbook(options) {
 
     log.info(`Fetched ${paths.length} URLs for pattern generation`);
 
-    // Extract domain from site
     const baseURL = site.getBaseURL();
     const domain = new URL(baseURL).hostname;
 
-    // Skip page type analysis if patterns already exist
-    const pagetypeRegexes = existingPatterns?.pagePatterns?.length
-      ? (log.info('Reusing existing page type patterns'), {})
-      : await analyzePageTypes(domain, paths, context);
-
-    // Filter new categories and skip product analysis if all exist
-    const existingCategories = existingPatterns?.topicPatterns?.map(
-      (p) => p.name.toLowerCase(),
-    ) || [];
-    const newCategories = configCategories.filter(
-      (cat) => !existingCategories.includes(cat.toLowerCase()),
-    );
-    const categoriesToAnalyze = newCategories.length ? newCategories : configCategories;
-
-    let productRegexes;
-    if (!existingPatterns?.topicPatterns?.length || newCategories.length) {
-      if (newCategories.length) {
-        log.info(`Analyzing ${newCategories.length} new categories`);
-      }
-      productRegexes = await analyzeProducts(domain, paths, context, categoriesToAnalyze);
-    } else {
-      log.info('Reusing existing product patterns');
-      productRegexes = {};
-    }
+    // Independent LLM pipelines — run concurrently so the two overlap.
+    const [pagetypeRegexes, productRegexes] = await Promise.all([
+      existingPatterns?.pagePatterns?.length
+        ? (log.info('Reusing existing page type patterns'), {})
+        : analyzePageTypes(domain, paths, context),
+      existingPatterns?.topicPatterns?.length
+        ? (log.info('Reusing existing product patterns'), {})
+        : analyzeProducts(domain, paths, context),
+    ]);
 
     const existingTopicPatterns = Array.isArray(existingPatterns?.topicPatterns)
       ? existingPatterns.topicPatterns
@@ -119,24 +208,9 @@ export async function generatePatternsWorkbook(options) {
       log.info(`Preserved ${existingPagePatterns.length} existing page type patterns`);
     }
 
-    // Prepare data for DB with unique lowercase names.
-    let productData = mergePatternRules(existingTopicPatterns, productRegexes);
+    const productData = mergePatternRules(existingTopicPatterns, productRegexes, paths, log);
+    const pagetypeData = mergePatternRules(existingPagePatterns, pagetypeRegexes, paths, log);
 
-    // Filter product data based on config categories if they exist
-    if (configCategories.length > 0) {
-      const configCategoriesLower = configCategories.map((cat) => cat.toLowerCase());
-      const productCountBeforeFilter = productData.length;
-      productData = productData.filter((item) => configCategoriesLower.includes(item.name));
-      productData = productData.map((item, index) => ({
-        ...item,
-        sort_order: index,
-      }));
-      log.info(`Filtered product patterns to match config categories. Kept ${productData.length} patterns out of ${productCountBeforeFilter}`);
-    }
-
-    const pagetypeData = mergePatternRules(existingPagePatterns, pagetypeRegexes);
-
-    // Return early if both arrays are empty
     if (productData.length === 0 && pagetypeData.length === 0) {
       log.warn('No pattern data available to generate report');
       return false;

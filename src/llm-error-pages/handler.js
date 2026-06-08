@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -202,6 +202,14 @@ export async function runAuditAndSendToMystique(context) {
         const processedResults = processErrorPagesResults(results);
         const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
+        // Malformed URLs (e.g. '/brandshttps://...', '/),') are dropped inside
+        // processErrorPagesResults so every downstream view stays consistent.
+        // Log a sample so false positives are diagnosable from Coralogix.
+        if (processedResults.droppedUrls?.length > 0) {
+          const sample = processedResults.droppedUrls.slice(0, 5);
+          log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.droppedUrls.length} malformed URL(s); sample: ${JSON.stringify(sample)}`);
+        }
+
         const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
         const writeCategoryExcel = async (code, errors) => {
@@ -300,6 +308,19 @@ export async function runAuditAndSendToMystique(context) {
               );
 
               opportunityMap[code] = opportunity;
+
+              // Temporary: hide newly-created Opps from the UI until it is updated to
+              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
+              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
+              // the UI ships support for these types, drop this block and bulk-flip any
+              // accumulated IGNORED rows back to NEW.
+              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
+                opportunity.setStatus(Oppty.STATUSES.IGNORED);
+                opportunity.setUpdatedBy('system');
+                await opportunity.save();
+                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
+              }
+
               existingSuggestions = await opportunity.getSuggestions();
 
               await syncSuggestions({

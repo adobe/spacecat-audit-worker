@@ -47,9 +47,7 @@ function getAgenticDbExportReferenceDatesForWeek(weekOffset, referenceDate = new
 }
 
 function shouldRefreshWeeklyAgenticDbExports(auditContext) {
-  // Keep Agentic DB refreshes behind one explicit signal. Other flags, such
-  // as categoriesUpdated, may affect report generation but should not be an
-  // independent DB export trigger.
+  // Keep Agentic DB refreshes behind one explicit signal.
   return hasWeekOffset(auditContext)
     && Boolean(auditContext?.refreshAgenticDailyExport);
 }
@@ -84,7 +82,6 @@ function getDateBasedReferenceDate(auditContext, siteId, context) {
 
 async function runAgenticDbExportForReferenceDate({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -95,7 +92,6 @@ async function runAgenticDbExportForReferenceDate({
   try {
     return await runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,
@@ -115,7 +111,6 @@ async function runAgenticDbExportForReferenceDate({
 
 async function runDateBasedAgenticDbExport({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -128,7 +123,6 @@ async function runDateBasedAgenticDbExport({
   return {
     dailyAgenticExport: await runAgenticDbExportForReferenceDate({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,
@@ -153,7 +147,6 @@ async function queueDailyAgenticDbExport({
       auditContext: {
         date: referenceDate.toISOString(),
         refreshAgenticDailyExport: true,
-        ...(auditContext.categoriesUpdated ? { categoriesUpdated: true } : {}),
         ...(auditContext.triggeredBy ? { triggeredBy: auditContext.triggeredBy } : {}),
         sourceWeekOffset: auditContext.weekOffset,
       },
@@ -259,7 +252,6 @@ async function queueWeeklyAgenticDbExports({
 
 export async function runAgenticDbExports({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -276,7 +268,6 @@ export async function runAgenticDbExports({
   if (!hasWeekOffset(auditContext)) {
     return runDateBasedAgenticDbExport({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,

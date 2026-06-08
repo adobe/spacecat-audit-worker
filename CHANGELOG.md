@@ -1,3 +1,100 @@
+## [1.461.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.1...v1.461.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** pin daily export S3 client to correct region (PermanentRedirect) ([#2609](https://github.com/adobe/spacecat-audit-worker/issues/2609)) ([b234174](https://github.com/adobe/spacecat-audit-worker/commit/b234174e22a1a96248bfba950757240a44d091f9))
+
+## [1.461.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.0...v1.461.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* **accessibility:** resolve stale a11y opportunities when no issues found (SITES-40450) ([#2607](https://github.com/adobe/spacecat-audit-worker/issues/2607)) ([465ebf8](https://github.com/adobe/spacecat-audit-worker/commit/465ebf8da1368d818b1ec1ff4baab21e6c366bec))
+* Alt-text Suggestions Created as NEW Instead of PENDING_VALIDATION ([#2592](https://github.com/adobe/spacecat-audit-worker/issues/2592)) ([6ea7d12](https://github.com/adobe/spacecat-audit-worker/commit/6ea7d12b587d7c0b18dd7cd670453d94f2cabad3))
+
+# [1.461.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.460.0...v1.461.0) (2026-06-05)
+
+
+### Features
+
+* **prerender:** skip HTML comparison for error/maintenance pages ([#2601](https://github.com/adobe/spacecat-audit-worker/issues/2601)) ([95e55c0](https://github.com/adobe/spacecat-audit-worker/commit/95e55c0db07144ee1d95fec365ef1ec728270ffb)), closes [spacecat-content-scraper#TBD](https://github.com/spacecat-content-scraper/issues/TBD)
+
+# [1.460.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.5...v1.460.0) (2026-06-05)
+
+
+### Features
+
+* **cdn-logs-report:** decouple URL classification from LLMO customer config (LLMO-4748) ([#2539](https://github.com/adobe/spacecat-audit-worker/issues/2539)) ([b1b690c](https://github.com/adobe/spacecat-audit-worker/commit/b1b690cecd17e0dbae59b11a43820dc860ab9782))
+
+## [1.459.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.4...v1.459.5) (2026-06-04)
+
+
+### Bug Fixes
+
+* **preflight:** detect broken links rewritten by AEM cq-LinkChecker (SITES-46032) ([#2603](https://github.com/adobe/spacecat-audit-worker/issues/2603)) ([2d69f14](https://github.com/adobe/spacecat-audit-worker/commit/2d69f14d923b9427eb14b04cf43901f250446535))
+
+## [1.459.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.3...v1.459.4) (2026-06-04)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** default new bucket-specific Opps to IGNORED ([#2602](https://github.com/adobe/spacecat-audit-worker/issues/2602)) ([1a43401](https://github.com/adobe/spacecat-audit-worker/commit/1a434014700ecd13f258f4d86225d0942183e947)), closes [#2461](https://github.com/adobe/spacecat-audit-worker/issues/2461)
+
+## [1.459.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.2...v1.459.3) (2026-06-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2598](https://github.com/adobe/spacecat-audit-worker/issues/2598)) ([8d92bb0](https://github.com/adobe/spacecat-audit-worker/commit/8d92bb0cc9e6e569e34bb008635b3c67e602ebea))
+
+## [1.459.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.1...v1.459.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* prompt generation as part of RCV audit flow ([#2309](https://github.com/adobe/spacecat-audit-worker/issues/2309)) ([4159538](https://github.com/adobe/spacecat-audit-worker/commit/4159538db6119b408c1e41ab10166da9df64ada0))
+
+## [1.459.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.0...v1.459.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **rum-config-refresh:** add www. prefix fallback for domain key lookup ([#2597](https://github.com/adobe/spacecat-audit-worker/issues/2597)) ([0e2bfeb](https://github.com/adobe/spacecat-audit-worker/commit/0e2bfeb9a645d89e6d8054ba9ae82ed3b4946304))
+
+# [1.459.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.1...v1.459.0) (2026-06-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2588](https://github.com/adobe/spacecat-audit-worker/issues/2588)) ([c3c1239](https://github.com/adobe/spacecat-audit-worker/commit/c3c123992d5cf73b2a743e04677966d252453df2))
+
+
+### Features
+
+* **csp:** run CSP audit for Crosswalk sites with valid hlxConfig ([#2595](https://github.com/adobe/spacecat-audit-worker/issues/2595)) ([0d37aee](https://github.com/adobe/spacecat-audit-worker/commit/0d37aeeb385250150f89d0958a4b168bfca66adc))
+
+## [1.458.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.458.0...v1.458.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **csp:** skip backward-compatible CSP findings ([#2594](https://github.com/adobe/spacecat-audit-worker/issues/2594)) ([6050513](https://github.com/adobe/spacecat-audit-worker/commit/6050513be00c3435552fc07a738845fcaf46c641))
+
+# [1.458.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.1...v1.458.0) (2026-06-02)
+
+
+### Features
+
+* **cdn-analysis:** include llms.txt in agentic aggregate inserts ([#2589](https://github.com/adobe/spacecat-audit-worker/issues/2589)) ([cb3c320](https://github.com/adobe/spacecat-audit-worker/commit/cb3c320ef98cf564487d11d444090cd4aa10e08f))
+
+## [1.457.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.457.0...v1.457.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** drop malformed URLs from categorized results ([#2587](https://github.com/adobe/spacecat-audit-worker/issues/2587)) ([eaa6990](https://github.com/adobe/spacecat-audit-worker/commit/eaa6990e5df4b3f5df16fdadec0fa0db89698db1))
+
 # [1.457.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.456.5...v1.457.0) (2026-06-02)
 
 
