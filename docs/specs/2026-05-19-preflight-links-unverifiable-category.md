@@ -94,6 +94,8 @@ The gap is specifically: **network-level failure**, where the audit has no signa
 | **Broken** | 404, 410, 5xx (after HEAD + GET fallback) | reported via `brokenExternalLinks` / `brokenInternalLinks` | unchanged |
 | **Unverifiable** | Network error (`ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `EAI_AGAIN`, etc.) | reported via `brokenExternalLinks` w/ `status: 0` (post-#2476) | reported via NEW `unverifiableExternalLinks` w/ `code` and `message` |
 
+> **Historical records:** Existing audit records retain the pre-cutover `status: 0` classification in `brokenExternalLinks`; no backfill is planned. Consumers aggregating broken-link counts over time will see a step-down at the cutover date as previously-flagged corp-network links move to `unverifiableExternalLinks`.
+
 ### Wire format change
 
 The preflight audit envelope today contains opportunity entries keyed by `check`:
@@ -101,7 +103,7 @@ The preflight audit envelope today contains opportunity entries keyed by `check`
 - `check: 'broken-internal-links'` — unchanged
 - `check: 'broken-external-links'` — `status: 0` entries move out of here
 
-Add a new opportunity entry. **Matches the shape of the existing `broken-internal-links` / `broken-external-links` opportunities** (see `src/preflight/handler.js` for the assembly): `{ check, issue: [...] }` where `issue` is the array of per-link entries. The per-entry field names mirror what handler.js emits today for broken links (`url` not `urlTo`; per-link `issue` string; per-link `seoImpact` / `seoRecommendation` / `elements`).
+Add a new opportunity entry. **Matches the shape of the existing `broken-internal-links` / `broken-external-links` opportunities** (see `src/preflight/links.js` for the assembly): `{ check, issue: [...] }` where `issue` is the array of per-link entries. The per-entry field names mirror what links.js emits today for broken links (`url` not `urlTo`; per-link `issue` string; per-link `seoImpact` / `seoRecommendation` / `elements`).
 
 - `check: 'unverifiable-external-links'` — new
 - `issue: [...]` — array of per-link entries. Each entry carries:
@@ -140,7 +142,7 @@ Example opportunity entry on the audit envelope:
 |---|---|---|
 | `ENOTFOUND`, `EAI_AGAIN` | `dns-failure` | "DNS lookup failed — may require corporate network or authentication" |
 | `ECONNREFUSED` | `connection-refused` | "Connection refused — may require corporate network or VPN" |
-| `ECONNRESET` | `connection-reset` | "Connection reset by remote server — server may be temporarily unavailable or rejecting connections" |
+| `ECONNRESET` | `connection-reset` | "Connection was reset — the server or an intermediary forcibly closed the connection" |
 | `ETIMEDOUT`, `UND_ERR_CONNECT_TIMEOUT` | `timeout` | "Request timed out — may require authentication or corporate network" |
 | `CERT_HAS_EXPIRED`, `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, etc. | `tls-error` | "TLS verification failed — server certificate may be misconfigured" |
 | anything else | `unreachable` | "Could not reach the URL — server may be temporarily unavailable" |
