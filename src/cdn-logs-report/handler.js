@@ -112,7 +112,6 @@ async function generateAgenticPatterns({
 async function runReferralExport({
   site,
   context,
-  s3Client,
   athenaClient,
   s3Config,
   referralReportConfig,
@@ -127,7 +126,6 @@ async function runReferralExport({
   try {
     return await runDailyReferralExport({
       athenaClient,
-      s3Client,
       s3Config,
       site,
       context,
@@ -184,7 +182,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   // 2. Daily agentic export — feeds PostgreSQL.
   const agenticDbExportResult = await runAgenticDbExports({
     athenaClient,
-    s3Client,
     s3Config,
     site,
     context,
@@ -198,7 +195,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     ? await runReferralExport({
       site,
       context,
-      s3Client,
       athenaClient,
       s3Config,
       referralReportConfig,

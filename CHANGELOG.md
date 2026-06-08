@@ -1,3 +1,25 @@
+## [1.461.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.1...v1.461.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** pin daily export S3 client to correct region (PermanentRedirect) ([#2609](https://github.com/adobe/spacecat-audit-worker/issues/2609)) ([b234174](https://github.com/adobe/spacecat-audit-worker/commit/b234174e22a1a96248bfba950757240a44d091f9))
+
+## [1.461.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.0...v1.461.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* **accessibility:** resolve stale a11y opportunities when no issues found (SITES-40450) ([#2607](https://github.com/adobe/spacecat-audit-worker/issues/2607)) ([465ebf8](https://github.com/adobe/spacecat-audit-worker/commit/465ebf8da1368d818b1ec1ff4baab21e6c366bec))
+* Alt-text Suggestions Created as NEW Instead of PENDING_VALIDATION ([#2592](https://github.com/adobe/spacecat-audit-worker/issues/2592)) ([6ea7d12](https://github.com/adobe/spacecat-audit-worker/commit/6ea7d12b587d7c0b18dd7cd670453d94f2cabad3))
+
+# [1.461.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.460.0...v1.461.0) (2026-06-05)
+
+
+### Features
+
+* **prerender:** skip HTML comparison for error/maintenance pages ([#2601](https://github.com/adobe/spacecat-audit-worker/issues/2601)) ([95e55c0](https://github.com/adobe/spacecat-audit-worker/commit/95e55c0db07144ee1d95fec365ef1ec728270ffb)), closes [spacecat-content-scraper#TBD](https://github.com/spacecat-content-scraper/issues/TBD)
+
 # [1.460.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.459.5...v1.460.0) (2026-06-05)
 
 
