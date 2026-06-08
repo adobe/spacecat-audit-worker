@@ -434,6 +434,8 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
       // Each check produces exactly one selector (its own), not all empty headings
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h2:nth-of-type(1)']);
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h2:nth-of-type(2)']);
+      // Called exactly twice — once per check, no spurious extra invocations
+      expect(mockDomSelector.toElementTargets).to.have.been.calledTwice;
       // toElementTargets is never called with both selectors together
       expect(mockDomSelector.toElementTargets).to.not.have.been.calledWith(
         ['body > h2:nth-of-type(1)', 'body > h2:nth-of-type(2)'],

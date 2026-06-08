@@ -45,7 +45,7 @@ function getSeoImpact(checkType) {
  * @param {Object} check - The check result from validatePageHeadingFromScrapeJson
  * @returns {Object} Element targets with selectors
  */
-function getElementsFromCheck(scrapeJsonObject, check) {
+function getElementsFromCheck(scrapeJsonObject, check, log) {
   if (!scrapeJsonObject?.scrapeResult?.rawBody) {
     return {};
   }
@@ -100,6 +100,8 @@ function getElementsFromCheck(scrapeJsonObject, check) {
             selectors.push(resolvedSelector);
           }
         }
+      } else {
+        log.debug(`[preflight-headings] heading-empty check has no transformRules.selector — element target will be omitted (check: ${JSON.stringify(check.transformRules)})`);
       }
       break;
     }
@@ -284,7 +286,7 @@ export default async function headings(context, auditContext) {
 
           // Generate selectors from the scraped HTML
           if (scrapeJsonObject) {
-            const elementData = getElementsFromCheck(scrapeJsonObject, check);
+            const elementData = getElementsFromCheck(scrapeJsonObject, check, log);
             if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
