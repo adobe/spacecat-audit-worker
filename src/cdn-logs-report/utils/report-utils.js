@@ -11,7 +11,9 @@
  */
 
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
-import { uploadToSharePoint } from '../../utils/report-uploader.js';
+
+// Region of the importer bucket (S3_IMPORTER_BUCKET_NAME) the daily exports write to.
+export const IMPORTER_BUCKET_REGION = 'us-east-1';
 
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
   'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
@@ -135,21 +137,4 @@ export async function replaceAgenticUrlClassificationRules({
   }
 
   return Array.isArray(data) ? data[0] : data;
-}
-
-export async function saveExcelReportForBatch({
-  workbook,
-  outputLocation,
-  log,
-  sharepointClient,
-  filename,
-}) {
-  const buffer = await workbook.xlsx.writeBuffer();
-
-  if (sharepointClient) {
-    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-    return { filename, outputLocation };
-  }
-
-  return null;
 }
