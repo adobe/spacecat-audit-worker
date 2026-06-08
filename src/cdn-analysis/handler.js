@@ -28,7 +28,6 @@ import {
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
-import { computeWeekOffset } from '../utils/date-utils.js';
 import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
@@ -168,7 +167,7 @@ export async function findRecentUploads(s3Client, bucketName, pathId, auditDate,
 
 /**
  * Triggers cdn-logs-analysis sub-audits for each detected day, and one
- * cdn-logs-report per affected week (deduplicated by weekOffset).
+ * date-based cdn-logs-report per detected day.
  *
  * Sub-audits include isSubAudit: true to prevent recursive scanning,
  * and forceReprocess: true because the same day may already have partial
@@ -182,8 +181,6 @@ async function triggerSubAudits(context, site, detectedDays) {
   const configuration = await Configuration.findLatest();
   const auditQueue = configuration.getQueues().audits;
   const siteId = site.getId();
-
-  const weekOffsets = new Set();
 
   for (const dayKey of detectedDays) {
     const [year, month, day] = dayKey.split('/').map(Number);
@@ -203,21 +200,24 @@ async function triggerSubAudits(context, site, detectedDays) {
       },
     });
     log.info(`Triggered cdn-logs-analysis sub-audit for siteId=${siteId} day=${dayKey}`);
-
-    weekOffsets.add(computeWeekOffset(year, month, day));
   }
 
-  for (const weekOffset of weekOffsets) {
+  // One date-based cdn-logs-report per detected day. cdn-logs-report exports the
+  // day BEFORE auditContext.date, so send day + 1 as the reference. Delayed 900s
+  // so the analysis sub-audits above have time to finish first.
+  for (const dayKey of detectedDays) {
+    const [year, month, day] = dayKey.split('/').map(Number);
+    const reportDate = new Date(Date.UTC(year, month - 1, day + 1)).toISOString();
+
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(auditQueue, {
       type: 'cdn-logs-report',
       siteId,
       auditContext: {
-        weekOffset,
-        triggeredBy: SERVICE_PROVIDER_TYPES.BYOCDN_OTHER,
+        date: reportDate,
       },
     }, null, 900);
-    log.info(`Triggered cdn-logs-report for siteId=${siteId} weekOffset=${weekOffset}`);
+    log.info(`Triggered cdn-logs-report for siteId=${siteId} date=${reportDate}`);
   }
 }
 

@@ -572,12 +572,15 @@ describe('CDN Analysis Handler', () => {
         900,
       );
 
-      const reportCall = context.sqs.sendMessage.getCalls()
-        .find((call) => call.args[1].type === 'cdn-logs-report');
-      expect(reportCall.args[1].auditContext).to.deep.equal({
-        weekOffset: computeWeekOffset(2025, 6, 14),
-        triggeredBy: 'byocdn-other',
-      });
+      // One date-based report per detected day (06/14, 06/15), sent as day + 1.
+      const reportCalls = context.sqs.sendMessage.getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-report');
+      expect(reportCalls).to.have.length(2);
+      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.have.members([
+        '2025-06-15T00:00:00.000Z',
+        '2025-06-16T00:00:00.000Z',
+      ]);
+      reportCalls.forEach((c) => expect(c.args[1].auditContext).to.have.all.keys('date'));
     });
 
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {
@@ -1039,7 +1042,7 @@ describe('CDN Analysis Handler', () => {
       );
     });
 
-    it('deduplicates cdn-logs-report triggers by week', async () => {
+    it('sends one date-based cdn-logs-report per detected day', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,
       };
@@ -1078,7 +1081,13 @@ describe('CDN Analysis Handler', () => {
         .filter((c) => c.args[1]?.type === 'cdn-logs-report');
 
       expect(analysisCalls).to.have.length(3);
-      expect(reportCalls.length).to.be.lessThanOrEqual(analysisCalls.length);
+      // No week dedup: one date-based report per detected day (day + 1 reference).
+      expect(reportCalls).to.have.length(3);
+      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.have.members([
+        '2025-06-10T00:00:00.000Z',
+        '2025-06-11T00:00:00.000Z',
+        '2025-06-12T00:00:00.000Z',
+      ]);
     });
 
     it('should skip provider when no raw data exists', async () => {
