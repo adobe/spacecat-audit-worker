@@ -1,3 +1,10 @@
+## [1.462.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.2...v1.462.3) (2026-06-08)
+
+
+### Bug Fixes
+
+* **wikipedia-analysis:** don't strip fused two-letter country codes from brand ([#2617](https://github.com/adobe/spacecat-audit-worker/issues/2617)) ([1d36c3a](https://github.com/adobe/spacecat-audit-worker/commit/1d36c3ab4642854d1ac1431c92ceeccb8267651a))
+
 ## [1.462.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.1...v1.462.2) (2026-06-08)
 
 
