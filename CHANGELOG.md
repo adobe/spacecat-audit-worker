@@ -1,3 +1,10 @@
+## [1.462.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.3...v1.462.4) (2026-06-08)
+
+
+### Bug Fixes
+
+* **preflight:** heading-empty duplicate cards when multiple empty headings exist ([#2618](https://github.com/adobe/spacecat-audit-worker/issues/2618)) ([cbd2d42](https://github.com/adobe/spacecat-audit-worker/commit/cbd2d42c4b6f73380d66e6a7a1a520ecd02e9726)), closes [#14](https://github.com/adobe/spacecat-audit-worker/issues/14) [#15](https://github.com/adobe/spacecat-audit-worker/issues/15)
+
 ## [1.462.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.2...v1.462.3) (2026-06-08)
 
 
