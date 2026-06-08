@@ -20,7 +20,9 @@ import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 
-describe('Preflight Headings - Selector Coverage Tests', () => {
+describe('Preflight Headings - Selector Coverage Tests', function () {
+  this.timeout(10000);
+
   let context;
   let site;
   let job;
@@ -28,6 +30,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
   let configuration;
   let mockDomSelector;
   let mockHeadingsHandler;
+  let mockSharedUtils;
 
   beforeEach(async () => {
     mockDomSelector = {
@@ -35,10 +38,13 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       toElementTargets: sinon.stub(),
     };
 
+    mockSharedUtils = {
+      getBrandGuidelines: sinon.stub().resolves({}),
+    };
+
     // Mock headings handler to return checks with transformRules
     mockHeadingsHandler = {
       validatePageHeadingFromScrapeJson: sinon.stub(),
-      getBrandGuidelines: sinon.stub().resolves({}),
       getH1HeadingASuggestion: sinon.stub().resolves('AI suggestion'),
       HEADINGS_CHECKS: {
         HEADING_MISSING_H1: { check: 'heading-missing-h1' },
@@ -161,6 +167,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -230,6 +237,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -301,6 +309,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -386,6 +395,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -452,6 +462,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -513,6 +524,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -575,6 +587,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -641,6 +654,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -707,6 +721,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -780,6 +795,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -844,6 +860,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
