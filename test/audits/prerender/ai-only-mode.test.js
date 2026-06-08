@@ -888,6 +888,72 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
+  describe('CSV URL filter in ai-only mode', () => {
+    it('should restrict candidates to URLs provided via auditContext.urls', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page1'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(1);
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/CSV URL filter active — restricting to 1 URL/),
+      );
+    });
+
+    it('should send 0 suggestions when no DB suggestions match the CSV URL filter', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/not-in-db'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No eligible suggestions to send to Mystique/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/1 CSV URL\(s\) had no eligible DB suggestion/),
+      );
+    });
+
+    it('should warn about CSV URLs with no matching DB suggestion (partial match)', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page1', 'https://example.com/not-in-db'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/1 CSV URL\(s\) had no eligible DB suggestion/),
+      );
+    });
+
+    it('should send all eligible suggestions when auditContext.urls is empty', async () => {
+      context.auditContext = { urls: [] };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(2);
+    });
+
+    it('should send all eligible suggestions when auditContext is not set', async () => {
+      // auditContext not set on context — no filter applied
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(2);
+    });
+  });
+
   describe('handleAiOnlyMode - malformed JSON handling', () => {
     it('should handle malformed JSON in data field gracefully', async () => {
       // This test covers the catch block at lines 501-504 in handleAiOnlyMode
