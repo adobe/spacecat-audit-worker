@@ -164,7 +164,6 @@ describe('CDN Logs Report Handler', function test() {
 
       // Both daily exports ran.
       expect(mocks.runAgenticDbExports).to.have.been.calledOnce;
-      expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(true);
       expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
 
       expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
@@ -262,7 +261,6 @@ describe('CDN Logs Report Handler', function test() {
       expect(athenaClient.execute).to.not.have.been.called;
       expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith('No agentic report config found - skipping patterns generation');
-      expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(false);
     });
 
     it('contains patterns failures so the daily exports still run', async () => {
@@ -276,7 +274,7 @@ describe('CDN Logs Report Handler', function test() {
         sinon.match.instanceOf(Error),
       );
       // patterns failure is swallowed → daily exports still run
-      expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(false);
+      expect(mocks.runAgenticDbExports).to.have.been.calledOnce;
       expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
       expect(result.auditResult).to.deep.equal([
         { name: 'agentic-db-export', batchId: 'agentic-batch' },
@@ -294,13 +292,22 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.info).to.have.been.calledWith('No agentic report data found - skipping patterns generation');
     });
 
-    it('skips the weekly step on date-based (daily) runs', async () => {
+    it('runs the rules step on date-based (backfill) runs too, but does not regenerate when rules exist', async () => {
       await runAudit({ date: '2026-04-01T10:00:00Z' });
 
-      expect(mocks.fetchAgenticUrlClassificationRules).to.not.have.been.called;
+      // Patterns step runs on every invocation now (generate-if-missing)...
+      expect(mocks.pathHasData).to.have.been.calledOnce;
+      expect(mocks.fetchAgenticUrlClassificationRules).to.have.been.calledOnce;
+      // ...but existing rules are never overwritten.
       expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
-      expect(mocks.pathHasData).to.not.have.been.called;
-      expect(mocks.runAgenticDbExports.firstCall.args[0].agenticReportHasData).to.equal(false);
+    });
+
+    it('generates rules on a backfill run when none exist yet', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+
+      await runAudit({ date: '2026-04-01T10:00:00Z' });
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
     });
   });
 
@@ -312,11 +319,15 @@ describe('CDN Logs Report Handler', function test() {
         .to.equal('2026-04-01T10:00:00.000Z');
     });
 
-    it('skips the referral export on weekly-only runs', async () => {
+    it('runs the referral export on weekOffset runs (no longer gated)', async () => {
       const result = await runAudit({ weekOffset: -2 });
 
-      expect(mocks.runDailyReferralExport).to.not.have.been.called;
-      expect(result.dailyReferralExport).to.equal(undefined);
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        batchId: 'referral-batch',
+      });
     });
 
     it('runs the referral export on categories-update runs (no longer gated)', async () => {

@@ -40,11 +40,10 @@ function resolvePatternWeekOffset(auditContext) {
 }
 
 /**
- * Weekly (non-daily) step: refresh the agentic URL classification rules and sync
- * them to the database. The weekly SharePoint .xlsx reports were retired once the
- * dashboards moved to PostgreSQL, so this is the only remaining weekly work.
- *
- * @returns {Promise<{ agenticReportHasData: boolean }>} whether agentic data was found
+ * Ensures the agentic URL classification rules exist in the database, generating
+ * them only when they're missing. Existing rules (which may include customer-added
+ * categories) are never overwritten. Runs on every audit invocation so a backfill
+ * for a brand-new site bootstraps its rules; established sites just read-and-skip.
  */
 async function generateAgenticPatterns({
   site,
@@ -59,13 +58,13 @@ async function generateAgenticPatterns({
 
   if (!agenticReportConfig) {
     log.info('No agentic report config found - skipping patterns generation');
-    return { agenticReportHasData: false };
+    return;
   }
 
   try {
     if (!(await pathHasData(s3Client, agenticReportConfig.aggregatedLocation))) {
       log.info('No agentic report data found - skipping patterns generation');
-      return { agenticReportHasData: false };
+      return;
     }
 
     // Pattern generation queries Athena, so ensure the database exists first.
@@ -95,13 +94,10 @@ async function generateAgenticPatterns({
         existingPatterns,
       });
     }
-
-    return { agenticReportHasData: true };
   } catch (error) {
     // Patterns generation is best-effort: a transient Athena/DB failure here must
     // not block the daily agentic/referral DB exports, which do not depend on it.
     log.error(`Agentic patterns generation failed for ${site.getId()}: ${error.message}`, error);
-    return { agenticReportHasData: false };
   }
 }
 
@@ -145,9 +141,6 @@ async function runReferralExport({
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
-  const isDailyDateRun = Boolean(auditContext?.date);
-  const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined
-    && auditContext?.weekOffset !== null;
 
   const awsRuntime = getCdnAwsRuntime(site, context);
   const { s3Client } = awsRuntime;
@@ -165,19 +158,16 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
   const referralReportConfig = reportConfigs.find((config) => config.name === 'referral');
 
-  // 1. Weekly step — refresh agentic classification rules in the DB (no SharePoint).
-  let agenticReportHasData = false;
-  if (!isDailyDateRun) {
-    ({ agenticReportHasData } = await generateAgenticPatterns({
-      site,
-      context,
-      s3Client,
-      athenaClient,
-      s3Config,
-      agenticReportConfig,
-      auditContext,
-    }));
-  }
+  // 1. Ensure agentic classification rules exist in the DB (generate only if missing).
+  await generateAgenticPatterns({
+    site,
+    context,
+    s3Client,
+    athenaClient,
+    s3Config,
+    agenticReportConfig,
+    auditContext,
+  });
 
   // 2. Daily agentic export — feeds PostgreSQL.
   const agenticDbExportResult = await runAgenticDbExports({
@@ -187,20 +177,17 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     context,
     agenticReportConfig,
     auditContext,
-    agenticReportHasData,
   });
 
-  // 3. Daily referral export — feeds PostgreSQL (skipped on weekly-only runs).
-  const dailyReferralExport = !isWeeklyOnlyRun
-    ? await runReferralExport({
-      site,
-      context,
-      athenaClient,
-      s3Config,
-      referralReportConfig,
-      auditContext,
-    })
-    : undefined;
+  // 3. Daily referral export — feeds PostgreSQL.
+  const dailyReferralExport = await runReferralExport({
+    site,
+    context,
+    athenaClient,
+    s3Config,
+    referralReportConfig,
+    auditContext,
+  });
 
   // 4. Assemble the audit result from the DB export outcomes.
   const auditResult = [];
