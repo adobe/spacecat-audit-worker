@@ -758,10 +758,10 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
-  it('should include form_field_engagement from opportunity data', async () => {
-    const formFieldEngagement = [
-      { source: 'input[name="email"]', clicks: 200, fills: 150, avg_time_spend: 3000 },
-      { source: 'input[name="phone"]', clicks: 120, fills: 100, avg_time_spend: 7500 },
+  it('should include fieldEngagement from opportunity data', async () => {
+    const fieldEngagement = [
+      { source: 'input[name="email"]', clicks: 200, fills: 150, avg_time_spend: '3.00' },
+      { source: 'input[name="phone"]', clicks: 120, fills: 100, avg_time_spend: '7.50' },
     ];
     const opportunity = {
       type: 'high-form-views-low-conversions',
@@ -774,17 +774,17 @@ describe('sendMessageToMystiqueForGuidance', () => {
         formsource: 'form.contact',
         pageViews: 500,
         formViews: 200,
-        formFieldEngagement,
+        fieldEngagement,
       },
     };
 
     await sendMessageToMystiqueForGuidance(context, opportunity);
 
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_field_engagement).to.deep.equal(formFieldEngagement);
+    expect(message.data.fieldEngagement).to.deep.equal(fieldEngagement);
   });
 
-  it('should default form_field_engagement to empty array when not present in data', async () => {
+  it('should default fieldEngagement to empty array when not present in data', async () => {
     const opportunity = {
       type: 'high-form-views-low-conversions',
       siteId: 'site-123',
@@ -802,7 +802,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
     await sendMessageToMystiqueForGuidance(context, opportunity);
 
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_field_engagement).to.deep.equal([]);
+    expect(message.data.fieldEngagement).to.deep.equal([]);
   });
 
 });

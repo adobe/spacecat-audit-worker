@@ -60,7 +60,6 @@ describe('Forms Vitals audit', () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
-      'form-field-vitals',
     ];
     const result = await formsAuditRunner(
       'www.example.com',
@@ -122,7 +121,6 @@ describe('audit and send scraping step', () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
-      'form-field-vitals',
     ];
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(context.rumApiClient.queryMulti).calledWith(
