@@ -88,15 +88,15 @@ function getElementsFromCheck(scrapeJsonObject, check) {
     }
 
     case 'heading-empty': {
-      // Find empty headings - extract tag name from check
-      const tagName = check.tagName?.toLowerCase();
-      if (tagName && /^h[1-6]$/.test(tagName)) {
-        const headingsArray = $(tagName).toArray();
-        // Find empty ones
-        const emptyHeadings = headingsArray.filter((h) => $(h).text().trim().length === 0);
-        selectors = emptyHeadings
-          .map((h) => getDomElementSelector(h))
-          .filter(Boolean);
+      const emptySelector = check.transformRules?.selector;
+      if (emptySelector) {
+        const element = $(emptySelector).get(0);
+        if (element) {
+          const selector = getDomElementSelector(element);
+          if (selector) {
+            selectors.push(selector);
+          }
+        }
       }
       break;
     }

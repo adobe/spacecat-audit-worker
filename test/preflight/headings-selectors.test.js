@@ -273,26 +273,29 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       );
     });
 
-    it('should generate selectors for heading-empty check when tagName is provided', async () => {
-      // Setup heading-empty check with tagName
-      const checkWithTagName = {
+    it('should generate a single selector for heading-empty check using transformRules.selector', async () => {
+      const checkWithTransformRules = {
         success: false,
         check: 'heading-empty',
         checkTitle: 'Empty Heading',
         description: 'Heading is empty',
         explanation: 'Add content to heading',
-        tagName: 'h1',
+        tagName: 'h2',
+        transformRules: {
+          action: 'replace',
+          selector: 'body > h2:nth-of-type(1)',
+          currValue: '',
+        },
       };
 
       mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
         url: 'https://main--example--page.aem.page/page1',
-        checks: [checkWithTagName],
+        checks: [checkWithTransformRules],
       });
 
-      // Mock getDomElementSelector to return a selector for the empty h1
-      mockDomSelector.getDomElementSelector.returns('body > h1');
+      mockDomSelector.getDomElementSelector.returns('body > h2:nth-of-type(1)');
       mockDomSelector.toElementTargets.returns({
-        elements: [{ selector: 'body > h1' }],
+        elements: [{ selector: 'body > h2:nth-of-type(1)' }],
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
@@ -323,7 +326,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         scrapedObjects: [{
           data: {
             scrapeResult: {
-              rawBody: '<body><h1></h1></body>',
+              rawBody: '<body><h1>Title</h1><h2></h2><h2></h2></body>',
             },
             finalUrl: 'https://main--example--page.aem.page/page1',
           },
@@ -333,10 +336,68 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify getDomElementSelector was called for the empty heading
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      // Verify toElementTargets was called with the generated selector
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
+      // Only 1 selector per card — not all empty H2s
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h2:nth-of-type(1)']);
+    });
+
+    it('should generate no selectors for heading-empty check when transformRules is absent', async () => {
+      const checkWithoutTransformRules = {
+        success: false,
+        check: 'heading-empty',
+        checkTitle: 'Empty Heading',
+        description: 'Heading is empty',
+        explanation: 'Add content to heading',
+        tagName: 'h2',
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkWithoutTransformRules],
+      });
+
+      mockDomSelector.toElementTargets.returns({});
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>Title</h1><h2></h2></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.getDomElementSelector).to.not.have.been.called;
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
     });
 
     it('should produce no selectors for unknown check types', async () => {
