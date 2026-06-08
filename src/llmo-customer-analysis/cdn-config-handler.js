@@ -134,13 +134,10 @@ async function handleAdobeFastly(
     await Promise.all(analysisPromises);
   }
 
-  // Always queue CDN logs report with delay
-  await sqs.sendMessage(auditQueue, {
-    type: 'cdn-logs-report',
-    siteId,
-    auditContext: { weekOffset: -1 },
-  }, null, CDN_LOGS_REPORT_DELAY_SECONDS);
-
+  // Queue the per-day cdn-logs-report DB imports, delayed (base wait + per-day
+  // stagger) so they fire after cdn-logs-analysis has had time to complete. The
+  // first day-run also generates the agentic classification rules if missing, so
+  // no separate weekly trigger is needed.
   const reportPromises = backfillDays.map((backfillDay, index) => sqs.sendMessage(auditQueue, {
     type: 'cdn-logs-report',
     siteId,
