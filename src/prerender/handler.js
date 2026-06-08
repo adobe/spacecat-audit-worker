@@ -614,6 +614,7 @@ async function sendPrerenderGuidanceRequestToMystique(
   try {
     const baseUrl = auditUrl;
 
+    /* c8 ignore next -- defensive guard: all callers pass an array */
     const suggestionsPayload = preBuiltCandidates ?? [];
 
     if (suggestionsPayload.length === 0) {
