@@ -565,19 +565,20 @@ describe('CDN Analysis Handler', () => {
         }),
       );
 
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'test-audit-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-        null,
-        900,
-      );
-
-      const reportCall = context.sqs.sendMessage.getCalls()
-        .find((call) => call.args[1].type === 'cdn-logs-report');
-      expect(reportCall.args[1].auditContext).to.deep.equal({
-        weekOffset: computeWeekOffset(2025, 6, 14),
-        refreshAgenticDailyExport: true,
-        triggeredBy: 'byocdn-other',
+      // One date-based report per detected day (06/14, 06/15), sent as day + 1,
+      // with a staggered delay: base 800 + index * 30, capped at the SQS max (900).
+      const reportCalls = context.sqs.sendMessage.getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-report');
+      expect(reportCalls).to.have.length(2);
+      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.deep.equal([
+        '2025-06-15T00:00:00.000Z',
+        '2025-06-16T00:00:00.000Z',
+      ]);
+      expect(reportCalls.map((c) => c.args[3])).to.deep.equal([800, 830]);
+      reportCalls.forEach((c) => {
+        expect(c.args[0]).to.equal('test-audit-queue');
+        expect(c.args[2]).to.equal(null);
+        expect(c.args[1].auditContext).to.have.all.keys('date');
       });
     });
 
@@ -1040,7 +1041,7 @@ describe('CDN Analysis Handler', () => {
       );
     });
 
-    it('deduplicates cdn-logs-report triggers by week', async () => {
+    it('sends one date-based cdn-logs-report per detected day', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,
       };
@@ -1079,7 +1080,15 @@ describe('CDN Analysis Handler', () => {
         .filter((c) => c.args[1]?.type === 'cdn-logs-report');
 
       expect(analysisCalls).to.have.length(3);
-      expect(reportCalls.length).to.be.lessThanOrEqual(analysisCalls.length);
+      // No week dedup: one date-based report per detected day (day + 1 reference).
+      expect(reportCalls).to.have.length(3);
+      expect(reportCalls.map((c) => c.args[1].auditContext.date)).to.have.members([
+        '2025-06-10T00:00:00.000Z',
+        '2025-06-11T00:00:00.000Z',
+        '2025-06-12T00:00:00.000Z',
+      ]);
+      // Staggered delays: base 800 + index * 30.
+      expect(reportCalls.map((c) => c.args[3])).to.deep.equal([800, 830, 860]);
     });
 
     it('should skip provider when no raw data exists', async () => {

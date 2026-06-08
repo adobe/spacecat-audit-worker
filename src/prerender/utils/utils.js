@@ -62,15 +62,24 @@ export function toPathname(url) {
 }
 
 /**
- * Merges multiple URL arrays, ensures uniqueness by path, and filters out non-HTML URLs
- * (handles www vs non-www differences by checking path only)
- * @param {...Array<string>} urlArrays - Variable number of URL arrays to merge
+ * Merges multiple URL arrays, ensures uniqueness, and filters out non-HTML URLs.
+ * By default, deduplicates by pathname only (handles www vs non-www differences).
+ * When includeQueryParams is true, query parameters are included in the uniqueness
+ * key so that URLs like /page?a=1 and /page?b=2 are treated as distinct.
+ * @param {Array<string>} urlArrays - URL arrays to merge (spread or single array)
+ * @param {Object} [options] - Options object (must be last argument)
+ * @param {boolean} [options.includeQueryParams=false] - Include query params in dedup key
  * @returns {Object} - Object with unique HTML URLs and filtered count
- *   - urls: Array of unique HTML URLs (by path), preserving original URLs
+ *   - urls: Array of unique HTML URLs, preserving original URLs
  *   - filteredCount: Number of non-HTML URLs that were filtered out
  */
-export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
-  const seenPaths = new Set();
+export function mergeAndGetUniqueHtmlUrls(...args) {
+  const lastArg = args[args.length - 1];
+  const hasOptions = lastArg && !Array.isArray(lastArg) && typeof lastArg === 'object';
+  const { includeQueryParams = false } = hasOptions ? lastArg : {};
+  const urlArrays = hasOptions ? args.slice(0, -1) : args;
+
+  const seenKeys = new Set();
   const uniqueUrls = [];
   let filteredCount = 0;
 
@@ -87,14 +96,20 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
       }
 
       // Normalize path by removing all trailing slashes (except for root path)
-      let normalizedPath = pathname;
-      if (normalizedPath.length > 1) {
-        normalizedPath = normalizedPath.replace(/\/+$/, ''); // Remove all trailing slashes
+      let dedupKey = pathname;
+      if (dedupKey.length > 1) {
+        dedupKey = dedupKey.replace(/\/+$/, ''); // Remove all trailing slashes
       }
 
-      // Only add URL if we haven't seen this path before
-      if (!seenPaths.has(normalizedPath)) {
-        seenPaths.add(normalizedPath);
+      // Include the raw query string in the dedup key when requested,
+      // so the user gets exactly what they passed in the CSV.
+      if (includeQueryParams && urlObj.search) {
+        dedupKey += urlObj.search;
+      }
+
+      // Only add URL if we haven't seen this key before
+      if (!seenKeys.has(dedupKey)) {
+        seenKeys.add(dedupKey);
         uniqueUrls.push(url); // Keep original URL unchanged
       }
     } catch (error) {
