@@ -27,7 +27,6 @@ describe('agentic DB export orchestration', () => {
   function createArgs(overrides = {}) {
     return {
       athenaClient: {},
-      s3Client: {},
       s3Config: { databaseName: 'cdn_logs_example' },
       site: {
         getId: () => 'site-1',
@@ -208,20 +207,10 @@ describe('agentic DB export orchestration', () => {
     );
   });
 
-  it('does not treat categoriesUpdated alone as a DB export trigger', async () => {
-    const result = await module.runAgenticDbExports(createArgs({
-      auditContext: { weekOffset: -1, categoriesUpdated: true },
-    }));
-
-    expect(result).to.deep.equal({});
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-  });
-
   it('queues seven date-based exports for completed weekly DB refreshes and keeps the singular result contract', async () => {
     const args = createArgs({
       auditContext: {
         weekOffset: -1,
-        categoriesUpdated: true,
         refreshAgenticDailyExport: true,
       },
     });
@@ -238,7 +227,6 @@ describe('agentic DB export orchestration', () => {
         auditContext: {
           date: '2026-03-31T00:00:00.000Z',
           refreshAgenticDailyExport: true,
-          categoriesUpdated: true,
           sourceWeekOffset: -1,
         },
       },

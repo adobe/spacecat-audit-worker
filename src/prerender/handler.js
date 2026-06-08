@@ -490,9 +490,24 @@ async function compareHtmlContent(url, context) {
 
   const { serverSideHtml, clientSideHtml, metadata } = scrapedData;
 
-  // Track if scrape.json exists and if it indicates 403
-  const hasScrapeMetadata = metadata !== null;
-  const scrapeForbidden = metadata?.error?.statusCode === 403;
+  // Fields derived from scrape.json, shared across all return paths
+  const scrapeContext = {
+    url,
+    hasScrapeMetadata: metadata !== null,
+    scrapeForbidden: metadata?.error?.statusCode === 403,
+    isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+    usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
+    /* c8 ignore next */
+    scrapeError: metadata?.error,
+  };
+
+  // error: true keeps URL out of scrapedUrlsSet so syncSuggestions won't resolve its suggestions.
+  if (metadata?.isErrorPage) {
+    log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
+    return {
+      ...scrapeContext, error: true, needsPrerender: false, isErrorPage: true,
+    };
+  }
 
   try {
     // Validate HTML data availability
@@ -508,28 +523,11 @@ async function compareHtmlContent(url, context) {
 
     log.debug(`${LOG_PREFIX} Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
-    return {
-      url,
-      ...analysis,
-      hasScrapeMetadata, // Track if scrape.json exists on S3
-      scrapeForbidden, // Track if original scrape was forbidden (403)
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml, // From scrape.json
-      /* c8 ignore next */
-      scrapeError: metadata?.error, // Include error details from scrape.json
-    };
+    // analysis fields intentionally override scrapeContext on key collision
+    return { ...scrapeContext, ...analysis };
   } catch (error) {
     log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
-    return {
-      url,
-      error: true,
-      needsPrerender: false,
-      hasScrapeMetadata,
-      scrapeForbidden,
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
-      scrapeError: metadata?.error,
-    };
+    return { ...scrapeContext, error: true, needsPrerender: false };
   }
 }
 
@@ -579,10 +577,17 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
  *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
+ * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
-// eslint-disable-next-line max-len
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, preBuiltCandidates) {
+async function sendPrerenderGuidanceRequestToMystique(
+  auditUrl,
+  auditData,
+  opportunity,
+  context,
+  preBuiltCandidates,
+  generatePrompts = false,
+) {
   const {
     log, sqs, env, site,
   } = context;
@@ -672,6 +677,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
           url: data.url,
           originalHtmlMarkdownKey: getS3Path(data.url, effectiveScrapeJobId, 'server-side-html.md'),
           markdownDiffKey: getS3Path(data.url, effectiveScrapeJobId, 'markdown-diff.md'),
+          // Signal whether this suggestion already has prompts so Mystique can skip re-generation
+          hasPrompts: Array.isArray(data.prompts) && data.prompts.length > 0,
         });
       });
 
@@ -703,6 +710,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         suggestions: firstBatch,
         batchIndex: 0,
         totalBatches: 1,
+        generatePrompts,
+        siteRegion: site.getRegion() ?? '',
       },
     });
 
@@ -732,20 +741,24 @@ export async function handleAiOnlyMode(context) {
   const siteId = site.getId();
   const baseUrl = site.getBaseURL();
 
-  // Parse optional params from data field (opportunityId, scrapeJobId)
+  // Parse optional params from data field (opportunityId, scrapeJobId, generatePrompts)
   let opportunityId = null;
   let scrapeJobId = null;
-  if (data) {
-    try {
-      const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+  let generatePrompts = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    if (parsedData) {
       opportunityId = parsedData.opportunityId;
       scrapeJobId = parsedData.scrapeJobId;
-    } catch (e) {
-      // Ignore parse errors - graceful degradation for malformed JSON
+      generatePrompts = !!parsedData.generatePrompts;
     }
+  } catch (e) {
+    // Ignore parse errors
+    // Non-JSON data — graceful degradation, values stay at defaults
+    log.warn(`${LOG_PREFIX} Failed to parse context.data for opportunityId, scrapeJobId, generatePrompts, defaulting to null, null, false: ${e.message}`);
   }
 
-  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
+  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}, generatePrompts=${generatePrompts}`);
 
   // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
@@ -822,6 +835,8 @@ export async function handleAiOnlyMode(context) {
     auditData,
     opportunity,
     context,
+    null, // preBuiltCandidates — build from DB suggestions in ai-only mode
+    generatePrompts,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
@@ -855,19 +870,29 @@ export async function importTopPages(context) {
     return handleAiOnlyMode(context);
   }
 
+  // Extract generatePrompts so it can be forwarded to downstream steps via auditContext.
+  // context.data is only populated on the SQS message that triggers Step 1 (the original
+  // Slack command payload) — it is NOT automatically forwarded to Steps 2 and 3.
+  let generatePromptsFlag = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePromptsFlag = !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+  }
+
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
     type: 'top-pages',
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
-    ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
-      ? {
-        auditContext: {
-          urls: auditContext.urls,
-        },
-      }
-      : {}),
+    auditContext: {
+      ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+        ? { urls: auditContext.urls }
+        : {}),
+      generatePrompts: generatePromptsFlag,
+    },
   };
 }
 
@@ -919,6 +944,7 @@ export async function submitForScraping(context) {
         pageLoadTimeout: 20000,
         storagePrefix: AUDIT_TYPE,
       },
+      auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
     };
   }
 
@@ -1026,6 +1052,7 @@ export async function submitForScraping(context) {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
     },
+    auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   };
 }
 
@@ -1429,6 +1456,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
           : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+        ...(result.isErrorPage && { isErrorPage: true }),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
       };
     });
@@ -1612,6 +1640,8 @@ export async function processContentAndGenerateOpportunities(context) {
   const startTime = process.hrtime();
   const isDomainBlocked = auditContext?.domainBlocked === true;
 
+  const generatePrompts = !!auditContext?.generatePrompts;
+
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
   await detectWrongEdgeDeployedStatus(dataAccess, siteId, site.getBaseURL(), log);
@@ -1749,6 +1779,7 @@ export async function processContentAndGenerateOpportunities(context) {
         opportunity,
         context,
         auditRunCandidates,
+        generatePrompts,
       );
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)

@@ -244,6 +244,47 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         log.debug('[preflight-audit] Found internal links:', internalLinks);
         log.debug('[preflight-audit] Found external links:', externalLinks);
 
+        // AEM's server-side cq-LinkChecker rewrites broken <a> tags to <img> elements
+        // before the HTML is served, removing the anchor entirely. The broken URL is
+        // preserved in the alt attribute as "invalid link: <url>". Extract these directly
+        // without HTTP probing — AEM has already validated them as broken (404).
+        const seenCqUrls = new Set();
+        $('img.cq-LinkChecker--prefix.cq-LinkChecker--invalid').each((i, img) => {
+          const alt = $(img).attr('alt') || '';
+          const match = alt.match(/^invalid link:\s*(.+)$/);
+          if (!match) {
+            return;
+          }
+          try {
+            const parsed = new URL(match[1].trim(), pageUrl);
+            // Mirror the protocol guard in checkLinkStatus — non-web schemes
+            // (mailto:, tel:, javascript:, etc.) are not navigable links.
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+              return;
+            }
+            const abs = parsed.toString();
+            // Deduplicate: same URL may appear in multiple cq-LinkChecker images.
+            if (seenCqUrls.has(abs)) {
+              return;
+            }
+            seenCqUrls.add(abs);
+            const selector = getDomElementSelector(img);
+            const result = {
+              urlTo: abs,
+              href: pageUrl,
+              status: 404,
+              ...toElementTargets([selector].filter(Boolean)),
+            };
+            if (parsed.origin === pageOrigin) {
+              brokenInternalLinks.push(result);
+            } else {
+              brokenExternalLinks.push(result);
+            }
+          } catch {
+            // skip unparseable URLs
+          }
+        });
+
         // Check internal links
         const internalResults = await Promise.all(
           Array.from(internalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
