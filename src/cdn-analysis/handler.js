@@ -214,7 +214,6 @@ async function triggerSubAudits(context, site, detectedDays) {
       siteId,
       auditContext: {
         weekOffset,
-        refreshAgenticDailyExport: true,
         triggeredBy: SERVICE_PROVIDER_TYPES.BYOCDN_OTHER,
       },
     }, null, 900);

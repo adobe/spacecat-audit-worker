@@ -417,7 +417,6 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
-          refreshAgenticDailyExport: true,
         });
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.
@@ -548,7 +547,6 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
-          refreshAgenticDailyExport: true,
         });
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.

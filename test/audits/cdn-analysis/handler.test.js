@@ -576,7 +576,6 @@ describe('CDN Analysis Handler', () => {
         .find((call) => call.args[1].type === 'cdn-logs-report');
       expect(reportCall.args[1].auditContext).to.deep.equal({
         weekOffset: computeWeekOffset(2025, 6, 14),
-        refreshAgenticDailyExport: true,
         triggeredBy: 'byocdn-other',
       });
     });
