@@ -17,7 +17,7 @@ import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
 const SQS_MAX_DELAY_SECONDS = 900;
-const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
+const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 30;
 // Base wait so cdn-logs-report fires after cdn-logs-analysis has had time to
 // complete. Kept under SQS_MAX_DELAY_SECONDS so per-day staggering can still
 // add headroom without exceeding the SQS DelaySeconds hard limit.

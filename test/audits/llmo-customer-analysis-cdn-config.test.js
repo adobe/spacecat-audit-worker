@@ -423,7 +423,7 @@ describe('CDN Config Handler', () => {
         });
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.
-        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 30), 900));
       });
     });
 
@@ -544,7 +544,7 @@ describe('CDN Config Handler', () => {
 
       expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
       cdnLogsAnalysisCalls.forEach((call, index) => {
-        expect(call.args[3]).to.equal(index * 5);
+        expect(call.args[3]).to.equal(index * 30);
       });
       expect(dailyReportCalls).to.have.length(cdnLogsAnalysisCalls.length);
       dailyReportCalls.forEach((call, index) => {
@@ -554,7 +554,7 @@ describe('CDN Config Handler', () => {
         });
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.
-        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 30), 900));
       });
 
       clock.restore();
@@ -604,7 +604,7 @@ describe('CDN Config Handler', () => {
         expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.
-        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 30), 900));
       });
       // Verify it checked for cdn-logs-analysis
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
@@ -646,7 +646,7 @@ describe('CDN Config Handler', () => {
         expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
         // Daily report delay is base (800s) + per-day staggering, capped at
         // the SQS 900s hard limit so total stays valid even for long backfills.
-        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 30), 900));
       });
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
