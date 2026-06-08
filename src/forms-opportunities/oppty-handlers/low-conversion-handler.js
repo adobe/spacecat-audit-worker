@@ -142,6 +142,14 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      // Get form field engagement from audit data
+      const { formFieldEngagement } = auditData.auditResult;
+      const fieldEngagement = Array.isArray(formFieldEngagement)
+        ? (formFieldEngagement.find(
+          (fe) => fe.url === opptyData.form && fe.formsource === opptyData.formsource,
+        )?.fields ?? [])
+        : [];
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -155,6 +163,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
           ...opptyData,
           projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
+          formFieldEngagement: fieldEngagement,
         },
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };

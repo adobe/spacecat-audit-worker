@@ -1015,6 +1015,7 @@ const testData = {
         'RUM',
         'Page',
       ],
+      formFieldEngagement: [],
     },
     guidance: {},
   },
@@ -1041,6 +1042,7 @@ const testData = {
       scrapedStatus: false,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      formFieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1146,6 +1148,7 @@ const testData = {
       scrapedStatus: false,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      formFieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1260,6 +1263,7 @@ const testData = {
       scrapedStatus: true,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      formFieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1456,6 +1460,7 @@ const testData = {
         'RUM',
         'Page',
       ],
+      formFieldEngagement: [],
     },
     guidance: {},
   },

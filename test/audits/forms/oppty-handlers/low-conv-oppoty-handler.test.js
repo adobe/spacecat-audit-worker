@@ -315,4 +315,45 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
+
+  it('should store matching formFieldEngagement in the created opportunity data', async () => {
+    const matchedFields = [
+      { source: 'form.contact input[name="email"]', clicks: 200, fills: 150, avg_time_spend: 3000 },
+    ];
+    const auditDataWithFieldEngagement = {
+      ...testData.auditData3,
+      auditResult: {
+        ...testData.auditData3.auditResult,
+        formFieldEngagement: [
+          { url: 'https://www.surest.com/contact-us', formsource: '.mycontact', fields: matchedFields },
+        ],
+      },
+    };
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await createLowConversionOpportunities(auditUrl, auditDataWithFieldEngagement, undefined, context);
+    const contactCall = dataAccessStub.Opportunity.create.getCalls()
+      .find((c) => c.args[0].data.form === 'https://www.surest.com/contact-us');
+    expect(contactCall).to.exist;
+    expect(contactCall.args[0].data.formFieldEngagement).to.deep.equal(matchedFields);
+  });
+
+  it('should store empty formFieldEngagement when there is no matching entry', async () => {
+    const auditDataWithFieldEngagement = {
+      ...testData.auditData3,
+      auditResult: {
+        ...testData.auditData3.auditResult,
+        formFieldEngagement: [
+          { url: 'https://www.surest.com/other', formsource: 'form.other', fields: [] },
+        ],
+      },
+    };
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await createLowConversionOpportunities(auditUrl, auditDataWithFieldEngagement, undefined, context);
+    const contactCall = dataAccessStub.Opportunity.create.getCalls()
+      .find((c) => c.args[0].data.form === 'https://www.surest.com/contact-us');
+    expect(contactCall).to.exist;
+    expect(contactCall.args[0].data.formFieldEngagement).to.deep.equal([]);
+  });
 });

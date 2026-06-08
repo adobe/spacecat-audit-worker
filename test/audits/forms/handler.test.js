@@ -60,17 +60,17 @@ describe('Forms Vitals audit', () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
+      'form-field-vitals',
     ];
     const result = await formsAuditRunner(
       'www.example.com',
       context,
       site,
     );
-    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
-      domain: 'www.example.com',
-      interval: 15,
-      granularity: 'hourly',
-    });
+    expect(context.rumApiClient.queryMulti).calledWith(
+      FORMS_OPPTY_QUERIES,
+      sinon.match({ domain: 'www.example.com', interval: 15, granularity: 'hourly' }),
+    );
     expect(result).to.deep.equal(expectedFormVitalsData);
   });
 });
@@ -122,13 +122,13 @@ describe('audit and send scraping step', () => {
     const FORMS_OPPTY_QUERIES = [
       'cwv',
       'form-vitals',
+      'form-field-vitals',
     ];
     const result = await runAuditAndSendUrlsForScrapingStep(context);
-    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
-      domain: 'www.example.com',
-      interval: 15,
-      granularity: 'hourly',
-    });
+    expect(context.rumApiClient.queryMulti).calledWith(
+      FORMS_OPPTY_QUERIES,
+      sinon.match({ domain: 'www.example.com', interval: 15, granularity: 'hourly' }),
+    );
     expect(result).to.deep.equal(expectedFormSendToScraperData);
   });
 

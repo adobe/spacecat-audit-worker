@@ -32,6 +32,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
   'cwv',
   'form-vitals',
+  'form-field-vitals',
 ];
 
 export async function formsAuditRunner(auditUrl, context) {
@@ -45,6 +46,7 @@ export async function formsAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
   const auditResult = {
     formVitals: queryResults['form-vitals'],
+    formFieldEngagement: queryResults['form-field-vitals'],
     auditContext: {
       interval: FORMS_AUDIT_INTERVAL,
     },

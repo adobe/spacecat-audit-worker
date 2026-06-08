@@ -470,6 +470,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
   if (opportunity) {
     log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
+    const { formFieldEngagement } = opptyData.data || {};
     const mystiqueMessage = {
       type: `guidance:${opptyData.type}`,
       ...options,
@@ -491,6 +492,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
         form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
+        form_field_engagement: Array.isArray(formFieldEngagement) ? formFieldEngagement : [],
         form_navigation: {
           url: opptyData.data?.formNavigation?.url || '',
           source: opptyData.data?.formNavigation?.source || '',
