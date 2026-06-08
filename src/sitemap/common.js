@@ -21,6 +21,9 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
+// ----- version ----------------------------------------------------------------
+export const COMMON_VERSION = 100; // manually update as needed
+
 // ----- performance tuning constants ------------------------------------------
 
 // GET timeout for robots.txt and each sitemap.xml file
