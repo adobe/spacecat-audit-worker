@@ -905,8 +905,8 @@ const testData = {
   mystiqueMessageForFormDetails:
     {
       url: 'test-base-url',
-      form_details: [{
-        form_source: 'form',
+      formDetails: [{
+        formSource: 'form',
         url: 'https://www.surest.com/info/win',
       }],
     },

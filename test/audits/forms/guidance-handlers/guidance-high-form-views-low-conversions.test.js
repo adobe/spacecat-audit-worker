@@ -51,7 +51,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance',
         suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
@@ -132,7 +132,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance'
       },
     };
@@ -159,7 +159,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance'
       },
     };
@@ -218,7 +218,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance',
         suggestions: newSuggestion
       },
@@ -279,7 +279,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       siteId: 'site-id',
       data: {
         url: 'https://example.com',
-        form_source: '.form',
+        formSource: '.form',
         guidance: 'Some guidance',
         suggestions: newSuggestion
       },

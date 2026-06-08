@@ -20,7 +20,7 @@ export default async function handler(message, context) {
   } = context;
   const { Opportunity } = dataAccess;
   const { data, auditId: id } = message;
-  const { form_details: formDetails } = data;
+  const { formDetails } = data;
 
   const opportunity = await Opportunity.findById(id);
   if (opportunity) {
@@ -30,11 +30,11 @@ export default async function handler(message, context) {
       const opportunityData = opportunity.getData();
       const updatedAccessibility = opportunityData.accessibility.map((item) => {
         // eslint-disable-next-line max-len
-        const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
+        const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.formSource === item.formSource);
         if (matchingFormDetail) {
           log.info(`Matching form details : ${JSON.stringify(matchingFormDetail)}`);
           // eslint-disable-next-line
-          const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
+          const { url, formSource, ...cleanedFormDetail } = matchingFormDetail;
           const formTitle = getFormTitle(cleanedFormDetail, opportunity);
           return { ...item, formTitle, formDetails: cleanedFormDetail };
         }
@@ -46,10 +46,10 @@ export default async function handler(message, context) {
     } else {
       const opportunityData = opportunity.getData();
       // eslint-disable-next-line max-len
-      const matchingFormDetail = formDetails.find((detail) => detail.url === opportunityData.form && detail.form_source === opportunityData.formsource);
+      const matchingFormDetail = formDetails.find((detail) => detail.url === opportunityData.form && detail.formSource === opportunityData.formsource);
       if (matchingFormDetail) {
         // eslint-disable-next-line
-        const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
+        const { form, formSource, ...cleanedFormDetail } = matchingFormDetail;
         const formTitle = getFormTitle(cleanedFormDetail, opportunity);
 
         // Check if this form should be ignored

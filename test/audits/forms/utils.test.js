@@ -645,8 +645,8 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.type).to.equal('guidance:other-type');
     expect(message.data.url).to.equal('https://example.com/form2');
     expect(message.data.cr).to.equal(0.85);
-    expect(message.data.form_source).to.equal('source2');
-    expect(message.data.form_details).to.deep.equal([{ detail: 'detail2' }]);
+    expect(message.data.formSource).to.equal('source2');
+    expect(message.data.formDetails).to.deep.equal([{ detail: 'detail2' }]);
   });
 
   it('should handle empty formDetails gracefully', async () => {
@@ -672,7 +672,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_details).to.deep.equal([]);
+    expect(message.data.formDetails).to.deep.equal([]);
   });
 
   it('should send message with default deliveryType when site is not available', async () => {
@@ -723,11 +723,11 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_navigation).to.deep.equal({
+    expect(message.data.formNavigation).to.deep.equal({
       url: '',
       source: '',
-      cta_clicks: 0,
-      page_views: 0,
+      ctaClicks: 0,
+      pageViews: 0,
     });
   });
 
@@ -755,7 +755,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
+    expect(message.data.formDetails).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
 });
@@ -1215,38 +1215,38 @@ describe('sendCodeFixMessagesToImporter', () => {
 });
 
 describe('shouldIgnoreFormByDetails', () => {
-  it('should return true for search form with is_lead_gen false', () => {
-    const formDetails = { form_type: 'search form', is_lead_gen: false };
+  it('should return true for search form with isLeadGen false', () => {
+    const formDetails = { formType: 'search form', isLeadGen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
   });
 
-  it('should return true for search form with is_lead_gen false (case insensitive)', () => {
-    const formDetails = { form_type: 'Search form', is_lead_gen: false };
+  it('should return true for search form with isLeadGen false (case insensitive)', () => {
+    const formDetails = { formType: 'Search form', isLeadGen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
   });
 
-  it('should return true for SEARCH form with is_lead_gen false (uppercase)', () => {
-    const formDetails = { form_type: 'SEARCH form', is_lead_gen: false };
+  it('should return true for SEARCH form with isLeadGen false (uppercase)', () => {
+    const formDetails = { formType: 'SEARCH form', isLeadGen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
   });
 
-  it('should return false for search form with is_lead_gen true', () => {
-    const formDetails = { form_type: 'search form', is_lead_gen: true };
+  it('should return false for search form with isLeadGen true', () => {
+    const formDetails = { formType: 'search form', isLeadGen: true };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 
-  it('should return false for search form with is_lead_gen null', () => {
-    const formDetails = { form_type: 'search form', is_lead_gen: null };
+  it('should return false for search form with isLeadGen null', () => {
+    const formDetails = { formType: 'search form', isLeadGen: null };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 
-  it('should return false for search form with is_lead_gen undefined', () => {
-    const formDetails = { form_type: 'search form', is_lead_gen: undefined };
+  it('should return false for search form with isLeadGen undefined', () => {
+    const formDetails = { formType: 'search form', isLeadGen: undefined };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 
-  it('should return false for contact form with is_lead_gen false', () => {
-    const formDetails = { form_type: 'contact form', is_lead_gen: false };
+  it('should return false for contact form with isLeadGen false', () => {
+    const formDetails = { formType: 'contact form', isLeadGen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 
@@ -1262,13 +1262,13 @@ describe('shouldIgnoreFormByDetails', () => {
     expect(shouldIgnoreFormByDetails('string')).to.be.false;
   });
 
-  it('should return false when form_type is undefined', () => {
-    const formDetails = { is_lead_gen: false };
+  it('should return false when formType is undefined', () => {
+    const formDetails = { isLeadGen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 
   it('should return true for order form formDetails', () => {
-    const formDetails = { is_lead_gen: false, form_type: 'order form' };
+    const formDetails = { isLeadGen: false, formType: 'order form' };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
   });
 });

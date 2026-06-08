@@ -171,10 +171,10 @@ describe('createLowConversionOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: true,
+        isLeadGen: true,
         industry: 'Insurance',
-        form_type: 'Quote Request Form',
-        form_category: 'B2C',
+        formType: 'Quote Request Form',
+        formCategory: 'B2C',
         cpl: 230.6,
       },
     });
@@ -202,8 +202,8 @@ describe('createLowConversionOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: true,
-        form_type: 'Quote Request Form',
+        isLeadGen: true,
+        formType: 'Quote Request Form',
       },
     });
     await createLowConversionOpportunities(
@@ -228,8 +228,8 @@ describe('createLowConversionOpportunities handler method', () => {
       pageViews: 5000,
       samples: 5000,
       formDetails: {
-        is_lead_gen: false,
-        form_type: 'search form',
+        isLeadGen: false,
+        formType: 'search form',
       },
     });
     await createLowConversionOpportunities(
@@ -240,10 +240,10 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     const [, message] = context.sqs.sendMessage.getCall(0).args;
     expect(message.type).to.equal('detect:form-details');
-    expect(message.data.form_details).to.have.lengthOf(1);
-    expect(message.data.form_details[0]).to.deep.include({
+    expect(message.data.formDetails).to.have.lengthOf(1);
+    expect(message.data.formDetails[0]).to.deep.include({
       url: 'https://www.surest.com/info/win-1',
-      form_source: '',
+      formSource: '',
     });
   });
 

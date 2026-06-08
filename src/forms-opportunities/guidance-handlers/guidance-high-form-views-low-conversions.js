@@ -21,7 +21,7 @@ export default async function handler(message, context) {
   const {
     url,
     guidance,
-    form_source: formsource,
+    formSource: formsource,
     suggestions,
   } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);

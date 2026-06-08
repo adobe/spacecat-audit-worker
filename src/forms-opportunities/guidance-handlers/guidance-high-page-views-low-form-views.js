@@ -20,7 +20,7 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const {
     url,
-    form_source: formsource,
+    formSource: formsource,
     guidance, suggestions,
   } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] message received in high-page-views-low-form-views guidance handler: ${JSON.stringify(message, null, 2)}`);

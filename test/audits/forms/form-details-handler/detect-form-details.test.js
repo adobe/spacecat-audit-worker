@@ -68,9 +68,9 @@ describe('Detect Form Details Handler', () => {
       auditId: 'testAuditId',
       siteId: 'testSiteId',
       data: {
-        form_details: [
-          { url: 'testUrl1', form_source: 'formSource1', testKey: 'testValue1' },
-          { url: 'testUrl2', form_source: 'formSource2', testKey: 'testValue1' },
+        formDetails: [
+          { url: 'testUrl1', formSource: 'formSource1', testKey: 'testValue1' },
+          { url: 'testUrl2', formSource: 'formSource2', testKey: 'testValue1' },
         ],
       },
     };
@@ -98,13 +98,13 @@ describe('Detect Form Details Handler', () => {
       save: sinon.stub().resolvesThis(),
     });
 
-    message.data.form_details = [
+    message.data.formDetails = [
       {
         url: 'testUrl1',
-        form_source: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'Contact Form',
-        form_category: 'B2B',
+        formSource: 'formSource1',
+        isLeadGen: true,
+        formType: 'Contact Form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -121,9 +121,9 @@ describe('Detect Form Details Handler', () => {
         samples: 987,
         projectedConversionValue: 8789.0,
         formDetails: {
-          is_lead_gen: true,
-          form_type: 'Contact Form',
-          form_category: 'B2B',
+          isLeadGen: true,
+          formType: 'Contact Form',
+          formCategory: 'B2B',
           industry: 'Telecommunications',
           cpl: 94.0,
         },
@@ -218,13 +218,13 @@ describe('Detect Form Details Handler', () => {
       save: sinon.stub().resolvesThis(),
     });
 
-    message.data.form_details = [
+    message.data.formDetails = [
       {
         url: 'testUrl1',
-        form_source: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'Contact Form',
-        form_category: 'B2B',
+        formSource: 'formSource1',
+        isLeadGen: true,
+        formType: 'Contact Form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -242,9 +242,9 @@ describe('Detect Form Details Handler', () => {
           a11yIssues: [],
           formTitle: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
           formDetails: {
-            is_lead_gen: true,
-            form_type: 'Contact Form',
-            form_category: 'B2B',
+            isLeadGen: true,
+            formType: 'Contact Form',
+            formCategory: 'B2B',
             industry: 'Telecommunications',
             cpl: 94,
           },
@@ -272,13 +272,13 @@ describe('Detect Form Details Handler', () => {
       save: sinon.stub().resolvesThis(),
     });
 
-    message.data.form_details = [
+    message.data.formDetails = [
       {
         url: 'testUrl1',
-        form_source: 'formSource1',
-        is_lead_gen: false,
-        form_type: 'search form',
-        form_category: 'B2B',
+        formSource: 'formSource1',
+        isLeadGen: false,
+        formType: 'search form',
+        formCategory: 'B2B',
         industry: 'Telecommunications',
         cpl: 94.0,
       },
@@ -307,12 +307,12 @@ describe('Detect Form Details Handler', () => {
       save: sinon.stub().resolvesThis(),
     });
 
-    message.data.form_details = [
+    message.data.formDetails = [
       {
         url: 'testUrl1',
-        form_source: 'formSource1',
-        is_lead_gen: false,
-        form_type: 'SEARCH form',
+        formSource: 'formSource1',
+        isLeadGen: false,
+        formType: 'SEARCH form',
       },
     ];
 
@@ -338,12 +338,12 @@ describe('Detect Form Details Handler', () => {
       save: sinon.stub().resolvesThis(),
     });
 
-    message.data.form_details = [
+    message.data.formDetails = [
       {
         url: 'testUrl1',
-        form_source: 'formSource1',
-        is_lead_gen: true,
-        form_type: 'search form',
+        formSource: 'formSource1',
+        isLeadGen: true,
+        formType: 'search form',
       },
     ];
 
