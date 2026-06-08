@@ -999,7 +999,11 @@ export async function submitForScraping(context) {
       urls: includedSlackDeduped,
       filteredCount: includedSlackFiltered,
     } = mergeAndGetUniqueHtmlUrls(rebasedIncludedURLs, { includeQueryParams: true });
-    finalUrls = [...organicSlackDeduped, ...includedSlackDeduped];
+    const { urls: crossSlackDeduped } = mergeAndGetUniqueHtmlUrls(
+      [...organicSlackDeduped, ...includedSlackDeduped],
+      { includeQueryParams: true },
+    );
+    finalUrls = crossSlackDeduped;
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
@@ -1041,9 +1045,11 @@ export async function submitForScraping(context) {
     } = mergeAndGetUniqueHtmlUrls(filteredAgenticUrls);
     filteredCount = organicFiltered + includedFiltered + agenticFiltered;
 
-    const batchedUrls = [
-      ...organicDeduped, ...includedDeduped, ...agenticDeduped,
-    ].slice(0, DAILY_BATCH_SIZE);
+    const { urls: crossDeduped } = mergeAndGetUniqueHtmlUrls(
+      [...organicDeduped, ...includedDeduped, ...agenticDeduped],
+      { includeQueryParams: true },
+    );
+    const batchedUrls = crossDeduped.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
@@ -1203,16 +1209,15 @@ export async function processOpportunityAndSuggestions(
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
 
-  // Normalize scrapedUrlsSet to match by pathname so that domain shifts
-  // (e.g. www.example.com → example.com) don't prevent existing suggestions
-  // from being correctly marked as outdated. The set uses pathname-based
-  // lookups: both stored values and .has() arguments are normalized to pathnames.
+  // Normalize scrapedUrlsSet to pathname+search so query-param variants are treated
+  // as distinct pages. Domain shifts only affect hostname so migration tolerance
+  // (e.g. www.example.com → example.com) is preserved.
   const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
-    const pathnames = new Set(
-      [...rawScrapedUrlsSet].map(toPathname),
+    const keys = new Set(
+      [...rawScrapedUrlsSet].map(normalizePathnameWithQuery),
     );
     return {
-      has: (url) => pathnames.has(toPathname(url)),
+      has: (url) => keys.has(normalizePathnameWithQuery(url)),
     };
   })() : null;
 
@@ -1465,7 +1470,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const existingStatus = await readSiteStatusJson(siteId, context);
     const existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
 
-    const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
+    const existingPageMap = new Map(
+      existingPages.map((p) => [normalizePathnameWithQuery(p.url), p]),
+    );
 
     const currentPages = (auditResult.results ?? []).map((result) => {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
@@ -1483,7 +1490,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapedAt,
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
-          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+          : (existingPageMap.get(normalizePathnameWithQuery(result.url))?.scrapeJobId ?? null),
         ...(result.isErrorPage && { isErrorPage: true }),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
       };
@@ -1500,10 +1507,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       );
     }
 
-    const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
+    const currentUrlSet = new Set(currentPages.map((p) => normalizePathnameWithQuery(p.url)));
     const mergedPages = [
       ...currentPages,
-      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathname(p.url))),
+      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathnameWithQuery(p.url))),
     ];
 
     // Derive aggregate metrics from the full merged page set and latest audit metadata.
