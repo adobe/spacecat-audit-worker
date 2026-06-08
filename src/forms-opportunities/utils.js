@@ -273,7 +273,7 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 
   // per-field engagement is only forwarded to Mystique for low-conversion opportunities
   if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
-    opportunityData.fieldEngagement = metricObject.fieldEngagement || [];
+    opportunityData.fieldEngagement = metricObject.fieldEngagement;
   }
 
   return opportunityData;
@@ -497,7 +497,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
         form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
-        field_engagement: Array.isArray(fieldEngagement) ? fieldEngagement : [],
+        fieldEngagement: fieldEngagement || [],
         form_navigation: {
           url: opptyData.data?.formNavigation?.url || '',
           source: opptyData.data?.formNavigation?.source || '',
