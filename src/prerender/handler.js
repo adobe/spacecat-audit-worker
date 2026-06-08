@@ -410,7 +410,7 @@ function isNotRecentUrl(url, recentPathnames) {
 function sanitizeImportPath(importPath) {
   return importPath
     .replace(/^\/+|\/+$/g, '')
-    .replace(/[/._]/g, '-')
+    .replace(/[/._?=&]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
@@ -425,8 +425,8 @@ function sanitizeImportPath(importPath) {
 * @returns {string} The S3 path to the file
 */
 function getS3Path(url, id, fileName) {
-  const rawImportPath = new URL(url).pathname;
-  const sanitizedImportPath = sanitizeImportPath(rawImportPath);
+  const { pathname, search } = new URL(url);
+  const sanitizedImportPath = sanitizeImportPath(pathname + search);
   const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
   return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
 }
