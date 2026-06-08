@@ -729,13 +729,22 @@ describe('Wikipedia Analysis Handler', () => {
       expect(extractBrandFromUrl('https://brandworldwide.com')).to.equal('brand');
     });
 
-    it('should strip country code suffixes', () => {
-      expect(extractBrandFromUrl('https://www.branduk.com')).to.equal('brand');
-      expect(extractBrandFromUrl('https://www.brandfr.com')).to.equal('brand');
-      expect(extractBrandFromUrl('https://www.brandde.com')).to.equal('brand');
-      expect(extractBrandFromUrl('https://www.brandau.com')).to.equal('brand');
-      expect(extractBrandFromUrl('https://www.brandca.com')).to.equal('brand');
-      expect(extractBrandFromUrl('https://www.brandjp.com')).to.equal('brand');
+    it('should strip two-letter country code suffixes only when delimited', () => {
+      expect(extractBrandFromUrl('https://www.brand-uk.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand-fr.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand_de.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand-au.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand-ca.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brand-jp.com')).to.equal('brand');
+    });
+
+    it('should NOT strip two-letter country codes fused into the brand name', () => {
+      // Regression: "adobe" ends in "be" (Belgium) but is a whole brand.
+      expect(extractBrandFromUrl('https://www.adobe.com')).to.equal('adobe');
+      expect(extractBrandFromUrl('https://www.linkedin.com')).to.equal('linkedin');
+      expect(extractBrandFromUrl('https://www.garmin.com')).to.equal('garmin');
+      expect(extractBrandFromUrl('https://www.mercedes.com')).to.equal('mercedes');
+      expect(extractBrandFromUrl('https://www.fiat.com')).to.equal('fiat');
     });
 
     it('should preserve hyphens in brand names', () => {
