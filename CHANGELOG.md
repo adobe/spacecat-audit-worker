@@ -1,3 +1,10 @@
+## [1.463.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.2...v1.463.3) (2026-06-09)
+
+
+### Reverts
+
+* Revert "fix: exclude static-asset URLs from audit query ([#2527](https://github.com/adobe/spacecat-audit-worker/issues/2527))" ([#2612](https://github.com/adobe/spacecat-audit-worker/issues/2612)) ([4730f1a](https://github.com/adobe/spacecat-audit-worker/commit/4730f1abb4a35cfac192c468c3fc93c8e7671ed4))
+
 ## [1.463.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.1...v1.463.2) (2026-06-09)
 
 
