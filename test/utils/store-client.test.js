@@ -263,6 +263,13 @@ describe('StoreClient', () => {
         .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl, SentimentTopic, SentimentGuideline');
     });
 
+    it('should throw when constructed without config (no dataAccess)', async () => {
+      const clientNoConfig = new StoreClient();
+
+      await expect(clientNoConfig.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl, SentimentTopic, SentimentGuideline');
+    });
+
     it('should throw StoreEmptyError when no URLs returned', async () => {
       dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({ data: [], cursor: null });
 
@@ -294,6 +301,17 @@ describe('StoreClient', () => {
       expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType)
         .to.have.been.calledWith(siteId, 'wikipedia-analysis');
       expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.not.have.been.called;
+    });
+
+    it('should default audits to [] when a guideline has no audits', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({ data: [] });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({
+        data: [makeGuideline({ audits: null })],
+      });
+
+      const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
+
+      expect(result.guidelines[0].audits).to.deep.equal([]);
     });
 
     it('should use allBySiteIdEnabled when audit type is undefined', async () => {
