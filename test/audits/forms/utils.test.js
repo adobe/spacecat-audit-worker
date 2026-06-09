@@ -758,6 +758,53 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
+  it('should include fieldEngagement from opportunity data', async () => {
+    const fieldEngagement = [
+      { source: 'input[name="email"]', clicks: 200, fills: 150, avg_time_spend: '3.00' },
+      { source: 'input[name="phone"]', clicks: 120, fills: 100, avg_time_spend: '7.50' },
+    ];
+    const opportunity = {
+      type: 'high-form-views-low-conversions',
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      data: {
+        form: 'https://example.com/form1',
+        trackedFormKPIValue: 0.05,
+        metrics: [],
+        formsource: 'form.contact',
+        pageViews: 500,
+        formViews: 200,
+        fieldEngagement,
+      },
+    };
+
+    await sendMessageToMystiqueForGuidance(context, opportunity);
+
+    const message = sqsStub.firstCall.args[1];
+    expect(message.data.field_engagement).to.deep.equal(fieldEngagement);
+  });
+
+  it('should default field_engagement to empty array when not present in data', async () => {
+    const opportunity = {
+      type: 'high-form-views-low-conversions',
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      data: {
+        form: 'https://example.com/form1',
+        trackedFormKPIValue: 0.05,
+        metrics: [],
+        formsource: 'form.contact',
+        pageViews: 500,
+        formViews: 200,
+      },
+    };
+
+    await sendMessageToMystiqueForGuidance(context, opportunity);
+
+    const message = sqsStub.firstCall.args[1];
+    expect(message.data.field_engagement).to.deep.equal([]);
+  });
+
 });
 
 
@@ -932,17 +979,14 @@ describe('sendCodeFixMessagesToImporter', () => {
     });
   });
 
-    describe('Auto-fix disabled', () => {
-        it('should skip code-fix generation when auto-fix is disabled', async () => {
-            isAuditEnabledForSiteStub.resolves(false);
-
+    describe('Code-fix generation (sub-feature flag deliberately removed)', () => {
+        it('proceeds with code-fix generation when suggestions exist', async () => {
             await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
 
-            expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', mockSite, context);
+            expect(context.sqs.sendMessage).to.have.been.called;
             expect(context.log.info).to.have.been.calledWith(
-                '[Form Opportunity] [Site Id: site-123] form-accessibility-auto-fix is disabled for site, skipping code-fix generation',
+                '[Form Opportunity] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
             );
-            expect(context.sqs.sendMessage).not.to.have.been.called;
         });
     });
 
@@ -1090,18 +1134,6 @@ describe('sendCodeFixMessagesToImporter', () => {
   });
 
   describe('Error handling', () => {
-    it('should handle errors in isAuditEnabledForSite check', async () => {
-      const error = new Error('Configuration check failed');
-      isAuditEnabledForSiteStub.rejects(error);
-
-      await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
-
-      expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: Configuration check failed',
-      );
-      expect(context.sqs.sendMessage).not.to.have.been.called;
-    });
-
     it('should handle errors in getSuggestions', async () => {
       const error = new Error('Database error');
       mockOpportunity.getSuggestions.rejects(error);

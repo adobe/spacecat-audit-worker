@@ -10,19 +10,83 @@
  * governing permissions and limitations under the License.
  */
 
-import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import DrsClient, {
+  SCRAPE_DATASET_IDS,
+  REDDIT_COMMENTS_SORT_BY_VALUES,
+} from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   DRS_URLS_LIMIT,
-  REDDIT_COMMENTS_DAYS_BACK,
+  RETRIABLE_STATUSES,
+  RETRY_DELAY_MS,
   OFFSITE_DOMAINS,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from './constants.js';
+
+/**
+ * Extracts reddit_comments scrape parameters from Slack/API `messageData`.
+ * Slack delivers keyword values as strings, so this normalizes them:
+ *  - `redditCommentLimit` / `redditDaysBack` → positive integer (or undefined)
+ *  - `redditSortBy` → allowlisted enum value; `'QA'` is normalized to `'Q&A'`
+ *    so Slack users can avoid Slack mangling the ampersand. Unknown values
+ *    are dropped.
+ *  - `redditLoadAllReplies` → strict boolean (only the strings 'true'/'false'
+ *    or real booleans are accepted; anything else is dropped)
+ *
+ * Invalid values are dropped rather than thrown — the DRS client validates and
+ * surfaces a clear error.
+ *
+ * @param {object} [messageData]
+ * @returns {{
+ *   commentLimit?: number,
+ *   sortBy?: string,
+ *   daysBack?: number,
+ *   loadAllReplies?: boolean,
+ * }}
+ */
+function resolveRedditCommentsParams(messageData) {
+  const md = messageData || {};
+  const params = {};
+
+  const parseInteger = (raw) => {
+    if (raw === undefined || raw === null || raw === '') {
+      return undefined;
+    }
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+
+  const commentLimit = parseInteger(md.redditCommentLimit);
+  if (commentLimit !== undefined) {
+    params.commentLimit = commentLimit;
+  }
+
+  const daysBack = parseInteger(md.redditDaysBack);
+  if (daysBack !== undefined) {
+    params.daysBack = daysBack;
+  }
+
+  if (md.redditSortBy !== undefined && md.redditSortBy !== null && md.redditSortBy !== '') {
+    const sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+    if (REDDIT_COMMENTS_SORT_BY_VALUES.has(sortBy)) {
+      params.sortBy = sortBy;
+    }
+  }
+
+  const rawLoadAll = md.redditLoadAllReplies;
+  if (rawLoadAll === true || rawLoadAll === 'true') {
+    params.loadAllReplies = true;
+  } else if (rawLoadAll === false || rawLoadAll === 'false') {
+    params.loadAllReplies = false;
+  }
+
+  return params;
+}
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
@@ -374,72 +438,28 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 /* c8 ignore stop */
 
 /**
- * Submits a DRS scrape job directly via HTTP, bypassing the DRS client.
- * Used when spacecat_org_id must be included in the request body.
+ * Determines whether an error is worth retrying.
+ * Retries on network-level failures (TypeError from fetch) and specific HTTP
+ * status codes that indicate transient server problems.
  *
- * @param {object} params - Scrape job parameters (datasetId, siteId, urls, daysBack)
- * @param {string} spacecatOrgId - SpaceCat organization ID
- * @param {object} context - Context with env and log
- * @returns {Promise<object>} Job result with job_id
+ * @param {Error} err
+ * @returns {boolean}
  */
-async function submitDrsJobDirect(params, spacecatOrgId, context) {
-  const { env, log } = context;
-  const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
-
-  let baseUrl = drsApiUrl;
-  while (baseUrl.endsWith('/')) {
-    baseUrl = baseUrl.slice(0, -1);
+function isRetriable(err) {
+  if (err instanceof TypeError) {
+    return true;
   }
-
-  const parameters = {
-    dataset_id: params.datasetId,
-    site_id: params.siteId,
-    urls: params.urls,
-  };
-  if (params.daysBack !== undefined) {
-    parameters.days_back = params.daysBack;
-  }
-
-  const body = {
-    provider_id: 'brightdata',
-    priority: 'HIGH',
-    parameters,
-    spacecat_org_id: spacecatOrgId,
-  };
-
-  log.info(`${LOG_PREFIX} Submitting direct DRS job with spacecat_org_id`, {
-    datasetId: params.datasetId,
-    siteId: params.siteId,
-    spacecatOrgId,
-  });
-
-  const start = Date.now();
-  const response = await fetch(`${baseUrl}/jobs`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': drsApiKey,
-    },
-    body: JSON.stringify(body),
-  });
-  const elapsed = Date.now() - start;
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DRS POST /jobs failed: ${response.status} - ${errorText} (${elapsed}ms)`);
-  }
-
-  log.info(`${LOG_PREFIX} Direct DRS POST /jobs responded in ${elapsed}ms`);
-
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    return response.json();
-  }
-  return null;
+  return typeof err.status === 'number' && RETRIABLE_STATUSES.has(err.status);
 }
 
 /**
- * Submits a single DRS job with one retry on failure.
+ * Submits a single DRS job with one selective retry.
+ * Only retries on network errors (TypeError) and retriable HTTP status codes
+ * (408, 429, 500, 502, 503, 504). Non-retriable errors (4xx) fail immediately.
+ *
+ * NOTE: POST /jobs is not idempotent and DRS does not support an idempotency
+ * key. A request that times out client-side but lands server-side may produce
+ * a duplicate job. The retry is limited to one attempt to minimise this risk.
  *
  * @param {{ domain: string, datasetId: string, params: object }} job
  * @param {Function} submitFn - Async function that submits the job
@@ -457,10 +477,15 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
         domain, datasetId, status: 'success', response: result,
       };
     } catch (err) {
-      if (attempt === 0) {
-        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying: ${err.message}`);
+      if (attempt === 0 && isRetriable(err)) {
+        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms: ${err.message}`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, RETRY_DELAY_MS);
+        });
       } else {
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId} after retry: ${err.message}`);
+        const label = attempt === 0 ? '' : ' after retry';
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}${label}: ${err.message}`);
         return {
           domain, datasetId, status: 'error', error: err.message,
         };
@@ -478,30 +503,38 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
  * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
- * When spacecatOrgId is provided, jobs are submitted directly via HTTP with
- * spacecat_org_id in the request body instead of using the DRS client.
+ * When spacecatOrgId is provided, it is passed through to
+ * drsClient.submitScrapeJob and included as spacecat_org_id in the DRS request.
+ *
+ * Reddit-comments params (`commentLimit`, `sortBy`, `daysBack`,
+ * `loadAllReplies`) are only attached to the `reddit_comments` dataset. When
+ * they are omitted and the request goes through the DRS client, the client
+ * applies its defaults (`commentLimit=150`, `sortBy='Best'`, no `daysBack`,
+ * no `loadAllReplies`). On the direct-HTTP path (`spacecatOrgId` set), only
+ * the params that the direct path explicitly handles (currently `daysBack`)
+ * actually reach DRS.
  *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
- * @param {string} [spacecatOrgId] - Optional SpaceCat org ID for direct DRS requests
+ * @param {string} [spacecatOrgId] - Optional SpaceCat org ID
+ * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
+ *   (see {@link resolveRedditCommentsParams})
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) {
+async function triggerDrsScraping(
+  urlsByDomain,
+  siteId,
+  context,
+  spacecatOrgId,
+  redditCommentsParams = {},
+) {
   const { log } = context;
-  const drsClient = spacecatOrgId ? null : DrsClient.createFrom(context);
+  const drsClient = DrsClient.createFrom(context);
 
-  if (!spacecatOrgId && !drsClient.isConfigured()) {
+  if (!drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
     return [];
-  }
-
-  if (spacecatOrgId) {
-    const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = context.env;
-    if (!drsApiUrl || !drsApiKey) {
-      log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
-      return [];
-    }
   }
 
   const jobs = [];
@@ -521,7 +554,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
         : urlList;
       const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
-        params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
+        Object.assign(params, redditCommentsParams);
+      }
+      if (spacecatOrgId) {
+        params.spacecatOrgId = spacecatOrgId;
       }
       jobs.push({ domain, datasetId, params });
     }
@@ -530,14 +566,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context, spacecatOrgId) 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
   log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
-  const submitJob = spacecatOrgId
-    ? (params) => submitDrsJobDirect(params, spacecatOrgId, context)
-    : (params) => drsClient.submitScrapeJob(params);
-
   const results = [];
   for (const job of jobs) {
     // eslint-disable-next-line no-await-in-loop
-    results.push(await submitWithRetry(job, submitJob, log));
+    results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), log));
   }
   return results;
 }
@@ -622,6 +654,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { dataAccess, log } = context;
   const { slackContext, messageData } = auditContext || {};
   const spacecatOrgId = messageData?.spacecatOrgId;
+  const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -681,7 +714,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context, spacecatOrgId);
+  const drsResults = await triggerDrsScraping(
+    storedByDomain,
+    siteId,
+    context,
+    spacecatOrgId,
+    redditCommentsParams,
+  );
 
   await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 

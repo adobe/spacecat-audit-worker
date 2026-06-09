@@ -15,10 +15,10 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 const siteData = {
   getConfig: () => Config({}),
   getId: () => 'site1',
-  getBaseURL: () => 'https://bar.foo.com',
+  getBaseURL: () => 'https://foo.com',
   getIsLive: () => true,
   getOrganizationId: () => 'org1',
-  resolveFinalURL: () => 'https://bar.foo.com',
+  resolveFinalURL: () => 'https://foo.com',
 };
 
 export const site = siteData;

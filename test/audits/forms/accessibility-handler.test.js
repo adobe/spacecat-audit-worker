@@ -2236,14 +2236,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Override isAuditEnabledForSiteStub to return true for this test
-      isAuditEnabledForSiteStub.resolves(true);
-
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify isAuditEnabledForSite was called with the site fetched from database
-      expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', sinon.match.has('getId'), context);
-      // Verify sendCodeFixMessagesToMystique was called
+      // Verify sendCodeFixMessagesToMystique was called (sub-feature flag deliberately removed)
       expect(sendCodeFixMessagesToMystiqueStub).to.have.been.called;
     });
 

@@ -61,8 +61,9 @@ describe('Prerender Audit', () => {
   describe('Import Top Pages', () => {
     it('should build a top-pages import job payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
       };
       const res = await importTopPages(context);
       expect(res).to.deep.equal({
@@ -70,13 +71,15 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
         fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: false },
       });
     });
 
     it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
         auditContext: {
           urls: [
             'https://example.com/page-1',
@@ -95,8 +98,37 @@ describe('Prerender Audit', () => {
             'https://example.com/page-1',
             'https://example.com/page-2',
           ],
+          generatePrompts: false,
         },
       });
+    });
+
+    it('should forward generatePrompts:true from data string into auditContext', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
+        data: JSON.stringify({ generatePrompts: true }),
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: true },
+      });
+    });
+
+    it('should default generatePrompts to false when data is malformed JSON', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+        data: '{invalid-json',
+      };
+      const res = await importTopPages(context);
+      expect(res.auditContext).to.deep.equal({ generatePrompts: false });
     });
   });
   describe('HTML Analysis', () => {
@@ -1199,8 +1231,8 @@ describe('Prerender Audit', () => {
         });
 
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
-          // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
-          // triggering catch { return false; } in hasRecentOrganic.
+          // 'not-a-valid-url' is not an absolute URL — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic([]);
           const context = {
             site: {
@@ -1228,8 +1260,8 @@ describe('Prerender Audit', () => {
         });
 
         it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
-          // 'not-a-valid-url' in the agentic list causes new URL(url) to throw inside filteredAgenticUrls,
-          // triggering catch { return true; } — the URL is kept in the batch.
+          // 'not-a-valid-url' in the agentic list — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic(['not-a-valid-url', 'https://example.com/valid']);
           const context = makeContext([]);
 
@@ -1237,6 +1269,43 @@ describe('Prerender Audit', () => {
           const resultUrls = result.urls.map((u) => u.url);
           expect(resultUrls).to.include('not-a-valid-url');
           expect(resultUrls).to.include('https://example.com/valid');
+        });
+
+        it('should treat query-param URL variants as distinct in the recently-processed set', async () => {
+          // Gap 2: /page?filter=iphone in PageCitability should NOT suppress /page?filter=mac.
+          const mockHandler = await makeHandlerWithAgentic([]);
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [
+                  'https://example.com/page?filter=iphone',
+                  'https://example.com/page?filter=mac',
+                ],
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+              // Only the iphone variant was recently processed
+              PageCitability: {
+                allByIndexKeys: sandbox.stub().resolves([{
+                  getUrl: () => 'https://example.com/page?filter=iphone',
+                }]),
+              },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // iphone was recently processed → should NOT appear
+          expect(resultUrls).to.not.include('https://example.com/page?filter=iphone');
+          // mac was NOT recently processed → should appear
+          expect(resultUrls).to.include('https://example.com/page?filter=mac');
         });
 
         describe('edge-deployed URL filtering', () => {
@@ -1597,12 +1666,90 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result).to.be.an('object');
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
         expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
         // createScrapeForbiddenOpportunity was called (not syncSuggestions)
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(syncSuggestionsStub).to.not.have.been.called;
         // uploadStatusSummaryToS3 was called (S3 PutObject written)
         expect(s3SendStub).to.have.been.called;
+      });
+
+      it('should forward generatePrompts:true to Mystique SQS message in normal audit path', async () => {
+        const sendMessageStub = sandbox.stub().resolves();
+        const convertToOpportunityStub = sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'test-site-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: async () => ({
+              needsPrerender: true,
+              contentGainRatio: 0.8,
+              wordCountBefore: 10,
+              wordCountAfter: 200,
+            }),
+          },
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const url = 'https://example.com/page1';
+        const scrapeResultPaths = new Map([[url, '/path/to/result']]);
+
+        // Return HTML for .html S3 keys; NoSuchKey for JSON; resolve for PutObject
+        const s3SendStub = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand') {
+            if (cmd.input.Key.endsWith('.html')) {
+              return Promise.resolve({
+                Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+              });
+            }
+            return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+          }
+          return Promise.resolve({}); // PutObjectCommand (uploadStatusSummaryToS3)
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+            getRegion: () => 'US',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          sqs: { sendMessage: sendMessageStub },
+          s3Client: { send: s3SendStub },
+          log: {
+            info: sandbox.stub(), debug: sandbox.stub(),
+            warn: sandbox.stub(), error: sandbox.stub(),
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue',
+          },
+          scrapeResultPaths,
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(sendMessageStub).to.have.been.called;
+        const sqsPayload = sendMessageStub.getCall(0).args[1];
+        expect(sqsPayload.data.generatePrompts).to.equal(true);
       });
 
       it('should handle errors gracefully', async function testHandleErrorsGracefully() {
@@ -1634,6 +1781,68 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should parse generatePrompts:true from JSON string data', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: JSON.stringify({ generatePrompts: true }),
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should default generatePrompts to false when data is malformed JSON', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          data: '{invalid-json',
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should read generatePrompts from auditContext when data is absent', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
       });
 
       it('should process URLs with scrape result paths', async () => {
@@ -2088,9 +2297,10 @@ describe('Prerender Audit', () => {
         expect(syncCall.mapNewSuggestion).to.be.a('function');
         expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
 
-        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
+        // buildKey uses pathname+search, consistent with processOpportunityAndSuggestions
         expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
         expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
+        expect(syncCall.buildKey({ url: 'https://test.com/page?filter=a' })).to.equal('/page?filter=a');
         expect(syncCall.mapNewSuggestion()).to.deep.equal({});
 
         expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
@@ -3228,6 +3438,10 @@ describe('Prerender Audit', () => {
         // Both domain variants of the same page must produce the same key
         expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
         expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
+
+        // Query-param variants must produce distinct keys
+        expect(buildKey({ url: 'https://example.com/some/page?filter=iphone' })).to.equal('/some/page?filter=iphone');
+        expect(buildKey({ url: 'https://www.example.com/some/page?filter=mac' })).to.equal('/some/page?filter=mac');
 
         // Domain-wide suggestions (with a `key` field) pass through unchanged
         expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
@@ -4435,8 +4649,8 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should return the raw Athena URL when it is already absolute but invalid', async function () {
       this.timeout(5000);
-      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
-        urls: urlGroups.flat(),
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...args) => ({
+        urls: args.filter(Array.isArray).flat(),
         filteredCount: 0,
       }));
 
@@ -4472,7 +4686,8 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
+      // Four calls: one per source (organic, included, agentic) + one cross-source dedup
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(4);
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
@@ -6589,6 +6804,142 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
 
+      it('should skip HTML comparison and not create suggestion when isErrorPage is true in scrape.json', async () => {
+        const scrapeMetadata = { isErrorPage: true, status: 'SUCCESS' };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const analyzeHtmlStub = sandbox.stub();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: analyzeHtmlStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(analyzeHtmlStub.called).to.be.false;
+        expect(result.auditResult.results[0].url).to.equal('https://example.com/page1');
+        expect(result.auditResult.results[0].isErrorPage).to.be.true;
+        expect(result.auditResult.results[0].needsPrerender).to.be.false;
+        expect(result.auditResult.results[0].error).to.be.true;
+        const infoMessages = context.log.info.args.map((call) => call[0]);
+        expect(infoMessages.some((msg) => msg.includes('Error/maintenance page detected'))).to.be.true;
+      });
+
+      it('should NOT skip HTML comparison when isErrorPage is false in scrape.json', async () => {
+        const scrapeMetadata = { isErrorPage: false, status: 'SUCCESS' };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>real content</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const analyzeHtmlStub = sandbox.stub().resolves({
+          needsPrerender: false,
+          contentGainRatio: 0,
+          wordCountBefore: 10,
+          wordCountAfter: 10,
+        });
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: analyzeHtmlStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // isErrorPage: false must not trigger the early-exit guard — analysis should run
+        expect(analyzeHtmlStub.called).to.be.true;
+        expect(result.auditResult.results[0]).to.not.have.property('isErrorPage');
+      });
+
+      it('should set both isErrorPage and scrapeForbidden when metadata has both flags', async () => {
+        const scrapeMetadata = {
+          isErrorPage: true,
+          error: { statusCode: 403, message: 'Forbidden' },
+        };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Site Maintenance</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+              { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            ]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map([['https://example.com/page1', {}]]),
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        const page = result.auditResult.results[0];
+        expect(page.url).to.equal('https://example.com/page1');
+        expect(page.isErrorPage).to.be.true;
+        expect(page.needsPrerender).to.be.false;
+        expect(page.error).to.be.true;
+        // scrapeError is preserved in cleanResults (only hasScrapeMetadata and scrapeForbidden are stripped)
+        expect(page.scrapeError).to.deep.equal({ statusCode: 403, message: 'Forbidden' });
+        // scrapeForbidden is stripped from cleanResults but contributes to the aggregate count
+        expect(result.auditResult.scrapeForbiddenCount).to.equal(1);
+      });
+
       it('should build S3 path without path segment for root URLs', async () => {
         const getObjectFromKeyStub = sinon.stub();
         getObjectFromKeyStub.resolves(null);
@@ -6841,6 +7192,42 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages[1].url).to.equal('https://example.com/success-page');
       expect(uploadedData.pages[1].scrapingStatus).to.equal('success');
       expect(uploadedData.pages[1]).to.not.have.property('scrapeError');
+    });
+
+    it('should include isErrorPage in status when result is an error page, omit it otherwise', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 2,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/maintenance',
+              error: true,
+              needsPrerender: false,
+              isErrorPage: true,
+            },
+            {
+              url: 'https://example.com/real-page',
+              error: false,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/maintenance');
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].isErrorPage).to.be.true;
+
+      expect(uploadedData.pages[1].url).to.equal('https://example.com/real-page');
+      expect(uploadedData.pages[1]).to.not.have.property('isErrorPage');
     });
 
     it('should skip upload when auditResult is missing', async () => {
@@ -9011,6 +9398,123 @@ describe('Prerender Audit', () => {
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
       expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should treat URLs with different query params as distinct records', async () => {
+      // Gap 2: PageCitability records keyed on pathname+search so query-param variants
+      // (/page?filter=iphone vs /page?filter=mac) are distinct, not collapsed to /page.
+      const saveStubIphone = sandbox.stub().resolves();
+      const saveStubMac = sandbox.stub().resolves();
+      const existingIphone = {
+        getUrl: () => 'https://example.com/page?filter=iphone',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubIphone,
+      };
+      const existingMac = {
+        getUrl: () => 'https://example.com/page?filter=mac',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubMac,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingIphone, existingMac]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=iphone', citabilityScore: 0.9 },
+        { url: 'https://example.com/page?filter=mac', citabilityScore: 0.6 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingIphone.setCitabilityScore).to.have.been.calledWith(0.9);
+      expect(existingMac.setCitabilityScore).to.have.been.calledWith(0.6);
+      expect(saveStubIphone).to.have.been.calledOnce;
+      expect(saveStubMac).to.have.been.calledOnce;
+    });
+
+    it('should create new records for query-param URLs even when pathname-only variant exists', async () => {
+      // The pathname /page already exists but /page?filter=new is a distinct URL.
+      const saveStub = sandbox.stub().resolves();
+      const existingPlain = {
+        getUrl: () => 'https://example.com/page',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingPlain]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=new', citabilityScore: 0.8 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // /page?filter=new is different from /page — should create, not update
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/page?filter=new');
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('should handle existing records with unparseable URLs gracefully', async () => {
+      // Exercises the catch branch of normalizePathnameWithQuery.
+      const createStub = sandbox.stub().resolves({});
+      const saveStub = sandbox.stub().resolves();
+      const invalidRecord = {
+        getUrl: () => 'not-a-valid-url',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([invalidRecord]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.7 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Invalid record key doesn't match the valid URL so a new record is created
+      expect(createStub).to.have.been.calledOnce;
+      expect(saveStub).to.not.have.been.called;
     });
 
     it('should skip results with error flag set', async () => {

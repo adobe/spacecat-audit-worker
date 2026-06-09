@@ -1144,22 +1144,6 @@ describe('Permissions Handler Tests', () => {
         .to.be.rejectedWith('Sync suggestions failed');
     });
 
-    it('should handle configuration fetch failure', async () => {
-      const auditData = {
-        auditResult: {
-          permissionsReport: mockPermissionsReport,
-          success: true,
-        },
-        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        auditId: 'audit-123',
-      };
-
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
-      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
-    });
-
     it('should handle opportunity fetch failure', async () => {
       const auditData = {
         auditResult: {
@@ -1355,22 +1339,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-    });
-
-    it('should handle configuration fetch failure', async () => {
-      const auditData = {
-        auditResult: {
-          permissionsReport: mockPermissionsReport,
-          success: true,
-        },
-        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        auditId: 'audit-123',
-      };
-
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
-      await expect(tooStrongOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
     });
 
     it('should handle opportunity fetch failure', async () => {

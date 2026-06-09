@@ -9,28 +9,16 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { weeklyBreakdownQueries } from '../utils/query-builder.js';
-
 export function getConfigs(bucket, siteKey, siteId) {
   return [
     {
       name: 'agentic',
       aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
       tableName: `aggregated_logs_${siteKey}_consolidated`,
-      filePrefix: 'agentictraffic',
-      folderSuffix: 'agentic-traffic',
-      workbookCreator: 'Spacecat Agentic Flat Report',
-      queryFunction: weeklyBreakdownQueries.createAgenticReportQuery,
-      sheetName: 'shared-all',
     },
     {
       name: 'referral',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
       tableName: `aggregated_referral_logs_${siteKey}_consolidated`,
-      filePrefix: 'referral-traffic',
-      folderSuffix: 'referral-traffic-cdn',
-      workbookCreator: 'Spacecat Referral Flat Report',
-      queryFunction: weeklyBreakdownQueries.createReferralReportQuery,
-      sheetName: 'shared-all',
     }];
 }

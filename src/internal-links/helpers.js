@@ -14,6 +14,7 @@ import {
   createInternalLinksAuditLogger,
   isInternalLinksContextLogger,
 } from './logging.js';
+import { isHtmlContentType, isSoft404Body } from '../utils/url-utils.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -145,49 +146,6 @@ function isMalformedPageUrl(url) {
   return /\/\.[a-z0-9]+(\?.*)?(?:#.*)?$/i.test(url);
 }
 
-function shouldInspectForSoft404(contentType) {
-  /* c8 ignore next - Defensive fallback for null/undefined contentType */
-  return /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
-}
-
-function isSoft404Text(bodyText) {
-  /* c8 ignore next - Defensive fallback for null/undefined bodyText */
-  const text = String(bodyText || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-
-  if (!text) {
-    return false;
-  }
-
-  const normalizedText = text.slice(0, 12000);
-
-  return [
-    /404 not found/,
-    /page not found/,
-    /not found/,
-    /the page you (requested|are looking for).{0,40}(could not be found|does not exist|is unavailable)/,
-    /sorry[, ]+we (couldn'?t|can'?t) find/,
-    /sorry[, ]+the page.{0,40}(could not be found|does not exist|is unavailable)/,
-    /we can'?t seem to find the page/,
-    /this page no longer exists/,
-    /the requested url was not found/,
-    /error 404/,
-    /seite nicht gefunden/,
-    /page introuvable/,
-    /page non trouv[ée]e/,
-    /p[áa]gina no encontrada/,
-    /pagina non trovata/,
-    /p[áa]gina n[ãa]o encontrada/,
-    /pagina niet gevonden/,
-    /ページが見つかりません/,
-  ].some((pattern) => pattern.test(normalizedText));
-}
-
 async function releaseResponseBody(response, log, requestLabel) {
   if (!response) {
     return;
@@ -276,9 +234,9 @@ async function checkLinkWithGet(url, log) {
     const contentType = getResponse.headers.get('content-type') || null;
     const statusBucket = classifyStatusBucket(status);
 
-    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType)) {
+    if (statusBucket === null && status === 200 && isHtmlContentType(contentType)) {
       const responseText = await getResponse.text();
-      if (isSoft404Text(responseText)) {
+      if (isSoft404Body(responseText)) {
         log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${STATUS_BUCKETS.SOFT_404})`);
         return {
           isBroken: true, httpStatus: status, statusBucket: STATUS_BUCKETS.SOFT_404, contentType,
