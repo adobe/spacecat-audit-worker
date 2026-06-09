@@ -781,10 +781,10 @@ describe('sendMessageToMystiqueForGuidance', () => {
     await sendMessageToMystiqueForGuidance(context, opportunity);
 
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.fieldEngagement).to.deep.equal(fieldEngagement);
+    expect(message.data.field_engagement).to.deep.equal(fieldEngagement);
   });
 
-  it('should default fieldEngagement to empty array when not present in data', async () => {
+  it('should default field_engagement to empty array when not present in data', async () => {
     const opportunity = {
       type: 'high-form-views-low-conversions',
       siteId: 'site-123',
@@ -802,7 +802,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
     await sendMessageToMystiqueForGuidance(context, opportunity);
 
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.fieldEngagement).to.deep.equal([]);
+    expect(message.data.field_engagement).to.deep.equal([]);
   });
 
 });

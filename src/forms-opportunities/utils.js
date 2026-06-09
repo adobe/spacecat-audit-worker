@@ -250,6 +250,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 
   if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
     opportunityData = convertToLowConversionOpptyData(metricObject);
+    // per-field engagement is only forwarded to Mystique for low-conversion opportunities
+    opportunityData.fieldEngagement = metricObject.fieldEngagement;
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
     opportunityData = convertToLowNavOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_VIEWS) {
@@ -269,11 +271,6 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 
   if (iframeSrc) {
     opportunityData.iframeSrc = iframeSrc;
-  }
-
-  // per-field engagement is only forwarded to Mystique for low-conversion opportunities
-  if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
-    opportunityData.fieldEngagement = metricObject.fieldEngagement;
   }
 
   return opportunityData;
@@ -497,7 +494,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
         form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
-        fieldEngagement: fieldEngagement || [],
+        field_engagement: fieldEngagement || [],
         form_navigation: {
           url: opptyData.data?.formNavigation?.url || '',
           source: opptyData.data?.formNavigation?.source || '',

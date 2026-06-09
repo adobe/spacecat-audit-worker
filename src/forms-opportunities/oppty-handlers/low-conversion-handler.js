@@ -155,7 +155,6 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
           ...opptyData,
           projectedConversionValue,
           dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
-          fieldEngagement: opptyData.fieldEngagement,
         },
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };
