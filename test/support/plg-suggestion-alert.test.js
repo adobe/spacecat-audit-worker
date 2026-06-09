@@ -228,4 +228,37 @@ describe('sendLowSuggestionCountAlert', () => {
     const body = getPostedBody();
     expect(body).to.exist;
   });
+
+  it('includes error message in the Slack message when provided', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const error = 'broken-backlinks audit failed at step submit-for-scraping. Reason: No top pages found';
+
+    await sendLowSuggestionCountAlert(site, 'broken-backlinks', 0, makeContext(), error);
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.include('Error');
+    expect(text).to.include('No top pages found');
+  });
+
+  it('does not include error line when errorMessage is not provided', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, makeContext());
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.not.include('Error:');
+  });
+
+  it('sanitizes mrkdwn control characters in the error message', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, makeContext(), '<script>bad</script>');
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.include('&lt;script&gt;bad&lt;/script&gt;');
+    expect(text).to.not.include('<script>');
+  });
 });

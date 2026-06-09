@@ -98,13 +98,16 @@ async function postSlackMessage(channelId, message, token) {
  *   SLACK_BOT_TOKEN                    – Slack bot OAuth token
  *   SLACK_AUDIT_LOW_SUGGESTION_CHANNEL – channel ID for low-suggestion alerts
  *
- * @param {object} site           - The Site model instance.
- * @param {string} auditType      - The audit type (e.g. 'cwv', 'alt-text').
+ * @param {object} site            - The Site model instance.
+ * @param {string} auditType       - The audit type (e.g. 'cwv', 'alt-text').
  * @param {number} suggestionCount - Number of NEW suggestions surfaced after the audit.
- * @param {object} context        - Lambda context ({ env, log }).
+ * @param {object} context         - Lambda context ({ env, log }).
+ * @param {string} [errorMessage]  - Optional error message to include when the alert is
+ *                                   triggered by a step failure rather than a low count.
  * @returns {Promise<void>}
  */
-export async function sendLowSuggestionCountAlert(site, auditType, suggestionCount, context) {
+// eslint-disable-next-line max-params, max-len
+export async function sendLowSuggestionCountAlert(site, auditType, suggestionCount, context, errorMessage = null) {
   const { env, log } = context;
   const token = env?.SLACK_BOT_TOKEN;
   const channelId = env?.SLACK_AUDIT_LOW_SUGGESTION_CHANNEL;
@@ -131,11 +134,15 @@ export async function sendLowSuggestionCountAlert(site, auditType, suggestionCou
     const safeSiteId = sanitizeForSlack(site.getId());
     const safeAuditType = sanitizeForSlack(auditType);
 
-    const message = ':warning: *Low Suggestion Count for PLG Site*\n\n'
+    let message = ':warning: *Low Suggestion Count for PLG Site*\n\n'
       + `• *Site:* \`${siteBaseURL}\`\n`
       + `• *Site ID:* \`${safeSiteId}\`\n`
       + `• *Audit Type:* \`${safeAuditType}\`\n`
       + `• *New Suggestions:* \`${suggestionCount}\` (threshold: ${threshold})`;
+
+    if (errorMessage) {
+      message += `\n• *Error:* ${sanitizeForSlack(errorMessage)}`;
+    }
 
     await postSlackMessage(channelId, message, token);
   } catch (alertError) {
