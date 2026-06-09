@@ -1051,9 +1051,50 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+      // The audit changed the status → attribute the update to 'system'.
+      expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledOnceWith('system');
       expect(mockLogger.info).to.have.been.calledWith(
         'ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.',
       );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should preserve updatedBy (not overwrite to system) when status is preserved on re-audit', async () => {
+      // Regression: previously syncSuggestions unconditionally stamped
+      // updatedBy='system' on every matched suggestion, clobbering the real
+      // actor (e.g. an IMS user or a Mystique cleanup job) on each re-audit.
+      // A custom mergeStatusFunction that returns null (keep status) must NOT
+      // trigger a 'system' re-stamp.
+      const data = { key: '1', title: 'same title' };
+      const existingSuggestions = [{
+        id: '1',
+        data,
+        getData: sinon.stub().returns(data),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1', title: 'new title' }],
+        buildKey,
+        mapNewSuggestion,
+        // keep existing status (mirrors CWV/other types that preserve ERROR etc.)
+        mergeStatusFunction: () => null,
+      });
+
+      // Status preserved → no setStatus, and crucially no updatedBy clobber.
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+      // Data is still merged + persisted.
+      expect(existingSuggestions[0].setData).to.have.been.called;
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
         .calledOnceWith([existingSuggestions[0]]);
     });

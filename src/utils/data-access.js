@@ -505,11 +505,17 @@ export async function syncSuggestions({
 
     // Use the merge status function to determine if status should change
     const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
-    // null indicates to keep existing status
+    // null indicates to keep existing status. Only attribute the update to
+    // 'system' when this re-audit actually transitions the status — otherwise
+    // we would overwrite the real actor (e.g. an IMS user, or a Mystique
+    // cleanup job) on every re-audit for suggestions whose status is preserved
+    // (ERROR / APPROVED / IN_PROGRESS / REJECTED / ...), making `updatedBy`
+    // useless for triage/attribution. Data (metrics) is still merged + saved
+    // regardless; only the audit-trail actor is left untouched.
     if (newStatus !== null) {
       existing.setStatus(newStatus);
+      existing.setUpdatedBy('system');
     }
-    existing.setUpdatedBy('system');
   });
 
   if (toUpdate.length > 0) {
