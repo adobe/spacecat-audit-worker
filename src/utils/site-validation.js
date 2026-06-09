@@ -51,7 +51,17 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
 
   // Internal/demo orgs bypass suggestion validation regardless of PAID tier
   const rawExcludedOrgs = process.env.ASO_PLG_EXCLUDED_ORGS;
-  log?.info?.(`[rv-debug] siteId=${siteId} orgId=${orgId} ASO_PLG_EXCLUDED_ORGS_set=${!!rawExcludedOrgs}`);
+  // TEMP: dump the actual value + a count of how many orgs are loaded into process.env
+  // (look for which env var name surfaces the Sunstar dev org 44568c3e-…)
+  log?.info?.(
+    `[rv-debug] siteId=${siteId} orgId=${orgId} ASO_PLG_EXCLUDED_ORGS_set=${!!rawExcludedOrgs} `
+    + `ASO_PLG_EXCLUDED_ORGS_len=${(rawExcludedOrgs || '').length} `
+    + `ASO_PLG_EXCLUDED_ORGS_value=${JSON.stringify((rawExcludedOrgs || '').slice(0, 500))}`,
+  );
+  // Also list every process.env key that contains 'ORG' or 'PLG' or 'VALIDATION' or 'EXCLUDE'
+  const interestingKeys = Object.keys(process.env)
+    .filter((k) => /ORG|PLG|VALIDATION|EXCLUDE/i.test(k));
+  log?.info?.(`[rv-debug] env keys matching ORG/PLG/VALIDATION/EXCLUDE: ${JSON.stringify(interestingKeys)}`);
   if (rawExcludedOrgs) {
     const excludedOrgIds = rawExcludedOrgs.split(',')
       .map((id) => id.trim()).filter((id) => id.length > 0);
