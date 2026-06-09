@@ -407,4 +407,12 @@ describe('CDN Logs Report Utils', () => {
       );
     });
   });
+
+  describe('getImporterS3Client', () => {
+    it('lazily creates and caches a single importer S3 client', () => {
+      const first = reportUtils.getImporterS3Client();
+      const second = reportUtils.getImporterS3Client();
+      expect(first).to.equal(second);
+    });
+  });
 });
