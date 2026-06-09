@@ -473,6 +473,10 @@ export const generateSuggestionData = async (context) => {
     )
   ).flat();
 
+  // Count outstanding NEW suggestions after sync. `suggestions` was queried by status
+  // so all items are NEW (or PENDING_VALIDATION for requiresValidation sites, filtered out).
+  // Resolved backlinks are marked OUTDATED by syncSuggestionsWithPublishDetection and
+  // excluded from this query — this reflects the PLG customer's current dashboard view.
   const newSuggestionCount = suggestions.filter(
     (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
   ).length;

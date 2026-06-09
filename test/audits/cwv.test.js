@@ -737,6 +737,117 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.sqs.sendMessage.firstCall.args[1].data.suggestionId).to.equal('sugg-2');
     });
   });
+
+  describe('syncOpportunityAndSuggestionsStep - PLG alert behavior', () => {
+    let mockedSyncStep;
+    let sendLowSuggestionCountAlertStub;
+
+    beforeEach(async () => {
+      sendLowSuggestionCountAlertStub = sandbox.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/cwv/handler.js', {
+        '../../src/support/plg-suggestion-alert.js': {
+          sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+        },
+      });
+      mockedSyncStep = mockedHandler.syncOpportunityAndSuggestionsStep;
+
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        create: sandbox.stub(),
+      };
+      context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+      context.sqs = { sendMessage: sandbox.stub().resolves() };
+    });
+
+    it('calls sendLowSuggestionCountAlert with the NEW suggestion count', async () => {
+      const newSuggestions = [
+        { getId: () => 's1', getStatus: () => 'NEW', getData: () => ({}) },
+        { getId: () => 's2', getStatus: () => 'NEW', getData: () => ({}) },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(newSuggestions);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(auditTypeArg).to.equal('cwv');
+      expect(countArg).to.equal(2);
+    });
+
+    it('does not fire the alert when no new suggestions exist', async () => {
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([]);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(countArg).to.equal(0);
+    });
+  });
 });
 
 describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () => {

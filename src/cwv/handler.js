@@ -64,6 +64,9 @@ export async function syncOpportunityAndSuggestionsStep(context) {
   const opportunity = await syncOpportunitiesAndSuggestions(context);
   await processAutoSuggest(context, opportunity, site);
 
+  // Count all outstanding NEW suggestions after sync (includes unresolved issues from
+  // prior runs). This represents what the PLG customer currently sees in their dashboard.
+  // Resolved pages are marked OUTDATED by syncSuggestions and excluded from this count.
   const newSuggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
     SuggestionModel.STATUSES.NEW,

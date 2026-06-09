@@ -836,3 +836,145 @@ describe('Missing Alt Text Guidance Handler', () => {
     );
   });
 });
+
+describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
+  let sandbox;
+  let guidanceHandler;
+  let sendLowSuggestionCountAlertStub;
+  let mockOpportunity;
+  let mockSite;
+  let context;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    sendLowSuggestionCountAlertStub = sandbox.stub().resolves();
+
+    mockOpportunity = {
+      getId: () => 'opportunity-id',
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      getData: sandbox.stub().returns({}),
+      save: sandbox.stub(),
+      getSuggestions: sandbox.stub().returns([]),
+      addSuggestions: sandbox.stub().returns({ errorItems: [], createdItems: [] }),
+      getType: () => AuditModel.AUDIT_TYPES.ALT_TEXT,
+      getSiteId: () => 'test-site-id',
+      setUpdatedBy: sandbox.stub(),
+      setLastAuditedAt: sandbox.stub(),
+    };
+
+    mockSite = {
+      getId: () => 'test-site-id',
+      getBaseURL: () => 'https://example.com',
+    };
+
+    const mockAuditRecord = {
+      getId: () => 'test-audit-id',
+      getAuditResult: sandbox.stub().returns({ status: 'processing', statusHistory: [] }),
+    };
+
+    context = {
+      log: {
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]) },
+        Site: { findById: sandbox.stub().resolves(mockSite) },
+        Audit: {
+          findById: sandbox.stub().resolves(mockAuditRecord),
+          updateByKeys: sandbox.stub().resolves(),
+        },
+        Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      },
+      env: {},
+    };
+
+    guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
+      '../../../src/image-alt-text/opportunityHandler.js': {
+        addAltTextSuggestions: sandbox.stub().resolves(),
+        getProjectedMetrics: sandbox.stub().resolves({ projectedTrafficLost: 0, projectedTrafficValue: 0 }),
+      },
+      '../../../src/utils/site-validation.js': {
+        checkSiteRequiresValidation: sandbox.stub().resolves(false),
+      },
+      '../../../src/support/plg-suggestion-alert.js': {
+        sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+      },
+    });
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('calls sendLowSuggestionCountAlert with the NEW count when all Mystique batches complete', async () => {
+    const newSuggestions = [
+      { getStatus: () => SuggestionModel.STATUSES.NEW, getData: () => ({ recommendations: [{ pageUrl: 'https://example.com/p1' }] }) },
+      { getStatus: () => SuggestionModel.STATUSES.NEW, getData: () => ({ recommendations: [{ pageUrl: 'https://example.com/p2' }] }) },
+    ];
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    mockOpportunity.getSuggestions.returns(newSuggestions);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{
+          pageUrl: 'https://example.com/p1',
+          imageId: 'img1',
+          altText: 'alt',
+          imageUrl: 'https://example.com/img1.jpg',
+          isAppropriate: true,
+          isDecorative: false,
+          language: 'en',
+          hasAltAttribute: false,
+        }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(auditTypeArg).to.equal(AuditModel.AUDIT_TYPES.ALT_TEXT);
+    expect(countArg).to.equal(2);
+  });
+
+  it('does not call sendLowSuggestionCountAlert when Mystique batches are still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 3,
+    });
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{
+          pageUrl: 'https://example.com/p1',
+          imageId: 'img1',
+          altText: 'alt',
+          imageUrl: 'https://example.com/img1.jpg',
+          isAppropriate: true,
+          isDecorative: false,
+          language: 'en',
+          hasAltAttribute: false,
+        }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.not.have.been.called;
+  });
+});
