@@ -83,8 +83,18 @@ describe('CDN Logs Query Builder', () => {
     mockOptions = createMockOptions();
   });
 
-  it('creates agentic report query with ChatGPT and Perplexity filtering', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+  // Pattern/classification helpers are shared by the agentic daily query and the
+  // (retired) weekly report query; exercise them via the live daily query.
+  const dailyArgs = (overrides = {}) => ({
+    trafficDate: new Date('2025-01-07T00:00:00Z'),
+    databaseName: 'test_db',
+    tableName: 'test_table',
+    site: createMockSite(),
+    ...overrides,
+  });
+
+  it('creates a daily agentic query with ChatGPT and Perplexity filtering', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs());
 
     expect(query).to.be.a('string');
     expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot');
@@ -92,52 +102,11 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('test_db.test_table');
     expect(query).to.include('agent_type');
     expect(query).to.include('user_agent_display');
-    expect(query).to.include('number_of_hits');
     expect(query).to.include('avg_ttfb_ms');
   });
 
-  it('handles site filters correctly', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
-        }),
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
-
-    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
-  });
-
-  it('handles llmo cdn logs site filters correctly', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
-        }),
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
-
-    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
-  });
-
-  it('includes date filtering for the specified week', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
-
-    expect(query).to.include("year = '2025'");
-    expect(query).to.include("month = '01'");
-  });
-
   it('creates a daily agentic export query for a single UTC day', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
-      trafficDate: new Date('2025-01-07T00:00:00Z'),
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      site: createMockSite(),
-    });
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs());
 
     expect(query).to.include("year = '2025'");
     expect(query).to.include("month = '01'");
@@ -149,26 +118,20 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.not.include('cdn_provider');
   });
 
-  it('handles site with no page patterns', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getBaseURL: () => 'https://unknown.com',
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+  it('handles a site with no patterns (default Other classification)', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      site: createMockSite({ getBaseURL: () => 'https://unknown.com' }),
+    }));
 
     expect(query).to.be.a('string');
     expect(query).to.include('Other');
   });
 
-  it('handles topic patterns with mixed named and extract patterns', async () => {
+  it('builds topic + page-type classification from DB rules', async () => {
     const patterns = createMockPatterns();
-    const customOptions = createMockOptions({
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoDataFolder: () => 'test-folder',
-        }),
+        getConfig: () => createMockSiteConfig({ getLlmoDataFolder: () => 'test-folder' }),
       }),
       context: {
         dataAccess: {
@@ -180,16 +143,14 @@ describe('CDN Logs Query Builder', () => {
           },
         },
       },
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
   });
 
-  it('uses pre-fetched patterns for agentic report queries', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+  it('uses pre-fetched patterns for daily agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       remotePatterns: createMockPatterns(),
     }));
 
@@ -197,21 +158,8 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include("THEN 'Products'");
   });
 
-  it('uses pre-fetched patterns for daily agentic report queries', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
-      trafficDate: new Date('2025-01-07T00:00:00Z'),
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      site: createMockSite(),
-      remotePatterns: createMockPatterns(),
-    });
-
-    expect(query).to.include("THEN 'Product Page'");
-    expect(query).to.include("THEN 'Products'");
-  });
-
   it('escapes single quotes in pattern regex and name to prevent SQL injection', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       remotePatterns: {
         pagePatterns: [{ name: "O'Brien Page", regex: "/o'brien/.*", sort_order: 0 }],
         topicPatterns: [{ name: "Can't Stop", regex: "/can't/", sort_order: 0 }],
@@ -225,7 +173,7 @@ describe('CDN Logs Query Builder', () => {
   });
 
   it('falls back to default classification when remotePatterns has an error', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       remotePatterns: { error: true, source: 'postgres' },
     }));
 
@@ -233,52 +181,8 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.not.include("REGEXP_LIKE(url, 'undefined')");
   });
 
-  it('falls back to default classification on daily query when remotePatterns has an error', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
-      trafficDate: new Date('2025-01-07T00:00:00Z'),
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      site: createMockSite(),
-      remotePatterns: { error: true, source: 'postgres' },
-    });
-
-    expect(query).to.include("'Other'");
-    expect(query).to.not.include("REGEXP_LIKE(url, 'undefined')");
-  });
-
-  it('handles topic patterns with named patterns', async () => {
-    const categoryRules = [
-      { regex: '/products/', name: 'Products', sort_order: 0 },
-    ];
-    const pageTypeRules = [
-      { name: 'Product Page', regex: '.*product.*', sort_order: 0 },
-    ];
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoDataFolder: () => 'test-folder',
-        }),
-      }),
-      context: {
-        dataAccess: {
-          services: {
-            postgrestClient: createMockPostgrestClient({
-              categoryRules,
-              pageTypeRules,
-            }),
-          },
-        },
-      },
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
-
-    expect(query).to.be.a('string');
-    expect(query).to.include('CASE');
-  });
-
   it('handles topic patterns with extract-only patterns', async () => {
-    const customOptions = createMockOptions({
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       context: {
         dataAccess: {
           services: {
@@ -289,15 +193,22 @@ describe('CDN Logs Query Builder', () => {
           },
         },
       },
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.include("COALESCE(\n    NULLIF(REGEXP_EXTRACT(url, '/category/([^/]+)', 1), ''),");
   });
 
+  // Date-filter + where-clause + site-filter helpers are shared with the live
+  // top-urls query; exercise them there.
+  it('includes date filtering for the specified week', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(mockOptions);
+
+    expect(query).to.include("year = '2025'");
+    expect(query).to.include("month = '01'");
+  });
+
   it('handles cross-month date filtering', async () => {
-    const customOptions = createMockOptions({
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
       periods: {
         weeks: [{
           startDate: new Date('2024-12-30'),
@@ -305,9 +216,7 @@ describe('CDN Logs Query Builder', () => {
           weekLabel: 'Week 1 2025',
         }],
       },
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.include("year = '2024'");
     expect(query).to.include("month = '12'");
@@ -316,20 +225,30 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('OR');
   });
 
-  it('handles empty conditions in where clause', async () => {
-    const customOptions = createMockOptions({
+  it('handles empty site-filter conditions in the where clause', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
       site: createMockSite({
         getConfig: () => createMockSiteConfig({
           getLlmoCdnlogsFilter: () => [],
         }),
       }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.include('WHERE');
     expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     expect(query).to.include('(?i)Claude(?!-web)');
+  });
+
+  it('handles site filters correctly', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
+        }),
+      }),
+    }));
+
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
   });
 
   describe('createTopUrlsQueryWithLimit', () => {

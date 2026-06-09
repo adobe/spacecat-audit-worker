@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { DeleteObjectsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
-import { loadSql, IMPORTER_BUCKET_REGION } from './utils/report-utils.js';
+import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
 
@@ -260,7 +260,7 @@ export async function runDailyAgenticExport({
   const bundleUri = `s3://${bundleBucket}/${keyPrefix}`;
   const uploadedFiles = buildBundleFileKeys(keyPrefix);
   // Importer bucket is us-east-1, not the site's CDN region; reusing the CDN client 301s.
-  const s3Client = new S3Client({ region: IMPORTER_BUCKET_REGION });
+  const s3Client = getImporterS3Client();
   let dispatch;
 
   try {

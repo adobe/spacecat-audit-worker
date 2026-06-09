@@ -1231,8 +1231,8 @@ describe('Prerender Audit', () => {
         });
 
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
-          // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
-          // triggering catch { return false; } in hasRecentOrganic.
+          // 'not-a-valid-url' is not an absolute URL — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic([]);
           const context = {
             site: {
@@ -1260,8 +1260,8 @@ describe('Prerender Audit', () => {
         });
 
         it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
-          // 'not-a-valid-url' in the agentic list causes new URL(url) to throw inside filteredAgenticUrls,
-          // triggering catch { return true; } — the URL is kept in the batch.
+          // 'not-a-valid-url' in the agentic list — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic(['not-a-valid-url', 'https://example.com/valid']);
           const context = makeContext([]);
 
@@ -1269,6 +1269,43 @@ describe('Prerender Audit', () => {
           const resultUrls = result.urls.map((u) => u.url);
           expect(resultUrls).to.include('not-a-valid-url');
           expect(resultUrls).to.include('https://example.com/valid');
+        });
+
+        it('should treat query-param URL variants as distinct in the recently-processed set', async () => {
+          // Gap 2: /page?filter=iphone in PageCitability should NOT suppress /page?filter=mac.
+          const mockHandler = await makeHandlerWithAgentic([]);
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [
+                  'https://example.com/page?filter=iphone',
+                  'https://example.com/page?filter=mac',
+                ],
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+              // Only the iphone variant was recently processed
+              PageCitability: {
+                allByIndexKeys: sandbox.stub().resolves([{
+                  getUrl: () => 'https://example.com/page?filter=iphone',
+                }]),
+              },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // iphone was recently processed → should NOT appear
+          expect(resultUrls).to.not.include('https://example.com/page?filter=iphone');
+          // mac was NOT recently processed → should appear
+          expect(resultUrls).to.include('https://example.com/page?filter=mac');
         });
 
         describe('edge-deployed URL filtering', () => {
@@ -2260,9 +2297,10 @@ describe('Prerender Audit', () => {
         expect(syncCall.mapNewSuggestion).to.be.a('function');
         expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
 
-        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
+        // buildKey uses pathname+search, consistent with processOpportunityAndSuggestions
         expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
         expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
+        expect(syncCall.buildKey({ url: 'https://test.com/page?filter=a' })).to.equal('/page?filter=a');
         expect(syncCall.mapNewSuggestion()).to.deep.equal({});
 
         expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
@@ -3400,6 +3438,10 @@ describe('Prerender Audit', () => {
         // Both domain variants of the same page must produce the same key
         expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page');
         expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page');
+
+        // Query-param variants must produce distinct keys
+        expect(buildKey({ url: 'https://example.com/some/page?filter=iphone' })).to.equal('/some/page?filter=iphone');
+        expect(buildKey({ url: 'https://www.example.com/some/page?filter=mac' })).to.equal('/some/page?filter=mac');
 
         // Domain-wide suggestions (with a `key` field) pass through unchanged
         expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
@@ -4607,8 +4649,8 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should return the raw Athena URL when it is already absolute but invalid', async function () {
       this.timeout(5000);
-      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
-        urls: urlGroups.flat(),
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...args) => ({
+        urls: args.filter(Array.isArray).flat(),
         filteredCount: 0,
       }));
 
@@ -4644,7 +4686,8 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
+      // Four calls: one per source (organic, included, agentic) + one cross-source dedup
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(4);
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
@@ -9355,6 +9398,123 @@ describe('Prerender Audit', () => {
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
       expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should treat URLs with different query params as distinct records', async () => {
+      // Gap 2: PageCitability records keyed on pathname+search so query-param variants
+      // (/page?filter=iphone vs /page?filter=mac) are distinct, not collapsed to /page.
+      const saveStubIphone = sandbox.stub().resolves();
+      const saveStubMac = sandbox.stub().resolves();
+      const existingIphone = {
+        getUrl: () => 'https://example.com/page?filter=iphone',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubIphone,
+      };
+      const existingMac = {
+        getUrl: () => 'https://example.com/page?filter=mac',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubMac,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingIphone, existingMac]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=iphone', citabilityScore: 0.9 },
+        { url: 'https://example.com/page?filter=mac', citabilityScore: 0.6 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingIphone.setCitabilityScore).to.have.been.calledWith(0.9);
+      expect(existingMac.setCitabilityScore).to.have.been.calledWith(0.6);
+      expect(saveStubIphone).to.have.been.calledOnce;
+      expect(saveStubMac).to.have.been.calledOnce;
+    });
+
+    it('should create new records for query-param URLs even when pathname-only variant exists', async () => {
+      // The pathname /page already exists but /page?filter=new is a distinct URL.
+      const saveStub = sandbox.stub().resolves();
+      const existingPlain = {
+        getUrl: () => 'https://example.com/page',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingPlain]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=new', citabilityScore: 0.8 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // /page?filter=new is different from /page — should create, not update
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/page?filter=new');
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('should handle existing records with unparseable URLs gracefully', async () => {
+      // Exercises the catch branch of normalizePathnameWithQuery.
+      const createStub = sandbox.stub().resolves({});
+      const saveStub = sandbox.stub().resolves();
+      const invalidRecord = {
+        getUrl: () => 'not-a-valid-url',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([invalidRecord]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.7 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Invalid record key doesn't match the valid URL so a new record is created
+      expect(createStub).to.have.been.calledOnce;
+      expect(saveStub).to.not.have.been.called;
     });
 
     it('should skip results with error flag set', async () => {
