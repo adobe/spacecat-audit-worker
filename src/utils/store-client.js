@@ -31,8 +31,8 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
-// Page size for cursor-based pagination over the URL store.
-const URL_STORE_PAGE_SIZE = 500;
+// Page size for cursor-based pagination over the url-store and sentiment collections.
+const STORE_PAGE_SIZE = 500;
 
 /**
  * Error thrown when a store returns empty results
@@ -155,21 +155,36 @@ export default class StoreClient {
     this.log = log;
   }
 
-  #ensureConfigured() {
-    const { AuditUrl, SentimentTopic, SentimentGuideline } = this.dataAccess || {};
-    const missing = [];
-    if (!AuditUrl) {
-      missing.push('AuditUrl');
-    }
-    if (!SentimentTopic) {
-      missing.push('SentimentTopic');
-    }
-    if (!SentimentGuideline) {
-      missing.push('SentimentGuideline');
-    }
+  /**
+   * Validates that the given dataAccess collections are available.
+   * @param {string[]} required - Collection names this operation needs
+   * @throws {Error} If any required collection is missing
+   */
+  #ensureConfigured(required) {
+    const dataAccess = this.dataAccess || {};
+    const missing = required.filter((name) => !dataAccess[name]);
     if (missing.length > 0) {
       throw new Error(`StoreClient is not configured: missing dataAccess collections ${missing.join(', ')}`);
     }
+  }
+
+  /**
+   * Drains a cursor-paginated collection query into a single array.
+   * @param {(cursor: string|null) => Promise<{data?: Array, cursor?: string|null}>} queryFn
+   *   Invoked once per page with the current cursor
+   * @returns {Promise<Array>} All items across every page
+   */
+  // eslint-disable-next-line class-methods-use-this
+  async #fetchAllPages(queryFn) {
+    const items = [];
+    let cursor = null;
+    do {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await queryFn(cursor);
+      items.push(...(result?.data ?? []));
+      cursor = result?.cursor ?? null;
+    } while (cursor);
+    return items;
   }
 
   /**
@@ -184,25 +199,22 @@ export default class StoreClient {
    * @throws {StoreEmptyError} If no URLs are found
    */
   async getUrls(siteId, auditType, queryParams = {}) {
-    this.#ensureConfigured();
+    this.#ensureConfigured(['AuditUrl']);
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
 
     this.log.info(`[StoreClient] Fetching ${auditType} URLs for siteId: ${siteId}`);
 
-    const items = [];
-    let cursor = null;
-    do {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await AuditUrl.allBySiteIdAndAuditType(siteId, auditType, {
-        limit: URL_STORE_PAGE_SIZE,
+    const items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
+      siteId,
+      auditType,
+      {
+        limit: STORE_PAGE_SIZE,
         cursor,
         sortBy,
         sortOrder,
-      });
-      items.push(...(result?.data ?? []));
-      cursor = result?.cursor ?? null;
-    } while (cursor);
+      },
+    ));
 
     if (items.length === 0) {
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
@@ -224,18 +236,24 @@ export default class StoreClient {
    * @throws {StoreEmptyError} If no guidelines are found
    */
   async getGuidelines(siteId, auditType) {
-    this.#ensureConfigured();
+    this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
 
     this.log.info(`[StoreClient] Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`);
 
-    const topicsResult = await SentimentTopic.allBySiteIdEnabled(siteId, {});
-    const guidelinesResult = auditType
-      ? await SentimentGuideline.allBySiteIdAndAuditType(siteId, auditType, {})
-      : await SentimentGuideline.allBySiteIdEnabled(siteId, {});
+    const topicItems = await this.#fetchAllPages(
+      (cursor) => SentimentTopic.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor }),
+    );
+    const guidelineItems = await this.#fetchAllPages((cursor) => (auditType
+      ? SentimentGuideline.allBySiteIdAndAuditType(
+        siteId,
+        auditType,
+        { limit: STORE_PAGE_SIZE, cursor },
+      )
+      : SentimentGuideline.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor })));
 
-    const topics = (topicsResult?.data ?? []).map(toSentimentTopicJson);
-    const guidelines = (guidelinesResult?.data ?? []).map(toSentimentGuidelineJson);
+    const topics = topicItems.map(toSentimentTopicJson);
+    const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);

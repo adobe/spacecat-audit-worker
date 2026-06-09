@@ -202,17 +202,23 @@ describe('StoreClient', () => {
   });
 
   describe('getUrls', () => {
-    it('should fetch URLs from the URL store', async () => {
-      const rows = [
-        makeAuditUrl({ url: 'https://en.wikipedia.org/wiki/Test' }),
-        makeAuditUrl({ url: 'https://en.wikipedia.org/wiki/Test2' }),
-      ];
+    it('should fetch URLs from the URL store and map the full DTO shape', async () => {
+      const rows = [makeAuditUrl({ url: 'https://en.wikipedia.org/wiki/Test' })];
       dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({ data: rows, cursor: null });
 
       const result = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
 
-      expect(result).to.have.length(2);
-      expect(result[0]).to.include({ url: 'https://en.wikipedia.org/wiki/Test', siteId });
+      // Locks the exact DTO contract: dropped/added fields will fail this test.
+      expect(result).to.deep.equal([{
+        siteId: 'test-site-id',
+        url: 'https://en.wikipedia.org/wiki/Test',
+        byCustomer: false,
+        audits: ['wikipedia-analysis'],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledOnce;
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[0]).to.equal(siteId);
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[1]).to.equal('wikipedia-analysis');
@@ -256,18 +262,29 @@ describe('StoreClient', () => {
         .to.include({ cursor: 'next-cursor' });
     });
 
-    it('should throw when dataAccess collections are not configured', async () => {
+    it('should throw when the AuditUrl collection is not configured', async () => {
       const clientNoData = new StoreClient({ dataAccess: {} }, mockLog);
 
       await expect(clientNoData.getUrls(siteId, URL_TYPES.WIKIPEDIA))
-        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl, SentimentTopic, SentimentGuideline');
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl');
     });
 
     it('should throw when constructed without config (no dataAccess)', async () => {
       const clientNoConfig = new StoreClient();
 
       await expect(clientNoConfig.getUrls(siteId, URL_TYPES.WIKIPEDIA))
-        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl, SentimentTopic, SentimentGuideline');
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl');
+    });
+
+    it('should propagate errors thrown mid-pagination', async () => {
+      const boom = new Error('dynamo exploded');
+      dataAccess.AuditUrl.allBySiteIdAndAuditType
+        .onFirstCall().resolves({ data: [makeAuditUrl()], cursor: 'next-cursor' })
+        .onSecondCall().rejects(boom);
+
+      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('dynamo exploded');
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
     });
 
     it('should throw StoreEmptyError when no URLs returned', async () => {
@@ -294,13 +311,56 @@ describe('StoreClient', () => {
 
       const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
 
-      expect(result.topics).to.have.length(1);
-      expect(result.topics[0]).to.include({ topicId: 'topic-1', name: 'Topic 1' });
-      expect(result.guidelines).to.have.length(1);
-      expect(result.guidelines[0]).to.include({ guidelineId: 'guideline-1', name: 'Guideline 1' });
+      // Locks the exact DTO contract for both topics and guidelines.
+      expect(result.topics).to.deep.equal([{
+        siteId: 'test-site-id',
+        topicId: 'topic-1',
+        name: 'Topic 1',
+        description: 'desc',
+        enabled: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
+      expect(result.guidelines).to.deep.equal([{
+        siteId: 'test-site-id',
+        guidelineId: 'guideline-1',
+        name: 'Guideline 1',
+        instruction: 'do the thing',
+        audits: ['wikipedia-analysis'],
+        enabled: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
       expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType)
         .to.have.been.calledWith(siteId, 'wikipedia-analysis');
       expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.not.have.been.called;
+    });
+
+    it('should throw when sentiment collections are not configured', async () => {
+      const clientNoData = new StoreClient({ dataAccess: { AuditUrl: {} } }, mockLog);
+
+      await expect(clientNoData.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections SentimentTopic, SentimentGuideline');
+    });
+
+    it('should paginate topics and guidelines across pages', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled
+        .onFirstCall().resolves({ data: [makeTopic({ topicId: 't1' })], cursor: 'c1' })
+        .onSecondCall().resolves({ data: [makeTopic({ topicId: 't2' })], cursor: null });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType
+        .onFirstCall().resolves({ data: [makeGuideline({ guidelineId: 'g1' })], cursor: 'c1' })
+        .onSecondCall().resolves({ data: [makeGuideline({ guidelineId: 'g2' })], cursor: null });
+
+      const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
+
+      expect(result.topics.map((t) => t.topicId)).to.deep.equal(['t1', 't2']);
+      expect(result.guidelines.map((g) => g.guidelineId)).to.deep.equal(['g1', 'g2']);
+      expect(dataAccess.SentimentTopic.allBySiteIdEnabled).to.have.been.calledTwice;
+      expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType).to.have.been.calledTwice;
     });
 
     it('should default audits to [] when a guideline has no audits', async () => {
