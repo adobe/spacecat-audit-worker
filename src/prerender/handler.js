@@ -743,7 +743,7 @@ export async function handleAiOnlyMode(context) {
       };
     }
 
-    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()} for baseUrl=${baseUrl}, siteId=${siteId}`);
+    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()} for baseUrl=${baseUrl}, siteId=${siteId}...`);
   }
 
   // Verify opportunity belongs to the site
