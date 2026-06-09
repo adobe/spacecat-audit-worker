@@ -774,7 +774,7 @@ export async function handleAiOnlyMode(context) {
 
   const csvUrls = context.auditContext?.urls;
   const urlFilter = Array.isArray(csvUrls) && csvUrls.length > 0
-    ? new Set(csvUrls.map((u) => toPathname(u)))
+    ? new Set(csvUrls.map((u) => normalizePathnameWithQuery(u)))
     : null;
 
   if (urlFilter) {
@@ -800,7 +800,7 @@ export async function handleAiOnlyMode(context) {
       return candidates;
     }
 
-    if (urlFilter && !urlFilter.has(toPathname(suggestionData.url))) {
+    if (urlFilter && !urlFilter.has(normalizePathnameWithQuery(suggestionData.url))) {
       return candidates;
     }
 
@@ -830,13 +830,27 @@ export async function handleAiOnlyMode(context) {
   }, []);
 
   if (urlFilter) {
-    const matchedPathnames = new Set(preBuiltCandidates.map((c) => toPathname(c.url)));
-    const unmatchedUrls = csvUrls.filter((u) => !matchedPathnames.has(toPathname(u)));
+    const matchedPathnames = new Set(
+      preBuiltCandidates.map((c) => normalizePathnameWithQuery(c.url)),
+    );
+    const unmatchedUrls = csvUrls.filter(
+      (u) => !matchedPathnames.has(normalizePathnameWithQuery(u)),
+    );
     if (unmatchedUrls.length > 0) {
       log.warn(`${LOG_PREFIX} ai-only: ${unmatchedUrls.length} CSV URL(s) had no eligible DB suggestion `
         + '(not yet scraped, or in OUTDATED/SKIPPED/FIXED status). Run a normal prerender audit first for these URLs. '
         + `baseUrl=${baseUrl}, siteId=${siteId}, urls=${unmatchedUrls.join(', ')}`);
     }
+  }
+
+  // Mystique receives a single SQS message capped at MYSTIQUE_BATCH_SIZE to stay under the
+  // 256 KB SQS limit. Anything beyond the cap is NOT sent in this run — warn so the operator
+  // knows to split the CSV into smaller batches.
+  if (preBuiltCandidates.length > MYSTIQUE_BATCH_SIZE) {
+    log.warn(`${LOG_PREFIX} ai-only: ${preBuiltCandidates.length} eligible suggestion(s) exceed the `
+      + `${MYSTIQUE_BATCH_SIZE}-per-message cap (SQS 256 KB limit). Only the first ${MYSTIQUE_BATCH_SIZE} `
+      + `will be sent to Mystique this run; split the CSV into batches of ${MYSTIQUE_BATCH_SIZE} or fewer. `
+      + `baseUrl=${baseUrl}, siteId=${siteId}`);
   }
 
   // Send to Mystique using the existing function

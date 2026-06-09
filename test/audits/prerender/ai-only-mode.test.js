@@ -19,6 +19,7 @@ import {
   processContentAndGenerateOpportunities,
   handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { MYSTIQUE_BATCH_SIZE } from '../../../src/prerender/utils/constants.js';
 
 use(sinonChai);
 
@@ -951,6 +952,60 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.status).to.equal('complete');
       expect(result.auditResult.suggestionCount).to.equal(2);
+    });
+
+    it('should match CSV URLs by pathname AND query (normalizePathnameWithQuery)', async () => {
+      // Two suggestions sharing a pathname but differing by query string must be
+      // treated as distinct — matching only by pathname would incorrectly collapse them.
+      mockOpportunity.getSuggestions.resolves([
+        {
+          getId: sandbox.stub().returns('q-1'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/page?id=1',
+            isDomainWide: false,
+            scrapeJobId: 'test-scrape-job',
+          }),
+          getStatus: sandbox.stub().returns('NEW'),
+        },
+        {
+          getId: sandbox.stub().returns('q-2'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/page?id=2',
+            isDomainWide: false,
+            scrapeJobId: 'test-scrape-job',
+          }),
+          getStatus: sandbox.stub().returns('NEW'),
+        },
+      ]);
+      context.auditContext = { urls: ['https://example.com/page?id=2'] };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1);
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page?id=2');
+    });
+
+    it('should warn when eligible suggestions exceed the per-message batch cap', async () => {
+      const many = Array.from({ length: MYSTIQUE_BATCH_SIZE + 5 }, (_, i) => ({
+        getId: sandbox.stub().returns(`bulk-${i}`),
+        getData: sandbox.stub().returns({
+          url: `https://example.com/bulk/${i}`,
+          isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
+        }),
+        getStatus: sandbox.stub().returns('NEW'),
+      }));
+      mockOpportunity.getSuggestions.resolves(many);
+
+      const result = await importTopPages(context);
+
+      // Only the first MYSTIQUE_BATCH_SIZE are sent (SQS 256 KB cap)
+      expect(result.auditResult.suggestionCount).to.equal(MYSTIQUE_BATCH_SIZE);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/exceed the 320-per-message cap/),
+      );
     });
   });
 
