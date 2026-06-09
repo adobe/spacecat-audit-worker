@@ -25,12 +25,10 @@ describe('referral daily export', function referralDailyExportTests() {
   this.timeout(10000);
   let sandbox;
   let s3ClientMock;
-  let S3ClientStub;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     s3ClientMock = { send: sandbox.stub().resolves({}) };
-    S3ClientStub = sandbox.stub().callsFake(() => s3ClientMock);
   });
 
   afterEach(() => {
@@ -78,6 +76,7 @@ describe('referral daily export', function referralDailyExportTests() {
       },
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE IF NOT EXISTS db'),
+        getImporterS3Client: () => s3ClientMock,
         ...reportUtilsOverrides,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
@@ -85,9 +84,6 @@ describe('referral daily export', function referralDailyExportTests() {
           createReferralDailyReportQuery: sandbox.stub().resolves('SELECT * FROM daily_referral'),
           ...queryBuilderOverrides,
         },
-      },
-      '@aws-sdk/client-s3': {
-        S3Client: S3ClientStub,
       },
     });
   }
@@ -135,7 +131,6 @@ describe('referral daily export', function referralDailyExportTests() {
       'cdn_db',
       '[Athena Query] referral_daily_flat_data',
     );
-    expect(S3ClientStub).to.have.been.calledOnceWith({ region: 'us-east-1' });
     expect(s3Client.send).to.have.been.calledOnce;
     expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-importer-bucket');
     expect(s3Client.send.firstCall.args[0].input.Key).to.equal(

@@ -10,10 +10,24 @@
  * governing permissions and limitations under the License.
  */
 
+import { S3Client } from '@aws-sdk/client-s3';
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 
 // Region of the importer bucket (S3_IMPORTER_BUCKET_NAME) the daily exports write to.
 export const IMPORTER_BUCKET_REGION = 'us-east-1';
+
+let importerS3Client;
+/**
+ * Lazily-created, shared S3 client pinned to the importer bucket region. Reused
+ * across the agentic + referral daily exports and across warm Lambda invocations,
+ * instead of constructing a new client per export.
+ */
+export function getImporterS3Client() {
+  if (!importerS3Client) {
+    importerS3Client = new S3Client({ region: IMPORTER_BUCKET_REGION });
+  }
+  return importerS3Client;
+}
 
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
   'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
