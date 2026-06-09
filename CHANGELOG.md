@@ -1,3 +1,59 @@
+## [1.463.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.0...v1.463.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2620](https://github.com/adobe/spacecat-audit-worker/issues/2620)) ([9e4c380](https://github.com/adobe/spacecat-audit-worker/commit/9e4c380bed001c19c96dd9d5b5a0714e85b29ba4))
+
+# [1.463.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.4...v1.463.0) (2026-06-09)
+
+
+### Features
+
+* pass field engagement metrics to mystique ([#2610](https://github.com/adobe/spacecat-audit-worker/issues/2610)) ([1bbec9e](https://github.com/adobe/spacecat-audit-worker/commit/1bbec9e2d75ff22c0965ebd98ba6108ead0e6b40))
+
+## [1.462.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.3...v1.462.4) (2026-06-08)
+
+
+### Bug Fixes
+
+* **preflight:** heading-empty duplicate cards when multiple empty headings exist ([#2618](https://github.com/adobe/spacecat-audit-worker/issues/2618)) ([cbd2d42](https://github.com/adobe/spacecat-audit-worker/commit/cbd2d42c4b6f73380d66e6a7a1a520ecd02e9726)), closes [#14](https://github.com/adobe/spacecat-audit-worker/issues/14) [#15](https://github.com/adobe/spacecat-audit-worker/issues/15)
+
+## [1.462.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.2...v1.462.3) (2026-06-08)
+
+
+### Bug Fixes
+
+* **wikipedia-analysis:** don't strip fused two-letter country codes from brand ([#2617](https://github.com/adobe/spacecat-audit-worker/issues/2617)) ([1d36c3a](https://github.com/adobe/spacecat-audit-worker/commit/1d36c3ab4642854d1ac1431c92ceeccb8267651a))
+
+## [1.462.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.1...v1.462.2) (2026-06-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.6.0 ([#2615](https://github.com/adobe/spacecat-audit-worker/issues/2615)) ([6bbf07a](https://github.com/adobe/spacecat-audit-worker/commit/6bbf07a6d56a90f24e17b9aac0dddc9fc6f0cdf1))
+
+## [1.462.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.462.0...v1.462.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2553](https://github.com/adobe/spacecat-audit-worker/issues/2553)) ([4fc55d2](https://github.com/adobe/spacecat-audit-worker/commit/4fc55d2121316b71ac4d8cc40086e499ce2508b6))
+
+# [1.462.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.3...v1.462.0) (2026-06-08)
+
+
+### Features
+
+* **cdn-logs-report:** stop uploading weekly reports to SharePoint [LLMO-5337] ([#2606](https://github.com/adobe/spacecat-audit-worker/issues/2606)) ([92b9d46](https://github.com/adobe/spacecat-audit-worker/commit/92b9d46343abc054817b3502f27d6e9989747a51)), closes [project-elmo-ui#1835](https://github.com/project-elmo-ui/issues/1835)
+
+## [1.461.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.2...v1.461.3) (2026-06-08)
+
+
+### Bug Fixes
+
+* preserve query params in URL dedup for CSV and included URLs ([#2586](https://github.com/adobe/spacecat-audit-worker/issues/2586)) ([ce98a99](https://github.com/adobe/spacecat-audit-worker/commit/ce98a998983403166d408a3f9ffa2a6fc181fab7))
+
 ## [1.461.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.461.1...v1.461.2) (2026-06-05)
 
 

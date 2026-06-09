@@ -17,7 +17,7 @@ import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
 const SQS_MAX_DELAY_SECONDS = 900;
-const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
+const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 30;
 // Base wait so cdn-logs-report fires after cdn-logs-analysis has had time to
 // complete. Kept under SQS_MAX_DELAY_SECONDS so per-day staggering can still
 // add headroom without exceeding the SQS DelaySeconds hard limit.
@@ -134,19 +134,15 @@ async function handleAdobeFastly(
     await Promise.all(analysisPromises);
   }
 
-  // Always queue CDN logs report with delay
-  await sqs.sendMessage(auditQueue, {
-    type: 'cdn-logs-report',
-    siteId,
-    auditContext: { weekOffset: -1 },
-  }, null, CDN_LOGS_REPORT_DELAY_SECONDS);
-
+  // Queue the per-day cdn-logs-report DB imports, delayed (base wait + per-day
+  // stagger) so they fire after cdn-logs-analysis has had time to complete. The
+  // first day-run also generates the agentic classification rules if missing, so
+  // no separate weekly trigger is needed.
   const reportPromises = backfillDays.map((backfillDay, index) => sqs.sendMessage(auditQueue, {
     type: 'cdn-logs-report',
     siteId,
     auditContext: {
       date: backfillDay.reportDate,
-      refreshAgenticDailyExport: true,
     },
   }, null, Math.min(
     CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS),
