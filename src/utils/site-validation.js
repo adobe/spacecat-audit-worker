@@ -32,21 +32,31 @@ export const IS_LLMO_OPPTY = [
  */
 export async function checkSiteRequiresValidation(site, context, auditType) {
   const siteId = site?.getId?.();
+  const log = context?.log;
+
+  // TEMP DIAGNOSTIC — remove after SITES-42095 follow-up identifies the silent branch.
+  // Logs one line per call covering every path that returns `false`, with enough
+  // context (`tier`, `productCode`, env var presence, entitlement-found flag) to
+  // tell apart "no entitlement" vs "tier value mismatch" vs env-var bypass.
+  const orgId = site?.getOrganizationId?.();
 
   if (!site) {
+    log?.info?.('[rv-debug] siteId=null → false (no site)');
     return false;
   }
   if (auditType && IS_LLMO_OPPTY.includes(auditType)) {
+    log?.info?.(`[rv-debug] siteId=${siteId} auditType=${auditType} → false (in IS_LLMO_OPPTY)`);
     return false;
   }
 
   // Internal/demo orgs bypass suggestion validation regardless of PAID tier
   const rawExcludedOrgs = process.env.ASO_PLG_EXCLUDED_ORGS;
+  log?.info?.(`[rv-debug] siteId=${siteId} orgId=${orgId} ASO_PLG_EXCLUDED_ORGS_set=${!!rawExcludedOrgs}`);
   if (rawExcludedOrgs) {
     const excludedOrgIds = rawExcludedOrgs.split(',')
       .map((id) => id.trim()).filter((id) => id.length > 0);
-    const orgId = site.getOrganizationId?.();
     if (orgId && excludedOrgIds.includes(orgId)) {
+      log?.info?.(`[rv-debug] siteId=${siteId} orgId=${orgId} → false (org in ASO_PLG_EXCLUDED_ORGS)`);
       return false;
     }
   }
@@ -57,6 +67,7 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
     laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
   }
   if (siteId && laSiteIds.includes(siteId)) {
+    log?.info?.(`[rv-debug] siteId=${siteId} → true (in LA_VALIDATION_SITE_IDS)`);
     return true;
   }
 
@@ -67,12 +78,22 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
     const tier = entitlement?.getTier?.() ?? null;
     const productCode = entitlement?.getProductCode?.() ?? null;
 
+    log?.info?.(
+      `[rv-debug] siteId=${siteId} orgId=${orgId} `
+      + `entitlementFound=${!!entitlement} entitlementId=${entitlement?.getId?.() ?? 'null'} `
+      + `tier=${JSON.stringify(tier)} productCode=${JSON.stringify(productCode)} `
+      + `Entitlement.TIERS.PAID=${JSON.stringify(Entitlement.TIERS.PAID)} `
+      + `ASO_PRODUCT_CODE=${JSON.stringify(ASO_PRODUCT_CODE)}`,
+    );
+
     if (tier === Entitlement.TIERS.PAID && productCode === ASO_PRODUCT_CODE) {
+      log?.info?.(`[rv-debug] siteId=${siteId} → true (PAID ASO entitlement matched)`);
       return true;
     }
   } catch (e) {
     context?.log?.warn?.(`Entitlement check failed for site ${siteId}: ${e.message}`);
   }
 
+  log?.info?.(`[rv-debug] siteId=${siteId} orgId=${orgId} → false (fell through to default)`);
   return false;
 }
