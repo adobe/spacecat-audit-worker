@@ -699,32 +699,43 @@ async function sendPrerenderGuidanceRequestToMystique(
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
-    // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
-    const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
-
+    // SQS has a 256 KB message size limit. Chunk suggestions into batches of MYSTIQUE_BATCH_SIZE
+    // and send every batch so no suggestions are silently dropped (LLMO-5446). Each message
+    // carries its batchIndex/totalBatches so Mystique can reassemble the full set.
+    const totalBatches = Math.ceil(suggestionsPayload.length / MYSTIQUE_BATCH_SIZE);
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
-    await sqs.sendMessage(queue, {
-      type: 'guidance:prerender',
-      url: baseUrl,
-      siteId,
-      auditId,
-      deliveryType,
-      time,
-      data: {
-        opportunityId,
-        suggestions: firstBatch,
-        batchIndex: 0,
-        totalBatches: 1,
-        generatePrompts,
-        siteRegion: site.getRegion() ?? '',
-      },
-    });
+    const siteRegion = site.getRegion() ?? '';
 
-    log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length} (capped to 1 batch of ${MYSTIQUE_BATCH_SIZE})`);
-    return firstBatch.length;
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex += 1) {
+      const batchStart = batchIndex * MYSTIQUE_BATCH_SIZE;
+      const batch = suggestionsPayload.slice(batchStart, batchStart + MYSTIQUE_BATCH_SIZE);
+
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(queue, {
+        type: 'guidance:prerender',
+        url: baseUrl,
+        siteId,
+        auditId,
+        deliveryType,
+        time,
+        data: {
+          opportunityId,
+          suggestions: batch,
+          batchIndex,
+          totalBatches,
+          generatePrompts,
+          siteRegion,
+        },
+      });
+
+      log.info(`${LOG_PREFIX} Queued guidance:prerender batch ${batchIndex + 1}/${totalBatches} `
+        + `(${batch.length} suggestion(s)) to Mystique for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId}`);
+    }
+
+    log.info(`${LOG_PREFIX} Queued all ${totalBatches} batch(es) (${suggestionsPayload.length} suggestion(s) total) `
+      + `to Mystique for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId}`);
+    return suggestionsPayload.length;
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
   } catch (error) {
