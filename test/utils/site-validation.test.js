@@ -133,6 +133,9 @@ describe('utils/site-validation', () => {
   it('returns true when tier in entitlement exists and is equal to PAID with ASO product code', async () => {
     const site = { getId: sandbox.stub().returns('site-2') };
     const entitlementMock = {
+      // getId stubbed so the [rv-debug] entitlementId interpolation exercises the
+      // truthy branch of `entitlement?.getId?.() ?? 'null'` for coverage.
+      getId: sandbox.stub().returns('ent-paid-aso'),
       getTier: sandbox.stub().returns('PAID'),
       getProductCode: sandbox.stub().returns('ASO'),
     };
