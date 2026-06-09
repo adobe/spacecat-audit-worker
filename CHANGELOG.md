@@ -1,3 +1,10 @@
+# [1.465.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.464.0...v1.465.0) (2026-06-09)
+
+
+### Features
+
+* Sitemap audit versioning ([#2619](https://github.com/adobe/spacecat-audit-worker/issues/2619)) ([3d46419](https://github.com/adobe/spacecat-audit-worker/commit/3d46419ed552fc4951c72480ffa9d6f1101c0f85))
+
 # [1.464.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.3...v1.464.0) (2026-06-09)
 
 
