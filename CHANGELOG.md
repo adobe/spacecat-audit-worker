@@ -1,3 +1,10 @@
+## [1.463.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.1...v1.463.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **store-client:** read url-store and sentiment via dataAccess instea… ([#2623](https://github.com/adobe/spacecat-audit-worker/issues/2623)) ([82afe74](https://github.com/adobe/spacecat-audit-worker/commit/82afe74c148c3adbf91f51ce749fd11578242567))
+
 ## [1.463.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.0...v1.463.1) (2026-06-09)
 
 
