@@ -3753,6 +3753,106 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
+    it('should use default status function for OUTDATED suggestions', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.OUTDATED,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (OUTDATED → PENDING_VALIDATION/NEW)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function transitions OUTDATED to PENDING_VALIDATION or NEW
+      expect(existingSuggestion.setStatus).to.have.been.called;
+      const newStatus = existingSuggestion.setStatus.firstCall.args[0];
+      expect([
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+        SuggestionDataAccess.STATUSES.NEW,
+      ]).to.include(newStatus);
+    });
+
+    it('should use default status function for ERROR suggestions', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.ERROR,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (ERROR → NEW)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function transitions ERROR to NEW
+      expect(existingSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+    });
+
+    it('should use default status function to keep REJECTED status', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.REJECTED,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (REJECTED stays REJECTED)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function keeps REJECTED status (returns null, no setStatus call)
+      // Status should not be changed when data is updated
+      expect(existingSuggestion.setData).to.have.been.called;
+      // setStatus should not be called for REJECTED (null return = keep status)
+      expect(existingSuggestion.setStatus).to.not.have.been.called;
+    });
+
     it('should handle error with no error message gracefully', async () => {
       const newData = [{ url: '/page1' }];
 

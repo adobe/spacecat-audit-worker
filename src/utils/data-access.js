@@ -897,14 +897,15 @@ export async function syncSuggestionsWithPublishDetection({
     }
 
     const newDataItem = newDataByKey.get(existingKey);
-    const mergedData = mergeDataFunction
-      ? mergeDataFunction(existingData, newDataItem)
-      : { ...existingData, ...newDataItem };
+
+    // Use default merge functions when not provided (matches base syncSuggestions behavior)
+    const effectiveMergeData = mergeDataFunction ?? defaultMergeDataFunction;
+    const effectiveMergeStatus = mergeStatusFunction ?? defaultMergeStatusFunction;
+
+    const mergedData = effectiveMergeData(existingData, newDataItem);
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
-    const newStatus = mergeStatusFunction
-      ? mergeStatusFunction(existing, newDataItem, context)
-      : null;
+    const newStatus = effectiveMergeStatus(existing, newDataItem, context);
 
     // Only update if data or status changed
     const dataChanged = !deepEqual(existingData, mergedData);
