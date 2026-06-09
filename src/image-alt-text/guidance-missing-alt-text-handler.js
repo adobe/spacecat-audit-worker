@@ -267,7 +267,7 @@ export default async function handler(message, context) {
       // This reflects the PLG customer's current dashboard view across all audit batches.
       const allSuggestions = await altTextOppty.getSuggestions();
       const newSuggestionCount = allSuggestions.filter(
-        (s) => s.getStatus() === SuggestionModel.STATUSES.NEW,
+        (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
       ).length;
       await sendLowSuggestionCountAlert(site, AUDIT_TYPE, newSuggestionCount, context);
     }
