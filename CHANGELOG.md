@@ -1,3 +1,10 @@
+# [1.464.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.3...v1.464.0) (2026-06-09)
+
+
+### Features
+
+* read brandalf feature-flag from db instead of making API call ([#2624](https://github.com/adobe/spacecat-audit-worker/issues/2624)) ([298a185](https://github.com/adobe/spacecat-audit-worker/commit/298a185368b1a70915d991b991e5eb2de66e1275))
+
 ## [1.463.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.2...v1.463.3) (2026-06-09)
 
 
