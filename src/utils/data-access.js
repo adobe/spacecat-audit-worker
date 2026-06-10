@@ -905,7 +905,7 @@ export async function syncSuggestionsWithPublishDetection({
     const mergedData = effectiveMergeData(existingData, newDataItem);
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
-    const newStatus = effectiveMergeStatus(existing, newDataItem, context);
+    const newStatus = effectiveMergeStatus(existing, newDataItem, { ...context, isTBYB });
 
     // Only update if data or status changed
     const dataChanged = !deepEqual(existingData, mergedData);
@@ -942,30 +942,41 @@ export async function syncSuggestionsWithPublishDetection({
     const requiredFixStatus = isAuthorOnly ? 'DEPLOYED' : 'PUBLISHED';
     log.debug(`[syncSuggestionsWithPublishDetection] Checking ${fixedSuggestions.length} FIXED suggestions for regression (required status: ${requiredFixStatus})`);
 
-    await Promise.all(fixedSuggestions.map(async (suggestion) => {
-      try {
-        const suggestionId = suggestion.getId();
-        if (!suggestionId) {
-          return;
-        }
+    let failedQueries = 0;
 
-        const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
-          suggestionId,
-        );
+    const results = await limitConcurrencyAllSettled(
+      fixedSuggestions.map((suggestion) => async () => {
+        try {
+          const suggestionId = suggestion.getId();
+          if (!suggestionId) {
+            return;
+          }
 
-        // Only consider it fully resolved if:
-        // 1. Fix entities exist (not just marked FIXED with no fixes)
-        // 2. ALL fix entities have reached the required status
-        if (fixEntities.length > 0
-            && fixEntities.every((fe) => fe.getStatus() === requiredFixStatus)) {
-          const key = buildKey(suggestion.getData());
-          fullyResolvedFixedKeys.add(key);
-          log.debug(`FIXED suggestion ${suggestionId} is fully resolved (${requiredFixStatus}): ${key}`);
+          const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
+            suggestionId,
+          );
+
+          // Only consider it fully resolved if:
+          // 1. Fix entities exist (not just marked FIXED with no fixes)
+          // 2. ALL fix entities have reached the required status
+          if (fixEntities.length > 0
+              && fixEntities.every((fe) => fe.getStatus() === requiredFixStatus)) {
+            const key = buildKey(suggestion.getData());
+            fullyResolvedFixedKeys.add(key);
+            log.debug(`FIXED suggestion ${suggestionId} is fully resolved (${requiredFixStatus}): ${key}`);
+          }
+        } catch (e) {
+          failedQueries += 1;
+          log.debug(`Failed to check fix entities for suggestion ${suggestion.getId()}: ${e.message}`);
         }
-      } catch (e) {
-        log.debug(`Failed to check fix entities for suggestion ${suggestion.getId()}: ${e.message}`);
-      }
-    }));
+      }),
+      MAX_CONCURRENT_CHECKS,
+    );
+
+    // Escalate when ALL queries fail - indicates systematic DB/connectivity issue
+    if (failedQueries > 0 && failedQueries === fixedSuggestions.length) {
+      log.warn(`All ${failedQueries} fix entity checks failed - regression detection incomplete`);
+    }
 
     log.info(`[syncSuggestionsWithPublishDetection] Found ${fullyResolvedFixedKeys.size} FIXED suggestions with all fixes ${requiredFixStatus}`);
   }
