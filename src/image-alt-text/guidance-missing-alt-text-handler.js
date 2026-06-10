@@ -265,7 +265,11 @@ export default async function handler(message, context) {
       // Count all outstanding NEW suggestions after the final Mystique batch completes.
       // Outdated images (removed from current pages) were cleared earlier in this handler.
       // This reflects the PLG customer's current dashboard view across all audit batches.
-      const allSuggestions = await altTextOppty.getSuggestions();
+      // Re-fetch from DB to get a fresh suggestion list — the in-memory object was loaded
+      // before this and earlier batch responses wrote their suggestions.
+      const freshOppty = await Opportunity.findById(altTextOppty.getId());
+      const allSuggestions = await freshOppty.getSuggestions();
+      log.info(`[${AUDIT_TYPE}]: Found ${allSuggestions.length} suggestions after re-fetching`);
       const newSuggestionCount = allSuggestions.filter(
         (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
       ).length;

@@ -78,6 +78,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         Opportunity: {
           allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
           create: sandbox.stub().resolves(mockOpportunity),
+          findById: sandbox.stub().resolves(mockOpportunity),
         },
         Site: {
           findById: sandbox.stub().resolves(mockSite),
@@ -873,6 +874,11 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
       getAuditResult: sandbox.stub().returns({ status: 'processing', statusHistory: [] }),
     };
 
+    const freshOpportunity = {
+      getId: () => 'opportunity-id',
+      getSuggestions: sandbox.stub().returns([]),
+    };
+
     context = {
       log: {
         info: sandbox.stub(),
@@ -881,7 +887,10 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
         warn: sandbox.stub(),
       },
       dataAccess: {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]) },
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+          findById: sandbox.stub().resolves(freshOpportunity),
+        },
         Site: { findById: sandbox.stub().resolves(mockSite) },
         Audit: {
           findById: sandbox.stub().resolves(mockAuditRecord),
@@ -904,6 +913,9 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
         sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
       },
     });
+
+    // expose freshOpportunity so individual tests can configure its getSuggestions
+    context._freshOpportunity = freshOpportunity;
   });
 
   afterEach(() => sandbox.restore());
@@ -917,7 +929,8 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
       mystiqueResponsesReceived: 0,
       mystiqueResponsesExpected: 1,
     });
-    mockOpportunity.getSuggestions.returns(newSuggestions);
+    // fresh DB fetch returns the 2 NEW suggestions
+    context._freshOpportunity.getSuggestions.returns(newSuggestions);
 
     const message = {
       type: 'guidance:missing-alt-text',
@@ -945,6 +958,74 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
     const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
     expect(auditTypeArg).to.equal(AuditModel.AUDIT_TYPES.ALT_TEXT);
     expect(countArg).to.equal(2);
+  });
+
+  it('counts only NEW suggestions, not PENDING_VALIDATION or OUTDATED, when firing the alert', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    context._freshOpportunity.getSuggestions.returns([
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.PENDING_VALIDATION },
+      { getStatus: () => 'OUTDATED' },
+    ]);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{ pageUrl: 'https://example.com/p1', imageId: 'img1', altText: 'alt', imageUrl: 'https://example.com/img1.jpg', isAppropriate: true, isDecorative: false, language: 'en', hasAltAttribute: false }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(countArg).to.equal(2);
+  });
+
+  it('uses fresh DB fetch for suggestion count, not stale in-memory list', async () => {
+    // in-memory object has 0 suggestions (stale — loaded before earlier batch responses wrote theirs)
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    mockOpportunity.getSuggestions.returns([]);
+
+    // fresh DB fetch returns 5 NEW suggestions written by earlier batch responses
+    context._freshOpportunity.getSuggestions.returns([
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+    ]);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{ pageUrl: 'https://example.com/p1', imageId: 'img1', altText: 'alt', imageUrl: 'https://example.com/img1.jpg', isAppropriate: true, isDecorative: false, language: 'en', hasAltAttribute: false }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    // must have re-fetched the opportunity by ID
+    expect(context.dataAccess.Opportunity.findById).to.have.been.calledWith('opportunity-id');
+    // alert receives 5, not 0
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(countArg).to.equal(5);
   });
 
   it('does not call sendLowSuggestionCountAlert when Mystique batches are still pending', async () => {
@@ -976,5 +1057,7 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
     await guidanceHandler(message, context);
 
     expect(sendLowSuggestionCountAlertStub).to.not.have.been.called;
+    // should not have done a fresh DB fetch either
+    expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
   });
 });
