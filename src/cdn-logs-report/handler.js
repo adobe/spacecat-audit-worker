@@ -40,7 +40,8 @@ function resolvePatternPeriods(auditContext) {
       return generateReportingPeriods(getPreviousUtcDate(referenceDate), 0);
     }
   }
-  return generateReportingPeriods(new Date(), new Date().getUTCDay() === 1 ? -1 : 0);
+  const now = new Date();
+  return generateReportingPeriods(now, now.getUTCDay() === 1 ? -1 : 0);
 }
 
 /**

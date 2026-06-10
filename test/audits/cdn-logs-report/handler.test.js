@@ -334,6 +334,20 @@ describe('CDN Logs Report Handler', function test() {
       expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
       expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, 0);
     });
+
+    it('falls back to the previous-week offset on Mondays when auditContext.date is invalid', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-06'), toFake: ['Date'] }); // Monday
+
+      try {
+        await runAudit({ date: 'not-a-real-date' });
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -1);
+    });
   });
 
   describe('daily referral export', () => {
