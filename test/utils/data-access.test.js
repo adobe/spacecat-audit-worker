@@ -1150,10 +1150,14 @@ describe('data-access', () => {
 
       // Verify warning was logged
       expect(mockLogger.warn).to.have.been.calledWith(
-        sinon.match(/mergeDataFunction returned same reference/),
+        sinon.match(/forcing dataChanged=true to prevent silent skip/),
       );
       // Verify the merge function was called
       expect(badMergeFunction).to.have.been.called;
+      // Verify fail-open behavior: update still happens despite broken merge function
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {

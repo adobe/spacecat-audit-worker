@@ -493,7 +493,7 @@ export async function syncSuggestions({
   const { Suggestion } = context.dataAccess;
   const toUpdate = [];
 
-  // Filter matched suggestions once to avoid redundant buildKey() calls
+  // Separate filter from processing for clarity
   const matchedSuggestions = existingSuggestions.filter((existing) => {
     const existingKey = buildKey(existing.getData());
     return newDataKeys.has(existingKey);
@@ -507,18 +507,20 @@ export async function syncSuggestions({
     // for deepEqual comparison to work correctly
     const mergedData = mergeDataFunction(existingData, newDataItem);
 
+    // Check if data actually changed using deep equality
+    let dataChanged = !deepEqual(existingData, mergedData);
+
     // Defensive guard: catch merge functions that mutate in place
+    // Fail open to prevent broken merge functions from silently suppressing updates
     if (mergedData === existingData) {
-      log.warn(`mergeDataFunction returned same reference - deepEqual will always be true. Key: ${existingKey}`);
+      log.warn(`mergeDataFunction returned same reference - forcing dataChanged=true to prevent silent skip. Key: ${existingKey}`);
+      dataChanged = true;
     }
 
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
     // Use the merge status function to determine if status should change
     const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
-
-    // Check if data actually changed using deep equality
-    const dataChanged = !deepEqual(existingData, mergedData);
 
     // Only update if something actually changed
     if (newStatus !== null || dataChanged) {
