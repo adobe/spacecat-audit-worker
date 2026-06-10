@@ -1,3 +1,45 @@
+## [1.465.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.2...v1.465.3) (2026-06-10)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** agentic weekly rollup on empty Sunday + date-based pattern sampling ([#2632](https://github.com/adobe/spacecat-audit-worker/issues/2632)) ([5769317](https://github.com/adobe/spacecat-audit-worker/commit/5769317a413e79cb2921a4d1e3dd0b8776a794d6))
+
+## [1.465.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.1...v1.465.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.3.3 ([#2630](https://github.com/adobe/spacecat-audit-worker/issues/2630)) ([445ab76](https://github.com/adobe/spacecat-audit-worker/commit/445ab76ad645f8f59c3af01357f71c6539153eee))
+
+## [1.465.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.0...v1.465.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.74.1 ([#2626](https://github.com/adobe/spacecat-audit-worker/issues/2626)) ([0ea2802](https://github.com/adobe/spacecat-audit-worker/commit/0ea28025b12cde5dbe619e9faff09cfddfdad37f))
+
+# [1.465.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.464.0...v1.465.0) (2026-06-09)
+
+
+### Features
+
+* Sitemap audit versioning ([#2619](https://github.com/adobe/spacecat-audit-worker/issues/2619)) ([3d46419](https://github.com/adobe/spacecat-audit-worker/commit/3d46419ed552fc4951c72480ffa9d6f1101c0f85))
+
+# [1.464.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.3...v1.464.0) (2026-06-09)
+
+
+### Features
+
+* read brandalf feature-flag from db instead of making API call ([#2624](https://github.com/adobe/spacecat-audit-worker/issues/2624)) ([298a185](https://github.com/adobe/spacecat-audit-worker/commit/298a185368b1a70915d991b991e5eb2de66e1275))
+
+## [1.463.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.2...v1.463.3) (2026-06-09)
+
+
+### Reverts
+
+* Revert "fix: exclude static-asset URLs from audit query ([#2527](https://github.com/adobe/spacecat-audit-worker/issues/2527))" ([#2612](https://github.com/adobe/spacecat-audit-worker/issues/2612)) ([4730f1a](https://github.com/adobe/spacecat-audit-worker/commit/4730f1abb4a35cfac192c468c3fc93c8e7671ed4))
+
 ## [1.463.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.463.1...v1.463.2) (2026-06-09)
 
 

@@ -33,6 +33,7 @@ import {
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   applyPageUrlProbeSampling,
+  COMMON_VERSION,
   ERROR_CODES,
   filterValidUrls,
   getSitemapUrls,
@@ -53,6 +54,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
+const HANDLER_VERSION = 1; // manually update as needed
 
 // HTTP status codes explicitly handled by this audit for suggestion generation
 const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
@@ -257,7 +259,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   const startTime = process.hrtime();
 
-  log.info(`Starting sitemap audit for ${baseURL}`);
+  log.info(`Starting sitemap audit v${HANDLER_VERSION}-${COMMON_VERSION} for ${baseURL}`);
 
   const auditResult = await findSitemap(baseURL, log);
 

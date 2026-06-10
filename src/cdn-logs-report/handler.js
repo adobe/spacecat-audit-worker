@@ -26,17 +26,22 @@ import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 import { runAgenticDbExports } from './utils/agentic-db-export.js';
 import { runDailyReferralExport } from './referral-daily-export.js';
+import { getPreviousUtcDate } from './agentic-daily-export.js';
 
 /**
- * Picks the single week offset used to sample CDN logs for pattern generation.
- * An explicit weekOffset wins; otherwise the previous full week on Mondays,
- * else the current week.
+ * Reporting period for sampling CDN logs for pattern generation. A date-based run uses
+ * that run's traffic day (`date - 1`, like the daily export) so backfills sample the
+ * uploaded week, not today's. Otherwise: previous full week on Mondays, else this week.
  */
-function resolvePatternWeekOffset(auditContext) {
-  if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
-    return auditContext.weekOffset;
+function resolvePatternPeriods(auditContext) {
+  if (auditContext?.date) {
+    const referenceDate = new Date(auditContext.date);
+    if (!Number.isNaN(referenceDate.getTime())) {
+      return generateReportingPeriods(getPreviousUtcDate(referenceDate), 0);
+    }
   }
-  return new Date().getUTCDay() === 1 ? -1 : 0;
+  const now = new Date();
+  return generateReportingPeriods(now, now.getUTCDay() === 1 ? -1 : 0);
 }
 
 /**
@@ -83,7 +88,7 @@ async function generateAgenticPatterns({
       log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
     } else if (!hasExistingPatterns) {
       log.info('Agentic URL classification rules not found, generating DB rules...');
-      const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
+      const periods = resolvePatternPeriods(auditContext);
 
       await generatePatternsWorkbook({
         site,
