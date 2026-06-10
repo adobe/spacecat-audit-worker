@@ -367,7 +367,7 @@ export async function loadBrandPresenceData({
   });
 
   const isBrandalfOrg = organizationId
-    ? await isBrandalfEnabled(organizationId, env, log)
+    ? await isBrandalfEnabled(organizationId, context.dataAccess?.services?.postgrestClient, log)
     : false;
 
   if (isBrandalfOrg === null) {
