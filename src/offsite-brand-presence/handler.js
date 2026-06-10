@@ -549,7 +549,7 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    log.error(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
+    log.warn(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
     return [];
   }
 

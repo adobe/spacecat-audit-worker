@@ -1291,7 +1291,7 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs an actionable error when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs an actionable warning when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1300,7 +1300,10 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      expect(log.error).to.have.been.calledWith(
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/imsOrgId/),
+      );
+      expect(log.error).to.not.have.been.calledWith(
         sinon.match(/imsOrgId/),
       );
     });
