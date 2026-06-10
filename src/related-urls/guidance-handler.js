@@ -26,6 +26,7 @@ import {
   RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER,
   buildColumnMap, getColumn,
 } from '../faqs/utils.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 const WEEKS_TO_LOOK_BACK = 4;
 const MAX_URLS_TO_WRITE = 5;
@@ -209,6 +210,57 @@ function updateWorksheetWithRelatedUrls(worksheet, promptRegionMap) {
   };
 }
 
+/**
+ * Enqueues a follow-up `faqs` audit for the same site after Related URLs are written.
+ * Only enqueues if `faqs` is enabled/eligible for the site.
+ *
+ * Dedupe note: a `LatestAudit`-based week-boundary check was considered but is
+ * intentionally omitted. The main problem this fix solves is precisely the case
+ * where `faqs` ran earlier in the same ISO week (before `related-urls` wrote the
+ * sheet), leaving suggestions stale. Any dedupe using "ran this week" would skip
+ * that enqueue and reproduce the original bug. A correct dedupe would require
+ * inspecting the SQS queue for pending messages or storing a "triggered-by"
+ * record in the audit log - left as a follow-up if double-run proves problematic.
+ *
+ * @param {Object} site - Site object
+ * @param {Object} context - Audit worker context (sqs, dataAccess, log)
+ */
+async function enqueueFaqsAudit(site, context) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+
+  if (!sqs) {
+    log.warn('[RELATED_URLS] SQS not available, skipping follow-up faqs audit');
+    return;
+  }
+
+  try {
+    const faqsEnabled = await isAuditEnabledForSite('faqs', site, context);
+    if (!faqsEnabled) {
+      log.warn(`[RELATED_URLS] faqs audit not enabled for siteId=${site.getId()} - Related URLs were written but suggestions will not be refreshed until faqs is enabled`);
+      return;
+    }
+
+    const configuration = await Configuration.findLatest();
+    const auditQueue = configuration.getQueues()?.audits;
+    if (!auditQueue) {
+      log.warn('[RELATED_URLS] Audit queue URL not found in configuration, skipping follow-up faqs audit');
+      return;
+    }
+
+    await sqs.sendMessage(auditQueue, {
+      type: 'faqs',
+      siteId: site.getId(),
+      auditContext: {
+        triggeredBy: 'related-urls',
+      },
+    });
+    log.info(`[RELATED_URLS] Enqueued follow-up faqs audit for siteId=${site.getId()}`);
+  } catch (error) {
+    log.error(`[RELATED_URLS] Failed to enqueue follow-up faqs audit for siteId=${site.getId()}: ${error.message}`);
+  }
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess, getOutputLocation } = context;
   const { Site } = dataAccess;
@@ -281,6 +333,9 @@ export default async function handler(message, context) {
       return badRequest('Failed to update brand presence sheet');
     }
 
+    // Best-effort follow-up: enqueue faqs after a successful Related URLs write.
+    // enqueueFaqsAudit has its own try/catch and must not affect the ok() response.
+    await enqueueFaqsAudit(site, context);
     return ok();
   } catch (error) {
     log.error(`[RELATED_URLS] Error processing related-urls guidance: ${error.message}`, error);

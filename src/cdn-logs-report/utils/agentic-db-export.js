@@ -11,6 +11,68 @@
  */
 
 import { runDailyAgenticExport } from '../agentic-daily-export.js';
+import { generateReportingPeriods } from './report-utils.js';
+
+const WEEKLY_REFRESH_RPC = 'wrpc_refresh_agentic_traffic_weekly';
+
+function toUtcDateString(date) {
+  return date.toISOString().split('T')[0];
+}
+
+// Sunday is the last day of the ISO week; invalid/missing dates yield NaN (never 0).
+function isWeekClosingSunday(trafficDate) {
+  return new Date(`${trafficDate}T00:00:00.000Z`).getUTCDay() === 0;
+}
+
+/**
+ * Triggers the weekly agentic rollup RPC for the ISO week containing `trafficDate`.
+ * The rollup normally rides on the Sunday daily import; an empty Sunday is skipped and
+ * emits no batch event, so we call the RPC directly to roll up the earlier days.
+ * Best-effort: never throws.
+ */
+async function refreshWeeklyAgenticRollup({ site, context, trafficDate }) {
+  const siteId = site.getId();
+  const { log } = context;
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+
+  if (!postgrestClient?.rpc) {
+    log.warn(`Skipping weekly agentic rollup for ${siteId}: PostgREST client unavailable`);
+    return { success: false, error: 'postgrest-client-unavailable' };
+  }
+
+  let weekStart;
+  let weekEnd;
+  try {
+    const [{ startDate, endDate }] = generateReportingPeriods(
+      new Date(`${trafficDate}T00:00:00.000Z`),
+      0,
+    ).weeks;
+    weekStart = toUtcDateString(startDate);
+    weekEnd = toUtcDateString(endDate);
+
+    const { error } = await postgrestClient.rpc(WEEKLY_REFRESH_RPC, {
+      p_site_id: siteId,
+      p_start_date: weekStart,
+      p_end_date: weekEnd,
+      p_updated_by: 'audit-worker:cdn-logs-report-weekly-refresh',
+    });
+
+    if (error) {
+      log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}): ${error.message}`);
+      return {
+        success: false, weekStart, weekEnd, error: error.message,
+      };
+    }
+
+    log.info(`Triggered weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}) after empty Sunday export`);
+    return { success: true, weekStart, weekEnd };
+  } catch (error) {
+    log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart ?? '?'}..${weekEnd ?? '?'}): ${error.message}`, error);
+    return {
+      success: false, weekStart, weekEnd, error: error.message,
+    };
+  }
+}
 
 /**
  * Resolves the reference date for the daily export from auditContext.date.
@@ -84,14 +146,25 @@ export async function runAgenticDbExports({
   }
 
   const referenceDate = getDateBasedReferenceDate(auditContext, siteId, context);
-  return {
-    dailyAgenticExport: await runAgenticDbExportForReferenceDate({
-      athenaClient,
-      s3Config,
+  const dailyAgenticExport = await runAgenticDbExportForReferenceDate({
+    athenaClient,
+    s3Config,
+    site,
+    context,
+    reportConfig: agenticReportConfig,
+    ...(referenceDate ? { referenceDate } : {}),
+  });
+
+  const result = { dailyAgenticExport };
+
+  // An empty Sunday emits no batch event, so roll up the week's earlier days directly.
+  if (dailyAgenticExport?.skipped && isWeekClosingSunday(dailyAgenticExport.trafficDate)) {
+    result.weeklyAgenticRefresh = await refreshWeeklyAgenticRollup({
       site,
       context,
-      reportConfig: agenticReportConfig,
-      ...(referenceDate ? { referenceDate } : {}),
-    }),
-  };
+      trafficDate: dailyAgenticExport.trafficDate,
+    });
+  }
+
+  return result;
 }

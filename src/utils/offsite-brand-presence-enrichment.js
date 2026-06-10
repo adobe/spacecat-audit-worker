@@ -15,17 +15,16 @@
  * LLMO brand-presence sheet data, mirroring the aggregation in offsite-brand-presence.
  */
 
-import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import ExcelJS from 'exceljs';
+import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { isBrandalfEnabled, resolveOrganizationIdForSite } from './brandalf-utils.js';
 import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-postgrest.js';
+import { createLLMOSharepointClient, readFromSharePointWithRetry } from './report-uploader.js';
+import { buildColumnMap, getColumn } from '../faqs/utils.js';
 import {
   BRAND_PRESENCE_REGEX,
-  FETCH_PAGE_SIZE,
-  FETCH_TIMEOUT_MS,
-  INCLUDE_COLUMNS,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
-  USER_AGENT,
 } from '../offsite-brand-presence/constants.js';
 
 const LOG_PREFIX = '[BrandPresenceEnrichment]';
@@ -46,146 +45,157 @@ export function getPreviousWeeks() {
   });
 }
 
+const BP_COLUMNS = ['Sources', 'Region', 'Topics', 'Category', 'Prompt'];
+
 /**
- * Fetches query-index.json for a site via the Spacecat API.
+ * Coerces an ExcelJS cell value to a plain string. ExcelJS represents non-trivial
+ * cells as objects (hyperlinks `{ text, hyperlink }`, rich text `{ richText }`,
+ * formulas `{ formula, result }`), so a naive `.toString()` yields "[object Object]"
+ * and corrupts the data (e.g. URLs in the Sources column). This unwraps those shapes.
  *
- * @param {string} siteId - The site ID
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
+ * @param {*} value - Raw `cell.value` from ExcelJS
+ * @returns {string} The cell's textual content, or '' when empty/unrepresentable
  */
-async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
+function cellValueToString(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value.richText)) {
+    return value.richText.map((run) => run.text).join('');
+  }
+  if (value.text !== undefined) {
+    return cellValueToString(value.text);
+  }
+  if (value.result !== undefined) {
+    return cellValueToString(value.result);
+  }
+  return '';
+}
 
-  log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
-
-  try {
-    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      log.warn(`${LOG_PREFIX} Failed to fetch query-index: ${response.status}`);
-      return null;
-    }
-
-    return await response.json();
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Error fetching query-index: ${error.message}`);
+/**
+ * Reads query-index.xlsx from SharePoint and extracts brand-presence paths.
+ *
+ * @param {object} site - Site entity
+ * @param {object} sharepointClient - SharePoint client instance
+ * @param {object} log - Logger instance
+ * @returns {Promise<{ sourceFolder: string, paths: string[] }|null>}
+ */
+async function readQueryIndexPaths(site, sharepointClient, log) {
+  const dataFolder = site.getConfig?.()?.getLlmoDataFolder?.();
+  if (!dataFolder) {
+    log.warn(`${LOG_PREFIX} No LLMO data folder configured for site`);
     return null;
   }
-}
 
-/**
- * Fetches brand presence JSON data for a specific file via the Spacecat API.
- *
- * @param {string} siteId - The site ID
- * @param {string} fileName - The brand presence file path relative to the llmo data directory
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if not found
- */
-async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
+  const buffer = await readFromSharePointWithRetry('query-index.xlsx', dataFolder, sharepointClient, log);
 
-  let allRows = [];
-  let offset = 0;
-  let hasMore = true;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
 
-  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${baseUrl}`);
-  while (hasMore) {
-    const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
-
-    // eslint-disable-next-line no-await-in-loop
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      // eslint-disable-next-line no-await-in-loop
-      const errorBody = await response.text().catch(() => '(unable to read body)');
-      log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`, {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        responseBody: errorBody,
-      });
-      if (allRows.length === 0) {
-        return null;
+  const paths = [];
+  workbook.worksheets.forEach((worksheet) => {
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) {
+        return;
       }
-      break;
-    }
+      row.eachCell((cell) => {
+        const val = cellValueToString(cell.value);
+        if (!val.includes('/brand-presence/') || val.includes('/brand-presence/latest/')) {
+          return;
+        }
 
-    // eslint-disable-next-line no-await-in-loop
-    const data = await response.json();
-    const rows = data?.data || [];
-    allRows = allRows.concat(rows);
+        const marker = '/brand-presence/';
+        const relPath = val.slice(val.indexOf(marker) + marker.length)
+          .replace(/\.\w+$/i, '');
+        if (relPath && !paths.includes(relPath)) {
+          paths.push(relPath);
+        }
+      });
+    });
+  });
 
-    if (rows.length < FETCH_PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      offset += FETCH_PAGE_SIZE;
-    }
-  }
-  return { data: allRows };
+  return { sourceFolder: `${dataFolder}/brand-presence`, paths };
 }
 
 /**
- * Attempts to extract a matching brand presence file path from a query-index entry.
+ * Reads a brand-presence XLSX sheet from SharePoint and returns row objects.
  *
- * @param {object} entry - A single query-index entry
+ * @param {string} sheetName - Sheet base name (without .xlsx)
+ * @param {string} sourceFolder - SharePoint folder path
+ * @param {object} sharepointClient - SharePoint client instance
+ * @param {object} log - Logger instance
+ * @returns {Promise<{ data: object[] }|null>}
+ */
+async function readBrandPresenceSheet(sheetName, sourceFolder, sharepointClient, log) {
+  const buffer = await readFromSharePointWithRetry(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    return null;
+  }
+
+  const colMap = buildColumnMap(worksheet);
+  const colIndices = BP_COLUMNS.map((name) => ({ name, idx: getColumn(colMap, name) }));
+
+  const rows = [];
+  const dataRows = worksheet.getRows(2, worksheet.rowCount - 1) || [];
+  for (const row of dataRows) {
+    const obj = {};
+    for (const { name, idx } of colIndices) {
+      obj[name] = idx ? cellValueToString(row.getCell(idx).value) : '';
+    }
+    rows.push(obj);
+  }
+  return { data: rows };
+}
+
+/**
+ * Tests whether a brand-presence path matches a target week/year and known provider.
+ *
+ * @param {string} path - A brand-presence relative path (e.g. "w07/brandpresence-copilot-w07-2026")
  * @param {number} targetWeek - The target week number to match
  * @param {number} targetYear - The target year to match
- * @returns {string|null} The matched file path, or null
+ * @returns {boolean}
  */
-function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) {
-    return null;
+function matchBrandPresencePath(path, targetWeek, targetYear) {
+  if (!path) {
+    return false;
   }
 
-  const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) {
-    return null;
-  }
-
-  const filePath = entry.path.substring(bpIdx);
-  const match = filePath.match(BRAND_PRESENCE_REGEX);
+  const match = path.match(BRAND_PRESENCE_REGEX);
   if (!match) {
-    return null;
+    return false;
   }
 
   const [, providerId, weekStr, yearStr] = match;
   const fileWeek = Number.parseInt(weekStr, 10);
   const fileYear = Number.parseInt(yearStr, 10);
-  const yearMatches = fileYear === targetYear;
 
-  if (fileWeek === targetWeek && yearMatches && PROVIDERS_SET.has(providerId)) {
-    return filePath;
-  }
-  return null;
+  return fileWeek === targetWeek && fileYear === targetYear && PROVIDERS_SET.has(providerId);
 }
 
 /**
- * Filters brand presence file paths from the query-index response.
+ * Filters brand presence paths extracted from the query-index XLSX.
  *
- * @param {object} queryIndex - The parsed query-index response
+ * @param {string[]} paths - Relative paths from query-index (extension-stripped)
  * @param {number} targetWeek - The target week number to match
  * @param {number} targetYear - The target year to match
- * @returns {string[]} Matched file paths relative to the llmo data directory
+ * @returns {string[]} Matched paths
  */
-export function filterBrandPresenceFiles(queryIndex, targetWeek, targetYear) {
-  const entries = queryIndex?.data || [];
-  const matched = [];
-
-  for (const entry of entries) {
-    const filePath = matchBrandPresenceEntry(entry, targetWeek, targetYear);
-    if (filePath) {
-      matched.push(filePath);
-    }
-  }
-  return matched;
+export function filterBrandPresenceFiles(paths, targetWeek, targetYear) {
+  const entries = paths || [];
+  return entries.filter((p) => matchBrandPresencePath(p, targetWeek, targetYear));
 }
 
 /**
@@ -357,7 +367,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
 export async function loadBrandPresenceData({
   siteId, site, previousWeeks, context,
 }) {
-  const { env, log } = context;
+  const { log } = context;
 
   const organizationId = await resolveOrganizationIdForSite({
     site,
@@ -387,27 +397,41 @@ export async function loadBrandPresenceData({
     if (dbData) {
       return dbData;
     }
-    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
+    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, falling back to SharePoint file fetch`);
+  }
+
+  let resolvedSite = site;
+  if (!resolvedSite) {
+    resolvedSite = await context.dataAccess?.Site?.findById(siteId);
+  }
+  if (!resolvedSite) {
+    log.warn(`${LOG_PREFIX} Cannot resolve site for ${siteId}, skipping SharePoint fetch`);
     return null;
   }
 
-  if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
-    log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
+  let sharepointClient;
+  let queryResult;
+  try {
+    sharepointClient = await createLLMOSharepointClient(context);
+    queryResult = await readQueryIndexPaths(resolvedSite, sharepointClient, log);
+  } catch (error) {
+    log.error(`${LOG_PREFIX} Error reading query-index from SharePoint: ${error.message}`);
     return null;
   }
+
+  if (!queryResult || queryResult.paths.length === 0) {
+    log.warn(`${LOG_PREFIX} Failed to read query-index for site ${siteId}`);
+    return null;
+  }
+
+  const { sourceFolder, paths } = queryResult;
 
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return null;
-  }
-
   const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+    ({ week, year }) => filterBrandPresenceFiles(paths, week, year),
   );
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
 
@@ -416,17 +440,17 @@ export async function loadBrandPresenceData({
   }
 
   const allRows = [];
-  for (const filePath of matchedFiles) {
+  for (const sheetName of matchedFiles) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const data = await fetchBrandPresenceData(siteId, filePath, env, log);
+      const data = await readBrandPresenceSheet(sheetName, sourceFolder, sharepointClient, log);
       if (!data) {
         // eslint-disable-next-line no-continue
         continue;
       }
       allRows.push(...data.data);
     } catch (err) {
-      log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
+      log.error(`${LOG_PREFIX} Error reading brand presence sheet ${sheetName}: ${err.message}`);
     }
   }
 

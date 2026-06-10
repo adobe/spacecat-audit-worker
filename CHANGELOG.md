@@ -1,3 +1,38 @@
+## [1.466.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.0...v1.466.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* Llmo 5495 Auto-trigger FAQs After Related URLs Are Published ([#2627](https://github.com/adobe/spacecat-audit-worker/issues/2627)) ([2ff6842](https://github.com/adobe/spacecat-audit-worker/commit/2ff684283cc7267ad9b1546a8776c147553980fd))
+
+# [1.466.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.3...v1.466.0) (2026-06-10)
+
+
+### Features
+
+* fallback to reading data using sharepoint client ([#2636](https://github.com/adobe/spacecat-audit-worker/issues/2636)) ([50b4269](https://github.com/adobe/spacecat-audit-worker/commit/50b426926c20107b516bec5dd913163e44cff05d))
+
+## [1.465.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.2...v1.465.3) (2026-06-10)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** agentic weekly rollup on empty Sunday + date-based pattern sampling ([#2632](https://github.com/adobe/spacecat-audit-worker/issues/2632)) ([5769317](https://github.com/adobe/spacecat-audit-worker/commit/5769317a413e79cb2921a4d1e3dd0b8776a794d6))
+
+## [1.465.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.1...v1.465.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.3.3 ([#2630](https://github.com/adobe/spacecat-audit-worker/issues/2630)) ([445ab76](https://github.com/adobe/spacecat-audit-worker/commit/445ab76ad645f8f59c3af01357f71c6539153eee))
+
+## [1.465.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.0...v1.465.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.74.1 ([#2626](https://github.com/adobe/spacecat-audit-worker/issues/2626)) ([0ea2802](https://github.com/adobe/spacecat-audit-worker/commit/0ea28025b12cde5dbe619e9faff09cfddfdad37f))
+
 # [1.465.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.464.0...v1.465.0) (2026-06-09)
 
 
