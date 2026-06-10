@@ -23,12 +23,18 @@
  *  - an `https://` S3 presigned URL (virtual-hosted or path style), or
  *  - an `s3://<bucket>/<key>` URI.
  *
- * In both cases the bucket must equal `env.DRS_RESULTS_BUCKET` and the object key
- * must start with `env.DRS_RESULTS_PREFIX`. The prefix defaults to
+ * The object key must start with `env.DRS_RESULTS_PREFIX`, which defaults to
  * `strategic_recommendations_semrush/` — the fixed `{PROVIDER_ID}/` key prefix the
- * DRS producer writes under (runner.py `_save_results`) — so the guard works
- * out of the box without deploy config; override only if the producer changes it.
- * The expected bucket is required — if it is not configured we fail closed.
+ * DRS producer writes under (runner.py `_save_results`) — so the guard works out
+ * of the box with no deploy config.
+ *
+ * `env.DRS_RESULTS_BUCKET` tightens the guard to a single bucket when it is
+ * configured. When it is NOT configured we still fail closed on anything we
+ * cannot bound: only the presigned `https://` form is accepted (its hostname is
+ * S3-allowlisted below), and the bare `s3://` form is rejected. The DRS producer
+ * emits a presigned URL (it presigns before publishing JOB_COMPLETED so the
+ * consumer needs no cross-account S3 access), so the happy path needs no deploy
+ * config; provisioning DRS_RESULTS_BUCKET later only narrows the guard further.
  */
 
 // Matches both virtual-hosted-style (bucket.s3[.region].amazonaws.com)
@@ -95,21 +101,27 @@ function parseS3Location(resultLocation) {
  *
  * @param {string} resultLocation
  * @param {object} env
- * @param {string} env.DRS_RESULTS_BUCKET - Required expected bucket name.
+ * @param {string} [env.DRS_RESULTS_BUCKET] - Expected bucket; pins the guard to it
+ *   when set. When unset, only the S3-allowlisted presigned https form is accepted.
  * @param {string} [env.DRS_RESULTS_PREFIX='strategic_recommendations_semrush/'] - Key prefix.
  * @throws {Error} if the location is malformed or outside the bucket/prefix.
  */
 export function assertResultLocation(resultLocation, env = {}) {
   const expectedBucket = env.DRS_RESULTS_BUCKET;
-  if (!expectedBucket) {
-    throw new Error('DRS_RESULTS_BUCKET is not configured; refusing to fetch result (fail closed)');
-  }
   const expectedPrefix = normalizePrefix(env.DRS_RESULTS_PREFIX);
 
   const { bucket, key } = parseS3Location(resultLocation);
 
-  if (bucket !== expectedBucket) {
-    throw new Error(`resultLocation bucket ${bucket} is not the expected results bucket ${expectedBucket}`);
+  if (expectedBucket) {
+    if (bucket !== expectedBucket) {
+      throw new Error(`resultLocation bucket ${bucket} is not the expected results bucket ${expectedBucket}`);
+    }
+  } else if (resultLocation.startsWith('s3://')) {
+    // No expected bucket configured: the bare s3:// form has no hostname to
+    // allowlist, so we cannot bound which bucket it targets — fail closed. The
+    // producer emits a presigned https URL (hostname allowlisted in
+    // parseS3Location), which remains accepted under the prefix check below.
+    throw new Error('resultLocation s3:// form requires DRS_RESULTS_BUCKET to be configured');
   }
   if (!key.startsWith(expectedPrefix)) {
     throw new Error(`resultLocation key ${key} is not under the expected prefix ${expectedPrefix}`);

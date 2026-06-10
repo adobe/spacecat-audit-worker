@@ -64,9 +64,19 @@ describe('assertResultLocation', () => {
     )).to.not.throw();
   });
 
-  it('fails closed when DRS_RESULTS_BUCKET is not configured', () => {
-    expect(() => assertResultLocation('s3://drs-results/results/x.json', {}))
-      .to.throw('DRS_RESULTS_BUCKET is not configured');
+  it('accepts a presigned https URL under the prefix with no DRS_RESULTS_BUCKET configured', () => {
+    // Merge-critical: the producer presigns the result before publishing, and the
+    // bucket env is external Secrets-Manager config not present at first deploy.
+    // The S3-hostname allowlist + provider prefix still bound the location.
+    expect(() => assertResultLocation(
+      'https://drs-results.s3.us-east-1.amazonaws.com/strategic_recommendations_semrush/2026/06/10/job-1/results.json?X-Amz-Signature=x',
+      {},
+    )).to.not.throw();
+  });
+
+  it('fails closed on the bare s3:// form when DRS_RESULTS_BUCKET is not configured', () => {
+    expect(() => assertResultLocation('s3://drs-results/strategic_recommendations_semrush/x.json', {}))
+      .to.throw('requires DRS_RESULTS_BUCKET to be configured');
   });
 
   it('rejects an empty / non-string location', () => {

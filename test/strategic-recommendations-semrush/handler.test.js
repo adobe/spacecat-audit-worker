@@ -416,10 +416,24 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
     expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('upload');
   });
 
-  it('rejects when DRS_RESULTS_BUCKET is not configured (fail closed)', async () => {
+  it('processes a presigned https result with no DRS_RESULTS_BUCKET configured', async () => {
+    // Merge-critical: the producer presigns before publishing, and the bucket env
+    // is external Secrets-Manager config absent at first deploy. The S3-hostname
+    // allowlist + provider prefix still bound the location, so the happy path runs.
     delete context.env.DRS_RESULTS_BUCKET;
+    context.env.DRS_RESULTS_PREFIX = 'results/';
 
     const result = await handler.default(completedMessage(), context);
+    expect(result.status).to.equal(200);
+  });
+
+  it('rejects the bare s3:// form when DRS_RESULTS_BUCKET is not configured (fail closed)', async () => {
+    delete context.env.DRS_RESULTS_BUCKET;
+
+    const result = await handler.default(
+      completedMessage({ resultLocation: 's3://drs-results-bucket/results/job-1/result.json' }),
+      context,
+    );
     expect(result.status).to.equal(500);
     expect(fetchStub).to.not.have.been.called;
   });
