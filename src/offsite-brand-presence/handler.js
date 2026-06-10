@@ -526,7 +526,9 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
  *   When falsy, DRS scraping is skipped (see above).
  * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
  *   (see {@link resolveRedditCommentsParams})
- * @returns {Promise<Array>} Results of DRS job creation
+ * @returns {Promise<{skipped: (string|null), results: Array}>} `skipped` is a
+ *   human-readable reason when scraping was skipped (and `results` is empty),
+ *   otherwise `null` with the DRS job creation results.
  */
 async function triggerDrsScraping(
   urlsByDomain,
@@ -541,7 +543,7 @@ async function triggerDrsScraping(
 
   if (!drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
-    return [];
+    return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
 
   // DRS rejects scrape jobs (HTTP 400) unless it can resolve the customer's
@@ -550,7 +552,10 @@ async function triggerDrsScraping(
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
     log.warn(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
-    return [];
+    return {
+      skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
+      results: [],
+    };
   }
 
   const jobs = [];
@@ -587,7 +592,7 @@ async function triggerDrsScraping(
     // eslint-disable-next-line no-await-in-loop
     results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), log));
   }
-  return results;
+  return { skipped: null, results };
 }
 
 /**
@@ -620,6 +625,23 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
   }
 
   return { topByDomain, topCited };
+}
+
+/**
+ * Sends a Slack notification when DRS scraping was skipped before any jobs were
+ * triggered (e.g. DRS not configured, or the organization has no imsOrgId).
+ * Posts only when a Slack thread context is available (manual runs);
+ * postMessageOptional no-ops on scheduled runs.
+ *
+ * @param {string} reason - Human-readable reason scraping was skipped
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsSkipped(reason, baseURL, context, channelId, threadTs) {
+  const text = `:warning: *offsite-brand-presence* DRS scraping *skipped* for *${baseURL}* — ${reason}.`;
+  await postMessageOptional(context, channelId, text, { threadTs });
 }
 
 /**
@@ -732,7 +754,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(
+  const { skipped, results: drsResults } = await triggerDrsScraping(
     storedByDomain,
     siteId,
     context,
@@ -741,7 +763,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     redditCommentsParams,
   );
 
-  await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
+  if (skipped) {
+    await notifyDrsSkipped(skipped, baseURL, context, channelId, threadTs);
+  } else {
+    await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
+  }
 
   // TODO: temporarily disabled
   // if (topicMap.size > 0) {
