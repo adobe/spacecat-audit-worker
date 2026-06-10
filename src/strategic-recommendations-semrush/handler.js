@@ -146,7 +146,10 @@ async function alertFailure(context, siteId, drsJobId, reason) {
             { type: 'mrkdwn', text: `*DRS Job:*\n\`${drsJobId || 'N/A'}\`` },
           ],
         },
-        { type: 'section', text: { type: 'mrkdwn', text: `*Reason:* ${reason}` } },
+        // plain_text (not mrkdwn): `reason` can carry attacker-influenced content
+        // (e.g. a crafted result location in the SSRF-rejection path), so render it
+        // verbatim rather than letting it inject Slack formatting or mentions.
+        { type: 'section', text: { type: 'plain_text', text: `Reason: ${reason}`, emoji: false } },
         { type: 'divider' },
       ],
     }],
@@ -370,7 +373,10 @@ export default async function strategicRecommendationsSemrushHandler(message, co
   }
 
   // Cross-tenant guard — the result must be for the site this message targets.
-  if (result.siteId && result.siteId !== siteId) {
+  // Fail closed: a result missing siteId is rejected too. DRS always emits
+  // siteId on the result envelope, so an absent value signals a malformed or
+  // spoofed payload, not a legitimate older producer.
+  if (!result.siteId || result.siteId !== siteId) {
     const msg = `cross-tenant mismatch: result.siteId=${result.siteId} != message.siteId=${siteId}`;
     log.error(`%s: ${msg}`, AUDIT_NAME);
     await alertFailure(context, siteId, drsJobId, msg);

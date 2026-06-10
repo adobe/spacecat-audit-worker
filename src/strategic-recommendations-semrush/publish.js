@@ -179,9 +179,14 @@ export async function publishWorkbookWithReadback({
     { name: 'live', url: `${ADMIN_BASE}/live/${ORG}/${SITE}/${REF}/${path}` },
   ];
 
-  for (const endpoint of endpoints) {
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(PUBLISH_STEP_DELAY_MS);
+  for (const [i, endpoint] of endpoints.entries()) {
+    // Delay only BETWEEN steps — nothing precedes the first (preview) POST, so
+    // sleeping before it just adds latency. The gap lets preview settle before
+    // the live publish reads it.
+    if (i > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(PUBLISH_STEP_DELAY_MS);
+    }
     log.info(`STRATEGIC_RECOMMENDATIONS_SEMRUSH: publishing to ${endpoint.name}: ${endpoint.url}`);
     // eslint-disable-next-line no-await-in-loop
     const response = await fetchImpl(endpoint.url, { method: 'POST', headers });

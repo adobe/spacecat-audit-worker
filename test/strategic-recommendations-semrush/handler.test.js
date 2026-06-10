@@ -350,6 +350,24 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
     expect(uploadToSharePointStub).to.not.have.been.called;
   });
 
+  it('fails closed on a result missing siteId (cross-tenant guard)', async () => {
+    fetchStub.callsFake(async (url) => {
+      if (url === RESULT_LOCATION) {
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => JSON.stringify({ rows: [validRow()] }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const result = await handler.default(completedMessage(), context);
+
+    expect(result.status).to.equal(500);
+    expect(uploadToSharePointStub).to.not.have.been.called;
+  });
+
   it('surfaces schema-invalid rows and does not write', async () => {
     fetchStub.callsFake(async (url) => {
       if (url === RESULT_LOCATION) {

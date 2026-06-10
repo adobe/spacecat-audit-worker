@@ -59,6 +59,16 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
 
     expect(fetchImpl.getCalls().some((c) => c.args[0].includes('/preview/'))).to.equal(true);
     expect(fetchImpl.getCalls().some((c) => c.args[0].includes('/live/'))).to.equal(true);
+
+    // Each admin.hlx publish POST must carry the auth cookie — without it the
+    // edge silently 401s and the read-back failure would be the only signal.
+    const publishCalls = fetchImpl.getCalls()
+      .filter((c) => /admin\.hlx\.page/.test(c.args[0]));
+    expect(publishCalls).to.have.lengthOf(2);
+    publishCalls.forEach((c) => {
+      expect(c.args[1].method).to.equal('POST');
+      expect(c.args[1].headers.Cookie).to.equal('auth_token=test-token');
+    });
   });
 
   it('throws on a non-200 publish', async () => {
