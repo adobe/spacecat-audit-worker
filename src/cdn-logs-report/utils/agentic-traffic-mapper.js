@@ -111,8 +111,7 @@ function buildCitabilityMap(suggestions, log) {
       return acc;
     }
 
-    const isDeployed = !!data.edgeDeployed
-      || suggestion.getStatus?.() === Suggestion.STATUSES.FIXED;
+    const isDeployed = !!data.edgeDeployed;
     const coveredByDomainWide = !!data.coveredByDomainWide;
     const coveredByPattern = !!data.coveredByPattern;
     const isDeployedAtEdge = isDeployed || coveredByDomainWide || coveredByPattern;
@@ -140,24 +139,25 @@ function buildCitabilityMap(suggestions, log) {
   }, {});
 }
 
-// Reads live suggestions from the site's NEW prerender opportunity (replaces PageCitability).
+// Reads the NEW suggestions from the site's prerender opportunity (replaces PageCitability).
+// Fetching by status keeps the query scoped to fresh, per-URL rows.
 async function getCitabilityScores(site, context) {
-  const opportunityDA = context?.dataAccess?.Opportunity;
-  if (!opportunityDA?.allBySiteIdAndStatus) {
+  const { Opportunity, Suggestion: SuggestionDA } = context?.dataAccess ?? {};
+  if (!Opportunity?.allBySiteIdAndStatus || !SuggestionDA?.allByOpportunityIdAndStatus) {
     return [];
   }
 
   try {
-    const opportunities = await opportunityDA.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
     const opportunity = (opportunities || []).find(
       (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER,
     );
-    if (!opportunity?.getSuggestions) {
+    if (!opportunity) {
       return [];
     }
-    const suggestions = await opportunity.getSuggestions();
-    return (suggestions || []).filter(
-      (s) => s.getStatus?.() !== Suggestion.STATUSES.OUTDATED,
+    return await SuggestionDA.allByOpportunityIdAndStatus(
+      opportunity.getId(),
+      Suggestion.STATUSES.NEW,
     );
   } catch (error) {
     context?.log?.warn?.(`Failed to fetch prerender suggestions for agentic mapping: ${error.message}`);

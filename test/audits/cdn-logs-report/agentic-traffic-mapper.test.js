@@ -14,7 +14,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   mapToAgenticTrafficBundle,
   getLlmVisibilityScore,
@@ -23,17 +23,13 @@ import {
 use(sinonChai);
 
 // Builds a stub prerender suggestion exposing the data-access accessors the mapper uses.
-const makeSuggestion = (data, {
-  status = Suggestion.STATUSES.NEW,
-  updatedAt = '2026-03-31T00:00:00.000Z',
-} = {}) => ({
+const makeSuggestion = (data, { updatedAt = '2026-03-31T00:00:00.000Z' } = {}) => ({
   getData: () => data,
-  getStatus: () => status,
   getUpdatedAt: () => updatedAt,
 });
 
-// Builds a context whose Opportunity data-access returns a single prerender opportunity
-// carrying the supplied suggestions.
+// Builds a context whose Opportunity data-access returns a single prerender opportunity and
+// whose Suggestion data-access returns the supplied NEW suggestions for that opportunity.
 const makeContext = (suggestions, {
   type = Audit.AUDIT_TYPES.PRERENDER,
   log = { warn: sinon.spy() },
@@ -42,8 +38,11 @@ const makeContext = (suggestions, {
   dataAccess: {
     Opportunity: {
       allBySiteIdAndStatus: sinon.stub().resolves([
-        { getType: () => type, getSuggestions: sinon.stub().resolves(suggestions) },
+        { getType: () => type, getId: () => 'oppty-1' },
       ]),
+    },
+    Suggestion: {
+      allByOpportunityIdAndStatus: sinon.stub().resolves(suggestions),
     },
   },
 });
@@ -175,7 +174,7 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('treats coveredByPattern and FIXED-status suggestions as deployed', async () => {
+  it('treats coveredByPattern suggestions as deployed', async () => {
     const patternContext = makeContext([
       makeSuggestion({ url: 'https://www.example.com/pattern', coveredByPattern: 'p1' }),
     ]);
@@ -189,40 +188,18 @@ describe('agentic traffic mapper', () => {
       citability_score: 100,
       deployed_at_edge: true,
     });
-
-    const fixedContext = makeContext([
-      makeSuggestion(
-        { url: 'https://www.example.com/fixed', wordCountBefore: 10, wordCountAfter: 100 },
-        { status: Suggestion.STATUSES.FIXED },
-      ),
-    ]);
-    const fixedResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/fixed')],
-      baseSite(),
-      fixedContext,
-      '2026-03-31',
-    );
-    expect(fixedResult.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
-    });
   });
 
-  it('skips domain-wide, url-less, outdated, and undeployed-no-wordcount suggestions', async () => {
+  it('skips domain-wide, url-less, and undeployed-no-wordcount suggestions', async () => {
     const context = makeContext([
       makeSuggestion({ url: 'https://www.example.com/dw', isDomainWide: true, edgeDeployed: 'x' }),
       makeSuggestion({ wordCountBefore: 5, wordCountAfter: 10 }),
-      makeSuggestion(
-        { url: 'https://www.example.com/old', edgeDeployed: 'x' },
-        { status: Suggestion.STATUSES.OUTDATED },
-      ),
       makeSuggestion({ url: 'https://www.example.com/nodata', wordCountAfter: 0 }),
       makeSuggestion(undefined),
     ]);
 
     const result = await mapToAgenticTrafficBundle([
       chatbotRow('/dw'),
-      chatbotRow('/old'),
       chatbotRow('/nodata'),
     ], baseSite(), context, '2026-03-31');
 
@@ -342,30 +319,31 @@ describe('agentic traffic mapper', () => {
     );
     expect(wrongTypeResult.trafficRows[0].dimensions).to.deep.equal({});
 
-    // Opportunity exists but has no getSuggestions accessor.
-    const noSuggestionsContext = {
+    // Opportunity data-access present, but the Suggestion data-access is missing.
+    const noSuggestionDaContext = {
       log: { warn: sinon.spy() },
       dataAccess: {
         Opportunity: {
           allBySiteIdAndStatus: sinon.stub().resolves([
-            { getType: () => Audit.AUDIT_TYPES.PRERENDER },
+            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getId: () => 'oppty-1' },
           ]),
         },
       },
     };
-    const noSuggestionsResult = await mapToAgenticTrafficBundle(
+    const noSuggestionDaResult = await mapToAgenticTrafficBundle(
       [chatbotRow('/x')],
       baseSite(),
-      noSuggestionsContext,
+      noSuggestionDaContext,
       '2026-03-31',
     );
-    expect(noSuggestionsResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(noSuggestionDaResult.trafficRows[0].dimensions).to.deep.equal({});
 
     // allBySiteIdAndStatus resolves null ⇒ tolerated.
     const nullOppsContext = {
       log: { warn: sinon.spy() },
       dataAccess: {
         Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves(null) },
+        Suggestion: { allByOpportunityIdAndStatus: sinon.stub().resolves([]) },
       },
     };
     const nullOppsResult = await mapToAgenticTrafficBundle(
@@ -377,27 +355,6 @@ describe('agentic traffic mapper', () => {
     expect(nullOppsResult.trafficRows[0].dimensions).to.deep.equal({});
   });
 
-  it('tolerates a prerender opportunity whose suggestions resolve to null', async () => {
-    const context = {
-      log: { warn: sinon.spy() },
-      dataAccess: {
-        Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([
-            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getSuggestions: sinon.stub().resolves(null) },
-          ]),
-        },
-      },
-    };
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')],
-      baseSite(),
-      context,
-      '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
   it('logs and tolerates prerender suggestion fetch failures', async () => {
     const warn = sinon.spy();
     const context = {
@@ -405,6 +362,9 @@ describe('agentic traffic mapper', () => {
       dataAccess: {
         Opportunity: {
           allBySiteIdAndStatus: sinon.stub().rejects(new Error('opportunity unavailable')),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([]),
         },
       },
     };
