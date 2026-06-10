@@ -1,3 +1,10 @@
+# [1.467.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.2...v1.467.0) (2026-06-10)
+
+
+### Features
+
+* replace duplicate wwwUrlResolver with shared lib delegation and persist resolved domain as overrideBaseURL ([#2628](https://github.com/adobe/spacecat-audit-worker/issues/2628)) ([4db760e](https://github.com/adobe/spacecat-audit-worker/commit/4db760efee5c57aec68e5a63f3a6093d126c1e46))
+
 ## [1.466.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.1...v1.466.2) (2026-06-10)
 
 
