@@ -1,3 +1,10 @@
+## [1.467.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.0...v1.467.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* **money-pages:** convert StepAudit to RunnerAudit to fix audit.getId() crash ([#2639](https://github.com/adobe/spacecat-audit-worker/issues/2639)) ([fac64fd](https://github.com/adobe/spacecat-audit-worker/commit/fac64fd41f4bd6041e19b49e4b2c686c45f6e12b))
+
 # [1.467.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.2...v1.467.0) (2026-06-10)
 
 
