@@ -1,3 +1,10 @@
+# [1.466.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.3...v1.466.0) (2026-06-10)
+
+
+### Features
+
+* fallback to reading data using sharepoint client ([#2636](https://github.com/adobe/spacecat-audit-worker/issues/2636)) ([50b4269](https://github.com/adobe/spacecat-audit-worker/commit/50b426926c20107b516bec5dd913163e44cff05d))
+
 ## [1.465.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.2...v1.465.3) (2026-06-10)
 
 
