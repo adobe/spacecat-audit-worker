@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "shared-semrush-row.schema.v1.json",
+  "title": "SharedSemrushRow",
+  "description": "One PROMPT row in the `shared-Semrush` worksheet of strategic-recommendations-template.xlsx. Single source of truth shared by the DRS runner row-emitter (Pydantic) and the spacecat-audit-worker sheet writer (validates on ingest). Mirrors project-elmo-ui SRApiSemrushRow. schema_version is carried on the result envelope, not per row.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tag", "strategy", "strategy_reasoning", "topic_id", "topic", "volume", "adobe_mentions", "prompt"],
+  "properties": {
+    "tag": { "type": "string", "enum": ["Hidden Win", "Coverage Gap", "Strategic Blindspot"], "description": "Customer-facing archetype. v1 mapping: topics_you_win->Hidden Win, coverage_gap->Coverage Gap, ai_engine_gaps->Strategic Blindspot." },
+    "strategy": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Card headline; repeated on every row in the recommendation group. GROUPING KEY." },
+    "strategy_reasoning": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "Situation + evidence + recommended action (joined). Repeated per group." },
+    "topic_id": { "type": "string", "minLength": 1, "description": "Semrush topic id. GROUPING KEY (within strategy)." },
+    "topic": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "volume": { "type": "integer", "minimum": 0 },
+    "adobe_mentions": { "type": "integer", "minimum": 0 },
+    "competitor_1": { "type": ["string", "null"], "maxLength": 200 },
+    "competitor_1_mentions": { "type": ["integer", "null"], "minimum": 0 },
+    "competitor_2": { "type": ["string", "null"], "maxLength": 200 },
+    "competitor_2_mentions": { "type": ["integer", "null"], "minimum": 0 },
+    "competitor_3": { "type": ["string", "null"], "maxLength": 200 },
+    "competitor_3_mentions": { "type": ["integer", "null"], "minimum": 0 },
+    "category": { "type": ["string", "null"], "maxLength": 120, "description": "Adobe product/cloud. Derived from LLMO config category; LLM-inferred fallback." },
+    "prompt": { "type": "string", "minLength": 1, "maxLength": 600, "description": "One trackable customer prompt. Row grain = one row per prompt. Deleted-preservation MATCH KEY = (topic_id, prompt) — see x-contract.match_key_for_deleted_preservation; forward path is the reserved prompt_id." },
+    "prompt_id": { "type": ["string", "null"], "maxLength": 128, "description": "RESERVED forward-compat seam. v1: runner emits null, writer ignores. When populated in a future version it becomes the stable deleted-preservation match key, replacing the best-effort (topic_id, prompt) text match — making that hardening an additive VALUE change, not a v2/schema bump. Optional + nullable so reserving it now keeps the strict schema valid and does not force a consumer re-vendor." },
+    "deleted": { "type": ["string", "null"], "enum": ["", "ignored", "added", null], "description": "UI soft-delete marker. ''/null = active, 'ignored' = dismissed, 'added' = manually tracked. Writer MUST preserve existing values by match key (topic_id, prompt) — best-effort in v1; see match_key_note." }
+  },
+  "x-contract": {
+    "worksheet": "shared-Semrush",
+    "sharepoint_path": "/sites/elmo-ui-data/{dataFolder}/strategic-recommendations-template/strategic-recommendations.xlsx",
+    "hlx_publish": "{dataFolder}/strategic-recommendations-template/strategic-recommendations.json (preview+live; HLX strips 'shared-' prefix -> JSON key 'Semrush')",
+    "row_grain": "one row per (strategy, topic_id, prompt)",
+    "grouping_keys": ["strategy", "topic_id"],
+    "match_key_for_deleted_preservation": ["topic_id", "prompt"],
+    "match_key_note": "v1 = BEST-EFFORT (user decision 2026-06-09). The audit-worker merge re-applies `deleted` by matching on the stable `topic_id` + `prompt` text. If a regeneration rephrases the prompt text, the match misses and a prior dismissal lapses (the card may reappear) — this is ACCEPTED for v1 and MUST be stated honestly in the UI (dismissals are best-effort, not guaranteed across refreshes). No UI change and no verbatim-reseed are required for v1. Future hardening: populate the RESERVED `prompt_id` field (nullable, emitted null in v1) and move the UI dismiss + merge to id-based matching — an additive value change, NOT a v2 bump, because the seam already exists in v1.",
+    "archetype_to_tag_v1": {
+      "topics_you_win": "Hidden Win",
+      "coverage_gap": "Coverage Gap",
+      "ai_engine_gaps": "Strategic Blindspot"
+    },
+    "deferred_archetypes_v1": ["losing_ground", "citation_gaps"]
+  }
+}

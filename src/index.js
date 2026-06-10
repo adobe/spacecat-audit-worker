@@ -121,6 +121,7 @@ import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
+import strategicRecommendationsSemrush from './strategic-recommendations-semrush/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
@@ -227,6 +228,7 @@ const HANDLERS = {
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
+  'drs:strategic_recommendations_semrush': strategicRecommendationsSemrush,
   'offsite-brand-presence': offsiteBrandPresence,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
