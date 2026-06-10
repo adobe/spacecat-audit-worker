@@ -33,6 +33,11 @@ import { readFileSync, existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import { expect } from 'chai';
+import {
+  REQUIRED_FIELDS,
+  TAG_VALUES,
+  DELETED_VALUES,
+} from '../../src/strategic-recommendations-semrush/schema-derived.js';
 
 // sha256 of the authoritative DRS schema, vendored here. Update on deliberate re-vendor.
 const EXPECTED_SHA256 = '6c2d8fa69826279fbdd2e52f198ed8e19b2c5480a7185f688766e823cab97f34';
@@ -69,5 +74,25 @@ describe('strategic-recommendations-semrush schema checksum drift', () => {
       sha256(VENDORED_PATH),
       'vendored schema has drifted from the DRS authoritative copy — re-vendor and update EXPECTED_SHA256',
     );
+  });
+
+  // The validator inputs in schema-derived.js are inlined as constants (not read
+  // from the JSON at runtime — that read broke the bundle). These assertions are
+  // the other half of the drift guard: they fail if the inlined constants drift
+  // from the vendored JSON, so a contract change must update both in one commit.
+  describe('inlined constants match the vendored JSON', () => {
+    const schema = JSON.parse(readFileSync(VENDORED_PATH, 'utf8'));
+
+    it('REQUIRED_FIELDS === schema.required', () => {
+      expect(REQUIRED_FIELDS).to.deep.equal(schema.required);
+    });
+
+    it('TAG_VALUES === schema.properties.tag.enum', () => {
+      expect(TAG_VALUES).to.deep.equal(schema.properties.tag.enum);
+    });
+
+    it('DELETED_VALUES === schema.properties.deleted.enum', () => {
+      expect(DELETED_VALUES).to.deep.equal(schema.properties.deleted.enum);
+    });
   });
 });

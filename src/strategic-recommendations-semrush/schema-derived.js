@@ -11,20 +11,39 @@
  */
 
 /**
- * Loads enum/required values directly from the vendored schema JSON so the
- * validator can never drift from the contract within this repo. (The vendored
- * copy itself is kept in sync with the authoritative DRS copy by the
- * checksum-drift test.)
+ * Validator inputs derived from the row contract
+ * `shared-semrush-row.schema.v1.json`.
+ *
+ * These are INLINED as constants rather than read from the JSON at runtime. The
+ * vendored JSON is a `wsk.static` asset, and reading it via an
+ * `import.meta.url`-relative path threw `ENOENT` under `validateBundle` (the
+ * bundled module resolves next to `dist/`, not to the source tree where the
+ * asset lands) — i.e. the Lambda failed at cold start, not just in CI. Inlining
+ * removes the module-eval-time disk dependency entirely.
+ *
+ * The drift chain is preserved without a runtime read:
+ *  - inlined constants == vendored JSON  -> asserted by `schema-checksum.test.js`
+ *  - vendored JSON == DRS authoritative  -> asserted by `schema-checksum.test.js`
+ * So a contract change must touch the JSON (changing its sha) AND these
+ * constants in the same commit, or a test fails.
  */
 
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
+// schema.required
+export const REQUIRED_FIELDS = [
+  'tag',
+  'strategy',
+  'strategy_reasoning',
+  'topic_id',
+  'topic',
+  'volume',
+  'adobe_mentions',
+  'prompt',
+];
 
-const schemaPath = fileURLToPath(new URL('./shared-semrush-row.schema.v1.json', import.meta.url));
+// schema.properties.tag.enum
+export const TAG_VALUES = ['Hidden Win', 'Coverage Gap', 'Strategic Blindspot'];
 
-export const SCHEMA = JSON.parse(readFileSync(schemaPath, 'utf8'));
-export const REQUIRED_FIELDS = SCHEMA.required;
-export const TAG_VALUES = SCHEMA.properties.tag.enum;
-// The `deleted` enum includes null; the validator treats null/undefined as the
-// active default and accepts the string markers, so expose the full enum.
-export const DELETED_VALUES = SCHEMA.properties.deleted.enum;
+// schema.properties.deleted.enum — includes '' and null; the validator treats
+// null/undefined as the active default and accepts the string markers, so the
+// full enum is exposed.
+export const DELETED_VALUES = ['', 'ignored', 'added', null];
