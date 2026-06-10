@@ -506,18 +506,24 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
  * When spacecatOrgId is provided, it is passed through to
  * drsClient.submitScrapeJob and included as spacecat_org_id in the DRS request.
  *
+ * DRS auto-resolves the customer's imsOrgId (and brand) from site_id by reading
+ * the SpaceCat organization, and rejects the job with HTTP 400 when that
+ * resolution fails (i.e. the organization has no imsOrgId). Because the caller
+ * reads imsOrgId from the same organization, an absent imsOrgId reliably
+ * predicts that DRS resolution would fail, so we skip submission rather than
+ * fire jobs that are guaranteed to 400.
+ *
  * Reddit-comments params (`commentLimit`, `sortBy`, `daysBack`,
  * `loadAllReplies`) are only attached to the `reddit_comments` dataset. When
- * they are omitted and the request goes through the DRS client, the client
- * applies its defaults (`commentLimit=150`, `sortBy='Best'`, no `daysBack`,
- * no `loadAllReplies`). On the direct-HTTP path (`spacecatOrgId` set), only
- * the params that the direct path explicitly handles (currently `daysBack`)
- * actually reach DRS.
+ * they are omitted, the DRS client applies its defaults (`commentLimit=150`,
+ * `sortBy='Best'`, no `daysBack`, no `loadAllReplies`).
  *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
  * @param {string} [spacecatOrgId] - Optional SpaceCat org ID
+ * @param {string} [imsOrgId] - IMS org ID resolved from the site's organization.
+ *   When falsy, DRS scraping is skipped (see above).
  * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
  *   (see {@link resolveRedditCommentsParams})
  * @returns {Promise<Array>} Results of DRS job creation
@@ -527,6 +533,7 @@ async function triggerDrsScraping(
   siteId,
   context,
   spacecatOrgId,
+  imsOrgId,
   redditCommentsParams = {},
 ) {
   const { log } = context;
@@ -534,6 +541,15 @@ async function triggerDrsScraping(
 
   if (!drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
+    return [];
+  }
+
+  // DRS rejects scrape jobs (HTTP 400) unless it can resolve the customer's
+  // imsOrgId from the site_id, which requires the SpaceCat organization to have
+  // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
+  // missing we skip rather than fire jobs that are guaranteed to fail.
+  if (!imsOrgId) {
+    log.error(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
     return [];
   }
 
@@ -658,6 +674,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+  const organization = await site.getOrganization();
+  const imsOrgId = organization?.getImsOrgId();
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
@@ -719,6 +737,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     siteId,
     context,
     spacecatOrgId,
+    imsOrgId,
     redditCommentsParams,
   );
 

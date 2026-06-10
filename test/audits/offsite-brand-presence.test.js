@@ -114,6 +114,9 @@ describe('Offsite Brand Presence Handler', () => {
     site = {
       getId: sandbox.stub().returns(SITE_ID),
       getBaseURL: sandbox.stub().returns(BASE_URL),
+      getOrganization: sandbox.stub().resolves({
+        getImsOrgId: () => '1234567890ABCDEF12345678@AdobeOrg',
+      }),
     };
 
     context = { dataAccess, env, log };
@@ -1284,6 +1287,32 @@ describe('Offsite Brand Presence Handler', () => {
       for (const call of mockSubmitScrapeJob.getCalls()) {
         expect(call.args[0].spacecatOrgId).to.equal('org-multi');
       }
+    });
+  });
+
+  describe('DRS Scraping imsOrgId resolution', () => {
+    it('skips DRS scraping and logs an actionable error when the organization has no imsOrgId', async () => {
+      site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/imsOrgId/),
+      );
+    });
+
+    it('skips DRS scraping when the site has no organization', async () => {
+      site.getOrganization = sandbox.stub().resolves(null);
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
   });
 
