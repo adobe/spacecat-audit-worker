@@ -1,3 +1,10 @@
+## [1.466.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.1...v1.466.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** skip DRS scraping when org has no imsOrgId ([#2637](https://github.com/adobe/spacecat-audit-worker/issues/2637)) ([0e01c59](https://github.com/adobe/spacecat-audit-worker/commit/0e01c59adcac588bd0c63ffef22f80253eb3470d))
+
 ## [1.466.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.0...v1.466.1) (2026-06-10)
 
 
