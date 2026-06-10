@@ -80,10 +80,7 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
-// Suggestion statuses considered "live" for citability. Mirrors the active-status
-// allow-list in project-elmo-ui's usePrerenderGains hook (excludes OUTDATED and other
-// terminal/inactive states). Keep in sync with the UI so the server-produced bundle and
-// the dashboard agree on which suggestions contribute a score.
+// Live suggestion statuses (excludes OUTDATED). Mirrors usePrerenderGains in project-elmo-ui.
 const LIVE_SUGGESTION_STATUSES = [
   Suggestion.STATUSES.NEW,
   Suggestion.STATUSES.PENDING_VALIDATION,
@@ -93,13 +90,8 @@ const LIVE_SUGGESTION_STATUSES = [
   Suggestion.STATUSES.SKIPPED,
 ];
 
-/**
- * LLM visibility ("citability") score for one prerender suggestion. Returns 100 when the
- * URL is deployed at edge or covered by a domain-wide / pattern deployment, otherwise the
- * word-count ratio (wordCountBefore / wordCountAfter) * 100, rounded and capped at 100.
- * Mirrors getLlmVisibilityScore in project-elmo-ui's usePrerenderGains so the server-built
- * agentic bundle matches what the dashboard renders.
- */
+// Mirrors getLlmVisibilityScore in project-elmo-ui: 100 when deployed/covered, else the
+// word-count ratio capped at 100.
 export function getLlmVisibilityScore({
   wordCountBefore, wordCountAfter, isDeployed, coveredByDomainWide, coveredByPattern,
 }) {
@@ -113,8 +105,7 @@ export function getLlmVisibilityScore({
 }
 
 // Builds a pathname -> { score, isDeployedAtEdge, updatedAt } map from prerender suggestions.
-// Domain-wide aggregate suggestions are skipped (they are not per-URL citability). URLs with
-// no deployment signal and no usable word counts are skipped so we never emit a meaningless 0.
+// Skips domain-wide aggregates and entries with neither a deploy signal nor usable word counts.
 function buildCitabilityMap(suggestions, log) {
   return suggestions.reduce((acc, suggestion) => {
     const data = suggestion?.getData?.() ?? {};
@@ -159,9 +150,7 @@ function buildCitabilityMap(suggestions, log) {
   }, {});
 }
 
-// Reads live prerender suggestions for the site from the NEW prerender opportunity.
-// PageCitability is being retired; the prerender opportunity's suggestions are now the
-// source of truth for the agentic citability score and edge-deployed status.
+// Reads live suggestions from the site's NEW prerender opportunity (replaces PageCitability).
 async function getCitabilityScores(site, context) {
   const opportunityDA = context?.dataAccess?.Opportunity;
   if (!opportunityDA?.allBySiteIdAndStatus) {
