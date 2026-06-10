@@ -106,8 +106,9 @@ async function fetchResult(resultLocation, log) {
   }
 
   const text = await response.text();
-  if (text.length > MAX_RESULT_BYTES) {
-    throw new Error(`DRS result too large: ${text.length} bytes exceeds cap ${MAX_RESULT_BYTES}`);
+  const byteLength = Buffer.byteLength(text, 'utf8');
+  if (byteLength > MAX_RESULT_BYTES) {
+    throw new Error(`DRS result too large: ${byteLength} bytes exceeds cap ${MAX_RESULT_BYTES}`);
   }
   try {
     return JSON.parse(text);
@@ -343,6 +344,7 @@ export default async function strategicRecommendationsSemrushHandler(message, co
       outputLocation,
       expectedRowCount: mergedRows.length,
       expectedGeneratedAt: result.generated_at ?? null,
+      adminApiKey: context.env?.ADMIN_HLX_API_KEY,
       log,
       fetchImpl: tracingFetch,
     });

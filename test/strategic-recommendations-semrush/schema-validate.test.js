@@ -91,6 +91,22 @@ describe('validateSemrushRows', () => {
     expect(res.errors.join(' ')).to.include("'prompt' must be non-empty");
   });
 
+  it('flags a string field exceeding its maxLength', () => {
+    const res = validateSemrushRows([goodRow({ strategy: 'x'.repeat(201) })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'strategy' exceeds maxLength 200");
+  });
+
+  it('flags an over-long nullable field (competitor_1)', () => {
+    const res = validateSemrushRows([goodRow({ competitor_1: 'y'.repeat(201) })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'competitor_1' exceeds maxLength 200");
+  });
+
+  it('accepts a string field exactly at its maxLength', () => {
+    expect(validateSemrushRows([goodRow({ prompt: 'p'.repeat(600) })]).valid).to.equal(true);
+  });
+
   it('flags a non-integer numeric field', () => {
     const res = validateSemrushRows([goodRow({ volume: 1.5 })]);
     expect(res.valid).to.equal(false);

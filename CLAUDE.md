@@ -245,3 +245,22 @@ await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
 4. Add `test/audits/[audit-name].test.js` (or a sub-directory for complex audits).
 5. Add fixtures to `test/fixtures/[audit-name]/`.
 6. Ensure 100% coverage on all new source files.
+
+### Non-AuditBuilder handlers (`drs:` / `guidance:` prefixes)
+
+Not every entry in the `HANDLERS` map is an `AuditBuilder` audit. Two recognized
+conventions register a plain `async (message, context) => Response` handler keyed
+by a namespaced `type`:
+
+- **`guidance:*`** — handlers that consume Mystique AI guidance responses.
+- **`drs:*`** — handlers that consume DRS (Data Retrieval Service) job-completion
+  notifications (e.g. `drs:strategic_recommendations_semrush`). These are not
+  triggered by a scheduled audit run; they react to an external SNS→SQS event,
+  fetch the referenced result, and write/publish downstream artifacts.
+
+Such handlers skip the `AuditBuilder` lifecycle (no `withRunner`, no
+`Audit.create()` persistence, no opportunity/suggestion sync) and instead export
+the handler function directly. They still register in `src/index.js` `HANDLERS`,
+still require 100% coverage, and the message they receive is the normalized shape
+produced by the dispatcher (see `normalizeDrsMessage` in `src/index.js` for the
+`drs:` envelope).

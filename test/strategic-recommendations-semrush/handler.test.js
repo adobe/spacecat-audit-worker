@@ -101,7 +101,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
       if (url.startsWith('https://admin.hlx.page/')) {
         return { ok: true, status: 200, statusText: 'OK' };
       }
-      if (url === LIVE_JSON_URL && opts.method === 'GET') {
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
         return {
           ok: true,
           json: async () => ({
@@ -131,7 +131,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
     context.env.DRS_RESULTS_BUCKET = RESULTS_BUCKET;
     context.env.DRS_RESULTS_PREFIX = 'results/';
     context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST';
-    process.env.ADMIN_HLX_API_KEY = 'test-token';
+    context.env.ADMIN_HLX_API_KEY = 'test-token';
 
     context.dataAccess.Site.findById.resolves({
       getConfig: () => ({ getLlmoDataFolder: () => DATA_FOLDER }),
@@ -140,7 +140,6 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
 
   afterEach(() => {
     sandbox.restore();
-    delete process.env.ADMIN_HLX_API_KEY;
   });
 
   const completedMessage = (overrides = {}) => ({
@@ -266,7 +265,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
       if (url.startsWith('https://admin.hlx.page/')) {
         return { ok: true, status: 200, statusText: 'OK' };
       }
-      if (url === LIVE_JSON_URL && opts.method === 'GET') {
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
         // stale: zero rows instead of the 1 we wrote
         return { ok: true, json: async () => ({ Semrush: { data: [] } }) };
       }
@@ -293,7 +292,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
       if (url.startsWith('https://admin.hlx.page/')) {
         return { ok: true, status: 200, statusText: 'OK' };
       }
-      if (url === LIVE_JSON_URL && opts.method === 'GET') {
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
         return {
           ok: true,
           json: async () => ({ generated_at: '1999-01-01T00:00:00Z', Semrush: { data: [validRow()] } }),
@@ -572,7 +571,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
       if (url.startsWith('https://admin.hlx.page/')) {
         return { ok: true, status: 200, statusText: 'OK' };
       }
-      if (url === LIVE_JSON_URL && opts.method === 'GET') {
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
         return { ok: true, json: async () => ({ Semrush: { data: [validRow()] } }) };
       }
       throw new Error(`unexpected fetch: ${url}`);

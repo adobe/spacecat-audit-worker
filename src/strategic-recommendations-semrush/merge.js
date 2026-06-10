@@ -13,18 +13,23 @@
 /**
  * Builds the deleted-preservation match key for a row, or null if the row lacks
  * the fields needed to match. `topic_id` and `prompt` are coerced to strings and
- * joined with a delimiter.
+ * joined with the ASCII Unit Separator (U+001F) — a control char that cannot
+ * appear in the human-authored prompt/topic text, so it removes the delimiter
+ * ambiguity a printable separator (e.g. a space) would carry when a `topic_id`
+ * ends with, or a `prompt` starts with, that character.
  *
  * @param {object} row
  * @returns {string|null}
  */
+const MATCH_KEY_DELIMITER = '\x1F';
+
 function matchKey(row) {
   const topicId = row.topic_id;
   const { prompt } = row;
   if (topicId === undefined || topicId === null || prompt === undefined || prompt === null) {
     return null;
   }
-  return `${String(topicId)} ${String(prompt)}`;
+  return `${String(topicId)}${MATCH_KEY_DELIMITER}${String(prompt)}`;
 }
 
 /**

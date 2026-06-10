@@ -47,3 +47,17 @@ export const TAG_VALUES = ['Hidden Win', 'Coverage Gap', 'Strategic Blindspot'];
 // null/undefined as the active default and accepts the string markers, so the
 // full enum is exposed.
 export const DELETED_VALUES = ['', 'ignored', 'added', null];
+
+// schema.properties[*].maxLength — only the fields that declare one. Kept in the
+// drift-guard chain by schema-checksum.test.js (asserted == the vendored JSON).
+export const MAX_LENGTHS = {
+  strategy: 200,
+  strategy_reasoning: 2000,
+  topic: 300,
+  competitor_1: 200,
+  competitor_2: 200,
+  competitor_3: 200,
+  category: 120,
+  prompt: 600,
+  prompt_id: 128,
+};

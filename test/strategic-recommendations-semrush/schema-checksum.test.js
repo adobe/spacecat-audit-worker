@@ -37,6 +37,7 @@ import {
   REQUIRED_FIELDS,
   TAG_VALUES,
   DELETED_VALUES,
+  MAX_LENGTHS,
 } from '../../src/strategic-recommendations-semrush/schema-derived.js';
 
 // sha256 of the authoritative DRS schema, vendored here. Update on deliberate re-vendor.
@@ -93,6 +94,16 @@ describe('strategic-recommendations-semrush schema checksum drift', () => {
 
     it('DELETED_VALUES === schema.properties.deleted.enum', () => {
       expect(DELETED_VALUES).to.deep.equal(schema.properties.deleted.enum);
+    });
+
+    it('MAX_LENGTHS === schema.properties[*].maxLength', () => {
+      const fromSchema = {};
+      Object.entries(schema.properties).forEach(([field, def]) => {
+        if (typeof def.maxLength === 'number') {
+          fromSchema[field] = def.maxLength;
+        }
+      });
+      expect(MAX_LENGTHS).to.deep.equal(fromSchema);
     });
   });
 });

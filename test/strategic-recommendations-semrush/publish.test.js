@@ -42,6 +42,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
     outputLocation: OUTPUT_LOCATION,
     expectedRowCount: 2,
     expectedGeneratedAt: 'g1',
+    adminApiKey: 'test-token',
     log,
     fetchImpl,
   });
@@ -49,7 +50,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
   it('publishes preview+live and confirms via read-back', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL).resolves({
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).resolves({
       ok: true,
       json: async () => ({ generated_at: 'g1', Semrush: { data: [{}, {}] } }),
     });
@@ -66,11 +67,41 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
       .to.be.rejectedWith('publish to preview failed: 500');
   });
 
+  it('throws before any fetch when adminApiKey is missing', async () => {
+    const fetchImpl = sandbox.stub();
+    const args = { ...baseArgs(fetchImpl), adminApiKey: undefined };
+    await expect(mod.publishWorkbookWithReadback(args))
+      .to.be.rejectedWith('ADMIN_HLX_API_KEY is not configured');
+    expect(fetchImpl).to.not.have.been.called;
+  });
+
+  it('busts the CDN cache with a fresh query param on each read-back attempt', async () => {
+    const fetchImpl = sandbox.stub();
+    fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
+    let call = 0;
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).callsFake(async () => {
+      call += 1;
+      if (call === 1) {
+        return { ok: false, status: 404, statusText: 'Not Found' };
+      }
+      return { ok: true, json: async () => ({ Semrush: { data: [{}, {}] } }) };
+    });
+
+    await mod.publishWorkbookWithReadback(baseArgs(fetchImpl));
+
+    const readbackUrls = fetchImpl.getCalls()
+      .map((c) => c.args[0])
+      .filter((u) => u.startsWith(LIVE_JSON_URL));
+    expect(readbackUrls).to.have.lengthOf(2);
+    readbackUrls.forEach((u) => expect(u).to.match(/\?cb=\d+-\d+$/));
+    expect(readbackUrls[0]).to.not.equal(readbackUrls[1]);
+  });
+
   it('retries read-back then succeeds (absorbs edge latency)', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
     let call = 0;
-    fetchImpl.withArgs(LIVE_JSON_URL).callsFake(async () => {
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).callsFake(async () => {
       call += 1;
       if (call === 1) {
         return { ok: false, status: 404, statusText: 'Not Found' };
@@ -85,7 +116,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
   it('throws after exhausting read-back retries on row-count mismatch', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL)
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL))
       .resolves({ ok: true, json: async () => ({ Semrush: { data: [] } }) });
 
     await expect(mod.publishWorkbookWithReadback(baseArgs(fetchImpl)))
@@ -95,7 +126,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
   it('throws when read-back JSON has no Semrush sheet', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL).resolves({ ok: true, json: async () => ({ foo: 'bar' }) });
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).resolves({ ok: true, json: async () => ({ foo: 'bar' }) });
 
     await expect(mod.publishWorkbookWithReadback(baseArgs(fetchImpl)))
       .to.be.rejectedWith('post-publish read-back failed');
@@ -104,7 +135,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
   it('throws when read-back fetch itself errors on every attempt', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL).rejects(new Error('network down'));
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).rejects(new Error('network down'));
 
     await expect(mod.publishWorkbookWithReadback(baseArgs(fetchImpl)))
       .to.be.rejectedWith('post-publish read-back failed');
@@ -113,7 +144,7 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
   it('passes read-back when no expectedGeneratedAt is provided', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL)
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL))
       .resolves({ ok: true, json: async () => ({ Semrush: { data: [{}, {}] } }) });
 
     await mod.publishWorkbookWithReadback({ ...baseArgs(fetchImpl), expectedGeneratedAt: null });
@@ -127,10 +158,24 @@ describe('publishWorkbookWithReadback / extractSemrushRows', () => {
     expect(mod.extractSemrushRows({ Semrush: {} })).to.equal(null);
   });
 
+  it('extractSemrushRows returns null for a multi-sheet doc missing the Semrush sheet', () => {
+    // `:names` envelope present but no Semrush key — must NOT fall through to a
+    // sibling sheet's `data` array.
+    expect(mod.extractSemrushRows({
+      ':names': ['Other'],
+      ':type': 'multi-sheet',
+      Other: { data: [1, 2, 3] },
+    })).to.equal(null);
+    expect(mod.extractSemrushRows({
+      ':type': 'multi-sheet',
+      data: [1, 2, 3],
+    })).to.equal(null);
+  });
+
   it('matches generated_at carried on a row instead of the envelope', async () => {
     const fetchImpl = sandbox.stub();
     fetchImpl.withArgs(sinon.match(/admin\.hlx\.page/)).resolves({ ok: true, status: 200, statusText: 'OK' });
-    fetchImpl.withArgs(LIVE_JSON_URL).resolves({
+    fetchImpl.withArgs(sinon.match(LIVE_JSON_URL)).resolves({
       ok: true,
       json: async () => ({ Semrush: { data: [{ generated_at: 'g1' }, { generated_at: 'g1' }] } }),
     });

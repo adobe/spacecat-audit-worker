@@ -60,7 +60,20 @@ export function extractSemrushRows(json) {
   if (!json || typeof json !== 'object') {
     return null;
   }
-  const sheet = json[SEMRUSH_JSON_KEY] ?? json;
+  // A multi-sheet HLX document carries a `:names`/`:type` envelope. In that shape
+  // the Semrush rows MUST live under the `Semrush` key — we deliberately do NOT
+  // fall through to the envelope itself, otherwise any multi-sheet doc that
+  // happens to expose some other top-level `data` array would masquerade as a
+  // successful read-back. Single-sheet docs ({ data: [...] }) still pass through.
+  const isMultiSheet = Array.isArray(json[':names']) || json[':type'] === 'multi-sheet';
+  let sheet;
+  if (Object.prototype.hasOwnProperty.call(json, SEMRUSH_JSON_KEY)) {
+    sheet = json[SEMRUSH_JSON_KEY];
+  } else if (isMultiSheet) {
+    return null;
+  } else {
+    sheet = json;
+  }
   if (sheet && Array.isArray(sheet.data)) {
     return sheet.data;
   }
@@ -75,7 +88,6 @@ export function extractSemrushRows(json) {
 async function readBack({
   path, expectedRowCount, expectedGeneratedAt, log, fetchImpl,
 }) {
-  const url = `${LIVE_BASE}/${path}`;
   let lastReason = 'unknown';
 
   for (let attempt = 1; attempt <= READBACK_MAX_ATTEMPTS; attempt += 1) {
@@ -83,6 +95,9 @@ async function readBack({
       // eslint-disable-next-line no-await-in-loop
       await sleep(READBACK_DELAY_MS);
     }
+    // Cache-bust per attempt so a retry never re-hits the same stale CDN edge that
+    // served the pre-publish document on the previous attempt.
+    const url = `${LIVE_BASE}/${path}?cb=${Date.now()}-${attempt}`;
     let json;
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -139,20 +154,25 @@ async function readBack({
  * @param {string} params.outputLocation - SharePoint folder path (relative).
  * @param {number} params.expectedRowCount - Number of Semrush rows just written.
  * @param {string|null} params.expectedGeneratedAt - Stamp to confirm on read-back, if any.
+ * @param {string} params.adminApiKey - admin.hlx.page auth token (context.env.ADMIN_HLX_API_KEY).
  * @param {object} params.log - Logger.
  * @param {Function} params.fetchImpl - fetch implementation (injectable for tests).
- * @throws {Error} on any publish non-2xx or a read-back mismatch.
+ * @throws {Error} on a missing admin API key, any publish non-2xx, or a read-back mismatch.
  */
 export async function publishWorkbookWithReadback({
   filename,
   outputLocation,
   expectedRowCount,
   expectedGeneratedAt,
+  adminApiKey,
   log,
   fetchImpl,
 }) {
+  if (!adminApiKey || typeof adminApiKey !== 'string') {
+    throw new Error('publish aborted: ADMIN_HLX_API_KEY is not configured');
+  }
   const path = toJsonPath(filename, outputLocation);
-  const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
+  const headers = { Cookie: `auth_token=${adminApiKey}` };
 
   const endpoints = [
     { name: 'preview', url: `${ADMIN_BASE}/preview/${ORG}/${SITE}/${REF}/${path}` },

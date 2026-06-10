@@ -22,7 +22,9 @@
  * reject.
  */
 
-import { TAG_VALUES, DELETED_VALUES, REQUIRED_FIELDS } from './schema-derived.js';
+import {
+  TAG_VALUES, DELETED_VALUES, REQUIRED_FIELDS, MAX_LENGTHS,
+} from './schema-derived.js';
 
 const INTEGER_FIELDS = [
   'volume',
@@ -67,6 +69,14 @@ function validateRow(row, index) {
   STRING_FIELDS.forEach((field) => {
     if (typeof row[field] === 'string' && row[field].length === 0) {
       errors.push(`row[${index}] '${field}' must be non-empty`);
+    }
+  });
+  // maxLength bounds from the contract (applies to any present string field,
+  // including the nullable competitor_*/category/prompt_id columns).
+  Object.entries(MAX_LENGTHS).forEach(([field, max]) => {
+    const value = row[field];
+    if (typeof value === 'string' && value.length > max) {
+      errors.push(`row[${index}] '${field}' exceeds maxLength ${max}`);
     }
   });
 
