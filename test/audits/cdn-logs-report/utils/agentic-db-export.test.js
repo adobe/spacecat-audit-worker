@@ -247,5 +247,30 @@ describe('agentic DB export orchestration', () => {
         sinon.match.instanceOf(Error),
       );
     });
+
+    it('logs "?..?" when the period calculation throws before the dates are resolved', async () => {
+      const throwingModule = await esmock('../../../../src/cdn-logs-report/utils/agentic-db-export.js', {
+        '../../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: sandbox.stub().resolves({
+            enabled: true, success: true, skipped: true, trafficDate: SUNDAY, rowCount: 0,
+          }),
+        },
+        '../../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: sandbox.stub().throws(new Error('bad period')),
+        },
+      });
+      const rpc = sandbox.stub();
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await throwingModule.runAgenticDbExports(args);
+
+      expect(rpc).to.not.have.been.called;
+      expect(result.weeklyAgenticRefresh.success).to.equal(false);
+      expect(result.weeklyAgenticRefresh.error).to.equal('bad period');
+      expect(args.context.log.error).to.have.been.calledWith(
+        'Failed weekly agentic rollup for site-1 (?..?): bad period',
+        sinon.match.instanceOf(Error),
+      );
+    });
   });
 });

@@ -67,7 +67,7 @@ async function refreshWeeklyAgenticRollup({ site, context, trafficDate }) {
     log.info(`Triggered weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}) after empty Sunday export`);
     return { success: true, weekStart, weekEnd };
   } catch (error) {
-    log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}): ${error.message}`, error);
+    log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart ?? '?'}..${weekEnd ?? '?'}): ${error.message}`, error);
     return {
       success: false, weekStart, weekEnd, error: error.message,
     };
