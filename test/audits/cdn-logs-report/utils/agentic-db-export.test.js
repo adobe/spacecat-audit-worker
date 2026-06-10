@@ -136,4 +136,116 @@ describe('agentic DB export orchestration', () => {
       error: 'daily export failed',
     });
   });
+
+  describe('weekly agentic rollup on empty Sunday export', () => {
+    // 2026-04-26 is a Sunday; its ISO week runs Mon 2026-04-20 .. Sun 2026-04-26.
+    const SUNDAY = '2026-04-26';
+    const WEEK_START = '2026-04-20';
+    const WEEK_END = '2026-04-26';
+
+    function withPostgrest(args, rpc) {
+      args.context.dataAccess = { services: { postgrestClient: { rpc } } };
+      return args;
+    }
+
+    it('triggers the weekly rollup RPC when the Sunday export is skipped', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, skipped: true, trafficDate: SUNDAY, rowCount: 0,
+      });
+      const rpc = sandbox.stub().resolves({ data: [{ rows_inserted: 5 }], error: null });
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(rpc).to.have.been.calledOnceWith('wrpc_refresh_agentic_traffic_weekly', {
+        p_site_id: 'site-1',
+        p_start_date: WEEK_START,
+        p_end_date: WEEK_END,
+        p_updated_by: 'audit-worker:cdn-logs-report-weekly-refresh',
+      });
+      expect(result.weeklyAgenticRefresh).to.deep.equal({
+        success: true, weekStart: WEEK_START, weekEnd: WEEK_END,
+      });
+      expect(args.context.log.info).to.have.been.calledWith(
+        'Triggered weekly agentic rollup for site-1 (2026-04-20..2026-04-26) after empty Sunday export',
+      );
+    });
+
+    it('does not trigger the weekly rollup when a non-Sunday export is skipped', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, skipped: true, trafficDate: '2026-04-29', rowCount: 0,
+      });
+      const rpc = sandbox.stub();
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(rpc).to.not.have.been.called;
+      expect(result.weeklyAgenticRefresh).to.equal(undefined);
+    });
+
+    it('does not trigger the weekly rollup when the Sunday export has data', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, trafficDate: SUNDAY, batchId: 'batch-1',
+      });
+      const rpc = sandbox.stub();
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(rpc).to.not.have.been.called;
+      expect(result.weeklyAgenticRefresh).to.equal(undefined);
+    });
+
+    it('skips the weekly rollup when the PostgREST client is unavailable', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, skipped: true, trafficDate: SUNDAY, rowCount: 0,
+      });
+      const args = createArgs();
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(result.weeklyAgenticRefresh).to.deep.equal({
+        success: false, error: 'postgrest-client-unavailable',
+      });
+      expect(args.context.log.warn).to.have.been.calledWith(
+        'Skipping weekly agentic rollup for site-1: PostgREST client unavailable',
+      );
+    });
+
+    it('records an RPC error without failing the caller', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, skipped: true, trafficDate: SUNDAY, rowCount: 0,
+      });
+      const rpc = sandbox.stub().resolves({ data: null, error: { message: 'boom' } });
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(result.weeklyAgenticRefresh).to.deep.equal({
+        success: false, weekStart: WEEK_START, weekEnd: WEEK_END, error: 'boom',
+      });
+      expect(args.context.log.error).to.have.been.calledWith(
+        'Failed weekly agentic rollup for site-1 (2026-04-20..2026-04-26): boom',
+      );
+    });
+
+    it('catches a thrown RPC error without failing the caller', async () => {
+      runDailyAgenticExportStub.resolves({
+        enabled: true, success: true, skipped: true, trafficDate: SUNDAY, rowCount: 0,
+      });
+      const rpc = sandbox.stub().rejects(new Error('network down'));
+      const args = withPostgrest(createArgs(), rpc);
+
+      const result = await module.runAgenticDbExports(args);
+
+      expect(result.weeklyAgenticRefresh).to.deep.equal({
+        success: false, weekStart: WEEK_START, weekEnd: WEEK_END, error: 'network down',
+      });
+      expect(args.context.log.error).to.have.been.calledWith(
+        'Failed weekly agentic rollup for site-1 (2026-04-20..2026-04-26): network down',
+        sinon.match.instanceOf(Error),
+      );
+    });
+  });
 });
