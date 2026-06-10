@@ -876,6 +876,7 @@ export async function syncSuggestionsWithPublishDetection({
   // Step 3: Update existing suggestions with FIXED skip logic
   // (inline instead of delegating to base syncSuggestions to add FIXED-specific behavior)
   const { Suggestion } = context.dataAccess;
+  const { isTBYB = false } = context;
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
   const toUpdate = [];
 
@@ -944,7 +945,7 @@ export async function syncSuggestionsWithPublishDetection({
 
     let failedQueries = 0;
 
-    const results = await limitConcurrencyAllSettled(
+    await limitConcurrencyAllSettled(
       fixedSuggestions.map((suggestion) => async () => {
         try {
           const suggestionId = suggestion.getId();
@@ -988,7 +989,6 @@ export async function syncSuggestionsWithPublishDetection({
 
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
-  const { isTBYB = false } = context;
   const defaultNewSuggestionStatus = requiresValidation && !isTBYB
     ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
     : SuggestionDataAccess.STATUSES.NEW;
