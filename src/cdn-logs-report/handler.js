@@ -29,16 +29,9 @@ import { runDailyReferralExport } from './referral-daily-export.js';
 import { getPreviousUtcDate } from './agentic-daily-export.js';
 
 /**
- * Resolves the reporting period used to sample CDN logs for pattern generation.
- *
- * A date-based (backfill) run carries an explicit `auditContext.date`; the period is
- * derived from that run's traffic date (`date - 1`, matching the daily export) so
- * patterns are sampled from the week that actually has uploaded data. This matters for
- * sites whose logs only cover an earlier period — e.g. backfilling May data in June
- * must not sample the (empty) current week, which would yield no URLs.
- *
- * Without a date (normal scheduled run) the period is the previous full week on
- * Mondays, else the current week.
+ * Reporting period for sampling CDN logs for pattern generation. A date-based run uses
+ * that run's traffic day (`date - 1`, like the daily export) so backfills sample the
+ * uploaded week, not today's. Otherwise: previous full week on Mondays, else this week.
  */
 function resolvePatternPeriods(auditContext) {
   if (auditContext?.date) {

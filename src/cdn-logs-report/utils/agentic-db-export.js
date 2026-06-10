@@ -19,26 +19,16 @@ function toUtcDateString(date) {
   return date.toISOString().split('T')[0];
 }
 
-/**
- * A daily agentic export is "week-closing" when its traffic date is a Sunday — the
- * last day of the ISO week. Only then does triggering a weekly rollup make sense.
- * Invalid/missing dates yield `NaN`, which is never `0`, so this safely returns false.
- */
+// Sunday is the last day of the ISO week; invalid/missing dates yield NaN (never 0).
 function isWeekClosingSunday(trafficDate) {
   return new Date(`${trafficDate}T00:00:00.000Z`).getUTCDay() === 0;
 }
 
 /**
- * Triggers the weekly agentic rollup RPC for the ISO week ending on `trafficDate`,
- * mirroring the api-service `backfill-llmo mode=weekly-db` path.
- *
- * The weekly rollup is normally a side-effect of the Sunday daily import completing.
- * When a site has no traffic on Sunday the daily export is skipped and no
- * `batch.completed` event is emitted, so the projector never fires the weekly refresh
- * and the week's earlier days (e.g. Mon–Fri) never roll up. Calling the RPC directly
- * fills the week from whatever was already imported.
- *
- * Best-effort: never throws, so a refresh failure cannot block the rest of the audit.
+ * Triggers the weekly agentic rollup RPC for the ISO week containing `trafficDate`.
+ * The rollup normally rides on the Sunday daily import; an empty Sunday is skipped and
+ * emits no batch event, so we call the RPC directly to roll up the earlier days.
+ * Best-effort: never throws.
  */
 async function refreshWeeklyAgenticRollup({ site, context, trafficDate }) {
   const siteId = site.getId();
@@ -165,9 +155,7 @@ export async function runAgenticDbExports({
 
   const result = { dailyAgenticExport };
 
-  // A Sunday with no traffic skips the daily export and emits no batch event, so the
-  // projector never fires the weekly rollup for that ISO week. Trigger it directly so
-  // any earlier days already imported still roll up into the weekly view.
+  // An empty Sunday emits no batch event, so roll up the week's earlier days directly.
   if (dailyAgenticExport?.skipped && isWeekClosingSunday(dailyAgenticExport.trafficDate)) {
     result.weeklyAgenticRefresh = await refreshWeeklyAgenticRollup({
       site,
