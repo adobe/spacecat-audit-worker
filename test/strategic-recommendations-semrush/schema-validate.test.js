@@ -11,7 +11,11 @@
  */
 
 import { expect } from 'chai';
-import { validateSemrushRows } from '../../src/strategic-recommendations-semrush/schema-validate.js';
+import {
+  validateSemrushRows,
+  validateCitationRows,
+  validatePersonaRows,
+} from '../../src/strategic-recommendations-semrush/schema-validate.js';
 import {
   TAG_VALUES, DELETED_VALUES, REQUIRED_FIELDS,
 } from '../../src/strategic-recommendations-semrush/schema-derived.js';
@@ -117,5 +121,120 @@ describe('validateSemrushRows', () => {
     const res = validateSemrushRows([goodRow({ adobe_mentions: -1 })]);
     expect(res.valid).to.equal(false);
     expect(res.errors.join(' ')).to.include("'adobe_mentions' must be >= 0");
+  });
+});
+
+const goodCitation = (overrides = {}) => ({
+  tag: 'Coverage Gap',
+  strategy: 'Own the care topic',
+  strategy_reasoning: 'No first-party coverage today.',
+  prompt: 'how to clean a modular sofa',
+  topic: 'sofa care',
+  category: 'Furniture',
+  region: 'US',
+  intent: 'informational',
+  type: 'howto',
+  source_url: 'https://lovesac.com/care',
+  prompt_reasoning: 'high-intent gap',
+  deleted: '',
+  ...overrides,
+});
+
+describe('validateCitationRows', () => {
+  it('accepts a fully valid row', () => {
+    expect(validateCitationRows([goodCitation()])).to.deep.equal({ valid: true, errors: [] });
+  });
+
+  it('accepts a free-form tag (no enum on the aux sheets)', () => {
+    expect(validateCitationRows([goodCitation({ tag: 'Anything Goes' })]).valid).to.equal(true);
+  });
+
+  it('accepts EMPTY strategy / strategy_reasoning (leave-it-empty rule)', () => {
+    const res = validateCitationRows([goodCitation({ strategy: '', strategy_reasoning: '' })]);
+    expect(res.valid).to.equal(true);
+  });
+
+  it('accepts null nullable passthrough columns', () => {
+    const row = goodCitation({
+      topic: null,
+      category: null,
+      region: null,
+      intent: null,
+      type: null,
+      source_url: null,
+      prompt_reasoning: null,
+      deleted: null,
+    });
+    expect(validateCitationRows([row]).valid).to.equal(true);
+  });
+
+  it('rejects a non-array input', () => {
+    expect(validateCitationRows('nope').valid).to.equal(false);
+    expect(validateCitationRows('nope').errors[0]).to.include('not an array');
+  });
+
+  it('rejects a non-object row', () => {
+    const res = validateCitationRows([7]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors[0]).to.include('not an object');
+  });
+
+  it('flags missing required fields (strategy present-but-empty is OK, missing is not)', () => {
+    const res = validateCitationRows([{ tag: 'Coverage Gap', prompt: 'p' }]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("missing required field 'strategy'");
+    expect(res.errors.join(' ')).to.include("missing required field 'strategy_reasoning'");
+  });
+
+  it('flags an empty prompt (minLength 1 still applies to prompt)', () => {
+    const res = validateCitationRows([goodCitation({ prompt: '' })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'prompt' must be non-empty");
+  });
+
+  it('flags a bad deleted enum value', () => {
+    const res = validateCitationRows([goodCitation({ deleted: 'maybe' })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("deleted 'maybe' not in enum");
+  });
+
+  it('flags a non-string passthrough column', () => {
+    const res = validateCitationRows([goodCitation({ topic: 42 })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'topic' must be a string");
+  });
+
+  it('flags a source_url exceeding maxLength 2048', () => {
+    const res = validateCitationRows([goodCitation({ source_url: `https://x/${'a'.repeat(2048)}` })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'source_url' exceeds maxLength 2048");
+  });
+});
+
+describe('validatePersonaRows', () => {
+  const goodPersona = (overrides = {}) => {
+    const { source_url: _, ...rest } = goodCitation(overrides);
+    return rest;
+  };
+
+  it('accepts a fully valid row (no source_url column)', () => {
+    expect(validatePersonaRows([goodPersona()]).valid).to.equal(true);
+  });
+
+  it('rejects a non-array input', () => {
+    expect(validatePersonaRows(null).valid).to.equal(false);
+  });
+
+  it('flags an empty prompt', () => {
+    const res = validatePersonaRows([goodPersona({ prompt: '' })]);
+    expect(res.valid).to.equal(false);
+    expect(res.errors.join(' ')).to.include("'prompt' must be non-empty");
+  });
+
+  it('does not impose a source_url bound on personas (source_url is not a persona column)', () => {
+    // A stray source_url longer than the citation cap is simply ignored — the
+    // persona maxLengths map has no source_url entry, so no error is raised.
+    const res = validatePersonaRows([goodPersona({ source_url: 'x'.repeat(5000) })]);
+    expect(res.valid).to.equal(true);
   });
 });

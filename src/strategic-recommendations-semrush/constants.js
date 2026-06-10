@@ -14,10 +14,23 @@
 // HLX strips the `.xlsx` and publishes `strategic-recommendations.json`.
 export const WORKBOOK_FILENAME = 'strategic-recommendations.xlsx';
 
-// The fully-populated worksheet this handler owns. The other two `shared-*`
-// worksheets (Citation Attempt, Synthetic Personas) and any non-shared sheets
-// (Notes) are byte-preserved — we never touch them.
+// The three `shared-*` worksheets this handler owns. All three are written on
+// every run from the DRS result envelope's `sheets` map (HLX strips the
+// `shared-` prefix, so the envelope keys are the un-prefixed names). The legacy
+// `Notes` sheet is intentionally dropped — elmo-ui does not consume it.
 export const SEMRUSH_SHEET = 'shared-Semrush';
+export const CITATION_SHEET = 'shared-Citation Attempt';
+export const PERSONAS_SHEET = 'shared-Synthetic Personas';
+
+// Un-prefixed sheet names — the keys in the DRS result `sheets` map, and the
+// keys HLX surfaces in the published multi-sheet JSON.
+export const SEMRUSH_JSON_KEY = 'Semrush';
+export const CITATION_JSON_KEY = 'Citation Attempt';
+export const PERSONAS_JSON_KEY = 'Synthetic Personas';
+
+// The legacy worksheet we now remove on every write (confirmed unconsumed by
+// elmo-ui). Kept as a named constant so the drop is explicit and testable.
+export const NOTES_SHEET = 'Notes';
 
 // Canonical column order for `shared-Semrush`, matching the reference template
 // strategic_recommendations_template.xlsx and the row schema property order.
@@ -39,5 +52,41 @@ export const SEMRUSH_COLUMNS = [
   'competitor_3_mentions',
   'category',
   'prompt',
+  'deleted',
+];
+
+// Canonical column order for `shared-Citation Attempt`, matching the property
+// order of `shared-citation-row.schema.v1.json`. Eight columns map 1:1 from the
+// brand's prompt-suggestions workbook; tag/strategy/strategy_reasoning are
+// generated. `source_url` is the citation grouping key.
+export const CITATION_COLUMNS = [
+  'tag',
+  'strategy',
+  'strategy_reasoning',
+  'prompt',
+  'topic',
+  'category',
+  'region',
+  'intent',
+  'type',
+  'source_url',
+  'prompt_reasoning',
+  'deleted',
+];
+
+// Canonical column order for `shared-Synthetic Personas`, matching the property
+// order of `shared-persona-row.schema.v1.json`. Same as the citation columns
+// minus `source_url`; `category` is the persona grouping key.
+export const PERSONA_COLUMNS = [
+  'tag',
+  'strategy',
+  'strategy_reasoning',
+  'prompt',
+  'topic',
+  'category',
+  'region',
+  'intent',
+  'type',
+  'prompt_reasoning',
   'deleted',
 ];

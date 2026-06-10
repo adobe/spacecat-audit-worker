@@ -24,6 +24,7 @@
 
 import {
   TAG_VALUES, DELETED_VALUES, REQUIRED_FIELDS, MAX_LENGTHS,
+  AUX_REQUIRED_FIELDS, AUX_DELETED_VALUES, CITATION_MAX_LENGTHS, PERSONA_MAX_LENGTHS,
 } from './schema-derived.js';
 
 const INTEGER_FIELDS = [
@@ -112,6 +113,98 @@ export function validateSemrushRows(rows) {
     errors.push(...validateRow(row, index));
   });
   return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validates one auxiliary-sheet row (Citation Attempt / Synthetic Personas).
+ *
+ * The auxiliary contracts differ from Semrush: `tag` is free-form (no enum),
+ * there are no integer columns, and `strategy` / `strategy_reasoning` are
+ * required-present but may be EMPTY (the "leave it empty" rule). Only `prompt`
+ * carries minLength 1. Every string column is type- and maxLength-checked.
+ *
+ * @param {object} row
+ * @param {number} index
+ * @param {{ required: string[], deletedValues: Array, maxLengths: object }} spec
+ * @returns {string[]}
+ */
+function validateAuxRow(row, index, spec) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return [`row[${index}] is not an object`];
+  }
+  const errors = [];
+
+  spec.required.forEach((field) => {
+    if (row[field] === undefined || row[field] === null) {
+      errors.push(`row[${index}] missing required field '${field}'`);
+    }
+  });
+
+  if (row.deleted !== undefined && !spec.deletedValues.includes(row.deleted)) {
+    errors.push(`row[${index}] deleted '${row.deleted}' not in enum`);
+  }
+
+  Object.entries(spec.maxLengths).forEach(([field, max]) => {
+    const value = row[field];
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (typeof value !== 'string') {
+      errors.push(`row[${index}] '${field}' must be a string`);
+    } else if (value.length > max) {
+      errors.push(`row[${index}] '${field}' exceeds maxLength ${max}`);
+    }
+  });
+
+  // Only `prompt` carries minLength 1; strategy/strategy_reasoning may be empty.
+  if (typeof row.prompt === 'string' && row.prompt.length === 0) {
+    errors.push(`row[${index}] 'prompt' must be non-empty`);
+  }
+
+  return errors;
+}
+
+function validateAuxRows(rows, spec) {
+  if (!Array.isArray(rows)) {
+    return { valid: false, errors: ['rows is not an array'] };
+  }
+  const errors = [];
+  rows.forEach((row, index) => {
+    errors.push(...validateAuxRow(row, index, spec));
+  });
+  return { valid: errors.length === 0, errors };
+}
+
+const CITATION_SPEC = {
+  required: AUX_REQUIRED_FIELDS,
+  deletedValues: AUX_DELETED_VALUES,
+  maxLengths: CITATION_MAX_LENGTHS,
+};
+
+const PERSONA_SPEC = {
+  required: AUX_REQUIRED_FIELDS,
+  deletedValues: AUX_DELETED_VALUES,
+  maxLengths: PERSONA_MAX_LENGTHS,
+};
+
+/**
+ * Validates an array of `shared-Citation Attempt` rows.
+ *
+ * @param {Array<object>} rows
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validateCitationRows(rows) {
+  return validateAuxRows(rows, CITATION_SPEC);
+}
+
+/**
+ * Validates an array of `shared-Synthetic Personas` rows.
+ *
+ * @param {Array<object>} rows
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validatePersonaRows(rows) {
+  return validateAuxRows(rows, PERSONA_SPEC);
 }
 
 export default validateSemrushRows;

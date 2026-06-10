@@ -11,7 +11,7 @@
  */
 
 import { expect } from 'chai';
-import { mergeSemrushRows } from '../../src/strategic-recommendations-semrush/merge.js';
+import { mergeSemrushRows, mergeRowsByKey } from '../../src/strategic-recommendations-semrush/merge.js';
 
 const baseRow = (overrides = {}) => ({
   tag: 'Hidden Win',
@@ -155,6 +155,55 @@ describe('mergeSemrushRows', () => {
     const incoming = [baseRow({ topic_id: 't-1', prompt: 'p', deleted: '' })];
 
     const merged = mergeSemrushRows(existing, incoming);
+
+    expect(merged[0].deleted).to.equal('ignored');
+  });
+});
+
+describe('mergeRowsByKey (auxiliary sheets)', () => {
+  it('preserves a Citation Attempt marker by (source_url, prompt)', () => {
+    const existing = [{ source_url: 'https://a/c', prompt: 'p1', deleted: 'ignored' }];
+    const incoming = [{ source_url: 'https://a/c', prompt: 'p1', deleted: '' }];
+
+    const merged = mergeRowsByKey(existing, incoming, ['source_url', 'prompt']);
+
+    expect(merged[0].deleted).to.equal('ignored');
+  });
+
+  it('does NOT carry a Citation marker across a different source_url', () => {
+    const existing = [{ source_url: 'https://a/c', prompt: 'p1', deleted: 'ignored' }];
+    const incoming = [{ source_url: 'https://b/c', prompt: 'p1', deleted: '' }];
+
+    const merged = mergeRowsByKey(existing, incoming, ['source_url', 'prompt']);
+
+    expect(merged[0].deleted).to.equal('');
+  });
+
+  it('preserves a Synthetic Personas marker by (category, prompt)', () => {
+    const existing = [{ category: 'Buyer', prompt: 'why elmo', deleted: 'added' }];
+    const incoming = [{ category: 'Buyer', prompt: 'why elmo', deleted: '' }];
+
+    const merged = mergeRowsByKey(existing, incoming, ['category', 'prompt']);
+
+    expect(merged[0].deleted).to.equal('added');
+  });
+
+  it('treats a null key field as no-match (best-effort)', () => {
+    // An incoming row with a null source_url cannot match any prior marker.
+    const existing = [{ source_url: 'https://a/c', prompt: 'p1', deleted: 'ignored' }];
+    const incoming = [{ source_url: null, prompt: 'p1', deleted: '' }];
+
+    const merged = mergeRowsByKey(existing, incoming, ['source_url', 'prompt']);
+
+    expect(merged[0].deleted).to.equal('');
+    expect(merged[0]).to.not.equal(incoming[0]); // fresh copy
+  });
+
+  it('matches on an empty-string key bucket (\'\' is matchable, null is not)', () => {
+    const existing = [{ source_url: '', prompt: 'p1', deleted: 'ignored' }];
+    const incoming = [{ source_url: '', prompt: 'p1', deleted: '' }];
+
+    const merged = mergeRowsByKey(existing, incoming, ['source_url', 'prompt']);
 
     expect(merged[0].deleted).to.equal('ignored');
   });

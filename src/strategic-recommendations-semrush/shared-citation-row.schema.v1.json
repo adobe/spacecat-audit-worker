@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "shared-citation-row.schema.v1.json",
+  "title": "SharedCitationRow",
+  "description": "One PROMPT row in the `shared-Citation Attempt` worksheet of strategic-recommendations.xlsx. Built from the brand's published prompt-suggestions workbook: eight columns map 1:1 from the prompt row, and the `tag` / `strategy` / `strategy_reasoning` gap columns are generated the SAME WAY as the Semrush strategy columns (LLM synthesis per prompt group, grouped by `source_url`). Single source of truth shared by the DRS runner row-emitter (Pydantic SharedCitationRow) and the spacecat-audit-worker sheet writer (validates on ingest). schema_version is carried on the result envelope, not per row.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tag", "strategy", "strategy_reasoning", "prompt"],
+  "properties": {
+    "tag": { "type": "string", "maxLength": 120, "description": "Generated archetype. Always \"Coverage Gap\" in v1 — elmo-ui's TAG_TO_ARCHETYPE maps any non-Semrush tag to coverage_gap and tolerates a blank strategy." },
+    "strategy": { "type": "string", "maxLength": 200, "description": "Generated card headline; repeated on every row in the group. GROUPING KEY. EMPTY (\"\") when the group could not be synthesized — the prompt is still emitted (product rule: if data is unavailable, leave it empty)." },
+    "strategy_reasoning": { "type": "string", "maxLength": 2000, "description": "Generated situation + evidence + recommended action. Repeated per group. May be empty (see strategy)." },
+    "prompt": { "type": "string", "minLength": 1, "maxLength": 600, "description": "One trackable customer prompt. Row grain = one row per prompt. Passthrough 1:1 from the prompt-suggestions row." },
+    "topic": { "type": ["string", "null"], "maxLength": 300, "description": "Passthrough 1:1 from the prompt row." },
+    "category": { "type": ["string", "null"], "maxLength": 120, "description": "Passthrough 1:1 from the prompt row." },
+    "region": { "type": ["string", "null"], "maxLength": 120, "description": "Passthrough 1:1 from the prompt row." },
+    "intent": { "type": ["string", "null"], "maxLength": 120, "description": "Passthrough 1:1 from the prompt row." },
+    "type": { "type": ["string", "null"], "maxLength": 120, "description": "Passthrough 1:1 from the prompt row." },
+    "source_url": { "type": ["string", "null"], "maxLength": 2048, "description": "Citation source URL. GROUPING KEY (synthesis + UI). Passthrough 1:1 from the prompt row's `url` column." },
+    "prompt_reasoning": { "type": ["string", "null"], "maxLength": 2000, "description": "Passthrough of the prompt row's `Reasoning` column (why the prompt was generated) — distinct from the generated `strategy_reasoning`." },
+    "deleted": { "type": ["string", "null"], "enum": ["", "ignored", "added", null], "description": "UI soft-delete marker. ''/null = active, 'ignored' = dismissed, 'added' = manually tracked. Writer MUST preserve existing values by match key (source_url, prompt) — best-effort in v1, mirroring the Semrush sheet." }
+  },
+  "x-contract": {
+    "worksheet": "shared-Citation Attempt",
+    "source_workbook": "{dataFolder}/prompt-suggestions/prompt-suggestions.json -> tab `shared-Citation Attempt`",
+    "sharepoint_path": "/sites/elmo-ui-data/{dataFolder}/strategic-recommendations-template/strategic-recommendations.xlsx",
+    "hlx_publish": "{dataFolder}/strategic-recommendations-template/strategic-recommendations.json (preview+live; HLX strips 'shared-' prefix -> JSON key 'Citation Attempt')",
+    "row_grain": "one row per (source_url, prompt)",
+    "grouping_keys": ["source_url"],
+    "generated_columns": ["tag", "strategy", "strategy_reasoning"],
+    "passthrough_columns": ["prompt", "topic", "category", "region", "intent", "type", "source_url", "prompt_reasoning"],
+    "generated_columns_note": "tag/strategy/strategy_reasoning are produced by the SAME LLM synthesis path as the Semrush strategy columns, one call per source_url group. When a group's synthesis is unavailable, strategy + strategy_reasoning are emitted EMPTY (\"\") and the prompt row is still emitted — the product requirement is 'if data is not available, just leave it empty', not drop the row. tag stays 'Coverage Gap' regardless.",
+    "match_key_for_deleted_preservation": ["source_url", "prompt"],
+    "match_key_note": "v1 = BEST-EFFORT, mirroring the Semrush sheet. The audit-worker merge re-applies `deleted` by matching on `source_url` + `prompt` text. A rephrased prompt lapses a prior dismissal; ACCEPTED for v1."
+  }
+}

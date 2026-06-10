@@ -61,3 +61,49 @@ export const MAX_LENGTHS = {
   prompt: 600,
   prompt_id: 128,
 };
+
+/* ------------------------------------------------------------------------- *
+ * Auxiliary sheets: shared-citation-row + shared-persona-row.
+ *
+ * These two contracts are derived from the brand's published prompt-suggestions
+ * workbook. Unlike Semrush: `tag` is free-form (no enum), and `strategy` /
+ * `strategy_reasoning` are `required` (the key is always present) but MAY be the
+ * empty string — the product rule is "if data is unavailable, leave it empty",
+ * not drop the row. Only `prompt` carries `minLength: 1`. All three constant
+ * groups are pinned to the vendored JSON by schema-checksum.test.js.
+ * ------------------------------------------------------------------------- */
+
+// schema.required — identical for both auxiliary schemas.
+export const AUX_REQUIRED_FIELDS = ['tag', 'strategy', 'strategy_reasoning', 'prompt'];
+
+// schema.properties.deleted.enum — identical for both auxiliary schemas.
+export const AUX_DELETED_VALUES = ['', 'ignored', 'added', null];
+
+// shared-citation-row.schema.v1.json — properties[*].maxLength.
+export const CITATION_MAX_LENGTHS = {
+  tag: 120,
+  strategy: 200,
+  strategy_reasoning: 2000,
+  prompt: 600,
+  topic: 300,
+  category: 120,
+  region: 120,
+  intent: 120,
+  type: 120,
+  source_url: 2048,
+  prompt_reasoning: 2000,
+};
+
+// shared-persona-row.schema.v1.json — properties[*].maxLength (no source_url).
+export const PERSONA_MAX_LENGTHS = {
+  tag: 120,
+  strategy: 200,
+  strategy_reasoning: 2000,
+  prompt: 600,
+  topic: 300,
+  category: 120,
+  region: 120,
+  intent: 120,
+  type: 120,
+  prompt_reasoning: 2000,
+};

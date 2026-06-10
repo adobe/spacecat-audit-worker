@@ -21,11 +21,19 @@ import {
 import { scrubUrlForLog } from '../utils/analysis-fetch.js';
 import { assertResultLocation } from './result-location.js';
 import { publishWorkbookWithReadback } from './publish.js';
-import { mergeSemrushRows } from './merge.js';
-import { validateSemrushRows } from './schema-validate.js';
+import { mergeRowsByKey } from './merge.js';
+import { validateSemrushRows, validateCitationRows, validatePersonaRows } from './schema-validate.js';
 import {
   SEMRUSH_SHEET,
+  CITATION_SHEET,
+  PERSONAS_SHEET,
+  NOTES_SHEET,
+  SEMRUSH_JSON_KEY,
+  CITATION_JSON_KEY,
+  PERSONAS_JSON_KEY,
   SEMRUSH_COLUMNS,
+  CITATION_COLUMNS,
+  PERSONA_COLUMNS,
   WORKBOOK_FILENAME,
 } from './constants.js';
 import { postMessageSafe } from '../utils/slack-utils.js';
@@ -33,6 +41,81 @@ import { postMessageSafe } from '../utils/slack-utils.js';
 const AUDIT_NAME = 'STRATEGIC_RECOMMENDATIONS_SEMRUSH';
 const MAX_RESULT_BYTES = 25 * 1024 * 1024; // 25 MB
 const RESULT_FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * The three worksheets written on every run. `jsonKey` is the key in the DRS
+ * result `sheets` map (the un-prefixed, HLX-stripped name); `sheetName` is the
+ * `shared-*` worksheet name. `primary: true` marks the Semrush sheet — the only
+ * one whose emptiness fails the run (the auxiliary sheets are best-effort and a
+ * header-only sheet is a valid "no data yet" outcome). Each sheet preserves the
+ * UI's `deleted` markers across refreshes by its own `matchKeyFields`.
+ */
+const SHEET_SPECS = [
+  {
+    jsonKey: SEMRUSH_JSON_KEY,
+    sheetName: SEMRUSH_SHEET,
+    columns: SEMRUSH_COLUMNS,
+    matchKeyFields: ['topic_id', 'prompt'],
+    validate: validateSemrushRows,
+    primary: true,
+  },
+  {
+    jsonKey: CITATION_JSON_KEY,
+    sheetName: CITATION_SHEET,
+    columns: CITATION_COLUMNS,
+    matchKeyFields: ['source_url', 'prompt'],
+    validate: validateCitationRows,
+    primary: false,
+  },
+  {
+    jsonKey: PERSONAS_JSON_KEY,
+    sheetName: PERSONAS_SHEET,
+    columns: PERSONA_COLUMNS,
+    matchKeyFields: ['category', 'prompt'],
+    validate: validatePersonaRows,
+    primary: false,
+  },
+];
+
+/**
+ * Normalizes the DRS result into the `{ jsonKey: rows }` sheets map. New
+ * producers emit `result.sheets`; older producers only emit `result.rows` (the
+ * Semrush sheet) — that transition shape is mapped to `{ Semrush: rows }`.
+ *
+ * @param {object} result
+ * @returns {object} A sheets map keyed by un-prefixed sheet name.
+ */
+function normalizeSheets(result) {
+  if (result.sheets && typeof result.sheets === 'object' && !Array.isArray(result.sheets)) {
+    return result.sheets;
+  }
+  return { [SEMRUSH_JSON_KEY]: Array.isArray(result.rows) ? result.rows : [] };
+}
+
+/**
+ * Validates each known sheet against its vendored contract and returns the
+ * per-sheet new-row arrays keyed by jsonKey. Pure (no IO, no alerting) so the
+ * caller owns the single failure path. The Semrush sheet additionally fails when
+ * empty; auxiliary sheets may be empty (header-only).
+ *
+ * @param {object} sheets - The normalized sheets map.
+ * @returns {{ byKey?: object, error?: string }}
+ */
+function collectAndValidateSheets(sheets) {
+  const byKey = {};
+  for (const spec of SHEET_SPECS) {
+    const rows = Array.isArray(sheets[spec.jsonKey]) ? sheets[spec.jsonKey] : [];
+    const validation = spec.validate(rows);
+    if (!validation.valid) {
+      return { error: `schema validation failed for sheet '${spec.jsonKey}': ${validation.errors.slice(0, 5).join('; ')}` };
+    }
+    if (spec.primary && rows.length === 0) {
+      return { error: 'DRS result contained zero Semrush rows' };
+    }
+    byKey[spec.jsonKey] = rows;
+  }
+  return { byKey };
+}
 
 /**
  * Sends a Slack alert to the LLMO onboarding channel when the strategy run or its
@@ -118,14 +201,15 @@ async function fetchResult(resultLocation, log) {
 }
 
 /**
- * Reads `shared-Semrush` rows out of a workbook as plain objects keyed by the
- * schema column names (in template column order).
+ * Reads a worksheet's rows out of a workbook as plain objects keyed by the
+ * header cell values (template column order). Returns [] when the sheet is absent.
  *
  * @param {ExcelJS.Workbook} workbook
+ * @param {string} sheetName
  * @returns {Array<object>}
  */
-function readSemrushRows(workbook) {
-  const sheet = workbook.getWorksheet(SEMRUSH_SHEET);
+function readSheetRows(workbook, sheetName) {
+  const sheet = workbook.getWorksheet(sheetName);
   if (!sheet) {
     return [];
   }
@@ -152,13 +236,15 @@ function readSemrushRows(workbook) {
 
 /**
  * Reads the currently published workbook from SharePoint, returning the loaded
- * ExcelJS workbook and the existing `shared-Semrush` rows. If no workbook exists
- * yet (first run), starts a fresh workbook seeded from the template-shaped header.
+ * ExcelJS workbook and the existing rows of each `shared-*` worksheet (keyed by
+ * jsonKey, used to preserve `deleted` markers). If no workbook exists yet (first
+ * run), returns `{ workbook: null, existingRowsByKey: {} }` — the caller builds a
+ * fresh workbook rather than failing closed.
  *
  * @param {string} dataFolder
  * @param {object} sharepointClient
  * @param {object} log
- * @returns {Promise<{ workbook: ExcelJS.Workbook, existingRows: Array<object> }>}
+ * @returns {Promise<{ workbook: ExcelJS.Workbook|null, existingRowsByKey: object }>}
  */
 async function loadWorkbook(dataFolder, sharepointClient, log) {
   const outputLocation = `${dataFolder}/strategic-recommendations-template`;
@@ -171,43 +257,60 @@ async function loadWorkbook(dataFolder, sharepointClient, log) {
       log,
     );
     await workbook.xlsx.load(buffer);
-    const existingRows = readSemrushRows(workbook);
-    return { workbook, existingRows };
+    const existingRowsByKey = {};
+    for (const spec of SHEET_SPECS) {
+      existingRowsByKey[spec.jsonKey] = readSheetRows(workbook, spec.sheetName);
+    }
+    return { workbook, existingRowsByKey };
   } catch (error) {
     const notFound = error.message?.includes('resource could not be found')
       || error.message?.includes('itemNotFound');
     if (!notFound) {
       throw error;
     }
-    log.info(`%s: No existing workbook at ${outputLocation}/${WORKBOOK_FILENAME}; starting fresh`, AUDIT_NAME);
-    return { workbook: null, existingRows: [] };
+    log.info(`%s: No existing workbook at ${outputLocation}/${WORKBOOK_FILENAME}; building fresh`, AUDIT_NAME);
+    return { workbook: null, existingRowsByKey: {} };
   }
 }
 
 /**
- * Replaces the `shared-Semrush` worksheet contents with the merged rows, one row
- * per prompt, in the canonical template column order. The two other `shared-*`
- * worksheets (and any non-shared sheets such as Notes) are left byte-preserved by
- * only touching the Semrush sheet.
+ * Replaces a worksheet's contents with the given rows, one row per prompt, in the
+ * canonical column order. Creates the sheet if absent (so a first-run build, or a
+ * workbook missing a sheet, is handled). Empty `rows` yields a header-only sheet.
  *
  * @param {ExcelJS.Workbook} workbook
+ * @param {string} sheetName
+ * @param {string[]} columns
  * @param {Array<object>} rows
  */
-function writeSemrushSheet(workbook, rows) {
-  let sheet = workbook.getWorksheet(SEMRUSH_SHEET);
+function writeSheet(workbook, sheetName, columns, rows) {
+  let sheet = workbook.getWorksheet(sheetName);
   if (!sheet) {
-    sheet = workbook.addWorksheet(SEMRUSH_SHEET);
+    sheet = workbook.addWorksheet(sheetName);
   }
   // Clear existing rows by spliceing everything below the header, then rewrite.
   if (sheet.rowCount > 0) {
     sheet.spliceRows(1, sheet.rowCount);
   }
-  sheet.addRow(SEMRUSH_COLUMNS);
+  sheet.addRow(columns);
   for (const row of rows) {
-    sheet.addRow(SEMRUSH_COLUMNS.map((col) => {
+    sheet.addRow(columns.map((col) => {
       const value = row[col];
       return value === undefined ? null : value;
     }));
+  }
+}
+
+/**
+ * Removes the legacy `Notes` worksheet if present. elmo-ui does not consume it,
+ * and carrying it forward bloats every published workbook. No-op when absent.
+ *
+ * @param {ExcelJS.Workbook} workbook
+ */
+function dropNotesSheet(workbook) {
+  const notes = workbook.getWorksheet(NOTES_SHEET);
+  if (notes) {
+    workbook.removeWorksheet(notes.id);
   }
 }
 
@@ -274,19 +377,14 @@ export default async function strategicRecommendationsSemrushHandler(message, co
     return internalServerError(msg);
   }
 
-  const newRows = Array.isArray(result.rows) ? result.rows : [];
-  const validation = validateSemrushRows(newRows);
-  if (!validation.valid) {
-    const msg = `schema validation failed: ${validation.errors.slice(0, 5).join('; ')}`;
-    log.error(`%s: ${msg} for site ${siteId}`, AUDIT_NAME);
-    await alertFailure(context, siteId, drsJobId, msg);
-    return internalServerError(msg);
-  }
-  if (newRows.length === 0) {
-    const msg = 'DRS result contained zero rows';
-    log.error(`%s: ${msg} for site ${siteId}`, AUDIT_NAME);
-    await alertFailure(context, siteId, drsJobId, msg);
-    return internalServerError(msg);
+  // Resolve + validate all three sheets. The new contract carries them in
+  // `result.sheets`; an older producer's `result.rows` maps to the Semrush sheet.
+  const sheets = normalizeSheets(result);
+  const { byKey: newRowsByKey, error: sheetError } = collectAndValidateSheets(sheets);
+  if (sheetError) {
+    log.error(`%s: ${sheetError} for site ${siteId}`, AUDIT_NAME);
+    await alertFailure(context, siteId, drsJobId, sheetError);
+    return internalServerError(sheetError);
   }
 
   const site = await Site.findById(siteId);
@@ -307,9 +405,9 @@ export default async function strategicRecommendationsSemrushHandler(message, co
   const outputLocation = `${dataFolder}/strategic-recommendations-template`;
 
   let workbook;
-  let existingRows;
+  let existingRowsByKey;
   try {
-    ({ workbook, existingRows } = await loadWorkbook(dataFolder, sharepointClient, log));
+    ({ workbook, existingRowsByKey } = await loadWorkbook(dataFolder, sharepointClient, log));
   } catch (e) {
     const msg = `failed to read existing workbook: ${e.message}`;
     log.error(`%s: ${msg} for site ${siteId}`, AUDIT_NAME);
@@ -317,15 +415,28 @@ export default async function strategicRecommendationsSemrushHandler(message, co
     return internalServerError(msg);
   }
 
+  // First run (no published workbook yet): build a fresh one rather than failing
+  // closed — the runner is the source of truth for all `shared-*` sheets.
   if (!workbook) {
-    const msg = `no published workbook found at ${outputLocation}/${WORKBOOK_FILENAME}; cannot preserve template structure`;
-    log.error(`%s: ${msg} for site ${siteId}`, AUDIT_NAME);
-    await alertFailure(context, siteId, drsJobId, msg);
-    return internalServerError(msg);
+    workbook = new ExcelJS.Workbook();
+    existingRowsByKey = {};
   }
 
-  const mergedRows = mergeSemrushRows(existingRows, newRows);
-  writeSemrushSheet(workbook, mergedRows);
+  // Drop the legacy Notes sheet, then (re)write every shared sheet from the
+  // merged rows. Auxiliary sheets with no rows become header-only.
+  dropNotesSheet(workbook);
+  let semrushRowCount = 0;
+  for (const spec of SHEET_SPECS) {
+    const merged = mergeRowsByKey(
+      existingRowsByKey[spec.jsonKey] || [],
+      newRowsByKey[spec.jsonKey],
+      spec.matchKeyFields,
+    );
+    writeSheet(workbook, spec.sheetName, spec.columns, merged);
+    if (spec.primary) {
+      semrushRowCount = merged.length;
+    }
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   try {
@@ -342,7 +453,7 @@ export default async function strategicRecommendationsSemrushHandler(message, co
     await publishWorkbookWithReadback({
       filename: WORKBOOK_FILENAME,
       outputLocation,
-      expectedRowCount: mergedRows.length,
+      expectedRowCount: semrushRowCount,
       expectedGeneratedAt: result.generated_at ?? null,
       adminApiKey: context.env?.ADMIN_HLX_API_KEY,
       log,
@@ -355,6 +466,6 @@ export default async function strategicRecommendationsSemrushHandler(message, co
     return internalServerError(msg);
   }
 
-  log.info(`%s: published ${mergedRows.length} Semrush rows for site ${siteId}, job ${drsJobId}`, AUDIT_NAME);
+  log.info(`%s: published ${semrushRowCount} Semrush rows for site ${siteId}, job ${drsJobId}`, AUDIT_NAME);
   return ok();
 }

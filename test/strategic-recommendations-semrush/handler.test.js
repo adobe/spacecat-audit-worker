@@ -16,7 +16,11 @@ import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import ExcelJS from 'exceljs';
 import { MockContextBuilder } from '../shared.js';
-import { SEMRUSH_COLUMNS } from '../../src/strategic-recommendations-semrush/constants.js';
+import {
+  SEMRUSH_COLUMNS,
+  CITATION_COLUMNS,
+  PERSONA_COLUMNS,
+} from '../../src/strategic-recommendations-semrush/constants.js';
 
 use(sinonChai);
 
@@ -42,6 +46,29 @@ function validRow(overrides = {}) {
     deleted: '',
     ...overrides,
   };
+}
+
+function validCitation(overrides = {}) {
+  return {
+    tag: 'Coverage Gap',
+    strategy: 'Own the sofa-care topic',
+    strategy_reasoning: 'No first-party coverage today.',
+    prompt: 'how to clean a modular sofa',
+    topic: 'sofa care',
+    category: 'Furniture',
+    region: 'US',
+    intent: 'informational',
+    type: 'howto',
+    source_url: 'https://lovesac.com/care',
+    prompt_reasoning: 'high-intent gap',
+    deleted: '',
+    ...overrides,
+  };
+}
+
+function validPersona(overrides = {}) {
+  const { source_url: _, ...rest } = validCitation(overrides);
+  return rest;
 }
 
 /**
@@ -175,10 +202,10 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
     const headers = sheet.getRow(1).values.slice(1);
     const deletedCol = headers.indexOf('deleted') + 1;
     expect(sheet.getRow(2).getCell(deletedCol).value).to.equal('ignored');
-    // other shared sheets preserved
+    // all three shared sheets are written; the legacy Notes sheet is dropped
     expect(wb.getWorksheet('shared-Citation Attempt')).to.not.equal(undefined);
     expect(wb.getWorksheet('shared-Synthetic Personas')).to.not.equal(undefined);
-    expect(wb.getWorksheet('Notes')).to.not.equal(undefined);
+    expect(wb.getWorksheet('Notes')).to.equal(undefined);
   });
 
   it('returns ok and alerts on JOB_FAILED without touching the sheet', async () => {
@@ -391,13 +418,19 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
     expect(result.status).to.equal(500);
   });
 
-  it('surfaces when no existing workbook is found (cannot preserve template)', async () => {
+  it('builds a fresh workbook on first run (no existing workbook) with all 3 sheets', async () => {
     readFromSharePointStub.rejects(new Error('itemNotFound: resource could not be found'));
 
     const result = await handler.default(completedMessage(), context);
-    expect(result.status).to.equal(500);
-    expect(uploadToSharePointStub).to.not.have.been.called;
-    expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('no published workbook');
+
+    expect(result.status).to.equal(200);
+    expect(uploadToSharePointStub).to.have.been.calledOnce;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(uploadToSharePointStub.firstCall.args[0]);
+    expect(wb.getWorksheet('shared-Semrush')).to.not.equal(undefined);
+    expect(wb.getWorksheet('shared-Citation Attempt')).to.not.equal(undefined);
+    expect(wb.getWorksheet('shared-Synthetic Personas')).to.not.equal(undefined);
+    expect(wb.getWorksheet('Notes')).to.equal(undefined);
   });
 
   it('surfaces when reading the existing workbook fails for other reasons', async () => {
@@ -556,7 +589,7 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
 
     const result = await handler.default(completedMessage(), context);
     expect(result.status).to.equal(500);
-    expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('zero rows');
+    expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('zero Semrush rows');
   });
 
   it('handles a result with no generated_at (read-back skips stamp check)', async () => {
@@ -579,5 +612,136 @@ describe('Strategic Recommendations Semrush Handler', function describeHandler()
 
     const result = await handler.default(completedMessage(), context);
     expect(result.status).to.equal(200);
+  });
+
+  it('writes all three sheets from a result.sheets envelope', async () => {
+    fetchStub.callsFake(async (url, opts = {}) => {
+      if (url === RESULT_LOCATION) {
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => JSON.stringify({
+            siteId: 'site-123',
+            generated_at: '2026-06-09T00:00:00Z',
+            sheets: {
+              Semrush: [validRow()],
+              'Citation Attempt': [validCitation(), validCitation({ prompt: 'second prompt' })],
+              'Synthetic Personas': [validPersona()],
+            },
+          }),
+        };
+      }
+      if (url.startsWith('https://admin.hlx.page/')) {
+        return { ok: true, status: 200, statusText: 'OK' };
+      }
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
+        return {
+          ok: true,
+          json: async () => ({ generated_at: '2026-06-09T00:00:00Z', Semrush: { data: [validRow()] } }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const result = await handler.default(completedMessage(), context);
+
+    expect(result.status).to.equal(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(uploadToSharePointStub.firstCall.args[0]);
+    // header + 2 citation rows, header + 1 persona row
+    expect(wb.getWorksheet('shared-Citation Attempt').rowCount).to.equal(3);
+    expect(wb.getWorksheet('shared-Synthetic Personas').rowCount).to.equal(2);
+    // headers match the canonical column order
+    expect(wb.getWorksheet('shared-Citation Attempt').getRow(1).values.slice(1))
+      .to.deep.equal(CITATION_COLUMNS);
+    expect(wb.getWorksheet('shared-Synthetic Personas').getRow(1).values.slice(1))
+      .to.deep.equal(PERSONA_COLUMNS);
+  });
+
+  it('writes header-only auxiliary sheets when result.sheets omits them', async () => {
+    // Transition shape (result.rows only) → Citation/Personas have no rows → header-only.
+    const result = await handler.default(completedMessage(), context);
+
+    expect(result.status).to.equal(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(uploadToSharePointStub.firstCall.args[0]);
+    expect(wb.getWorksheet('shared-Citation Attempt').rowCount).to.equal(1); // header only
+    expect(wb.getWorksheet('shared-Synthetic Personas').rowCount).to.equal(1);
+  });
+
+  it('surfaces schema-invalid Citation Attempt rows and names the sheet', async () => {
+    fetchStub.callsFake(async (url) => {
+      if (url === RESULT_LOCATION) {
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => JSON.stringify({
+            siteId: 'site-123',
+            sheets: {
+              Semrush: [validRow()],
+              'Citation Attempt': [{ tag: 'Coverage Gap', prompt: '' }], // missing strategy*, empty prompt
+            },
+          }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const result = await handler.default(completedMessage(), context);
+
+    expect(result.status).to.equal(500);
+    expect(uploadToSharePointStub).to.not.have.been.called;
+    expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('Citation Attempt');
+  });
+
+  it('preserves an existing Citation Attempt "ignored" marker via merge', async () => {
+    readFromSharePointStub.callsFake(async () => {
+      const wb = new ExcelJS.Workbook();
+      const semrush = wb.addWorksheet('shared-Semrush');
+      semrush.addRow(SEMRUSH_COLUMNS);
+      const cit = wb.addWorksheet('shared-Citation Attempt');
+      cit.addRow(CITATION_COLUMNS);
+      const ignored = validCitation({ deleted: 'ignored' });
+      cit.addRow(CITATION_COLUMNS.map((c) => ignored[c] ?? null));
+      wb.addWorksheet('shared-Synthetic Personas').addRow(PERSONA_COLUMNS);
+      return wb.xlsx.writeBuffer();
+    });
+
+    fetchStub.callsFake(async (url, opts = {}) => {
+      if (url === RESULT_LOCATION) {
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => JSON.stringify({
+            siteId: 'site-123',
+            generated_at: '2026-06-09T00:00:00Z',
+            sheets: {
+              Semrush: [validRow()],
+              'Citation Attempt': [validCitation({ deleted: '' })], // same (source_url, prompt)
+            },
+          }),
+        };
+      }
+      if (url.startsWith('https://admin.hlx.page/')) {
+        return { ok: true, status: 200, statusText: 'OK' };
+      }
+      if (url.startsWith(LIVE_JSON_URL) && opts.method === 'GET') {
+        return {
+          ok: true,
+          json: async () => ({ generated_at: '2026-06-09T00:00:00Z', Semrush: { data: [validRow()] } }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const result = await handler.default(completedMessage(), context);
+
+    expect(result.status).to.equal(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(uploadToSharePointStub.firstCall.args[0]);
+    const cit = wb.getWorksheet('shared-Citation Attempt');
+    const headers = cit.getRow(1).values.slice(1);
+    const deletedCol = headers.indexOf('deleted') + 1;
+    expect(cit.getRow(2).getCell(deletedCol).value).to.equal('ignored');
   });
 });
