@@ -17,30 +17,21 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
-const DEFAULT_ENV = Object.freeze({
-  SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-  SPACECAT_API_KEY: 'test-key',
-});
-
 describe('brandalf-utils', () => {
   let sandbox;
-  let mockFetch;
   let isBrandalfEnabled;
   let resolveOrganizationIdForSite;
   let log;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    mockFetch = sandbox.stub();
     log = {
       info: sandbox.stub(),
       warn: sandbox.stub(),
       error: sandbox.stub(),
     };
 
-    const mod = await esmock('../../src/utils/brandalf-utils.js', {
-      '@adobe/spacecat-shared-utils': { tracingFetch: mockFetch },
-    });
+    const mod = await esmock('../../src/utils/brandalf-utils.js', {});
 
     isBrandalfEnabled = mod.isBrandalfEnabled;
     resolveOrganizationIdForSite = mod.resolveOrganizationIdForSite;
@@ -50,91 +41,98 @@ describe('brandalf-utils', () => {
     sandbox.restore();
   });
 
-  function stubFeatureFlagsResponse(flags) {
-    mockFetch.resolves({
-      ok: true,
-      json: async () => flags,
-    });
+  /**
+   * Builds a chainable PostgREST client stub whose terminal `maybeSingle()`
+   * resolves to `{ data, error }`.
+   */
+  function stubPostgrestClient({ data = null, error = null } = {}) {
+    const query = {
+      select: sandbox.stub().returnsThis(),
+      eq: sandbox.stub().returnsThis(),
+      maybeSingle: sandbox.stub().resolves({ data, error }),
+    };
+    const from = sandbox.stub().returns(query);
+    return { client: { from }, query, from };
   }
 
   describe('isBrandalfEnabled', () => {
     it('returns true when the brandalf flag is enabled', async () => {
-      stubFeatureFlagsResponse([{ flagName: 'brandalf', flagValue: true }]);
+      const { client, from, query } = stubPostgrestClient({ data: { flag_value: true } });
 
-      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
+      const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(true);
-      expect(mockFetch).to.have.been.calledWith(
-        'https://spacecat.example.com/organizations/org-123/feature-flags?product=LLMO',
-        sinon.match.hasNested('headers.x-api-key', 'test-key'),
-      );
+      expect(from).to.have.been.calledWith('feature_flags');
+      expect(query.select).to.have.been.calledWith('flag_value');
+      expect(query.eq).to.have.been.calledWith('organization_id', 'org-123');
+      expect(query.eq).to.have.been.calledWith('product', 'LLMO');
+      expect(query.eq).to.have.been.calledWith('flag_name', 'brandalf');
     });
 
-    it('returns false without calling the API when organizationId is missing', async () => {
-      const result = await isBrandalfEnabled(null, DEFAULT_ENV, log);
+    it('returns false without querying when organizationId is missing', async () => {
+      const { client, from } = stubPostgrestClient({ data: { flag_value: true } });
+
+      const result = await isBrandalfEnabled(null, client, log);
 
       expect(result).to.equal(false);
-      expect(mockFetch).to.not.have.been.called;
+      expect(from).to.not.have.been.called;
       expect(log.warn).to.not.have.been.called;
     });
 
-    it('returns null when API env is missing', async () => {
-      const result = await isBrandalfEnabled('org-123', {}, log);
-
-      expect(result).to.equal(null);
-      expect(mockFetch).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
-    });
-
-    it('returns null when env is omitted entirely', async () => {
+    it('returns null when the PostgREST client is missing', async () => {
       const result = await isBrandalfEnabled('org-123', undefined, log);
 
       expect(result).to.equal(null);
-      expect(mockFetch).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
     });
 
-    it('encodes the org ID and returns false when brandalf is not enabled', async () => {
-      stubFeatureFlagsResponse([
-        { flagName: 'brandalf', flagValue: false },
-        { flagName: 'different-flag', flagValue: true },
-      ]);
+    it('returns null when the PostgREST client has no query builder', async () => {
+      const result = await isBrandalfEnabled('org-123', {}, log);
 
-      const result = await isBrandalfEnabled('org/with spaces', DEFAULT_ENV, log);
+      expect(result).to.equal(null);
+      expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
+    });
+
+    it('returns false when no flag row exists', async () => {
+      const { client } = stubPostgrestClient({ data: null });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(false);
-      expect(mockFetch).to.have.been.calledWith(
-        'https://spacecat.example.com/organizations/org%2Fwith%20spaces/feature-flags?product=LLMO',
-        sinon.match.hasNested('headers.x-api-key', 'test-key'),
-      );
     });
 
-    it('returns null when the feature-flags endpoint responds with a non-ok status', async () => {
-      mockFetch.resolves({ ok: false, status: 503 });
+    it('returns false when the flag row is explicitly disabled', async () => {
+      const { client } = stubPostgrestClient({ data: { flag_value: false } });
 
-      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(false);
+    });
+
+    it('returns null and warns when the query returns an error', async () => {
+      const { client } = stubPostgrestClient({ error: { message: 'db unavailable' } });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
-        /Failed to fetch feature flags for org org-123: 503/,
+        /Failed to read brandalf flag for org org-123: db unavailable/,
       );
     });
 
-    it('returns null when the API payload is not an array', async () => {
-      stubFeatureFlagsResponse({ flagName: 'brandalf', flagValue: true });
+    it('returns null and warns when the query throws', async () => {
+      const query = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        maybeSingle: sandbox.stub().rejects(new Error('connection reset')),
+      };
+      const client = { from: sandbox.stub().returns(query) };
 
-      expect(await isBrandalfEnabled('org-123', DEFAULT_ENV, log)).to.equal(null);
-      expect(log.warn).to.have.been.calledWithMatch(/Unexpected feature flags payload/);
-    });
-
-    it('returns null and warns when the feature-flag request throws', async () => {
-      mockFetch.rejects(new Error('network down'));
-
-      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
+      const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
-        /Error checking brandalf flag for org org-123: network down/,
+        /Error checking brandalf flag for org org-123: connection reset/,
       );
     });
   });
