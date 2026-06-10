@@ -493,6 +493,49 @@ describe('Audit tests', () => {
       expect(persistSite.save).to.have.been.calledOnce;
     });
 
+    it('wwwUrlResolver does not call save when overrideBaseURL already matches', async () => {
+      const base = 'http://spacecat.com';
+      const siteConfig = Config.fromDynamoItem({ fetchConfig: { overrideBaseURL: 'https://www.spacecat.com' } });
+      const persistSite = {
+        getBaseURL: () => base,
+        getConfig: () => siteConfig,
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
+
+      const resolvedURL = await wwwUrlResolver(persistSite, context);
+
+      expect(resolvedURL).to.equal('www.spacecat.com');
+      expect(persistSite.save).to.not.have.been.called;
+    });
+
+    it('wwwUrlResolver logs error when save fails', async () => {
+      const base = 'http://spacecat.com';
+      const siteConfig = Config.fromDynamoItem({});
+      const persistSite = {
+        getBaseURL: () => base,
+        getConfig: () => siteConfig,
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('db write failed')),
+      };
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
+
+      const resolvedURL = await wwwUrlResolver(persistSite, context);
+
+      expect(resolvedURL).to.equal('www.spacecat.com');
+      expect(persistSite.save).to.have.been.calledOnce;
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to persist overrideBaseURL/));
+    });
+
     it('wwwUrlResolver resolves to apex using rum api client', async () => {
       const base = 'http://spacecat.com';
       context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').rejects();

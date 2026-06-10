@@ -64,16 +64,22 @@ export async function wwwUrlResolver(site, context) {
   const rumApiClient = RUMAPIClient.createFrom(context);
   const resolvedHostname = await sharedWwwUrlResolver(site, rumApiClient, log);
 
-  // Persist overrideBaseURL when the resolved domain differs from the site's baseURL so that
-  // future audits skip the RUM bundle probe entirely.
   const baseHostname = new URI(site.getBaseURL()).hostname();
+  const desiredOverride = `https://${resolvedHostname}`;
+
   if (resolvedHostname !== baseHostname && typeof site.save === 'function') {
     const siteConfig = site.getConfig();
-    const existingFetchConfig = siteConfig.getFetchConfig?.() || {};
-    siteConfig.updateFetchConfig?.({ ...existingFetchConfig, overrideBaseURL: `https://${resolvedHostname}` });
-    site.setConfig?.(Config.toDynamoItem(siteConfig));
-    site.save().catch((e) => log.error(`[wwwUrlResolver] failed to persist overrideBaseURL: ${e.message}`));
-    log.debug(`[wwwUrlResolver] persisted overrideBaseURL=https://${resolvedHostname} for ${site.getBaseURL()}`);
+    const existingFetchConfig = siteConfig.getFetchConfig() || {};
+    if (existingFetchConfig.overrideBaseURL !== desiredOverride) {
+      siteConfig.updateFetchConfig({ ...existingFetchConfig, overrideBaseURL: desiredOverride });
+      site.setConfig(Config.toDynamoItem(siteConfig));
+      try {
+        await site.save();
+        log.debug(`[wwwUrlResolver] persisted overrideBaseURL=${desiredOverride} for ${site.getBaseURL()}`);
+      } catch (e) {
+        log.error(`[wwwUrlResolver] failed to persist overrideBaseURL: ${e.message}`);
+      }
+    }
   }
 
   return resolvedHostname;
