@@ -309,6 +309,39 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
     });
+
+    it('derives the pattern sampling week from auditContext.date (date - 1), not from today', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      // Today (Jun 10) is far from the uploaded data (early May). The sampling week
+      // must come from the backfill date's traffic day, not the empty current week.
+      const clock = sinon.useFakeTimers({ now: new Date('2026-06-10'), toFake: ['Date'] });
+
+      try {
+        await runAudit({ date: '2026-05-07T10:00:00Z' });
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      const [refDate, offset] = mocks.generateReportingPeriods.firstCall.args;
+      // date - 1 = 2026-05-06 (UTC midnight); current week of that date (offset 0).
+      expect(refDate.toISOString()).to.equal('2026-05-06T00:00:00.000Z');
+      expect(offset).to.equal(0);
+    });
+
+    it('falls back to the current-week offset when auditContext.date is invalid', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-07'), toFake: ['Date'] }); // Tuesday
+
+      try {
+        await runAudit({ date: 'not-a-real-date' });
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, 0);
+    });
   });
 
   describe('daily referral export', () => {

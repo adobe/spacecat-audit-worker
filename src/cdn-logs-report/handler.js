@@ -26,17 +26,31 @@ import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 import { runAgenticDbExports } from './utils/agentic-db-export.js';
 import { runDailyReferralExport } from './referral-daily-export.js';
+import { getPreviousUtcDate } from './agentic-daily-export.js';
 
 /**
- * Picks the single week offset used to sample CDN logs for pattern generation.
- * An explicit weekOffset wins; otherwise the previous full week on Mondays,
- * else the current week.
+ * Resolves the reporting period used to sample CDN logs for pattern generation.
+ *
+ * A date-based (backfill) run carries an explicit `auditContext.date`; the period is
+ * derived from that run's traffic date (`date - 1`, matching the daily export) so
+ * patterns are sampled from the week that actually has uploaded data. This matters for
+ * sites whose logs only cover an earlier period — e.g. backfilling May data in June
+ * must not sample the (empty) current week, which would yield no URLs.
+ *
+ * Otherwise an explicit `weekOffset` wins (the `weeks=N` backfill path); failing that,
+ * the previous full week on Mondays, else the current week.
  */
-function resolvePatternWeekOffset(auditContext) {
-  if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
-    return auditContext.weekOffset;
+function resolvePatternPeriods(auditContext) {
+  if (auditContext?.date) {
+    const referenceDate = new Date(auditContext.date);
+    if (!Number.isNaN(referenceDate.getTime())) {
+      return generateReportingPeriods(getPreviousUtcDate(referenceDate), 0);
+    }
   }
-  return new Date().getUTCDay() === 1 ? -1 : 0;
+  if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
+    return generateReportingPeriods(new Date(), auditContext.weekOffset);
+  }
+  return generateReportingPeriods(new Date(), new Date().getUTCDay() === 1 ? -1 : 0);
 }
 
 /**
@@ -83,7 +97,7 @@ async function generateAgenticPatterns({
       log.info(`Skipping fresh patterns generation for ${site.getId()}; DB rule fetch failed`);
     } else if (!hasExistingPatterns) {
       log.info('Agentic URL classification rules not found, generating DB rules...');
-      const periods = generateReportingPeriods(new Date(), resolvePatternWeekOffset(auditContext));
+      const periods = resolvePatternPeriods(auditContext);
 
       await generatePatternsWorkbook({
         site,
