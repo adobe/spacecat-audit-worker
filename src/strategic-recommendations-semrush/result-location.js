@@ -24,8 +24,11 @@
  *  - an `s3://<bucket>/<key>` URI.
  *
  * In both cases the bucket must equal `env.DRS_RESULTS_BUCKET` and the object key
- * must start with `env.DRS_RESULTS_PREFIX` (default `results/`). The expected
- * bucket is required — if it is not configured we fail closed.
+ * must start with `env.DRS_RESULTS_PREFIX`. The prefix defaults to
+ * `strategic_recommendations_semrush/` — the fixed `{PROVIDER_ID}/` key prefix the
+ * DRS producer writes under (runner.py `_save_results`) — so the guard works
+ * out of the box without deploy config; override only if the producer changes it.
+ * The expected bucket is required — if it is not configured we fail closed.
  */
 
 // Matches both virtual-hosted-style (bucket.s3[.region].amazonaws.com)
@@ -33,7 +36,7 @@
 const S3_HOSTNAME_RE = /^(?<bucket>[a-z0-9.-]+\.)?s3(\.[a-z0-9-]+)?\.amazonaws\.com$/;
 
 function normalizePrefix(prefix) {
-  const p = (prefix || 'results/').replace(/^\/+/, '');
+  const p = (prefix || 'strategic_recommendations_semrush/').replace(/^\/+/, '');
   return p.endsWith('/') ? p : `${p}/`;
 }
 
@@ -93,7 +96,7 @@ function parseS3Location(resultLocation) {
  * @param {string} resultLocation
  * @param {object} env
  * @param {string} env.DRS_RESULTS_BUCKET - Required expected bucket name.
- * @param {string} [env.DRS_RESULTS_PREFIX='results/'] - Required key prefix.
+ * @param {string} [env.DRS_RESULTS_PREFIX='strategic_recommendations_semrush/'] - Key prefix.
  * @throws {Error} if the location is malformed or outside the bucket/prefix.
  */
 export function assertResultLocation(resultLocation, env = {}) {

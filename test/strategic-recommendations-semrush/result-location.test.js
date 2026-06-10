@@ -41,11 +41,20 @@ describe('assertResultLocation', () => {
     expect(() => assertResultLocation('s3://drs-results/results/job-1/r.json', ENV)).to.not.throw();
   });
 
-  it('defaults the prefix to results/ when not configured', () => {
+  it('defaults the prefix to the DRS producer prefix when not configured', () => {
+    // Matches the producer's hardcoded {PROVIDER_ID}/ key (runner.py _save_results),
+    // so the guard accepts real result locations with no deploy config.
+    expect(() => assertResultLocation(
+      's3://drs-results/strategic_recommendations_semrush/2026/06/10/job-1/results.json',
+      { DRS_RESULTS_BUCKET: 'drs-results' },
+    )).to.not.throw();
+  });
+
+  it('rejects the legacy results/ prefix now that the default is provider-scoped', () => {
     expect(() => assertResultLocation(
       's3://drs-results/results/job-1/r.json',
       { DRS_RESULTS_BUCKET: 'drs-results' },
-    )).to.not.throw();
+    )).to.throw('not under the expected prefix');
   });
 
   it('normalizes a prefix without a trailing slash', () => {
