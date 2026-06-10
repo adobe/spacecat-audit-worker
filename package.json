@@ -104,7 +104,7 @@
     "@adobe/spacecat-shared-slack-client": "1.7.2",
     "@adobe/spacecat-shared-splunk-client": "^1.0.30",
     "@adobe/spacecat-shared-tier-client": "1.6.3",
-    "@adobe/spacecat-shared-utils": "https://gist.github.com/tkotthakota-adobe/f5fc99579ed7d8bd4117473eb8c62fd5/raw/8ae47c4e737e6d4a06aedaa79821f67a3fffddb7/adobe-spacecat-shared-utils-1.117.0.tgz",
+    "@adobe/spacecat-shared-utils": "1.118.0",
     "@adobe/spacecat-shared-vault-secrets": "1.4.1",
     "@adobe/structured-data-validator": "1.7.0",
     "@aws-sdk/client-athena": "3.1063.0",
