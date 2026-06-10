@@ -1025,6 +1025,90 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
+    it('should update suggestion when status changes but data does not', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Same data (data unchanged)
+      const newData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify status changed (ERROR -> NEW per defaultMergeStatusFunction)
+      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+      // Verify setData called even though data unchanged (required for update path)
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify setUpdatedBy called only on status change
+      expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should preserve attribution when only data changes (no status change)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed but status stays NEW (defaultMergeStatusFunction returns null for NEW)
+      const newData = [
+        { key: '1', title: 'new title', description: 'new description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify data updated
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify status NOT changed (defaultMergeStatusFunction returns null for NEW -> NEW)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify setUpdatedBy NOT called (preserves original human attribution)
+      expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
     it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
       const suggestionsData = [{ key: '1', title: 'old title' }];
       const existingSuggestions = [{

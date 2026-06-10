@@ -506,6 +506,12 @@ export async function syncSuggestions({
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly
     const mergedData = mergeDataFunction(existingData, newDataItem);
+
+    // Defensive guard: catch merge functions that mutate in place
+    if (mergedData === existingData) {
+      log.warn(`mergeDataFunction returned same reference - deepEqual will always be true. Key: ${existingKey}`);
+    }
+
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
     // Use the merge status function to determine if status should change
@@ -519,8 +525,8 @@ export async function syncSuggestions({
       existing.setData(mergedData);
       if (newStatus !== null) {
         existing.setStatus(newStatus);
+        existing.setUpdatedBy('system'); // Only stamp 'system' on status changes
       }
-      existing.setUpdatedBy('system');
       toUpdate.push(existing);
     } else {
       log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);

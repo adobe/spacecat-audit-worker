@@ -324,7 +324,7 @@ describe('LLM Blocked Audit', () => {
 
     // Verify that existing suggestions were checked but not saved (same data, same status)
     expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
-    // Phase 1: With same robotsTxtHash (same data) and SKIPPED status unchanged, no save should occur
+    // Same data + unchanged SKIPPED status -> no save should occur
     expect(existingSuggestions[0].setData).to.not.have.been.called;
     expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
     expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
