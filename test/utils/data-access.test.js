@@ -1130,7 +1130,9 @@ describe('data-access', () => {
 
       // Merge function that mutates in place (contract violation)
       const badMergeFunction = sinon.stub().callsFake((existing, newItem) => {
+        // eslint-disable-next-line no-param-reassign
         existing.title = newItem.title;
+        // eslint-disable-next-line no-param-reassign
         existing.count = newItem.count;
         return existing; // Returns same reference - triggers warning
       });
