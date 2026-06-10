@@ -1,3 +1,17 @@
+## [1.465.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.2...v1.465.3) (2026-06-10)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** agentic weekly rollup on empty Sunday + date-based pattern sampling ([#2632](https://github.com/adobe/spacecat-audit-worker/issues/2632)) ([5769317](https://github.com/adobe/spacecat-audit-worker/commit/5769317a413e79cb2921a4d1e3dd0b8776a794d6))
+
+## [1.465.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.1...v1.465.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.3.3 ([#2630](https://github.com/adobe/spacecat-audit-worker/issues/2630)) ([445ab76](https://github.com/adobe/spacecat-audit-worker/commit/445ab76ad645f8f59c3af01357f71c6539153eee))
+
 ## [1.465.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.0...v1.465.1) (2026-06-09)
 
 
