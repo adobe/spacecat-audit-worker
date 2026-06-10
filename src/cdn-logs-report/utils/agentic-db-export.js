@@ -11,6 +11,76 @@
  */
 
 import { runDailyAgenticExport } from '../agentic-daily-export.js';
+import { generateReportingPeriods } from './report-utils.js';
+
+const WEEKLY_REFRESH_RPC = 'wrpc_refresh_agentic_traffic_weekly';
+
+function toUtcDateString(date) {
+  return date.toISOString().split('T')[0];
+}
+
+/**
+ * A daily agentic export is "week-closing" when its traffic date is a Sunday — the
+ * last day of the ISO week. Only then does triggering a weekly rollup make sense.
+ * Invalid/missing dates yield `NaN`, which is never `0`, so this safely returns false.
+ */
+function isWeekClosingSunday(trafficDate) {
+  return new Date(`${trafficDate}T00:00:00.000Z`).getUTCDay() === 0;
+}
+
+/**
+ * Triggers the weekly agentic rollup RPC for the ISO week ending on `trafficDate`,
+ * mirroring the api-service `backfill-llmo mode=weekly-db` path.
+ *
+ * The weekly rollup is normally a side-effect of the Sunday daily import completing.
+ * When a site has no traffic on Sunday the daily export is skipped and no
+ * `batch.completed` event is emitted, so the projector never fires the weekly refresh
+ * and the week's earlier days (e.g. Mon–Fri) never roll up. Calling the RPC directly
+ * fills the week from whatever was already imported.
+ *
+ * Best-effort: never throws, so a refresh failure cannot block the rest of the audit.
+ */
+async function refreshWeeklyAgenticRollup({ site, context, trafficDate }) {
+  const siteId = site.getId();
+  const { log } = context;
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+
+  if (!postgrestClient?.rpc) {
+    log.warn(`Skipping weekly agentic rollup for ${siteId}: PostgREST client unavailable`);
+    return { success: false, error: 'postgrest-client-unavailable' };
+  }
+
+  const [{ startDate, endDate }] = generateReportingPeriods(
+    new Date(`${trafficDate}T00:00:00.000Z`),
+    0,
+  ).weeks;
+  const weekStart = toUtcDateString(startDate);
+  const weekEnd = toUtcDateString(endDate);
+
+  try {
+    const { error } = await postgrestClient.rpc(WEEKLY_REFRESH_RPC, {
+      p_site_id: siteId,
+      p_start_date: weekStart,
+      p_end_date: weekEnd,
+      p_updated_by: 'audit-worker:cdn-logs-report-weekly-refresh',
+    });
+
+    if (error) {
+      log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}): ${error.message}`);
+      return {
+        success: false, weekStart, weekEnd, error: error.message,
+      };
+    }
+
+    log.info(`Triggered weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}) after empty Sunday export`);
+    return { success: true, weekStart, weekEnd };
+  } catch (error) {
+    log.error(`Failed weekly agentic rollup for ${siteId} (${weekStart}..${weekEnd}): ${error.message}`, error);
+    return {
+      success: false, weekStart, weekEnd, error: error.message,
+    };
+  }
+}
 
 /**
  * Resolves the reference date for the daily export from auditContext.date.
@@ -84,14 +154,27 @@ export async function runAgenticDbExports({
   }
 
   const referenceDate = getDateBasedReferenceDate(auditContext, siteId, context);
-  return {
-    dailyAgenticExport: await runAgenticDbExportForReferenceDate({
-      athenaClient,
-      s3Config,
+  const dailyAgenticExport = await runAgenticDbExportForReferenceDate({
+    athenaClient,
+    s3Config,
+    site,
+    context,
+    reportConfig: agenticReportConfig,
+    ...(referenceDate ? { referenceDate } : {}),
+  });
+
+  const result = { dailyAgenticExport };
+
+  // A Sunday with no traffic skips the daily export and emits no batch event, so the
+  // projector never fires the weekly rollup for that ISO week. Trigger it directly so
+  // any earlier days already imported still roll up into the weekly view.
+  if (dailyAgenticExport?.skipped && isWeekClosingSunday(dailyAgenticExport.trafficDate)) {
+    result.weeklyAgenticRefresh = await refreshWeeklyAgenticRollup({
       site,
       context,
-      reportConfig: agenticReportConfig,
-      ...(referenceDate ? { referenceDate } : {}),
-    }),
-  };
+      trafficDate: dailyAgenticExport.trafficDate,
+    });
+  }
+
+  return result;
 }
