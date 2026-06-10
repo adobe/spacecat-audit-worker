@@ -80,16 +80,6 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
-// Live suggestion statuses (excludes OUTDATED). Mirrors usePrerenderGains in project-elmo-ui.
-const LIVE_SUGGESTION_STATUSES = [
-  Suggestion.STATUSES.NEW,
-  Suggestion.STATUSES.PENDING_VALIDATION,
-  Suggestion.STATUSES.APPROVED,
-  Suggestion.STATUSES.IN_PROGRESS,
-  Suggestion.STATUSES.FIXED,
-  Suggestion.STATUSES.SKIPPED,
-];
-
 // Mirrors getLlmVisibilityScore in project-elmo-ui: 100 when deployed/covered, else the
 // word-count ratio capped at 100.
 export function getLlmVisibilityScore({
@@ -167,7 +157,7 @@ async function getCitabilityScores(site, context) {
     }
     const suggestions = await opportunity.getSuggestions();
     return (suggestions || []).filter(
-      (s) => LIVE_SUGGESTION_STATUSES.includes(s.getStatus?.()),
+      (s) => s.getStatus?.() !== Suggestion.STATUSES.OUTDATED,
     );
   } catch (error) {
     context?.log?.warn?.(`Failed to fetch prerender suggestions for agentic mapping: ${error.message}`);
