@@ -530,21 +530,6 @@ describe('referral daily export', function referralDailyExportTests() {
     );
   });
 
-  it('serializes null and undefined CSV field values as empty strings', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/referral-daily-export.js');
-
-    expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
-    expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
-  });
-
-  it('wraps CSV values containing commas or quotes in double-quotes', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/referral-daily-export.js');
-
-    expect(module.testHelpers.escapeCsvValue('hello, world')).to.equal('"hello, world"');
-    expect(module.testHelpers.escapeCsvValue('say "hi"')).to.equal('"say ""hi"""');
-    expect(module.testHelpers.escapeCsvValue('line\r\nbreak')).to.equal('"line\r\nbreak"');
-  });
-
   it('handles null/missing optional row fields gracefully', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: null });
     const module = await loadModule(classifyStub);
@@ -766,6 +751,41 @@ describe('referral daily export', function referralDailyExportTests() {
     expect(context.log.info).to.have.been.calledWith(
       sinon.match('Athena returned 1 rows, 0 matched classification'),
     );
+  });
+
+  it('neutralizes a formula-leading host value in the uploaded CSV', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+    const module = await loadModule(classifyStub);
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([{
+          path: '/page',
+          // Formula trigger: host value STARTS with '='
+          host: '=evil.example.com',
+          referrer: 'chatgpt.com',
+          utm_source: null,
+          utm_medium: null,
+          tracking_param: null,
+          device: 'desktop',
+          date: '2026-03-31',
+          region: 'US',
+          pageviews: 1,
+        }]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context: makeContext(),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    const csvBody = s3Client.send.firstCall.args[0].input.Body;
+    // Formula-leading host cell is neutralized with a single-quote prefix.
+    expect(csvBody).to.include("'=evil.example.com");
   });
 
   it('handles path without leading slash in url construction', async () => {

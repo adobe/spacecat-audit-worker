@@ -17,31 +17,13 @@ import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
+import { serializeCsv } from '../common/spreadsheet-safe.js';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
   'pageviews', 'referrer', 'utm_source', 'utm_medium', 'tracking_param',
   'trf_type', 'trf_channel', 'updated_by',
 ];
-
-function escapeCsvValue(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  const normalized = String(value);
-  if (/["\r\n,]/.test(normalized)) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-  return normalized;
-}
-
-function serializeCsv(rows) {
-  const header = CDN_REFERRAL_CSV_COLUMNS.join(',');
-  const body = rows.map(
-    (row) => CDN_REFERRAL_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
-  );
-  return [header, ...body].join('\r\n');
-}
 
 export function getPreviousUtcDate(referenceDate = new Date()) {
   const previous = new Date(referenceDate);
@@ -137,7 +119,6 @@ async function getAnalyticsQueueUrl(context) {
 
 export const testHelpers = {
   cleanupCsvFromS3,
-  escapeCsvValue,
 };
 
 export async function runDailyReferralExport({
@@ -221,7 +202,7 @@ export async function runDailyReferralExport({
     await s3Client.send(new PutObjectCommand({
       Bucket: bucket,
       Key: csvKey,
-      Body: serializeCsv(rows),
+      Body: serializeCsv(rows, CDN_REFERRAL_CSV_COLUMNS),
       ContentType: 'text/csv',
     }));
 

@@ -17,6 +17,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
+import { createClassifier } from '../common/agentic-url-classification.js';
+import { serializeCsv } from '../common/spreadsheet-safe.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -53,26 +56,16 @@ function validateDate(date) {
   }
 }
 
+// Stable 14-column daily schema (I5). topic + category are always present,
+// positioned after region (mirroring the agentic CDN-logs report layout); their
+// cells are empty when no classification rules exist for the site — never 'Other'.
 const CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
+  'topic', 'category',
   'pageviews', 'consent', 'trf_type', 'trf_channel', 'bounced', 'updated_by',
 ];
 
-function escapeCsvValue(value) {
-  const normalized = String(value ?? '');
-  if (/["\r\n,]/.test(normalized)) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-  return normalized;
-}
-
-export function serializeCsv(rows) {
-  const header = CSV_COLUMNS.join(',');
-  const body = rows.map((row) => CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','));
-  return [header, ...body].join('\r\n');
-}
-
-function buildCsvRows(records, host) {
+function buildCsvRows(records, host, classifier = null) {
   const grouped = new Map();
 
   for (const row of records) {
@@ -93,6 +86,10 @@ function buildCsvRows(records, host) {
       if (grouped.has(key)) {
         grouped.get(key).pageviews += pageviews;
       } else {
+        // topic/category always present; empty when no classifier (I5)
+        const { topic, category } = classifier
+          ? classifier.classify(urlPath)
+          : { topic: '', category: '' };
         grouped.set(key, {
           traffic_date: trafficDate,
           host,
@@ -100,6 +97,8 @@ function buildCsvRows(records, host) {
           trf_platform: trfPlatform,
           device,
           region,
+          topic,
+          category,
           pageviews,
           consent: consentBool ? 'true' : 'false',
           trf_type: 'earned',
@@ -226,7 +225,21 @@ export async function referralTrafficDailyRunner(context) {
     throw err;
   }
 
-  const rows = buildCsvRows(records, host);
+  // fetch agentic URL classification rules (topic + category); gate enrichment
+  // on rules being present so cells stay empty rather than blanket-tagged 'Other'
+  const classificationRules = await fetchAgenticUrlClassificationRules(site, context);
+  const classifier = createClassifier(classificationRules, { log });
+  // M5: distinguish a failed fetch from a site with no rules. Both yield a null
+  // classifier; the error shape on the fetch result disambiguates the log line.
+  if (classifier) {
+    log.info(`[llmo-referral-traffic-daily] Agentic classification rules found for site ${siteId}`);
+  } else if (classificationRules?.error) {
+    log.warn(`[llmo-referral-traffic-daily] Failed to fetch agentic classification rules for site ${siteId}; topic/category left empty`);
+  } else {
+    log.info(`[llmo-referral-traffic-daily] No agentic classification rules for site ${siteId}; topic/category left empty`);
+  }
+
+  const rows = buildCsvRows(records, host, classifier);
 
   if (rows.length === 0) {
     log.info(`[llmo-referral-traffic-daily] No LLM referral rows after filter for site ${siteId} on ${date}`);
@@ -236,7 +249,7 @@ export async function referralTrafficDailyRunner(context) {
     };
   }
 
-  const csvBody = serializeCsv(rows);
+  const csvBody = serializeCsv(rows, CSV_COLUMNS);
 
   await s3Client.send(new PutObjectCommand({
     Bucket: bucket,

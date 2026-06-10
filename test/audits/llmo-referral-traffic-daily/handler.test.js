@@ -16,7 +16,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import { serializeCsv } from '../../../src/llmo-referral-traffic-daily/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -37,46 +36,6 @@ const PARQUET_ROW = {
   engaged: 1,
 };
 
-describe('serializeCsv', () => {
-  it('should render null field values as empty string', () => {
-    const rows = [{
-      traffic_date: '2026-04-29',
-      host: 'example.com',
-      url_path: '/page',
-      trf_platform: null,
-      device: 'desktop',
-      region: 'GLOBAL',
-      pageviews: 1,
-      consent: 'true',
-      trf_type: 'earned',
-      trf_channel: 'llm',
-      bounced: 0,
-      updated_by: 'spacecat:optel',
-    }];
-    const csv = serializeCsv(rows);
-    expect(csv).to.include('2026-04-29,example.com,/page,,desktop');
-  });
-
-  it('should quote CSV values that contain carriage return', () => {
-    const rows = [{
-      traffic_date: '2026-04-29',
-      host: 'example.com',
-      url_path: '/page',
-      trf_platform: 'platform\rwith\rcr',
-      device: 'desktop',
-      region: 'GLOBAL',
-      pageviews: 1,
-      consent: 'true',
-      trf_type: 'earned',
-      trf_channel: 'llm',
-      bounced: 0,
-      updated_by: 'spacecat:optel',
-    }];
-    const csv = serializeCsv(rows);
-    expect(csv).to.include('"platform\rwith\rcr"');
-  });
-});
-
 describe('LLMO Referral Traffic Daily Handler', function () {
   this.timeout(10000);
 
@@ -87,16 +46,25 @@ describe('LLMO Referral Traffic Daily Handler', function () {
   let s3ClientStub;
   let sqsSendMessageStub;
   let parquetReadObjectsStub;
+  let fetchRulesStub;
+  let createClassifierStub;
   let handlerModule;
 
   before(() => {
     sandbox = sinon.createSandbox();
   });
 
+  // classifier stub matching the frozen contract:
+  // createClassifier(rules, { log }) → { classify(path) } | null
+  const classifierFor = (fn) => ({ classify: (path) => fn(path) });
+
   beforeEach(async () => {
     s3ClientStub = { send: sandbox.stub() };
     sqsSendMessageStub = sandbox.stub().resolves();
     parquetReadObjectsStub = sandbox.stub().resolves([PARQUET_ROW]);
+    // default: no rules → classifier null, topic/category stay empty
+    fetchRulesStub = sandbox.stub().resolves({ topicPatterns: [], pagePatterns: [] });
+    createClassifierStub = sandbox.stub().returns(null);
 
     site = {
       getId: sandbox.stub().returns('site-123'),
@@ -139,6 +107,12 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         GetObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'GetObjectCommand' })),
         PutObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'PutObjectCommand' })),
         DeleteObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'DeleteObjectCommand' })),
+      },
+      '../../../src/common/agentic-url-classification-rules.js': {
+        fetchAgenticUrlClassificationRules: fetchRulesStub,
+      },
+      '../../../src/common/agentic-url-classification.js': {
+        createClassifier: createClassifierStub,
       },
     });
   });
@@ -529,6 +503,161 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const putCall = s3ClientStub.send.secondCall.args[0];
       expect(putCall.Body).to.include('"platform,with,commas"');
       expect(putCall.Body).to.include('"device""with""quotes"');
+    });
+
+    // ───────────── classification + stable schema (I5/I9) ─────────────
+
+    const EXPECTED_HEADER = 'traffic_date,host,url_path,trf_platform,device,region,'
+      + 'topic,category,pageviews,consent,trf_type,trf_channel,bounced,updated_by';
+
+    it('should populate topic/category when a classifier is present', async () => {
+      createClassifierStub.returns(
+        classifierFor(() => ({ topic: 'Acrobat', category: 'Product' })),
+      );
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/us/acrobat' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(createClassifierStub).to.have.been.calledOnce;
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      const lines = putCall.Body.split('\r\n');
+      // I9: assert EXACT field ordering, not substring matches
+      expect(lines[0]).to.equal(EXPECTED_HEADER);
+      expect(lines[1]).to.equal(
+        '2026-04-29,example.com,/us/acrobat,chatgpt,desktop,US,'
+        + 'Acrobat,Product,100,true,earned,llm,0,spacecat:optel',
+      );
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /Agentic classification rules found/,
+      );
+    });
+
+    it('classifies once per unique group key and applies it to the merged row', async () => {
+      // Two rows with an identical group key must merge: classify() runs once
+      // (on the first-seen key, NOT per raw row), pageviews aggregate, and the
+      // merged row carries the classified topic/category. Guards against a
+      // regression that classifies every row or drops the label on aggregation.
+      const classifySpy = sandbox.stub().returns({ topic: 'Acrobat', category: 'Product' });
+      createClassifierStub.returns(classifierFor(classifySpy));
+      parquetReadObjectsStub.resolves([
+        { ...PARQUET_ROW, path: '/us/acrobat', pageviews: 40 },
+        { ...PARQUET_ROW, path: '/us/acrobat', pageviews: 60 },
+      ]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      const result = await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(result.auditResult.rowCount).to.equal(1);
+      expect(classifySpy).to.have.been.calledOnce;
+      expect(classifySpy).to.have.been.calledWith('/us/acrobat');
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      const lines = putCall.Body.split('\r\n');
+      expect(lines[1]).to.equal(
+        '2026-04-29,example.com,/us/acrobat,chatgpt,desktop,US,'
+        + 'Acrobat,Product,100,true,earned,llm,0,spacecat:optel',
+      );
+    });
+
+    it('should emit 14 columns with empty topic/category when no rules (I5)', async () => {
+      createClassifierStub.returns(null);
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/us/acrobat' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      const lines = putCall.Body.split('\r\n');
+      expect(lines[0]).to.equal(EXPECTED_HEADER);
+      expect(lines[0].split(',')).to.have.lengthOf(14);
+      // topic/category cells empty (NOT 'Other'), exact ordering
+      expect(lines[1]).to.equal(
+        '2026-04-29,example.com,/us/acrobat,chatgpt,desktop,US,'
+        + ',,100,true,earned,llm,0,spacecat:optel',
+      );
+      expect(lines[1].split(',')).to.have.lengthOf(14);
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /No agentic classification rules/,
+      );
+    });
+
+    it('should warn and leave topic/category empty when rule fetch errored (M5)', async () => {
+      fetchRulesStub.resolves({ error: true, source: 'postgres' });
+      createClassifierStub.returns(null);
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/us/acrobat' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      const lines = putCall.Body.split('\r\n');
+      expect(lines[1]).to.equal(
+        '2026-04-29,example.com,/us/acrobat,chatgpt,desktop,US,'
+        + ',,100,true,earned,llm,0,spacecat:optel',
+      );
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /Failed to fetch agentic classification rules/,
+      );
+    });
+
+    it('should classify the full url path even when it confounds region detection (I9)', async () => {
+      // /us/acrobat → region US; classifier still receives and matches full path
+      createClassifierStub.returns(
+        classifierFor((path) => (path === '/us/acrobat'
+          ? { topic: 'Acrobat', category: 'Product' }
+          : { topic: 'Other', category: 'Other' })),
+      );
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/us/acrobat' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      const lines = putCall.Body.split('\r\n');
+      expect(lines[1]).to.equal(
+        '2026-04-29,example.com,/us/acrobat,chatgpt,desktop,US,'
+        + 'Acrobat,Product,100,true,earned,llm,0,spacecat:optel',
+      );
+    });
+
+    // ───────────── formula injection (I4) ─────────────
+
+    it('should neutralize formula-injection in a classifier-derived topic cell', async () => {
+      createClassifierStub.returns(
+        classifierFor(() => ({ topic: '=2+5', category: '@SUM(A1)' })),
+      );
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/x' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      // leading-quote prefix neutralizes the formula trigger
+      expect(putCall.Body).to.include(",'=2+5,'@SUM(A1),");
     });
   });
 });

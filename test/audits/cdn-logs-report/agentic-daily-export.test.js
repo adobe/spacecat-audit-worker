@@ -180,6 +180,83 @@ describe('agentic daily export', () => {
     );
   });
 
+  it('neutralizes formula-leading cells and RFC-quotes CR-containing cells in the uploaded CSV', async () => {
+    const queryBuilder = {
+      createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT * FROM daily_agentic'),
+    };
+    const mapper = {
+      mapToAgenticTrafficBundle: sandbox.stub().resolves({
+        trafficRows: [{
+          traffic_date: '2026-03-31',
+          host: 'docs.example.com',
+          // Formula trigger: cell value STARTS with '='
+          platform: '=cmd|/c calc',
+          agent_type: 'Chatbots',
+          // CR-containing field must be RFC-4180 quoted
+          user_agent: 'ChatGPT\rUser',
+          http_status: 200,
+          url_path: '/docs/page',
+          hits: 12,
+          avg_ttfb_ms: 123.45,
+          dimensions: {},
+          metrics: {},
+          updated_by: 'audit-worker:agentic-daily-export',
+        }],
+        classificationRows: [],
+      }),
+    };
+
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+      },
+      '../../../src/cdn-logs-report/utils/query-builder.js': {
+        weeklyBreakdownQueries: queryBuilder,
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': mapper,
+      uuid: {
+        v4: () => 'batch-123',
+      },
+    });
+
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    await module.runDailyAgenticExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([{ raw: true }]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'db' },
+      site: {
+        getId: () => 'site-1',
+        getOrganizationId: () => 'org-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
+      },
+      context: {
+        env: { S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer' },
+        dataAccess: {
+          Configuration: { findLatest: sandbox.stub().resolves(createConfiguration()) },
+        },
+        log: { info: sandbox.spy() },
+        sqs: { sendMessage: sandbox.stub().resolves() },
+      },
+      reportConfig: { tableName: 'aggregated_logs_example_consolidated' },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    });
+
+    // Locate the traffic CSV upload by its Key, not call order — robust to any
+    // reordering of the two PutObject uploads (traffic vs classifications).
+    const trafficCall = s3Client.send.getCalls()
+      .find((c) => c.args[0].input.Key.endsWith('agentic_traffic.csv'));
+    const trafficBody = trafficCall.args[0].input.Body;
+    // Formula-leading cell is neutralized with a single-quote prefix.
+    expect(trafficBody).to.include("'=cmd|/c calc");
+    // CR-containing cell is RFC-4180 quoted (wrapped in double quotes).
+    expect(trafficBody).to.include('"ChatGPT\rUser"');
+  });
+
   it('logs a warning when cleanup after failure also fails', async () => {
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
     const log = {
@@ -297,13 +374,6 @@ describe('agentic daily export', () => {
       },
       referenceDate: new Date('2026-04-01T10:00:00Z'),
     })).to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided for agentic daily export');
-  });
-
-  it('serializes null and undefined CSV values as empty strings', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
-
-    expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
-    expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {

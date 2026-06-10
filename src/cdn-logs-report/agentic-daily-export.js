@@ -15,38 +15,38 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
+import { serializeCsv } from '../common/spreadsheet-safe.js';
+
+const AGENTIC_TRAFFIC_CSV_COLUMNS = [
+  'traffic_date',
+  'host',
+  'platform',
+  'agent_type',
+  'user_agent',
+  'http_status',
+  'url_path',
+  'hits',
+  'avg_ttfb_ms',
+  'dimensions',
+  'metrics',
+  'updated_by',
+];
+
+const AGENTIC_CLASSIFICATION_CSV_COLUMNS = [
+  'host',
+  'url_path',
+  'region',
+  'category_name',
+  'page_type',
+  'content_type',
+  'updated_by',
+];
 
 export function getPreviousUtcDate(referenceDate = new Date()) {
   const previous = new Date(referenceDate);
   previous.setUTCDate(previous.getUTCDate() - 1);
   previous.setUTCHours(0, 0, 0, 0);
   return previous;
-}
-
-function escapeCsvValue(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  let normalized;
-  if (typeof value === 'string') {
-    normalized = value;
-  } else if (typeof value === 'object') {
-    normalized = JSON.stringify(value);
-  } else {
-    normalized = String(value);
-  }
-
-  if (/["\n,]/.test(normalized)) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-
-  return normalized;
-}
-
-function serializeCsv(rows, columns) {
-  const header = columns.join(',');
-  const body = rows.map((row) => columns.map((column) => escapeCsvValue(row[column])).join(','));
-  return [header, ...body].join('\r\n');
 }
 
 function getAgenticBundleKeyPrefix(siteId, trafficDate, batchId) {
@@ -81,34 +81,13 @@ async function uploadBundleToS3({
     s3Client.send(new PutObjectCommand({
       Bucket: bucket,
       Key: uploadedFiles.trafficKey,
-      Body: serializeCsv(trafficRows, [
-        'traffic_date',
-        'host',
-        'platform',
-        'agent_type',
-        'user_agent',
-        'http_status',
-        'url_path',
-        'hits',
-        'avg_ttfb_ms',
-        'dimensions',
-        'metrics',
-        'updated_by',
-      ]),
+      Body: serializeCsv(trafficRows, AGENTIC_TRAFFIC_CSV_COLUMNS),
       ContentType: 'text/csv',
     })),
     s3Client.send(new PutObjectCommand({
       Bucket: bucket,
       Key: uploadedFiles.classificationsKey,
-      Body: serializeCsv(classificationRows, [
-        'host',
-        'url_path',
-        'region',
-        'category_name',
-        'page_type',
-        'content_type',
-        'updated_by',
-      ]),
+      Body: serializeCsv(classificationRows, AGENTIC_CLASSIFICATION_CSV_COLUMNS),
       ContentType: 'text/csv',
     })),
   ]);
@@ -195,7 +174,6 @@ export const testHelpers = {
   cleanupBundleFromS3,
   createBundleId,
   dispatchAnalyticsEvent,
-  escapeCsvValue,
 };
 
 export async function runDailyAgenticExport({

@@ -34,7 +34,10 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 }
 
 // Page Type Classification
-function generatePageTypeClassification(remotePatterns = null) {
+// Exported for the JS-twin parity test (test/common/agentic-url-classification.test.js):
+// the mechanical parity check parses this builder's output and the JS classifier
+// must agree, so SQL edits cannot drift from the JS twin silently.
+export function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
 
   if (patterns.length === 0) {
@@ -58,7 +61,8 @@ function buildCountryExtractionSQL() {
 }
 
 // Topic Classification
-function buildTopicExtractionSQL(remotePatterns = null) {
+// Exported for the JS-twin parity test (see generatePageTypeClassification).
+export function buildTopicExtractionSQL(remotePatterns = null) {
   const patterns = remotePatterns?.topicPatterns || [];
 
   if (Array.isArray(patterns) && patterns.length > 0) {
