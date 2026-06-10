@@ -664,6 +664,125 @@ async function sendPrerenderGuidanceRequestToMystique(
 }
 
 /**
+ * Determines whether a DB suggestion is eligible to be (re)sent to Mystique in ai-only mode.
+ * Excludes the domain-wide aggregate, URL-less entries, and OUTDATED / SKIPPED / FIXED /
+ * already-edge-deployed suggestions.
+ * @param {Object} suggestion - Suggestion entity
+ * @param {Object} suggestionData - Result of suggestion.getData()
+ * @returns {boolean}
+ */
+function isSuggestionEligibleForAiOnly(suggestion, suggestionData) {
+  if (!suggestionData?.url || suggestionData?.isDomainWide) {
+    return false;
+  }
+  const status = suggestion.getStatus();
+  const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!suggestionData?.edgeDeployed;
+  return status !== Suggestion.STATUSES.OUTDATED
+    && status !== Suggestion.STATUSES.SKIPPED
+    && !isDeployedOrFixed;
+}
+
+/**
+ * Resolves the scrapeJobId for a suggestion in priority order:
+ *   1. data.scrapeJobId — stamped at suggestion-creation time (most reliable)
+ *   2. the job segment of data.originalHtmlKey (format: prerender/scrapes/{scrapeJobId}/...)
+ * Returns null when neither is available; valid S3 keys cannot be built without it.
+ * @param {Object} suggestionData - Result of suggestion.getData()
+ * @param {string} suggestionId
+ * @param {Object} context - Audit context (for logging + site metadata)
+ * @returns {string|null}
+ */
+function resolveScrapeJobId(suggestionData, suggestionId, context) {
+  const { log, site } = context;
+  if (suggestionData.scrapeJobId) {
+    return suggestionData.scrapeJobId;
+  }
+  const derived = suggestionData.originalHtmlKey?.split('/')[2] || null;
+  if (derived) {
+    log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
+      + `derived from originalHtmlKey: ${derived}. `
+      + `baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
+  }
+  return derived;
+}
+
+/**
+ * Builds the Mystique candidate payload from an opportunity's DB suggestions, optionally
+ * restricted to a set of normalized CSV pathnames. Ineligible suggestions and those without a
+ * resolvable scrapeJobId are skipped (the latter with a warning).
+ * @param {Array<Object>} existingSuggestions
+ * @param {Set<string>|null} urlFilter - normalized pathname+query set, or null for no filter
+ * @param {Object} context - Audit context
+ * @returns {Array<Object>} candidate objects ready for Mystique
+ */
+function buildAiOnlyCandidates(existingSuggestions, urlFilter, context) {
+  const { log, site } = context;
+  return existingSuggestions.reduce((candidates, suggestion) => {
+    const suggestionData = suggestion.getData();
+    const suggestionId = suggestion.getId?.();
+
+    if (!isSuggestionEligibleForAiOnly(suggestion, suggestionData)) {
+      return candidates;
+    }
+    if (urlFilter && !urlFilter.has(normalizePathnameWithQuery(suggestionData.url))) {
+      return candidates;
+    }
+
+    const scrapeJobId = resolveScrapeJobId(suggestionData, suggestionId, context);
+    if (!scrapeJobId) {
+      log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
+        + `originalHtmlKey to derive one from. baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
+      return candidates;
+    }
+
+    candidates.push({
+      suggestionId,
+      url: suggestionData.url,
+      originalHtmlMarkdownKey: getS3Path(suggestionData.url, scrapeJobId, 'server-side-html.md'),
+      markdownDiffKey: getS3Path(suggestionData.url, scrapeJobId, 'markdown-diff.md'),
+      hasPrompts: Array.isArray(suggestionData.prompts) && suggestionData.prompts.length > 0,
+    });
+    return candidates;
+  }, []);
+}
+
+/**
+ * Emits operator-facing warnings about the ai-only candidate set:
+ *   - CSV URLs that produced no eligible suggestion (only when a CSV filter was supplied)
+ *   - candidate counts that exceed the single-message batch cap (anything beyond is not sent)
+ * @param {Array<string>|null} csvUrls - raw CSV URLs when a filter was supplied, else null
+ * @param {Array<Object>} candidates
+ * @param {Object} context - Audit context
+ */
+function warnOnAiOnlyCandidateGaps(csvUrls, candidates, context) {
+  const { log, site } = context;
+  const baseUrl = site.getBaseURL();
+  const siteId = site.getId();
+
+  if (csvUrls) {
+    const matchedPathnames = new Set(candidates.map((c) => normalizePathnameWithQuery(c.url)));
+    const unmatchedUrls = csvUrls.filter(
+      (u) => !matchedPathnames.has(normalizePathnameWithQuery(u)),
+    );
+    if (unmatchedUrls.length > 0) {
+      log.warn(`${LOG_PREFIX} ai-only: ${unmatchedUrls.length} CSV URL(s) had no eligible DB suggestion `
+        + '(not yet scraped, or in OUTDATED/SKIPPED/FIXED status). Run a normal prerender audit first for these URLs. '
+        + `baseUrl=${baseUrl}, siteId=${siteId}, urls=${unmatchedUrls.join(', ')}`);
+    }
+  }
+
+  // Mystique receives a single SQS message capped at MYSTIQUE_BATCH_SIZE to stay under the
+  // 256 KB SQS limit. Anything beyond the cap is NOT sent in this run — warn so the operator
+  // knows to split the CSV into smaller batches.
+  if (candidates.length > MYSTIQUE_BATCH_SIZE) {
+    log.warn(`${LOG_PREFIX} ai-only: ${candidates.length} eligible suggestion(s) exceed the `
+      + `${MYSTIQUE_BATCH_SIZE}-per-message cap (SQS 256 KB limit). Only the first ${MYSTIQUE_BATCH_SIZE} `
+      + `will be sent to Mystique this run; split the CSV into batches of ${MYSTIQUE_BATCH_SIZE} or fewer. `
+      + `baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+}
+
+/**
  * Handles AI-summary-only mode: sends existing suggestions to Mystique without running audit.
  * Called early in step 1 to bypass import/scraping/processing steps.
  * @param {Object} context - Audit context
@@ -781,77 +900,8 @@ export async function handleAiOnlyMode(context) {
     log.info(`${LOG_PREFIX} ai-only: CSV URL filter active — restricting to ${urlFilter.size} URL(s). baseUrl=${baseUrl}, siteId=${siteId}`);
   }
 
-  const preBuiltCandidates = existingSuggestions.reduce((candidates, s) => {
-    const suggestionData = s.getData();
-    const suggestionId = s.getId?.();
-
-    if (!suggestionData?.url || suggestionData?.isDomainWide) {
-      return candidates;
-    }
-
-    const status = s.getStatus();
-    const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED
-      || !!suggestionData?.edgeDeployed;
-    if (
-      status === Suggestion.STATUSES.OUTDATED
-      || status === Suggestion.STATUSES.SKIPPED
-      || isDeployedOrFixed
-    ) {
-      return candidates;
-    }
-
-    if (urlFilter && !urlFilter.has(normalizePathnameWithQuery(suggestionData.url))) {
-      return candidates;
-    }
-
-    let effectiveScrapeJobId = suggestionData.scrapeJobId;
-    if (!effectiveScrapeJobId && suggestionData.originalHtmlKey) {
-      effectiveScrapeJobId = suggestionData.originalHtmlKey.split('/')[2] || null;
-      if (effectiveScrapeJobId) {
-        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
-          + `derived from originalHtmlKey: ${effectiveScrapeJobId}. `
-          + `baseUrl=${baseUrl}, siteId=${siteId}`);
-      }
-    }
-    if (!effectiveScrapeJobId) {
-      log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
-        + `originalHtmlKey to derive one from. baseUrl=${baseUrl}, siteId=${siteId}`);
-      return candidates;
-    }
-
-    candidates.push({
-      suggestionId,
-      url: suggestionData.url,
-      originalHtmlMarkdownKey: getS3Path(suggestionData.url, effectiveScrapeJobId, 'server-side-html.md'),
-      markdownDiffKey: getS3Path(suggestionData.url, effectiveScrapeJobId, 'markdown-diff.md'),
-      hasPrompts: Array.isArray(suggestionData.prompts) && suggestionData.prompts.length > 0,
-    });
-    return candidates;
-  }, []);
-
-  if (urlFilter) {
-    const matchedPathnames = new Set(
-      preBuiltCandidates.map((c) => normalizePathnameWithQuery(c.url)),
-    );
-    const unmatchedUrls = csvUrls.filter(
-      (u) => !matchedPathnames.has(normalizePathnameWithQuery(u)),
-    );
-    if (unmatchedUrls.length > 0) {
-      log.warn(`${LOG_PREFIX} ai-only: ${unmatchedUrls.length} CSV URL(s) had no eligible DB suggestion `
-        + '(not yet scraped, or in OUTDATED/SKIPPED/FIXED status). Run a normal prerender audit first for these URLs. '
-        + `baseUrl=${baseUrl}, siteId=${siteId}, urls=${unmatchedUrls.join(', ')}`);
-    }
-  }
-
-  // Mystique receives a single SQS message capped at MYSTIQUE_BATCH_SIZE to stay under the
-  // 256 KB SQS limit. Anything beyond the cap is NOT sent in this run — warn so the operator
-  // knows to split the CSV into smaller batches.
-  if (preBuiltCandidates.length > MYSTIQUE_BATCH_SIZE) {
-    log.warn(`${LOG_PREFIX} ai-only: ${preBuiltCandidates.length} eligible suggestion(s) exceed the `
-      + `${MYSTIQUE_BATCH_SIZE}-per-message cap (SQS 256 KB limit). Only the first ${MYSTIQUE_BATCH_SIZE} `
-      + `will be sent to Mystique this run; split the CSV into batches of ${MYSTIQUE_BATCH_SIZE} or fewer. `
-      + `baseUrl=${baseUrl}, siteId=${siteId}`);
-  }
+  const preBuiltCandidates = buildAiOnlyCandidates(existingSuggestions, urlFilter, context);
+  warnOnAiOnlyCandidateGaps(urlFilter ? csvUrls : null, preBuiltCandidates, context);
 
   // Send to Mystique using the existing function
   const auditData = {
