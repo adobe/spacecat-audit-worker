@@ -27,6 +27,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   let readFromSharePointStub;
   let uploadToSharePointStub;
   let publishToAdminHlxStub;
+  let filterReachableUrlsStub;
 
   beforeEach(async () => {
     // Mock all report-uploader functions
@@ -34,6 +35,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     readFromSharePointStub = sandbox.stub();
     uploadToSharePointStub = sandbox.stub().resolves();
     publishToAdminHlxStub = sandbox.stub().resolves();
+    // Passthrough HEAD-check by default; individual tests override.
+    filterReachableUrlsStub = sandbox.stub().callsFake(async (urls) => urls);
 
     guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
       '../../../src/utils/report-uploader.js': {
@@ -41,6 +44,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         readFromSharePoint: readFromSharePointStub,
         uploadToSharePoint: uploadToSharePointStub,
         publishToAdminHlx: publishToAdminHlxStub,
+      },
+      '../../../src/llm-error-pages/url-health-check.js': {
+        filterReachableUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -1088,12 +1094,15 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
   let readFromSharePointStub;
   let uploadToSharePointStub;
   let publishToAdminHlxStub;
+  let filterReachableUrlsStub;
 
   beforeEach(async () => {
     createLLMOSharepointClientStub = sandbox.stub().resolves({});
     readFromSharePointStub = sandbox.stub();
     uploadToSharePointStub = sandbox.stub().resolves();
     publishToAdminHlxStub = sandbox.stub().resolves();
+    // Passthrough HEAD-check by default; individual tests override.
+    filterReachableUrlsStub = sandbox.stub().callsFake(async (urls) => urls);
 
     // Default: Excel read returns a workbook so the Excel block succeeds.
     const wb = new ExcelJS.Workbook();
@@ -1108,6 +1117,9 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
         readFromSharePoint: readFromSharePointStub,
         uploadToSharePoint: uploadToSharePointStub,
         publishToAdminHlx: publishToAdminHlxStub,
+      },
+      '../../../src/llm-error-pages/url-health-check.js': {
+        filterReachableUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -1295,7 +1307,9 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
     expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
 
-  it('skips brokenLinks with empty suggestedUrls', async () => {
+  it('persists empty-suggestion rows to DB (Excel↔DB consistency — gate removed)', async () => {
+    // Pre-fix behavior was to silently skip empty-suggestion rows in the DB, which
+    // diverged from the Excel write that includes them. Both surfaces must now agree.
     const suggestion = makeSuggestion('/p');
     const ctx = buildContext({ suggestions: [suggestion] });
 
@@ -1310,8 +1324,12 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
       },
     }, ctx);
 
-    expect(suggestion.setData).to.not.have.been.called;
-    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(suggestion.setData).to.have.been.calledOnce;
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    // HEAD-check pass clears the rationale once the URL list is empty.
+    expect(saved.aiRationale).to.equal('');
+    expect(ctx.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
   });
 
   it('skips brokenLinks where no suggestion matches the URL path', async () => {
@@ -1364,6 +1382,100 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
       data: { opportunityId: 'opp-1', brokenLinks: [] },
     }, ctx);
 
+    expect(resp.status).to.equal(200);
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('drops HEAD-failed suggestedUrls before persisting and logs the drop count', async () => {
+    // Helper drops /bad, keeps /good.
+    filterReachableUrlsStub.callsFake(async (urls) => urls.filter((u) => !u.endsWith('/bad')));
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/good', 'https://example.com/bad'],
+          aiRationale: 'Some prose',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal(['https://example.com/good']);
+    // Rationale is preserved when at least one URL survives.
+    expect(saved.aiRationale).to.equal('Some prose');
+    expect(ctx.log.info).to.have.been.calledWithMatch(/Dropped 1 suggested URL/);
+  });
+
+  it('clears aiRationale when HEAD-check empties suggestedUrls for a link', async () => {
+    // Helper drops every URL.
+    filterReachableUrlsStub.callsFake(async () => []);
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/bad-1', 'https://example.com/bad-2'],
+          aiRationale: 'Refers to URLs that no longer exist',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('tolerates brokenLinks entries with non-array suggestedUrls (e.g. undefined)', async () => {
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          // no suggestedUrls field at all
+          aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('handles brokenLinks absent from the message (defensive Array.isArray guard)', async () => {
+    const ctx = buildContext({ suggestions: [makeSuggestion('/p')] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      // data has no brokenLinks key
+      data: { opportunityId: 'opp-1' },
+    }, ctx);
+
+    // The Excel block throws on brokenLinks.length but that's caught; DB write
+    // sees an empty brokenLinks reduce — no saveMany call. The handler still 200s.
     expect(resp.status).to.equal(200);
     expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
