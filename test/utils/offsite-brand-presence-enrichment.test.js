@@ -89,6 +89,38 @@ function makeBrandPresenceRow(overrides = {}) {
   };
 }
 
+/**
+ * Builds a brand-presence sheet from raw ExcelJS cell arrays, allowing non-string
+ * cell encodings (hyperlink/richText/formula objects, numbers, Dates, null) and a
+ * custom header set so column-mapping edge cases can be exercised.
+ */
+async function makeRawSheetBuffer(rows, headers = ['Sources', 'Region', 'Topics', 'Category', 'Prompt']) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(headers);
+  for (const cells of rows) {
+    ws.addRow(cells);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** Builds a query-index sheet from raw cell arrays (supports hyperlink/object cells). */
+async function makeRawQueryIndexBuffer(cellRows) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(['Path']);
+  for (const cells of cellRows) {
+    ws.addRow(cells);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** Builds a valid XLSX buffer for a workbook that contains no worksheets. */
+async function makeEmptyWorkbookBuffer() {
+  const workbook = new ExcelJS.Workbook();
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 describe('offsite-brand-presence-enrichment', function () {
   this.timeout(10000);
 
@@ -176,6 +208,17 @@ describe('offsite-brand-presence-enrichment', function () {
     });
   }
 
+  // Wires the query-index read to `qiBuffer` and every sheet read to `bpResolver`
+  // (either a fixed buffer or a function of the requested filename).
+  function stubSharePoint(qiBuffer, bpResolver) {
+    mockReadFromSP.callsFake(async (filename) => {
+      if (filename === 'query-index.xlsx') {
+        return qiBuffer;
+      }
+      return typeof bpResolver === 'function' ? bpResolver(filename) : bpResolver;
+    });
+  }
+
   describe('filterBrandPresenceFiles', () => {
     it('returns paths matching week, year, and known provider', () => {
       const paths = [
@@ -221,6 +264,12 @@ describe('offsite-brand-presence-enrichment', function () {
       const result = filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR);
       expect(result).to.have.lengthOf(1);
       expect(result[0]).to.include('copilot');
+    });
+
+    it('ignores empty or falsy path entries', () => {
+      const valid = `w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126`;
+      const result = filterBrandPresenceFiles(['', null, valid], DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.deep.equal([valid]);
     });
   });
 
@@ -725,6 +774,154 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(findById).to.have.been.calledWith(SITE_ID);
       expect(result).to.not.be.null;
       expect(result.data).to.have.lengthOf(1);
+    });
+  });
+
+  describe('SharePoint XLSX decoding and corner cases', () => {
+    const site = () => makeSite();
+    const weeks = [{ week: DEFAULT_WEEK, year: DEFAULT_YEAR }];
+
+    it('decodes hyperlink, rich-text, and formula Sources cells without corruption', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const bpBuffer = await makeRawSheetBuffer([
+        [{ text: 'https://www.reddit.com/r/hyperlink', hyperlink: 'https://www.reddit.com/r/hyperlink' }, 'US', 'HL', 'C', 'P'],
+        [{ richText: [{ text: 'https://www.reddit.com/' }, { text: 'r/richtext' }] }, 'US', 'RT', 'C', 'P'],
+        [{ formula: 'A1', result: 'https://www.reddit.com/r/formula' }, 'US', 'FM', 'C', 'P'],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      const byName = Object.fromEntries(result.map((t) => [t.name, t.urls[0].url]));
+      expect(byName.HL).to.equal('https://www.reddit.com/r/hyperlink');
+      expect(byName.RT).to.equal('https://www.reddit.com/r/richtext');
+      expect(byName.FM).to.equal('https://www.reddit.com/r/formula');
+    });
+
+    it('treats error cells and empty cells as blank', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const bpBuffer = await makeRawSheetBuffer([
+        // Error-valued Sources -> '' -> row yields no URL -> topic dropped.
+        [{ error: '#REF!' }, 'US', 'ErrTopic', 'C', 'P'],
+        // Short row: Category and Prompt cells are absent (null) -> '' default.
+        ['https://www.reddit.com/r/nulls', 'US', 'NullTopic'],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result.map((t) => t.name)).to.not.include('ErrTopic');
+      const nullTopic = result.find((t) => t.name === 'NullTopic');
+      expect(nullTopic).to.exist;
+      expect(nullTopic.urls[0].category).to.equal('');
+      expect(nullTopic.urls[0].subPrompts).to.deep.equal([]);
+    });
+
+    it('coerces numeric and date-valued cells to strings', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const promptDate = new Date('2026-01-02T03:04:05Z');
+      const bpBuffer = await makeRawSheetBuffer([
+        ['https://www.reddit.com/r/numdate', 'US', 2026, 'C', promptDate],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('2026');
+      expect(result[0].urls[0].subPrompts).to.deep.equal([promptDate.toISOString()]);
+    });
+
+    it('skips non-brand-presence, "latest", and duplicate query-index entries and decodes hyperlink paths', async () => {
+      const copilotPath = `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json`;
+      const geminiPath = `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-gemini-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json`;
+      const qiBuffer = await makeRawQueryIndexBuffer([
+        ['/adobe/blog/some-article'], // not a brand-presence path -> skipped
+        [`/adobe/brand-presence/latest/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}`], // latest -> skipped
+        [copilotPath],
+        [copilotPath], // duplicate -> deduped
+        [{ text: geminiPath, hyperlink: 'https://example.com' }], // hyperlink cell -> decoded
+      ]);
+      const bpBuffer = await makeBrandPresenceBuffer([makeBrandPresenceRow()]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      const sheetReads = mockReadFromSP.getCalls().filter((c) => c.args[0] !== 'query-index.xlsx');
+      expect(sheetReads).to.have.lengthOf(2); // copilot (deduped) + gemini; blog/latest excluded
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(2);
+    });
+
+    it('returns null when query-index has brand-presence files but none match the audited weeks', async () => {
+      // Audited week is DEFAULT_WEEK; the only brand-presence file is for week 8.
+      const qiBuffer = await makeQueryIndexBuffer([
+        `/adobe/brand-presence/w8/brandpresence-copilot-w8-${DEFAULT_YEAR}-010126.json`,
+      ]);
+      mockReadFromSP.resolves(qiBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+      expect(log.info).to.have.been.calledWithMatch(/Found 0 brand presence files/);
+    });
+
+    it('skips a brand-presence sheet whose workbook has no worksheets', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const emptyBuffer = await makeEmptyWorkbookBuffer();
+      stubSharePoint(qiBuffer, emptyBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+      // A missing worksheet is skipped gracefully, not treated as a read error.
+      expect(log.error).to.not.have.been.called;
+    });
+
+    it('reads a header-only brand-presence sheet as zero rows', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const headerOnly = await makeRawSheetBuffer([]);
+      stubSharePoint(qiBuffer, headerOnly);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+    });
+
+    it('defaults a missing optional column to an empty string (schema drift)', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      // 'Category' header intentionally omitted.
+      const bpBuffer = await makeRawSheetBuffer(
+        [['https://www.reddit.com/r/drift', 'US', 'DriftTopic', 'P']],
+        ['Sources', 'Region', 'Topics', 'Prompt'],
+      );
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('DriftTopic');
+      expect(result[0].urls[0].category).to.equal('');
     });
   });
 });

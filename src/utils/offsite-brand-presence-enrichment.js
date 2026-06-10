@@ -70,7 +70,7 @@ function cellValueToString(value) {
     return value.toISOString();
   }
   if (Array.isArray(value.richText)) {
-    return value.richText.map((run) => run?.text ?? '').join('');
+    return value.richText.map((run) => run.text).join('');
   }
   if (value.text !== undefined) {
     return cellValueToString(value.text);
