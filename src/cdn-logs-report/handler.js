@@ -37,8 +37,8 @@ import { getPreviousUtcDate } from './agentic-daily-export.js';
  * sites whose logs only cover an earlier period — e.g. backfilling May data in June
  * must not sample the (empty) current week, which would yield no URLs.
  *
- * Otherwise an explicit `weekOffset` wins (the `weeks=N` backfill path); failing that,
- * the previous full week on Mondays, else the current week.
+ * Without a date (normal scheduled run) the period is the previous full week on
+ * Mondays, else the current week.
  */
 function resolvePatternPeriods(auditContext) {
   if (auditContext?.date) {
@@ -46,9 +46,6 @@ function resolvePatternPeriods(auditContext) {
     if (!Number.isNaN(referenceDate.getTime())) {
       return generateReportingPeriods(getPreviousUtcDate(referenceDate), 0);
     }
-  }
-  if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
-    return generateReportingPeriods(new Date(), auditContext.weekOffset);
   }
   return generateReportingPeriods(new Date(), new Date().getUTCDay() === 1 ? -1 : 0);
 }

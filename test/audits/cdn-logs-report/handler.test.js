@@ -233,14 +233,6 @@ describe('CDN Logs Report Handler', function test() {
       expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
     });
 
-    it('uses the explicit weekOffset for pattern sampling when provided', async () => {
-      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
-
-      await runAudit({ weekOffset: -3 });
-
-      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -3);
-    });
-
     it('skips regeneration when the DB rule fetch fails', async () => {
       mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ error: true, source: 'postgres' });
 
