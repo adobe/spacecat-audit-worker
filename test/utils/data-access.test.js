@@ -1109,6 +1109,51 @@ describe('data-access', () => {
         .calledOnceWith([existingSuggestions[0]]);
     });
 
+    it('should warn when mergeDataFunction returns same reference (defensive guard)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'title', count: 5 },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', count: 10 },
+      ];
+
+      // Merge function that mutates in place (contract violation)
+      const badMergeFunction = sinon.stub().callsFake((existing, newItem) => {
+        existing.title = newItem.title;
+        existing.count = newItem.count;
+        return existing; // Returns same reference - triggers warning
+      });
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        mergeDataFunction: badMergeFunction,
+      });
+
+      // Verify warning was logged
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/mergeDataFunction returned same reference/),
+      );
+      // Verify the merge function was called
+      expect(badMergeFunction).to.have.been.called;
+    });
+
     it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
       const suggestionsData = [{ key: '1', title: 'old title' }];
       const existingSuggestions = [{
