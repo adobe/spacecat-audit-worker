@@ -758,6 +758,53 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
+  it('should include fieldEngagement from opportunity data', async () => {
+    const fieldEngagement = [
+      { source: 'input[name="email"]', clicks: 200, fills: 150, avg_time_spend: '3.00' },
+      { source: 'input[name="phone"]', clicks: 120, fills: 100, avg_time_spend: '7.50' },
+    ];
+    const opportunity = {
+      type: 'high-form-views-low-conversions',
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      data: {
+        form: 'https://example.com/form1',
+        trackedFormKPIValue: 0.05,
+        metrics: [],
+        formsource: 'form.contact',
+        pageViews: 500,
+        formViews: 200,
+        fieldEngagement,
+      },
+    };
+
+    await sendMessageToMystiqueForGuidance(context, opportunity);
+
+    const message = sqsStub.firstCall.args[1];
+    expect(message.data.field_engagement).to.deep.equal(fieldEngagement);
+  });
+
+  it('should default field_engagement to empty array when not present in data', async () => {
+    const opportunity = {
+      type: 'high-form-views-low-conversions',
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      data: {
+        form: 'https://example.com/form1',
+        trackedFormKPIValue: 0.05,
+        metrics: [],
+        formsource: 'form.contact',
+        pageViews: 500,
+        formViews: 200,
+      },
+    };
+
+    await sendMessageToMystiqueForGuidance(context, opportunity);
+
+    const message = sqsStub.firstCall.args[1];
+    expect(message.data.field_engagement).to.deep.equal([]);
+  });
+
 });
 
 

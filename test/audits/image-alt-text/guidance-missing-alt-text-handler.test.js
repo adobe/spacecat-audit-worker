@@ -14,7 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
 
 use(sinonChai);
@@ -29,6 +29,7 @@ describe('Missing Alt Text Guidance Handler', () => {
   let guidanceHandler;
   let addAltTextSuggestionsStub;
   let getProjectedMetricsStub;
+  let checkSiteRequiresValidationStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -126,12 +127,16 @@ describe('Missing Alt Text Guidance Handler', () => {
       projectedTrafficLost: 100,
       projectedTrafficValue: 100,
     });
+    checkSiteRequiresValidationStub = sandbox.stub().resolves(false);
 
     // Mock the guidance handler with all dependencies
     guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
       '../../../src/image-alt-text/opportunityHandler.js': {
         addAltTextSuggestions: addAltTextSuggestionsStub,
         getProjectedMetrics: getProjectedMetricsStub,
+      },
+      '../../../src/utils/site-validation.js': {
+        checkSiteRequiresValidation: checkSiteRequiresValidationStub,
       },
     });
   });
@@ -653,6 +658,9 @@ describe('Missing Alt Text Guidance Handler', () => {
         addAltTextSuggestions: addAltTextSuggestionsStub,
         getProjectedMetrics: getProjectedMetricsStub,
       },
+      '../../../src/utils/site-validation.js': {
+        checkSiteRequiresValidation: checkSiteRequiresValidationStub,
+      },
     });
 
     const result = await guidanceHandler(mockMessage, context);
@@ -739,6 +747,54 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(context.log.warn).to.have.been.calledWith(
       sinon.match(/Failed to save audit status: Save failed/),
     );
+  });
+
+  it('should create suggestions with PENDING_VALIDATION status for PAID-tier sites', async () => {
+    checkSiteRequiresValidationStub.resolves(true);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(checkSiteRequiresValidationStub).to.have.been.calledOnce;
+
+    const callArgs = addAltTextSuggestionsStub.getCall(0).args[0];
+    const newSuggestions = callArgs.newSuggestionDTOs;
+    expect(newSuggestions).to.have.length.greaterThan(0);
+    newSuggestions.forEach((dto) => {
+      expect(dto.status).to.equal(SuggestionModel.STATUSES.PENDING_VALIDATION);
+    });
+  });
+
+  it('should create suggestions with NEW status for free-tier sites', async () => {
+    checkSiteRequiresValidationStub.resolves(false);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(checkSiteRequiresValidationStub).to.have.been.calledOnce;
+
+    const callArgs = addAltTextSuggestionsStub.getCall(0).args[0];
+    const newSuggestions = callArgs.newSuggestionDTOs;
+    expect(newSuggestions).to.have.length.greaterThan(0);
+    newSuggestions.forEach((dto) => {
+      expect(dto.status).to.equal(SuggestionModel.STATUSES.NEW);
+    });
+  });
+
+  it('should create suggestions with NEW status for LLMO/excluded orgs (requiresValidation false)', async () => {
+    // LLMO orgs and excluded orgs return false from checkSiteRequiresValidation
+    checkSiteRequiresValidationStub.resolves(false);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+
+    const callArgs = addAltTextSuggestionsStub.getCall(0).args[0];
+    const newSuggestions = callArgs.newSuggestionDTOs;
+    expect(newSuggestions).to.have.length.greaterThan(0);
+    newSuggestions.forEach((dto) => {
+      expect(dto.status).to.equal(SuggestionModel.STATUSES.NEW);
+    });
   });
 
   it('should not delete manually edited suggestions even when in pageUrlSet', async () => {

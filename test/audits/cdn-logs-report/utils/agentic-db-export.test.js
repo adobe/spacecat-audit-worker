@@ -21,13 +21,11 @@ describe('agentic DB export orchestration', () => {
   let sandbox;
   let clock;
   let runDailyAgenticExportStub;
-  let generateReportingPeriodsStub;
   let module;
 
   function createArgs(overrides = {}) {
     return {
       athenaClient: {},
-      s3Client: {},
       s3Config: { databaseName: 'cdn_logs_example' },
       site: {
         getId: () => 'site-1',
@@ -39,23 +37,12 @@ describe('agentic DB export orchestration', () => {
           warn: sandbox.spy(),
           error: sandbox.spy(),
         },
-        dataAccess: {
-          Configuration: {
-            findLatest: sandbox.stub().resolves({
-              getQueues: () => ({ audits: 'https://sqs.us-east-1.amazonaws.com/123/audits-queue' }),
-            }),
-          },
-        },
-        sqs: {
-          sendMessage: sandbox.stub().resolves(),
-        },
       },
       agenticReportConfig: {
         name: 'agentic',
         tableName: 'aggregated_logs_example_consolidated',
       },
       auditContext: {},
-      agenticReportHasData: true,
       ...overrides,
     };
   }
@@ -71,19 +58,9 @@ describe('agentic DB export orchestration', () => {
       success: true,
       trafficDate: '2026-04-29',
     });
-    generateReportingPeriodsStub = sandbox.stub().returns({
-      weeks: [{
-        startDate: new Date('2026-03-30T00:00:00.000Z'),
-        endDate: new Date('2026-04-05T23:59:59.999Z'),
-      }],
-      periodIdentifier: 'w14-2026',
-    });
     module = await esmock('../../../../src/cdn-logs-report/utils/agentic-db-export.js', {
       '../../../../src/cdn-logs-report/agentic-daily-export.js': {
         runDailyAgenticExport: runDailyAgenticExportStub,
-      },
-      '../../../../src/cdn-logs-report/utils/report-utils.js': {
-        generateReportingPeriods: generateReportingPeriodsStub,
       },
     });
   });
@@ -105,10 +82,11 @@ describe('agentic DB export orchestration', () => {
     );
   });
 
-  it('runs a single daily export for normal non-weekly report runs', async () => {
+  it('runs a single daily export for yesterday on a normal (no-date) run', async () => {
     const result = await module.runAgenticDbExports(createArgs());
 
     expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+    // No auditContext.date → reference date defaults to now (worker exports yesterday).
     expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
       .to.equal('2026-04-30T12:00:00.000Z');
     expect(result.dailyAgenticExport).to.deep.equal({
@@ -118,11 +96,32 @@ describe('agentic DB export orchestration', () => {
     });
   });
 
-  it('captures single daily export failures without failing the caller', async () => {
+  it('passes a valid date-based reference date through to the daily export', async () => {
+    await module.runAgenticDbExports(createArgs({
+      auditContext: { date: '2026-04-01T10:00:00.000Z' },
+    }));
+
+    expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+    expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
+      .to.equal('2026-04-01T10:00:00.000Z');
+  });
+
+  it('logs invalid date input and falls back to the default reference date', async () => {
+    const args = createArgs({ auditContext: { date: 'not-a-real-date' } });
+
+    await module.runAgenticDbExports(args);
+
+    expect(args.context.log.error).to.have.been.calledWith(
+      'Invalid date in auditContext for site-1: not-a-real-date',
+    );
+    expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+    expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
+      .to.equal('2026-04-30T12:00:00.000Z');
+  });
+
+  it('captures daily export failures without failing the caller', async () => {
     runDailyAgenticExportStub.rejects(new Error('daily export failed'));
-    const args = createArgs({
-      auditContext: { refreshAgenticDailyExport: true },
-    });
+    const args = createArgs();
 
     const result = await module.runAgenticDbExports(args);
 
@@ -136,254 +135,5 @@ describe('agentic DB export orchestration', () => {
       siteId: 'site-1',
       error: 'daily export failed',
     });
-  });
-
-  it('passes a valid date-based run reference date through to the daily export', async () => {
-    await module.runAgenticDbExports(createArgs({
-      auditContext: {
-        date: '2026-04-01T10:00:00.000Z',
-      },
-    }));
-
-    expect(runDailyAgenticExportStub).to.have.been.calledOnce;
-    expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
-      .to.equal('2026-04-01T10:00:00.000Z');
-  });
-
-  it('logs invalid date-based run input and falls back to the default daily export date', async () => {
-    const args = createArgs({
-      auditContext: {
-        date: 'not-a-real-date',
-      },
-    });
-
-    await module.runAgenticDbExports(args);
-
-    expect(args.context.log.error).to.have.been.calledWith(
-      'Invalid date in auditContext for site-1: not-a-real-date',
-    );
-    expect(runDailyAgenticExportStub).to.have.been.calledOnce;
-    expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
-      .to.equal('2026-04-30T12:00:00.000Z');
-  });
-
-  it('skips normal weekly report runs without a refresh flag', async () => {
-    const result = await module.runAgenticDbExports(createArgs({
-      auditContext: { weekOffset: -1 },
-    }));
-
-    expect(result).to.deep.equal({});
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-  });
-
-  it('treats null weekOffset as a non-weekly daily export run', async () => {
-    const args = createArgs({
-      auditContext: { weekOffset: null, refreshAgenticDailyExport: true },
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(runDailyAgenticExportStub).to.have.been.calledOnce;
-    expect(args.context.dataAccess.Configuration.findLatest).to.not.have.been.called;
-    expect(args.context.sqs.sendMessage).to.not.have.been.called;
-    expect(result.dailyAgenticExport).to.deep.equal({
-      enabled: true,
-      success: true,
-      trafficDate: '2026-04-29',
-    });
-  });
-
-  it('skips weekly refreshes when the agentic report has no data', async () => {
-    const args = createArgs({
-      auditContext: { weekOffset: -1, refreshAgenticDailyExport: true },
-      agenticReportHasData: false,
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(result).to.deep.equal({});
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-    expect(args.context.log.info).to.have.been.calledWith(
-      'Skipping weekly agentic DB exports for site-1: no agentic report data found',
-    );
-  });
-
-  it('queues seven date-based exports for completed weekly DB refreshes and keeps the singular result contract', async () => {
-    const args = createArgs({
-      auditContext: {
-        weekOffset: -1,
-        refreshAgenticDailyExport: true,
-      },
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-    expect(args.context.sqs.sendMessage).to.have.callCount(7);
-    expect(args.context.sqs.sendMessage.firstCall).to.have.been.calledWith(
-      'https://sqs.us-east-1.amazonaws.com/123/audits-queue',
-      {
-        type: 'cdn-logs-report',
-        siteId: 'site-1',
-        auditContext: {
-          date: '2026-03-31T00:00:00.000Z',
-          refreshAgenticDailyExport: true,
-          sourceWeekOffset: -1,
-        },
-      },
-      null,
-      0,
-    );
-    expect(args.context.sqs.sendMessage.lastCall.args[1].auditContext.date)
-      .to.equal('2026-04-06T00:00:00.000Z');
-    expect(args.context.sqs.sendMessage.lastCall.args[3]).to.equal(30);
-    expect(result.dailyAgenticExports).to.have.length(7);
-    expect(result.dailyAgenticExport).to.deep.equal(result.dailyAgenticExports.at(-1));
-    expect(args.context.log.info).to.have.been.calledWith(
-      'Queueing weekly agentic DB exports for site-1: weekOffset=-1, trigger=refreshAgenticDailyExport, days=7',
-    );
-  });
-
-  it('runs only completed current-week exports for BYOCDN refreshes', async () => {
-    generateReportingPeriodsStub.returns({
-      weeks: [{
-        startDate: new Date('2026-04-27T00:00:00.000Z'),
-        endDate: new Date('2026-05-03T23:59:59.999Z'),
-      }],
-      periodIdentifier: 'w18-2026',
-    });
-    const args = createArgs({
-      auditContext: {
-        weekOffset: 0,
-        refreshAgenticDailyExport: true,
-        triggeredBy: 'byocdn-other',
-      },
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-    expect(args.context.sqs.sendMessage).to.have.callCount(3);
-    expect(args.context.sqs.sendMessage.firstCall.args[1].auditContext).to.deep.equal({
-      date: '2026-04-28T00:00:00.000Z',
-      refreshAgenticDailyExport: true,
-      triggeredBy: 'byocdn-other',
-      sourceWeekOffset: 0,
-    });
-    expect(args.context.sqs.sendMessage.lastCall.args[1].auditContext.date)
-      .to.equal('2026-04-30T00:00:00.000Z');
-    expect(result.dailyAgenticExports).to.have.length(3);
-    expect(args.context.log.info).to.have.been.calledWith(
-      'Queueing weekly agentic DB exports for site-1: weekOffset=0, trigger=byocdn-other, days=3',
-    );
-  });
-
-  it('continues queueing when one date-based export message fails', async () => {
-    const args = createArgs({
-      auditContext: { weekOffset: -1, refreshAgenticDailyExport: true },
-    });
-    args.context.sqs.sendMessage.onCall(3).rejects(new Error('queue failed'));
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(args.context.sqs.sendMessage).to.have.callCount(7);
-    expect(result.dailyAgenticExports).to.have.length(7);
-    expect(result.dailyAgenticExports[3]).to.include({
-      success: false,
-      queued: false,
-      error: 'queue failed',
-    });
-    expect(args.context.log.warn).to.have.been.calledWith(
-      'Partial agentic DB export queueing failure for site-1: 1/7 days failed',
-    );
-  });
-
-  it('does not forward invalid triggeredBy values to queued date-based exports', async () => {
-    const args = createArgs({
-      auditContext: {
-        weekOffset: -1,
-        refreshAgenticDailyExport: true,
-        triggeredBy: 'bad\ntrigger',
-      },
-    });
-
-    await module.runAgenticDbExports(args);
-
-    expect(args.context.sqs.sendMessage.firstCall.args[1].auditContext).to.deep.equal({
-      date: '2026-03-31T00:00:00.000Z',
-      refreshAgenticDailyExport: true,
-      sourceWeekOffset: -1,
-    });
-    expect(args.context.log.info).to.have.been.calledWith(
-      'Queueing weekly agentic DB exports for site-1: weekOffset=-1, trigger=refreshAgenticDailyExport, days=7',
-    );
-  });
-
-  it('captures Configuration lookup failures without failing weekly report results', async () => {
-    const args = createArgs({
-      auditContext: { weekOffset: -1, refreshAgenticDailyExport: true },
-    });
-    args.context.dataAccess.Configuration.findLatest.rejects(new Error('configuration unavailable'));
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(args.context.sqs.sendMessage).to.not.have.been.called;
-    expect(args.context.log.error).to.have.been.calledWith(
-      'Failed to resolve audit queue for site site-1: configuration unavailable',
-      sinon.match.instanceOf(Error),
-    );
-    expect(result).to.deep.equal({
-      dailyAgenticExport: {
-        enabled: true,
-        success: false,
-        queued: false,
-        siteId: 'site-1',
-        error: 'configuration unavailable',
-      },
-      dailyAgenticExports: [],
-    });
-  });
-
-  it('captures missing audit queue configuration without throwing', async () => {
-    const args = createArgs({
-      auditContext: { weekOffset: -1, refreshAgenticDailyExport: true },
-    });
-    args.context.dataAccess.Configuration.findLatest.resolves({
-      getQueues: () => ({}),
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(args.context.sqs.sendMessage).to.not.have.been.called;
-    expect(args.context.log.error).to.have.been.calledWith(
-      'Audit queue not configured for site site-1; skipping weekly DB export queueing',
-    );
-    expect(result).to.deep.equal({
-      dailyAgenticExport: {
-        enabled: true,
-        success: false,
-        queued: false,
-        siteId: 'site-1',
-        error: 'Audit queue not configured',
-      },
-      dailyAgenticExports: [],
-    });
-  });
-
-  it('returns an empty weekly result when the reporting period has no week start', async () => {
-    generateReportingPeriodsStub.returns({
-      weeks: [],
-      periodIdentifier: 'w14-2026',
-    });
-    const args = createArgs({
-      auditContext: { weekOffset: -1, refreshAgenticDailyExport: true },
-    });
-
-    const result = await module.runAgenticDbExports(args);
-
-    expect(runDailyAgenticExportStub).to.not.have.been.called;
-    expect(args.context.dataAccess.Configuration.findLatest).to.not.have.been.called;
-    expect(result.dailyAgenticExport).to.equal(null);
-    expect(result.dailyAgenticExports).to.deep.equal([]);
   });
 });

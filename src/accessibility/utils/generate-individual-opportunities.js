@@ -22,6 +22,7 @@ import {
   syncSuggestions,
   keepSameDataFunction,
   warnOnInvalidSuggestionData,
+  resolveOpportunityIfNoIssues,
 } from '../../utils/data-access.js';
 import {
   successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR, issueTypesForCodeFix,
@@ -818,7 +819,7 @@ export function calculateAccessibilityMetrics(aggregatedData) {
  */
 export async function createAccessibilityIndividualOpportunities(accessibilityData, context) {
   const {
-    site, log,
+    site, log, dataAccess,
   } = context;
 
   log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
@@ -832,6 +833,11 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
   // Early return if no actionable issues found
   if (!aggregatedData || !aggregatedData.data || aggregatedData.data.length === 0) {
     log.debug(`[A11yIndividual] No individual accessibility opportunities found for ${site.getBaseURL()}`);
+    await Promise.all(
+      Object.keys(accessibilityOpportunitiesMap).map(
+        (oppType) => resolveOpportunityIfNoIssues(site.getId(), oppType, dataAccess, log),
+      ),
+    );
     return {
       status: 'NO_OPPORTUNITIES',
       message: 'No accessibility issues found in tracked categories',

@@ -21,10 +21,6 @@ const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
 const XLSX_RETRY_MAX = 3;
 const XLSX_RETRY_DELAY_MS = 60_000;
 
-const BULK_POLL_INTERVAL_MS = 5_000;
-const BULK_POLL_TIMEOUT_MS = 3 * 60_000;
-const BULK_LOG_PATHS_THRESHOLD = 10;
-
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
@@ -290,75 +286,6 @@ export async function uploadAndPublishFile(
       error: error.message,
       stack: error.stack,
     });
-    throw error;
-  }
-}
-
-async function runBulkJob(route, operation, paths, log, opts = {}) {
-  const { wait = true, pollTimeoutMs = BULK_POLL_TIMEOUT_MS } = opts;
-  const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
-  const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
-  const res = await fetchWithRetry(
-    url,
-    { method: 'POST', headers, body: JSON.stringify({ paths }) },
-    `${operation} request`,
-    log,
-  );
-  const data = await res.json();
-  const jobUrl = data.links?.self;
-  if (!jobUrl) {
-    throw new Error(`No job URL from ${operation}`);
-  }
-  const pathSummary = paths.length <= BULK_LOG_PATHS_THRESHOLD ? `: ${paths.join(', ')}` : '';
-  log.info(`%s: ${operation} job started for ${paths.length} paths${pathSummary}, job URL: ${jobUrl}`, AUDIT_NAME);
-
-  if (!wait) {
-    log.info(`%s: ${operation} job fire-and-forget, not polling for completion: ${jobUrl}`, AUDIT_NAME);
-    return;
-  }
-
-  const maxAttempts = Math.ceil(pollTimeoutMs / BULK_POLL_INTERVAL_MS);
-  for (let i = 0; i < maxAttempts; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(BULK_POLL_INTERVAL_MS);
-    // eslint-disable-next-line no-await-in-loop
-    const statusRes = await fetchWithRetry(
-      jobUrl,
-      { method: 'GET', headers },
-      `${operation} status check`,
-      log,
-    );
-    // eslint-disable-next-line no-await-in-loop
-    const status = await statusRes.json();
-    const { state, progress } = status;
-    log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
-    if (state === 'stopped') {
-      return;
-    }
-  }
-  throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
-}
-
-/**
- * Bulk preview and publish files to admin.hlx.page
- * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
- * @param {object} log - Logger
- */
-export async function bulkPublishToAdminHlx(reports, log, { pollTimeoutMs } = {}) {
-  if (!reports?.length) {
-    return;
-  }
-
-  const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
-  log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
-
-  try {
-    await runBulkJob('preview', 'preview', paths, log, { pollTimeoutMs });
-    await runBulkJob('live', 'publish', paths, log, { wait: false });
-    log.info(`%s: Bulk publish submitted for ${paths.length} files (preview complete, publish fire-and-forget)`, AUDIT_NAME);
-  } catch (error) {
-    const pathSummary = paths.length <= BULK_LOG_PATHS_THRESHOLD ? ` [${paths.join(', ')}]` : '';
-    log.error(`%s: Bulk publish failed for ${paths.length} paths${pathSummary}: ${error.message}`, AUDIT_NAME);
     throw error;
   }
 }
