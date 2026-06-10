@@ -40,14 +40,16 @@ async function refreshWeeklyAgenticRollup({ site, context, trafficDate }) {
     return { success: false, error: 'postgrest-client-unavailable' };
   }
 
-  const [{ startDate, endDate }] = generateReportingPeriods(
-    new Date(`${trafficDate}T00:00:00.000Z`),
-    0,
-  ).weeks;
-  const weekStart = toUtcDateString(startDate);
-  const weekEnd = toUtcDateString(endDate);
-
+  let weekStart;
+  let weekEnd;
   try {
+    const [{ startDate, endDate }] = generateReportingPeriods(
+      new Date(`${trafficDate}T00:00:00.000Z`),
+      0,
+    ).weeks;
+    weekStart = toUtcDateString(startDate);
+    weekEnd = toUtcDateString(endDate);
+
     const { error } = await postgrestClient.rpc(WEEKLY_REFRESH_RPC, {
       p_site_id: siteId,
       p_start_date: weekStart,
