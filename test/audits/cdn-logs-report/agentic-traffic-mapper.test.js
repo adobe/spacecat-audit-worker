@@ -14,93 +14,109 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { mapToAgenticTrafficBundle } from '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js';
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import {
+  mapToAgenticTrafficBundle,
+  getLlmVisibilityScore,
+} from '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js';
 
 use(sinonChai);
 
+// Builds a stub prerender suggestion exposing the data-access accessors the mapper uses.
+const makeSuggestion = (data, {
+  status = Suggestion.STATUSES.NEW,
+  updatedAt = '2026-03-31T00:00:00.000Z',
+} = {}) => ({
+  getData: () => data,
+  getStatus: () => status,
+  getUpdatedAt: () => updatedAt,
+});
+
+// Builds a context whose Opportunity data-access returns a single prerender opportunity
+// carrying the supplied suggestions.
+const makeContext = (suggestions, {
+  type = Audit.AUDIT_TYPES.PRERENDER,
+  log = { warn: sinon.spy() },
+} = {}) => ({
+  log,
+  dataAccess: {
+    Opportunity: {
+      allBySiteIdAndStatus: sinon.stub().resolves([
+        { getType: () => type, getSuggestions: sinon.stub().resolves(suggestions) },
+      ]),
+    },
+  },
+});
+
+const baseSite = (overrides = {}) => ({
+  getId: () => 'site-1',
+  getBaseURL: () => 'https://www.example.com',
+  getConfig: () => ({
+    getLlmoCountryCodeIgnoreList: () => [],
+  }),
+  ...overrides,
+});
+
+const chatbotRow = (url, overrides = {}) => ({
+  agent_type: 'Chatbots',
+  user_agent_display: 'ChatGPT-User',
+  status: 200,
+  number_of_hits: 4,
+  avg_ttfb_ms: 50,
+  country_code: 'US',
+  url,
+  host: 'www.example.com',
+  product: 'Docs',
+  category: 'Documentation',
+  ...overrides,
+});
+
 describe('agentic traffic mapper', () => {
+  describe('getLlmVisibilityScore', () => {
+    it('returns 100 when deployed, covered by domain-wide, or covered by pattern', () => {
+      expect(getLlmVisibilityScore({ isDeployed: true })).to.equal(100);
+      expect(getLlmVisibilityScore({ coveredByDomainWide: true })).to.equal(100);
+      expect(getLlmVisibilityScore({ coveredByPattern: true })).to.equal(100);
+    });
+
+    it('computes the word-count ratio and caps it at 100', () => {
+      expect(getLlmVisibilityScore({ wordCountBefore: 30, wordCountAfter: 120 })).to.equal(25);
+      expect(getLlmVisibilityScore({ wordCountBefore: 200, wordCountAfter: 100 })).to.equal(100);
+    });
+
+    it('returns 0 when word counts are missing or unusable', () => {
+      expect(getLlmVisibilityScore({ wordCountBefore: 10, wordCountAfter: 0 })).to.equal(0);
+      expect(getLlmVisibilityScore({})).to.equal(0);
+    });
+  });
+
   it('maps Athena rows into traffic and classification bundle rows', async () => {
-    const site = {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => ['AA'],
+    const context = makeContext([
+      makeSuggestion({
+        url: 'https://www.example.com/docs/page',
+        wordCountBefore: 80,
+        wordCountAfter: 100,
+        edgeDeployed: '2026-03-31T00:00:00.000Z',
       }),
-    };
-    const context = {
-      log: {
-        warn: sinon.spy(),
-      },
-      dataAccess: {
-        PageCitability: {
-          allBySiteId: sinon.stub().resolves([
-            {
-              getUrl: () => 'https://www.example.com/docs/page',
-              getCitabilityScore: () => 82,
-              getIsDeployedAtEdge: () => true,
-              getUpdatedAt: () => '2026-03-31T00:00:00.000Z',
-            },
-            {
-              getUrl: () => '/bad-url',
-              getCitabilityScore: () => 12,
-              getIsDeployedAtEdge: () => false,
-              getUpdatedAt: () => '2026-03-30T00:00:00.000Z',
-            },
-          ]),
-        },
-      },
-    };
+      makeSuggestion({
+        url: '/bad-url',
+        wordCountBefore: 5,
+        wordCountAfter: 10,
+      }),
+    ]);
 
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 12,
-        avg_ttfb_ms: 123.45,
-        country_code: 'US',
-        url: '/docs/page',
-        host: 'docs.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 5,
-        avg_ttfb_ms: 110,
-        country_code: 'AA',
-        url: '/docs/page',
-        host: 'docs.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
-      {
-        agent_type: 'Other',
-        user_agent_display: 'Mozilla/5.0',
-        status: 200,
-        number_of_hits: 8,
-        avg_ttfb_ms: 80,
-        country_code: 'DE',
-        url: '/skip-me',
-        host: 'docs.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 0,
-        avg_ttfb_ms: 99,
-        country_code: 'US',
-        url: '/skip-me',
-        host: 'docs.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
-    ], site, context, '2026-03-31');
+      chatbotRow('/docs/page', {
+        number_of_hits: 12, avg_ttfb_ms: 123.45, host: 'docs.example.com',
+      }),
+      chatbotRow('/docs/page', {
+        number_of_hits: 5, avg_ttfb_ms: 110, country_code: 'AA', host: 'docs.example.com',
+      }),
+      chatbotRow('/skip-me', { agent_type: 'Other', host: 'docs.example.com' }),
+      chatbotRow('/skip-me', { number_of_hits: 0, host: 'docs.example.com' }),
+    ], baseSite({
+      getConfig: () => ({ getLlmoCountryCodeIgnoreList: () => ['AA'] }),
+    }), context, '2026-03-31');
 
     expect(result.trafficRows).to.have.length(2);
     expect(result.classificationRows).to.have.length(1);
@@ -116,8 +132,9 @@ describe('agentic traffic mapper', () => {
       hits: 12,
       updated_by: 'audit-worker:agentic-daily-export',
     });
+    // Edge-deployed suggestion ⇒ visibility score forced to 100.
     expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 82,
+      citability_score: 100,
       deployed_at_edge: true,
     });
 
@@ -130,7 +147,89 @@ describe('agentic traffic mapper', () => {
       content_type: 'html',
       updated_by: 'audit-worker:agentic-daily-export',
     });
-    expect(context.log.warn).to.have.been.calledOnce;
+    // The malformed suggestion URL is logged and skipped.
+    expect(context.log.warn).to.have.been.calledWith(
+      'Skipping malformed citability URL during agentic mapping: Invalid URL',
+    );
+  });
+
+  it('computes citability from word counts for non-deployed suggestions', async () => {
+    const context = makeContext([
+      makeSuggestion({
+        url: 'https://www.example.com/guide',
+        wordCountBefore: 30,
+        wordCountAfter: 120,
+      }),
+    ]);
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/guide')],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 25,
+      deployed_at_edge: false,
+    });
+  });
+
+  it('treats coveredByPattern and FIXED-status suggestions as deployed', async () => {
+    const patternContext = makeContext([
+      makeSuggestion({ url: 'https://www.example.com/pattern', coveredByPattern: 'p1' }),
+    ]);
+    const patternResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/pattern')],
+      baseSite(),
+      patternContext,
+      '2026-03-31',
+    );
+    expect(patternResult.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 100,
+      deployed_at_edge: true,
+    });
+
+    const fixedContext = makeContext([
+      makeSuggestion(
+        { url: 'https://www.example.com/fixed', wordCountBefore: 10, wordCountAfter: 100 },
+        { status: Suggestion.STATUSES.FIXED },
+      ),
+    ]);
+    const fixedResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/fixed')],
+      baseSite(),
+      fixedContext,
+      '2026-03-31',
+    );
+    expect(fixedResult.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 100,
+      deployed_at_edge: true,
+    });
+  });
+
+  it('skips domain-wide, url-less, outdated, and undeployed-no-wordcount suggestions', async () => {
+    const context = makeContext([
+      makeSuggestion({ url: 'https://www.example.com/dw', isDomainWide: true, edgeDeployed: 'x' }),
+      makeSuggestion({ wordCountBefore: 5, wordCountAfter: 10 }),
+      makeSuggestion(
+        { url: 'https://www.example.com/old', edgeDeployed: 'x' },
+        { status: Suggestion.STATUSES.OUTDATED },
+      ),
+      makeSuggestion({ url: 'https://www.example.com/nodata', wordCountAfter: 0 }),
+      makeSuggestion(undefined),
+    ]);
+
+    const result = await mapToAgenticTrafficBundle([
+      chatbotRow('/dw'),
+      chatbotRow('/old'),
+      chatbotRow('/nodata'),
+    ], baseSite(), context, '2026-03-31');
+
+    // None of the suggestions contribute a citability entry.
+    result.trafficRows.forEach((row) => {
+      expect(row.dimensions).to.deep.equal({});
+    });
   });
 
   it('returns empty bundle arrays when required inputs are missing', async () => {
@@ -142,40 +241,10 @@ describe('agentic traffic mapper', () => {
   });
 
   it('classifies common image and icon asset content types', async () => {
-    const site = {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => [],
-      }),
-    };
-
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 12,
-        avg_ttfb_ms: 50,
-        country_code: 'US',
-        url: '/assets/hero.png',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 6,
-        avg_ttfb_ms: 40,
-        country_code: 'US',
-        url: '/favicon.ico',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-    ], site, { log: { warn: sinon.spy() } }, '2026-03-31');
+      chatbotRow('/assets/hero.png', { number_of_hits: 12, category: 'Asset' }),
+      chatbotRow('/favicon.ico', { number_of_hits: 6, category: 'Asset' }),
+    ], baseSite(), { log: { warn: sinon.spy() } }, '2026-03-31');
 
     expect(result.classificationRows).to.deep.include({
       host: 'www.example.com',
@@ -197,131 +266,168 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('uses the newest citability record for a path and supports missing PageCitability access', async () => {
-    const site = {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => [],
-      }),
-    };
-    const context = {
-      log: {
-        warn: sinon.spy(),
-      },
+  it('uses the newest suggestion for a path and supports missing Opportunity access', async () => {
+    const context = makeContext([
+      makeSuggestion(
+        { url: 'https://www.example.com/image.jpg', wordCountBefore: 10, wordCountAfter: 100 },
+        { updatedAt: '2026-03-30T00:00:00.000Z' },
+      ),
+      makeSuggestion(
+        { url: 'https://www.example.com/image.jpg', edgeDeployed: 'x' },
+        { updatedAt: '2026-03-31T00:00:00.000Z' },
+      ),
+    ]);
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/image.jpg', { category: 'Asset' })],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
+
+    // Newest record (edge-deployed) wins.
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 100,
+      deployed_at_edge: true,
+    });
+    expect(result.classificationRows[0].content_type).to.equal('jpg');
+
+    // No Opportunity data-access at all ⇒ no citability dimensions.
+    const noCitabilityResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/brochure.gif', { category: 'Asset' })],
+      baseSite(),
+      { log: { warn: sinon.spy() } },
+      '2026-03-31',
+    );
+    expect(noCitabilityResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(noCitabilityResult.classificationRows[0].content_type).to.equal('gif');
+  });
+
+  it('keeps an older record when a newer-dated path entry is processed second', async () => {
+    const context = makeContext([
+      makeSuggestion(
+        { url: 'https://www.example.com/page', edgeDeployed: 'x' },
+        { updatedAt: '2026-03-31T00:00:00.000Z' },
+      ),
+      makeSuggestion(
+        { url: 'https://www.example.com/page', wordCountBefore: 10, wordCountAfter: 100 },
+        { updatedAt: '2026-03-30T00:00:00.000Z' },
+      ),
+    ]);
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/page')],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 100,
+      deployed_at_edge: true,
+    });
+  });
+
+  it('returns no citability when the prerender opportunity or its suggestions are absent', async () => {
+    // No prerender-typed opportunity in the NEW list.
+    const wrongTypeContext = makeContext(
+      [makeSuggestion({ url: 'https://www.example.com/x', edgeDeployed: 'x' })],
+      { type: 'broken-internal-links' },
+    );
+    const wrongTypeResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')],
+      baseSite(),
+      wrongTypeContext,
+      '2026-03-31',
+    );
+    expect(wrongTypeResult.trafficRows[0].dimensions).to.deep.equal({});
+
+    // Opportunity exists but has no getSuggestions accessor.
+    const noSuggestionsContext = {
+      log: { warn: sinon.spy() },
       dataAccess: {
-        PageCitability: {
-          allBySiteId: sinon.stub().resolves([
-            {
-              getUrl: () => 'https://www.example.com/image.jpg',
-              getCitabilityScore: () => 10,
-              getIsDeployedAtEdge: () => false,
-              getUpdatedAt: () => '2026-03-30T00:00:00.000Z',
-            },
-            {
-              getUrl: () => 'https://www.example.com/image.jpg',
-              getCitabilityScore: () => 55,
-              getIsDeployedAtEdge: () => true,
-              getUpdatedAt: () => '2026-03-31T00:00:00.000Z',
-            },
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([
+            { getType: () => Audit.AUDIT_TYPES.PRERENDER },
+          ]),
+        },
+      },
+    };
+    const noSuggestionsResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')],
+      baseSite(),
+      noSuggestionsContext,
+      '2026-03-31',
+    );
+    expect(noSuggestionsResult.trafficRows[0].dimensions).to.deep.equal({});
+
+    // allBySiteIdAndStatus resolves null ⇒ tolerated.
+    const nullOppsContext = {
+      log: { warn: sinon.spy() },
+      dataAccess: {
+        Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves(null) },
+      },
+    };
+    const nullOppsResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')],
+      baseSite(),
+      nullOppsContext,
+      '2026-03-31',
+    );
+    expect(nullOppsResult.trafficRows[0].dimensions).to.deep.equal({});
+  });
+
+  it('tolerates a prerender opportunity whose suggestions resolve to null', async () => {
+    const context = {
+      log: { warn: sinon.spy() },
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([
+            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getSuggestions: sinon.stub().resolves(null) },
           ]),
         },
       },
     };
 
-    const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 4,
-        avg_ttfb_ms: 50,
-        country_code: 'US',
-        url: '/image.jpg',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-    ], site, context, '2026-03-31');
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 55,
-      deployed_at_edge: true,
-    });
-    expect(result.classificationRows[0].content_type).to.equal('jpg');
-
-    const noCitabilityResult = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 4,
-        avg_ttfb_ms: 50,
-        country_code: 'US',
-        url: '/brochure.gif',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-    ], site, { log: { warn: sinon.spy() } }, '2026-03-31');
-
-    expect(noCitabilityResult.trafficRows[0].dimensions).to.deep.equal({});
-    expect(noCitabilityResult.classificationRows[0].content_type).to.equal('gif');
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
   });
 
-  it('returns other for unknown file extensions and logs citability fetch failures', async () => {
+  it('logs and tolerates prerender suggestion fetch failures', async () => {
     const warn = sinon.spy();
-    const site = {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => [],
-      }),
-    };
-
-    const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 4,
-        avg_ttfb_ms: 50,
-        country_code: 'US',
-        url: '/download/file.bin',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-    ], site, {
+    const context = {
       log: { warn },
       dataAccess: {
-        PageCitability: {
-          allBySiteId: sinon.stub().rejects(new Error('citability unavailable')),
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().rejects(new Error('opportunity unavailable')),
         },
       },
-    }, '2026-03-31');
+    };
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/download/file.bin', { category: 'Asset' })],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
 
     expect(result.trafficRows[0].dimensions).to.deep.equal({});
     expect(result.classificationRows[0].content_type).to.equal('other');
     expect(warn).to.have.been.calledWith(
-      'Failed to fetch citability scores for agentic mapping: citability unavailable',
+      'Failed to fetch prerender suggestions for agentic mapping: opportunity unavailable',
     );
   });
 
   it('uses site and row fallbacks for host, base URL, status, and timing fields', async () => {
     const resultWithoutConfig = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 'bad-status',
-        number_of_hits: 7,
-        avg_ttfb_ms: 'not-a-number',
-        country_code: 'US',
-        url: '-',
-        host: '',
-        product: 'Docs',
-        category: 'Landing',
-      },
+      chatbotRow('-', {
+        status: 'bad-status', number_of_hits: 7, avg_ttfb_ms: 'not-a-number', host: '', category: 'Landing',
+      }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://fallback.example.com/base',
@@ -337,18 +443,9 @@ describe('agentic traffic mapper', () => {
     expect(resultWithoutConfig.classificationRows[0].host).to.equal('fallback.example.com');
 
     const resultWithOverride = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 201,
-        number_of_hits: 3,
-        avg_ttfb_ms: 15,
-        country_code: 'US',
-        url: '/docs/start',
-        host: '',
-        product: 'Docs',
-        category: 'Documentation',
-      },
+      chatbotRow('/docs/start', {
+        status: 201, number_of_hits: 3, avg_ttfb_ms: 15, host: '',
+      }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://ignored.example.com',
@@ -371,32 +468,17 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('classifies the remaining known file extensions and tolerates null citability payloads', async () => {
-    const site = {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => [],
-      }),
-    };
-
+  it('classifies the remaining known file extensions and tolerates absent citability', async () => {
     const result = await mapToAgenticTrafficBundle([
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/a.webp', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/a.svg', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/a.bmp', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/a.avif', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/feed.xml', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/guide.pdf', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/index.htm', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/notes.txt', host: 'www.example.com', product: 'Docs', category: 'Asset' },
-    ], site, {
-      log: { warn: sinon.spy() },
-      dataAccess: {
-        PageCitability: {
-          allBySiteId: sinon.stub().resolves(null),
-        },
-      },
-    }, '2026-03-31');
+      chatbotRow('/a.webp', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/a.svg', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/a.bmp', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/a.avif', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/feed.xml', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/guide.pdf', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/index.htm', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+      chatbotRow('/notes.txt', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+    ], baseSite(), { log: { warn: sinon.spy() }, dataAccess: {} }, '2026-03-31');
 
     expect(result.classificationRows.map((row) => row.content_type)).to.deep.equal([
       'webp',
@@ -412,30 +494,12 @@ describe('agentic traffic mapper', () => {
 
   it('normalizes empty and non-string values when building bundle rows', async () => {
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 202,
-        number_of_hits: 2,
-        avg_ttfb_ms: 5,
-        country_code: 'US',
-        url: '',
-        host: null,
-        product: {},
-        category: null,
-      },
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 202,
-        number_of_hits: 2,
-        avg_ttfb_ms: 5,
-        country_code: 'US',
-        url: '/trimmed',
-        host: null,
-        product: '   ',
-        category: 'Category',
-      },
+      chatbotRow('', {
+        status: 202, number_of_hits: 2, avg_ttfb_ms: 5, host: null, product: {}, category: null,
+      }),
+      chatbotRow('/trimmed', {
+        status: 202, number_of_hits: 2, avg_ttfb_ms: 5, host: null, product: '   ', category: 'Category',
+      }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://fallback.example.com',
@@ -459,37 +523,13 @@ describe('agentic traffic mapper', () => {
 
   it('skips pseudo-urls while preserving normal path-only URLs', async () => {
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 5,
-        avg_ttfb_ms: 15,
-        country_code: 'DE',
-        url: '/data:image/x-icon;base64,abcd',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Asset',
-      },
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 3,
-        avg_ttfb_ms: 10,
-        country_code: 'DE',
-        url: 'de/docs/start',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
-    ], {
-      getId: () => 'site-1',
-      getBaseURL: () => 'https://www.example.com',
-      getConfig: () => ({
-        getLlmoCountryCodeIgnoreList: () => [],
+      chatbotRow('/data:image/x-icon;base64,abcd', {
+        number_of_hits: 5, avg_ttfb_ms: 15, country_code: 'DE', category: 'Asset',
       }),
-    }, { log: { warn: sinon.spy() } }, '2026-03-31');
+      chatbotRow('de/docs/start', {
+        number_of_hits: 3, avg_ttfb_ms: 10, country_code: 'DE',
+      }),
+    ], baseSite(), { log: { warn: sinon.spy() } }, '2026-03-31');
 
     expect(result.trafficRows).to.have.length(1);
     expect(result.classificationRows).to.have.length(1);
@@ -499,18 +539,9 @@ describe('agentic traffic mapper', () => {
 
   it('strips null bytes from host and url path values', async () => {
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 2,
-        avg_ttfb_ms: 20,
-        country_code: 'US',
-        url: '/unsafe\0path/index.htm',
-        host: 'WWW.EXAMPLE.COM\0',
-        product: 'Docs',
-        category: 'Documentation',
-      },
+      chatbotRow('/unsafe\0path/index.htm', {
+        number_of_hits: 2, avg_ttfb_ms: 20, host: 'WWW.EXAMPLE.COM\0',
+      }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://fallback.example.com',
@@ -531,18 +562,9 @@ describe('agentic traffic mapper', () => {
 
   it('canonicalizes traversal-style paths after stripping null bytes', async () => {
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 1,
-        avg_ttfb_ms: 10,
-        country_code: 'US',
-        url: '/wlmdeu/../../../../../../../../../../../etc/passwd\0index.htm',
-        host: 'corporate.walmart.com\0',
-        product: 'Docs',
-        category: 'Documentation',
-      },
+      chatbotRow('/wlmdeu/../../../../../../../../../../../etc/passwd\0index.htm', {
+        number_of_hits: 1, avg_ttfb_ms: 10, host: 'corporate.walmart.com\0',
+      }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://corporate.walmart.com',
@@ -576,25 +598,8 @@ describe('agentic traffic mapper', () => {
 
     try {
       const result = await mapToAgenticTrafficBundle([
-        {
-          agent_type: 'Chatbots',
-          user_agent_display: 'ChatGPT-User',
-          status: 200,
-          number_of_hits: 1,
-          avg_ttfb_ms: 10,
-          country_code: 'US',
-          url: '/will-throw',
-          host: 'www.example.com',
-          product: 'Docs',
-          category: 'Documentation',
-        },
-      ], {
-        getId: () => 'site-1',
-        getBaseURL: () => 'https://www.example.com',
-        getConfig: () => ({
-          getLlmoCountryCodeIgnoreList: () => [],
-        }),
-      }, { log: { warn } }, '2026-03-31');
+        chatbotRow('/will-throw', { number_of_hits: 1, avg_ttfb_ms: 10 }),
+      ], baseSite(), { log: { warn } }, '2026-03-31');
 
       expect(result).to.deep.equal({
         trafficRows: [],
@@ -610,18 +615,7 @@ describe('agentic traffic mapper', () => {
 
   it('nulls impossible avg_ttfb_ms values instead of exporting them', async () => {
     const result = await mapToAgenticTrafficBundle([
-      {
-        agent_type: 'Chatbots',
-        user_agent_display: 'ChatGPT-User',
-        status: 200,
-        number_of_hits: 2,
-        avg_ttfb_ms: 24412667,
-        country_code: 'US',
-        url: '/normal/path',
-        host: 'www.example.com',
-        product: 'Docs',
-        category: 'Documentation',
-      },
+      chatbotRow('/normal/path', { number_of_hits: 2, avg_ttfb_ms: 24412667 }),
     ], {
       getId: () => 'site-1',
       getBaseURL: () => 'https://fallback.example.com',

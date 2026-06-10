@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { joinBaseAndPath } from '../../utils/url-utils.js';
 import { validateCountryCode } from './report-utils.js';
 import { inferProviderFromUserAgent } from '../../common/user-agent-classification.js';
@@ -79,22 +80,78 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
-function buildCitabilityMap(citabilityScores, log) {
-  return (citabilityScores || []).reduce((acc, score) => {
+// Suggestion statuses considered "live" for citability. Mirrors the active-status
+// allow-list in project-elmo-ui's usePrerenderGains hook (excludes OUTDATED and other
+// terminal/inactive states). Keep in sync with the UI so the server-produced bundle and
+// the dashboard agree on which suggestions contribute a score.
+const LIVE_SUGGESTION_STATUSES = [
+  Suggestion.STATUSES.NEW,
+  Suggestion.STATUSES.PENDING_VALIDATION,
+  Suggestion.STATUSES.APPROVED,
+  Suggestion.STATUSES.IN_PROGRESS,
+  Suggestion.STATUSES.FIXED,
+  Suggestion.STATUSES.SKIPPED,
+];
+
+/**
+ * LLM visibility ("citability") score for one prerender suggestion. Returns 100 when the
+ * URL is deployed at edge or covered by a domain-wide / pattern deployment, otherwise the
+ * word-count ratio (wordCountBefore / wordCountAfter) * 100, rounded and capped at 100.
+ * Mirrors getLlmVisibilityScore in project-elmo-ui's usePrerenderGains so the server-built
+ * agentic bundle matches what the dashboard renders.
+ */
+export function getLlmVisibilityScore({
+  wordCountBefore, wordCountAfter, isDeployed, coveredByDomainWide, coveredByPattern,
+}) {
+  if (isDeployed || coveredByDomainWide || coveredByPattern) {
+    return 100;
+  }
+  if (Number.isFinite(wordCountBefore) && Number.isFinite(wordCountAfter) && wordCountAfter > 0) {
+    return Math.min(100, Math.round((wordCountBefore / wordCountAfter) * 100));
+  }
+  return 0;
+}
+
+// Builds a pathname -> { score, isDeployedAtEdge, updatedAt } map from prerender suggestions.
+// Domain-wide aggregate suggestions are skipped (they are not per-URL citability). URLs with
+// no deployment signal and no usable word counts are skipped so we never emit a meaningless 0.
+function buildCitabilityMap(suggestions, log) {
+  return suggestions.reduce((acc, suggestion) => {
+    const data = suggestion?.getData?.() ?? {};
+    if (!data.url || data.isDomainWide) {
+      return acc;
+    }
+
     let pathname;
     try {
-      ({ pathname } = new URL(score.getUrl()));
+      ({ pathname } = new URL(data.url));
     } catch (error) {
       log?.warn?.(`Skipping malformed citability URL during agentic mapping: ${error.message}`);
       return acc;
     }
-    const existingScore = acc[pathname];
 
-    if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
+    const isDeployed = !!data.edgeDeployed
+      || suggestion.getStatus?.() === Suggestion.STATUSES.FIXED;
+    const coveredByDomainWide = !!data.coveredByDomainWide;
+    const coveredByPattern = !!data.coveredByPattern;
+    const isDeployedAtEdge = isDeployed || coveredByDomainWide || coveredByPattern;
+
+    const { wordCountBefore, wordCountAfter } = data;
+    const hasUsableWordCounts = Number.isFinite(wordCountBefore)
+      && Number.isFinite(wordCountAfter) && wordCountAfter > 0;
+    if (!isDeployedAtEdge && !hasUsableWordCounts) {
+      return acc;
+    }
+
+    const updatedAt = suggestion.getUpdatedAt?.();
+    const existing = acc[pathname];
+    if (!existing || new Date(updatedAt) > new Date(existing.updatedAt)) {
       acc[pathname] = {
-        score: score.getCitabilityScore(),
-        isDeployedAtEdge: score.getIsDeployedAtEdge(),
-        updatedAt: score.getUpdatedAt(),
+        score: getLlmVisibilityScore({
+          wordCountBefore, wordCountAfter, isDeployed, coveredByDomainWide, coveredByPattern,
+        }),
+        isDeployedAtEdge,
+        updatedAt,
       };
     }
 
@@ -102,16 +159,29 @@ function buildCitabilityMap(citabilityScores, log) {
   }, {});
 }
 
+// Reads live prerender suggestions for the site from the NEW prerender opportunity.
+// PageCitability is being retired; the prerender opportunity's suggestions are now the
+// source of truth for the agentic citability score and edge-deployed status.
 async function getCitabilityScores(site, context) {
-  const pageCitability = context?.dataAccess?.PageCitability;
-  if (!pageCitability?.allBySiteId) {
+  const opportunityDA = context?.dataAccess?.Opportunity;
+  if (!opportunityDA?.allBySiteIdAndStatus) {
     return [];
   }
 
   try {
-    return await pageCitability.allBySiteId(site.getId());
+    const opportunities = await opportunityDA.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const opportunity = (opportunities || []).find(
+      (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER,
+    );
+    if (!opportunity?.getSuggestions) {
+      return [];
+    }
+    const suggestions = await opportunity.getSuggestions();
+    return (suggestions || []).filter(
+      (s) => LIVE_SUGGESTION_STATUSES.includes(s.getStatus?.()),
+    );
   } catch (error) {
-    context?.log?.warn?.(`Failed to fetch citability scores for agentic mapping: ${error.message}`);
+    context?.log?.warn?.(`Failed to fetch prerender suggestions for agentic mapping: ${error.message}`);
     return [];
   }
 }
@@ -141,8 +211,8 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
   }
 
   const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
-  const citabilityScores = await getCitabilityScores(site, context);
-  const citabilityMap = buildCitabilityMap(citabilityScores, context?.log);
+  const prerenderSuggestions = await getCitabilityScores(site, context);
+  const citabilityMap = buildCitabilityMap(prerenderSuggestions, context?.log);
   const baseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL || site.getBaseURL();
   const defaultHost = new URL(baseURL).host;
   const classificationMap = new Map();
