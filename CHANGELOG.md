@@ -1,3 +1,10 @@
+## [1.470.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.0...v1.470.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* prepare Sitemap error codes for UI consistency ([#2640](https://github.com/adobe/spacecat-audit-worker/issues/2640)) ([a8de015](https://github.com/adobe/spacecat-audit-worker/commit/a8de0153803ac984055d461ea828dbb39818f3dd))
+
 # [1.470.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.469.1...v1.470.0) (2026-06-11)
 
 
