@@ -594,7 +594,9 @@ export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContex
       };
     }
 
-    log.error(`cdn-logs-analysis giving up for siteId=${site.getId()} after ${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}: ${e.message}`);
+    // No e.message here: the framework logs the full "... failed. Reason: ..." on
+    // throw, so including it would double-match the ("cdn-logs-analysis" "failed") alert.
+    log.error(`cdn-logs-analysis giving up for siteId=${site.getId()} after ${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
     throw e;
   }
 }

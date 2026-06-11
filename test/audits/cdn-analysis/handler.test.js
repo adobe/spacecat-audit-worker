@@ -820,7 +820,7 @@ describe('CDN Analysis Handler', () => {
 
         expect(context.sqs.sendMessage).to.not.have.been.called;
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/giving up for siteId=test-site-id after 1 retry:/),
+          sinon.match(/giving up for siteId=test-site-id after 1 retry$/),
         );
       });
     });
