@@ -1,3 +1,10 @@
+# [1.470.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.469.1...v1.470.0) (2026-06-11)
+
+
+### Features
+
+* **offsite-brand-presence:** pass imsOrgId to DRS scrape jobs ([#2643](https://github.com/adobe/spacecat-audit-worker/issues/2643)) ([a89bd83](https://github.com/adobe/spacecat-audit-worker/commit/a89bd832416c79f543be49999cade1cc575218fc)), closes [adobe/spacecat-shared#1664](https://github.com/adobe/spacecat-shared/issues/1664)
+
 ## [1.469.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.469.0...v1.469.1) (2026-06-11)
 
 
