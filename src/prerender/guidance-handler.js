@@ -166,7 +166,7 @@ export default async function handler(message, context) {
 
       // Track if AI summary is meaningful
       const hasValidAiSummary = aiSummary && aiSummary.toLowerCase() !== 'not available';
-      const isValuable = typeof valuable === 'boolean' ? valuable : true;
+      const isValuable = typeof valuable === 'boolean' ? valuable : null;
 
       if (hasValidAiSummary) {
         validAiSummaryCount += 1;
