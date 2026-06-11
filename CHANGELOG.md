@@ -1,3 +1,17 @@
+# [1.469.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.468.1...v1.469.0) (2026-06-11)
+
+
+### Features
+
+* **cdn-analysis:** retry transient Athena failures via delayed re-queue ([#2642](https://github.com/adobe/spacecat-audit-worker/issues/2642)) ([4e5bcaf](https://github.com/adobe/spacecat-audit-worker/commit/4e5bcaf1d45db9343392f6b5513463c50465741c))
+
+## [1.468.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.468.0...v1.468.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.11.0 ([#2638](https://github.com/adobe/spacecat-audit-worker/issues/2638)) ([89ef5c3](https://github.com/adobe/spacecat-audit-worker/commit/89ef5c31a7ebee6c176810c453b8b3ccf31c1746))
+
 # [1.468.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.2...v1.468.0) (2026-06-11)
 
 
