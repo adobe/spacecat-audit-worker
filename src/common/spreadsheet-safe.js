@@ -36,6 +36,12 @@ export const FORMULA_TRIGGERS = ['=', '+', '-', '@', '\t', '\r', '\n'];
  * NOT a safe guard — Excel/Sheets trim it before evaluating — so `' =x'`,
  * `'\t=x'`, and `'\n=x'` are all treated as formulas. Plain leading-whitespace
  * text without an operator (`' foo'`, `'   '`) is left alone.
+ *
+ * Note on `-`: a leading `-` is a formula trigger, so a value like `-5` would
+ * be prefixed (`'-5`). No column in these reports holds a negative number
+ * today, so this is not hit in practice; quoting is the deliberate safe default
+ * because `-2+cmd(...)` is a valid formula. If a future column can carry a
+ * genuine negative numeric, add a numeric-skip guard (e.g. `!Number.isNaN`).
  */
 const NEUTRALIZE_PATTERN = /^[\t\r\n]|^\s*[=+\-@]/;
 

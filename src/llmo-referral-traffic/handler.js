@@ -176,8 +176,12 @@ export async function referralTrafficRunner(context) {
   }, {});
 
   // fetch agentic URL classification rules (topic + category); gate enrichment
-  // on rules being present so rows are not blanket-tagged as 'Other'
+  // on rules being present so rows are not blanket-tagged as 'Other'.
+  // Timed: the Postgres fetch latency adds to Lambda runtime and is the first
+  // thing to check during latency investigations.
+  const rulesFetchStart = Date.now();
   const classificationRules = await fetchAgenticUrlClassificationRules(site, context);
+  log.info(`[llmo-referral-traffic] Fetched agentic classification rules in ${Date.now() - rulesFetchStart}ms`);
   const classifier = createClassifier(classificationRules, { log });
   // M5: distinguish a failed fetch from a site that simply has no rules. The
   // classifier is null in both cases, so the fetch error shape disambiguates.

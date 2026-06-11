@@ -160,6 +160,11 @@ function toRegExp(pattern) {
   // ReDoS guard: reject oversized sources, and refuse known catastrophic shapes
   // up front (exponential shapes that the input cap cannot bound). This is a
   // coarse, incomplete screen — see REDOS_HEURISTICS — not a safety proof.
+  // The rule source is authored for RE2J (Trino/Athena), whose grammar has no
+  // backreferences or lookaround — the features most associated with
+  // catastrophic backtracking — so legitimately-authored rules cannot express
+  // the worst exponential shapes. This guard therefore mainly defends against a
+  // corrupted or hostile rules table, not against normal authored input.
   if (src.length > MAX_PATTERN_LENGTH || REDOS_HEURISTICS.some((re) => re.test(src))) {
     return null;
   }
