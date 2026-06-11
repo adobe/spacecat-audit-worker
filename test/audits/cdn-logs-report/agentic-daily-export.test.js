@@ -22,13 +22,25 @@ use(sinonChai);
 
 describe('agentic daily export', () => {
   let sandbox;
+  let mockedModules;
+
+  // Wrap esmock so every mocked module is tracked and purged after each test.
+  // Without purging, esmock's global registrations leak across spec files and
+  // cause nondeterministic cross-file pollution in the full suite.
+  async function loadMocked(...args) {
+    const module = await esmock(...args);
+    mockedModules.push(module);
+    return module;
+  }
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    mockedModules = [];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     sandbox.restore();
+    await Promise.all(mockedModules.map((module) => esmock.purge(module)));
   });
 
   function createConfiguration(queueUrl = 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue') {
@@ -75,7 +87,7 @@ describe('agentic daily export', () => {
       send: sandbox.stub().resolves({}),
     };
 
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE IF NOT EXISTS test_db'),
         getImporterS3Client: () => s3Client,
@@ -206,9 +218,12 @@ describe('agentic daily export', () => {
       }),
     };
 
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+        getImporterS3Client: () => s3Client,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: queryBuilder,
@@ -218,8 +233,6 @@ describe('agentic daily export', () => {
         v4: () => 'batch-123',
       },
     });
-
-    const s3Client = { send: sandbox.stub().resolves({}) };
 
     await module.runDailyAgenticExport({
       athenaClient: {
@@ -258,7 +271,7 @@ describe('agentic daily export', () => {
   });
 
   it('logs a warning when cleanup after failure also fails', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js');
     const log = {
       warn: sandbox.spy(),
     };
@@ -283,7 +296,7 @@ describe('agentic daily export', () => {
   });
 
   it('guards against dispatch without a queue URL', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js');
 
     await expect(module.testHelpers.dispatchAnalyticsEvent({
       context: {
@@ -303,7 +316,7 @@ describe('agentic daily export', () => {
   });
 
   it('dispatches with FIFO MessageGroupId and MessageDeduplicationId', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js');
     const sendMessage = sandbox.stub().resolves();
 
     const result = await module.testHelpers.dispatchAnalyticsEvent({
@@ -333,7 +346,7 @@ describe('agentic daily export', () => {
   });
 
   it('requires an importer bucket before running the daily export', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js');
 
     await expect(module.runDailyAgenticExport({
       athenaClient: {
@@ -377,7 +390,7 @@ describe('agentic daily export', () => {
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
       },
@@ -451,7 +464,7 @@ describe('agentic daily export', () => {
 
   it('fails before Athena or S3 work when the analytics queue is missing', async () => {
     const getImporterS3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
         getImporterS3Client: getImporterS3ClientStub,
@@ -522,7 +535,7 @@ describe('agentic daily export', () => {
       send: sandbox.stub().resolves({}),
     };
 
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
         getImporterS3Client: () => s3Client,
@@ -616,7 +629,7 @@ describe('agentic daily export', () => {
     s3Client.send.onCall(1).resolves({});
     s3Client.send.onCall(2).resolves({});
 
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
         getImporterS3Client: () => s3Client,
@@ -704,7 +717,7 @@ describe('agentic daily export', () => {
 
   it('propagates Athena database setup failures without touching S3', async () => {
     const getImporterS3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+    const module = await loadMocked('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
         getImporterS3Client: getImporterS3ClientStub,

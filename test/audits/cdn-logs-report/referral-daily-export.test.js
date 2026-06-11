@@ -25,14 +25,17 @@ describe('referral daily export', function referralDailyExportTests() {
   this.timeout(10000);
   let sandbox;
   let s3ClientMock;
+  let mockedModules;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     s3ClientMock = { send: sandbox.stub().resolves({}) };
+    mockedModules = [];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     sandbox.restore();
+    await Promise.all(mockedModules.map((module) => esmock.purge(module)));
   });
 
   function createConfiguration(queueUrl = 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue') {
@@ -70,7 +73,7 @@ describe('referral daily export', function referralDailyExportTests() {
   }
 
   async function loadModule(classifyStub, reportUtilsOverrides = {}, queryBuilderOverrides = {}) {
-    return esmock('../../../src/cdn-logs-report/referral-daily-export.js', {
+    const module = await esmock('../../../src/cdn-logs-report/referral-daily-export.js', {
       '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js': {
         classifyTrafficSource: classifyStub,
       },
@@ -86,6 +89,8 @@ describe('referral daily export', function referralDailyExportTests() {
         },
       },
     });
+    mockedModules.push(module);
+    return module;
   }
 
   it('uploads CSV and dispatches the analytics event', async () => {
@@ -756,7 +761,7 @@ describe('referral daily export', function referralDailyExportTests() {
   it('neutralizes a formula-leading host value in the uploaded CSV', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
     const module = await loadModule(classifyStub);
-    const s3Client = { send: sandbox.stub().resolves({}) };
+    const s3Client = s3ClientMock;
 
     await module.runDailyReferralExport({
       athenaClient: {
