@@ -785,6 +785,26 @@ describe('CDN Analysis Handler', () => {
         expect(context.sqs.sendMessage).to.not.have.been.called;
       });
 
+      it('clamps a negative retryCount to 0 (no extra retries from malformed input)', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+
+        await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          { ...subAuditContext, retryCount: -5 },
+        );
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+          'test-audit-queue',
+          sinon.match({ auditContext: sinon.match({ retryCount: 1 }) }),
+          null,
+          850,
+        );
+      });
+
       it('preserves the original Athena error if the requeue itself fails', async () => {
         context.athenaClient.execute = sandbox.stub().rejects(
           new Error('Query exhausted resources at this scale factor'),

@@ -71,7 +71,7 @@ function isRetryableAthenaError(error) {
   if (typeof error.retryable === 'boolean') {
     return error.retryable;
   }
-  const normalized = error.message.toLowerCase();
+  const normalized = String(error.message).toLowerCase();
   return RETRYABLE_ATHENA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
 }
 
@@ -585,7 +585,7 @@ export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContex
   try {
     return await processCdnLogs(auditUrl, context, site, auditContext);
   } catch (e) {
-    const retryCount = Number(auditContext?.retryCount) || 0;
+    const retryCount = Math.max(0, Number(auditContext?.retryCount) || 0);
     const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
 
     if (retriesEnabled && isRetryableAthenaError(e) && retryCount < MAX_ANALYSIS_RETRIES) {
