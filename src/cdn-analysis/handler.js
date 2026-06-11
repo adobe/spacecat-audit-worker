@@ -41,7 +41,39 @@ const SQS_MAX_DELAY_SECONDS = 900;
 const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
 const CDN_LOGS_REPORT_STAGGER_SECONDS = 30;
 
+// Re-enqueue the window as a delayed sub-audit on transient Athena failures.
+// Disable with env CDN_ANALYSIS_RETRY_ENABLED=false. Delay kept under the 900s SQS cap.
+const MAX_ANALYSIS_RETRIES = 2;
+const ANALYSIS_RETRY_DELAY_SECONDS = 850;
+// Fallback only: used when the athena-client did not surface Athena's structured
+// Retryable flag (see isRetryableAthenaError). Transient (System-category) errors
+// worth retrying; user errors excluded. Prefer the structured flag — don't copy this
+// list into other handlers as the primary signal.
+const RETRYABLE_ATHENA_ERROR_PATTERNS = [
+  'exhausted resources at this scale factor',
+  'internal error',
+  'internalerror',
+  'resource limit exceeded',
+  'throttl',
+  'too many requests',
+  'rate exceeded',
+  'slow down',
+  'slowdown',
+  'service unavailable',
+  'worker node',
+];
+
 const pad2 = (n) => String(n).padStart(2, '0');
+
+function isRetryableAthenaError(error) {
+  // Trust Athena's authoritative Retryable flag when the client surfaced it;
+  // otherwise fall back to matching the message string.
+  if (typeof error.retryable === 'boolean') {
+    return error.retryable;
+  }
+  const normalized = String(error.message).toLowerCase();
+  return RETRYABLE_ATHENA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
 
 function isValidAuditContext(auditContext) {
   if (!isNonEmptyObject(auditContext)) {
@@ -528,8 +560,61 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   };
 }
 
+// Re-enqueues the same audit context as a delayed retry, bumping retryCount.
+async function requeueAnalysisRetry(context, site, auditContext, retryCount) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditQueue = configuration.getQueues().audits;
+  const siteId = site.getId();
+
+  await sqs.sendMessage(auditQueue, {
+    type: 'cdn-logs-analysis',
+    siteId,
+    auditContext: {
+      ...auditContext,
+      retryCount,
+    },
+  }, null, ANALYSIS_RETRY_DELAY_SECONDS);
+
+  log.info(`cdn-logs-analysis scheduled retry ${retryCount}/${MAX_ANALYSIS_RETRIES} for siteId=${siteId} in ${ANALYSIS_RETRY_DELAY_SECONDS}s`);
+}
+
 export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext);
+  const { log, env } = context;
+  try {
+    return await processCdnLogs(auditUrl, context, site, auditContext);
+  } catch (e) {
+    const retryCount = Math.max(0, Number(auditContext?.retryCount) || 0);
+    const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
+
+    if (retriesEnabled && isRetryableAthenaError(e) && retryCount < MAX_ANALYSIS_RETRIES) {
+      try {
+        await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
+      } catch (requeueErr) {
+        // If the requeue itself fails (SQS/DB), surface the original Athena error so
+        // logs/alerts show the real reason. "failed" omitted here to avoid double-
+        // matching the alert; the framework logs the canonical failure when e rethrows.
+        log.error(`cdn-logs-analysis could not re-enqueue retry for siteId=${site.getId()}: ${requeueErr.message}`);
+        throw e;
+      }
+      // Soft result so SQS doesn't also retry this invocation (double-process).
+      return {
+        auditResult: {
+          retryScheduled: true,
+          retryCount: retryCount + 1,
+          error: e.message,
+          completedAt: new Date().toISOString(),
+        },
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    // No e.message here: the framework logs the full "... failed. Reason: ..." on
+    // throw, so including it would double-match the ("cdn-logs-analysis" "failed") alert.
+    log.error(`cdn-logs-analysis giving up for siteId=${site.getId()} after ${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
+    throw e;
+  }
 }
 
 export default new AuditBuilder()
