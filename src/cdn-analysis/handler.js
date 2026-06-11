@@ -41,7 +41,31 @@ const SQS_MAX_DELAY_SECONDS = 900;
 const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
 const CDN_LOGS_REPORT_STAGGER_SECONDS = 30;
 
+// Re-enqueue the window as a delayed sub-audit on transient Athena failures.
+// Disable with env CDN_ANALYSIS_RETRY_ENABLED=false. Delay kept under the 900s SQS cap.
+const MAX_ANALYSIS_RETRIES = 2;
+const ANALYSIS_RETRY_DELAY_SECONDS = 850;
+// Transient (System-category) Athena failures worth retrying; user errors excluded.
+const RETRYABLE_ATHENA_ERROR_PATTERNS = [
+  'exhausted resources at this scale factor',
+  'internal error',
+  'internalerror',
+  'resource limit exceeded',
+  'throttl',
+  'too many requests',
+  'rate exceeded',
+  'slow down',
+  'slowdown',
+  'service unavailable',
+  'worker node',
+];
+
 const pad2 = (n) => String(n).padStart(2, '0');
+
+function isRetryableAthenaError(message = '') {
+  const normalized = message.toLowerCase();
+  return RETRYABLE_ATHENA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
 
 function isValidAuditContext(auditContext) {
   if (!isNonEmptyObject(auditContext)) {
@@ -528,8 +552,51 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   };
 }
 
+// Re-enqueues the same audit context as a delayed retry, bumping retryCount.
+async function requeueAnalysisRetry(context, site, auditContext, retryCount) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditQueue = configuration.getQueues().audits;
+  const siteId = site.getId();
+
+  await sqs.sendMessage(auditQueue, {
+    type: 'cdn-logs-analysis',
+    siteId,
+    auditContext: {
+      ...auditContext,
+      retryCount,
+    },
+  }, null, ANALYSIS_RETRY_DELAY_SECONDS);
+
+  log.info(`cdn-logs-analysis scheduled retry ${retryCount}/${MAX_ANALYSIS_RETRIES} for siteId=${siteId} in ${ANALYSIS_RETRY_DELAY_SECONDS}s`);
+}
+
 export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext);
+  const { log, env } = context;
+  try {
+    return await processCdnLogs(auditUrl, context, site, auditContext);
+  } catch (e) {
+    const retryCount = Number(auditContext?.retryCount) || 0;
+    const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
+
+    if (retriesEnabled && isRetryableAthenaError(e.message) && retryCount < MAX_ANALYSIS_RETRIES) {
+      await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
+      // Soft result so SQS doesn't also retry this invocation (double-process).
+      return {
+        auditResult: {
+          retryScheduled: true,
+          retryCount: retryCount + 1,
+          error: e.message,
+          completedAt: new Date().toISOString(),
+        },
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    log.error(`cdn-logs-analysis giving up for siteId=${site.getId()} after ${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}: ${e.message}`);
+    throw e;
+  }
 }
 
 export default new AuditBuilder()
