@@ -62,8 +62,13 @@ const RETRYABLE_ATHENA_ERROR_PATTERNS = [
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
-function isRetryableAthenaError(message = '') {
-  const normalized = message.toLowerCase();
+function isRetryableAthenaError(error) {
+  // Trust Athena's authoritative Retryable flag when the client surfaced it;
+  // otherwise fall back to matching the message string.
+  if (typeof error.retryable === 'boolean') {
+    return error.retryable;
+  }
+  const normalized = error.message.toLowerCase();
   return RETRYABLE_ATHENA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
 }
 
@@ -580,7 +585,7 @@ export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContex
     const retryCount = Number(auditContext?.retryCount) || 0;
     const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
 
-    if (retriesEnabled && isRetryableAthenaError(e.message) && retryCount < MAX_ANALYSIS_RETRIES) {
+    if (retriesEnabled && isRetryableAthenaError(e) && retryCount < MAX_ANALYSIS_RETRIES) {
       await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
       // Soft result so SQS doesn't also retry this invocation (double-process).
       return {

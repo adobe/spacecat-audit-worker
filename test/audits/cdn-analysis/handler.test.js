@@ -754,6 +754,37 @@ describe('CDN Analysis Handler', () => {
         );
       });
 
+      it('retries on the structured retryable flag even when the message does not match', async () => {
+        const err = new Error('some unmatched athena message');
+        err.retryable = true;
+        context.athenaClient.execute = sandbox.stub().rejects(err);
+
+        const result = await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        );
+
+        expect(result.auditResult).to.include({ retryScheduled: true, retryCount: 1 });
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      });
+
+      it('does not retry when the structured flag is false, even if the message matches', async () => {
+        const err = new Error('Query exhausted resources at this scale factor');
+        err.retryable = false;
+        context.athenaClient.execute = sandbox.stub().rejects(err);
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
       it('does not retry when the kill switch CDN_ANALYSIS_RETRY_ENABLED=false', async () => {
         context.env.CDN_ANALYSIS_RETRY_ENABLED = 'false';
         context.athenaClient.execute = sandbox.stub().rejects(
