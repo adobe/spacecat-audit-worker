@@ -1,3 +1,10 @@
+## [1.467.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.1...v1.467.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* canonical - exclude noindex url and excludeUrl ([#2585](https://github.com/adobe/spacecat-audit-worker/issues/2585)) ([90c4a37](https://github.com/adobe/spacecat-audit-worker/commit/90c4a37b37f39a2eebbf37aaf91d4744c45ce85e))
+
 ## [1.467.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.0...v1.467.1) (2026-06-10)
 
 
