@@ -187,8 +187,8 @@ export default async function handler(message, context) {
         aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
         // Use new prompts if provided; otherwise preserve existing
         prompts: hasNewPrompts ? prompts : (currentData.prompts ?? []),
-        // Keep valuable in sync with aiSummary — only update when new AI response is valid
-        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? true),
+        // Only update when AI response is valid; null = undetermined (no AI summary generated)
+        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? null),
       };
 
       warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
