@@ -21,7 +21,7 @@ import {
   SPREADSHEET_COLUMNS,
 } from './utils.js';
 import { getS3Config } from '../utils/cdn-utils.js';
-import { filterReachableUrls } from './url-health-check.js';
+import { filterOutConfirmedBrokenUrls } from './url-health-check.js';
 
 function derivePeriodFromBrokenLinks(brokenLinks = []) {
   const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
@@ -72,7 +72,7 @@ export default async function handler(message, context) {
   const allSuggestedUrls = Array.from(new Set(
     incoming.flatMap((l) => (Array.isArray(l.suggestedUrls) ? l.suggestedUrls : [])),
   ));
-  const reachable = new Set(await filterReachableUrls(allSuggestedUrls, log));
+  const reachable = new Set(await filterOutConfirmedBrokenUrls(allSuggestedUrls, log));
   let droppedCount = 0;
   const brokenLinks = incoming.map((link) => {
     const original = Array.isArray(link.suggestedUrls) ? link.suggestedUrls : [];
@@ -86,6 +86,14 @@ export default async function handler(message, context) {
   if (droppedCount > 0) {
     log.info(`[LLM-ERROR-PAGES] Dropped ${droppedCount} suggested URL(s) that failed HEAD check`);
   }
+  // Structured summary line — dashboard query target. Emitted regardless of
+  // whether any URLs were dropped so the absence of drops is also observable.
+  log.info(`[LLM-ERROR-PAGES] head-check-summary ${JSON.stringify({
+    siteId,
+    total: allSuggestedUrls.length,
+    kept: reachable.size,
+    dropped: droppedCount,
+  })}`);
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
@@ -116,7 +124,9 @@ export default async function handler(message, context) {
 
       // suggestedUrls is normalized to an array by the HEAD-check pass above.
       if (suggestedUrls.length === 0) {
-        log.warn(`No suggested URLs for broken link: ${urlTo}`);
+        // Aggregate counter in the head-check-summary log line above is the
+        // real signal; per-link traces stay at debug to keep INFO clean.
+        log.debug(`No suggested URLs for broken link: ${urlTo}`);
       }
 
       brokenUrlsMap.set(keyUrl, {

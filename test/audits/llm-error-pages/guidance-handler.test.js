@@ -46,7 +46,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         publishToAdminHlx: publishToAdminHlxStub,
       },
       '../../../src/llm-error-pages/url-health-check.js': {
-        filterReachableUrls: filterReachableUrlsStub,
+        filterOutConfirmedBrokenUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -509,8 +509,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
 
-    // Verify that the warning about empty suggestions was logged
-    expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+    // Empty-suggestion rows now log at debug (aggregate counter in
+    // head-check-summary is the real signal); warn must NOT fire.
+    expect(logMock.debug.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+    expect(logMock.warn).to.not.have.been.calledWith('No suggested URLs for broken link: https://example.com/test-page');
   });
 
   it('handles user agent mismatch scenario - now updates regardless', async () => {
@@ -1119,7 +1121,7 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
         publishToAdminHlx: publishToAdminHlxStub,
       },
       '../../../src/llm-error-pages/url-health-check.js': {
-        filterReachableUrls: filterReachableUrlsStub,
+        filterOutConfirmedBrokenUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -1474,9 +1476,76 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
       data: { opportunityId: 'opp-1' },
     }, ctx);
 
-    // The Excel block throws on brokenLinks.length but that's caught; DB write
-    // sees an empty brokenLinks reduce — no saveMany call. The handler still 200s.
+    // brokenLinks is normalised to [] by the `Array.isArray(...) ? : []`
+    // guard near the top of the handler. The Excel block then runs against
+    // an empty list — it does NOT throw — and proceeds to write an
+    // unchanged workbook to SharePoint. The DB-write reduce sees [] and
+    // never calls saveMany. The handler returns 200 normally.
     expect(resp.status).to.equal(200);
+    expect(uploadToSharePointStub).to.have.been.called;
+    expect(publishToAdminHlxStub).to.have.been.called;
+    expect(ctx.log.error).to.not.have.been.calledWithMatch(/Excel guidance update failed/);
     expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('keeps incoming aiRationale as "" when surviving URLs exist but rationale is undefined (?? "" fallback)', async () => {
+    // HEAD-check is the default passthrough so all suggested URLs survive;
+    // the link.aiRationale field is missing on the incoming payload, so the
+    // `?? ''` fallback in the handler should land an empty string in the DB.
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/keep-1', 'https://example.com/keep-2'],
+          // aiRationale intentionally undefined
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(suggestion.setData).to.have.been.calledOnce;
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([
+      'https://example.com/keep-1',
+      'https://example.com/keep-2',
+    ]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('emits head-check-summary log line with siteId / total / kept / dropped counters', async () => {
+    // Drop one URL, keep one — verifies the structured log shape.
+    filterReachableUrlsStub.callsFake(async (urls) => urls.filter((u) => !u.endsWith('/bad')));
+    const ctx = buildContext({ suggestions: [makeSuggestion('/p')] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/good', 'https://example.com/bad'],
+          aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    const summaryCall = ctx.log.info.getCalls().find(
+      (c) => typeof c.args[0] === 'string' && c.args[0].includes('head-check-summary'),
+    );
+    expect(summaryCall, 'head-check-summary log line missing').to.exist;
+    const json = summaryCall.args[0].split('head-check-summary ')[1];
+    const parsed = JSON.parse(json);
+    expect(parsed).to.deep.equal({
+      siteId: 'site-1', total: 2, kept: 1, dropped: 1,
+    });
   });
 });
