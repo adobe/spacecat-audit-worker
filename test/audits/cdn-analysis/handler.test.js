@@ -785,6 +785,24 @@ describe('CDN Analysis Handler', () => {
         expect(context.sqs.sendMessage).to.not.have.been.called;
       });
 
+      it('preserves the original Athena error if the requeue itself fails', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+        context.sqs.sendMessage = sandbox.stub().rejects(new Error('SQS unavailable'));
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/could not re-enqueue retry for siteId=test-site-id: SQS unavailable/),
+        );
+      });
+
       it('does not retry when the kill switch CDN_ANALYSIS_RETRY_ENABLED=false', async () => {
         context.env.CDN_ANALYSIS_RETRY_ENABLED = 'false';
         context.athenaClient.execute = sandbox.stub().rejects(

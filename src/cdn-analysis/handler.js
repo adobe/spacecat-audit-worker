@@ -45,7 +45,10 @@ const CDN_LOGS_REPORT_STAGGER_SECONDS = 30;
 // Disable with env CDN_ANALYSIS_RETRY_ENABLED=false. Delay kept under the 900s SQS cap.
 const MAX_ANALYSIS_RETRIES = 2;
 const ANALYSIS_RETRY_DELAY_SECONDS = 850;
-// Transient (System-category) Athena failures worth retrying; user errors excluded.
+// Fallback only: used when the athena-client did not surface Athena's structured
+// Retryable flag (see isRetryableAthenaError). Transient (System-category) errors
+// worth retrying; user errors excluded. Prefer the structured flag — don't copy this
+// list into other handlers as the primary signal.
 const RETRYABLE_ATHENA_ERROR_PATTERNS = [
   'exhausted resources at this scale factor',
   'internal error',
@@ -586,7 +589,15 @@ export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContex
     const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
 
     if (retriesEnabled && isRetryableAthenaError(e) && retryCount < MAX_ANALYSIS_RETRIES) {
-      await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
+      try {
+        await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
+      } catch (requeueErr) {
+        // If the requeue itself fails (SQS/DB), surface the original Athena error so
+        // logs/alerts show the real reason. "failed" omitted here to avoid double-
+        // matching the alert; the framework logs the canonical failure when e rethrows.
+        log.error(`cdn-logs-analysis could not re-enqueue retry for siteId=${site.getId()}: ${requeueErr.message}`);
+        throw e;
+      }
       // Soft result so SQS doesn't also retry this invocation (double-process).
       return {
         auditResult: {
