@@ -573,7 +573,12 @@ async function triggerDrsScraping(
       const scrapeUrls = datasetId === SCRAPE_DATASET_IDS.TOP_CITED
         ? urlList.map((url) => ({ url }))
         : urlList;
-      const params = { datasetId, siteId, urls: scrapeUrls };
+      // imsOrgId is guaranteed truthy here (the guard above returns early when
+      // it is absent). DRS attaches it as parameters.metadata.imsOrgId to scope
+      // the job's S2S token instead of relying on site_id auto-resolution.
+      const params = {
+        datasetId, siteId, urls: scrapeUrls, imsOrgId,
+      };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
         Object.assign(params, redditCommentsParams);
       }
