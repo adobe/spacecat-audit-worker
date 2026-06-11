@@ -374,6 +374,12 @@ export function createClassifier(rules, { log } = {}) {
   return {
     classify(urlPath) {
       const cappedPath = capUrlPath(urlPath);
+      // Output key names are intentionally the inverse of the source-rule
+      // names (see module header): `topic` carries the agentic *category*
+      // rules (agentic_url_category_rules) and `category` carries the agentic
+      // *page-type* rules (agentic_url_page_type_rules). Kept for backward
+      // compatibility with existing report columns — renaming would break
+      // downstream consumers, so the legacy convention is preserved here.
       return {
         topic: applyTopic(cappedPath, topicCompiled),
         category: applyPageType(cappedPath, pageCompiled),
