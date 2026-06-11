@@ -1,3 +1,10 @@
+# [1.468.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.2...v1.468.0) (2026-06-11)
+
+
+### Features
+
+* added slack alerts for low suggestions in ASO PLG ([#2604](https://github.com/adobe/spacecat-audit-worker/issues/2604)) ([4feda7a](https://github.com/adobe/spacecat-audit-worker/commit/4feda7ad1282d702185e94896a15f7b80c965d36))
+
 ## [1.467.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.1...v1.467.2) (2026-06-11)
 
 
