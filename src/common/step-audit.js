@@ -23,9 +23,16 @@ import {
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
+
+const PLG_AUDIT_TYPES = new Set([
+  AuditModel.AUDIT_TYPES.CWV,
+  AuditModel.AUDIT_TYPES.BROKEN_BACKLINKS,
+  AuditModel.AUDIT_TYPES.ALT_TEXT,
+]);
 
 export class StepAudit extends BaseAudit {
   constructor(
@@ -110,8 +117,10 @@ export class StepAudit extends BaseAudit {
       type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
+    let site;
+
     try {
-      const site = await this.siteProvider(siteId, context);
+      site = await this.siteProvider(siteId, context);
       // Preserve requiresValidation from index.js - siteProvider returns a fresh site
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
@@ -208,6 +217,11 @@ export class StepAudit extends BaseAudit {
       // Enhance error message with more context
       const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
+
+      if (site && PLG_AUDIT_TYPES.has(type)) {
+        await sendLowSuggestionCountAlert(site, type, 0, context, errorMessage);
+      }
+
       throw new Error(errorMessage, { cause: e });
     }
   }
