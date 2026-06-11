@@ -1047,6 +1047,18 @@ describe('Offsite Brand Presence Handler', () => {
       expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
+    it('forwards the resolved imsOrgId to submitScrapeJob for every dataset', async () => {
+      stubBrandPresenceData(['https://youtube.com/watch?v=x', 'https://reddit.com/r/adobe/']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const calls = mockSubmitScrapeJob.getCalls();
+      expect(calls).to.not.be.empty;
+      calls.forEach((c) => {
+        expect(c.args[0].imsOrgId).to.equal('1234567890ABCDEF12345678@AdobeOrg');
+      });
+    });
+
     it('should not attach reddit_comments params by default (DRS client applies defaults)', async () => {
       stubBrandPresenceData(['https://reddit.com/r/adobe/']);
 
