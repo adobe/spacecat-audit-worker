@@ -552,14 +552,20 @@ describe('LLM Error Pages Handler', function () {
     });
 
     it('does not publish observation:llm-broken-urls when flag is anything except literal "true"', async () => {
-      // Strict 'true' comparison — '1', 'yes', 'on', boolean true all do nothing.
-      // Matches the explicit-opt-in posture for a feature gating production traffic.
-      for (const v of ['false', '1', 'yes', 'on', 'TRUE', '']) {
+      // Strict 'true' comparison — '1', 'yes', 'on', boolean true, even
+      // 'true ' with trailing space all do nothing. Matches the
+      // explicit-opt-in posture for a feature gating production traffic.
+      // Also verifies the single call is the LEGACY message — not an
+      // accidental observation publish — so a future flip of the
+      // conditional inside the helper would fail this test.
+      for (const v of ['false', '1', 'yes', 'on', 'TRUE', '', 'true ', ' true', true]) {
         context.sqs.sendMessage.resetHistory();
         context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = v;
         // eslint-disable-next-line no-await-in-loop
         await runAuditAndSendToMystique(context);
         expect(context.sqs.sendMessage, `value=${v}`).to.have.been.calledOnce;
+        const [, message] = context.sqs.sendMessage.firstCall.args;
+        expect(message.type, `value=${v}`).to.equal('guidance:llm-error-pages');
       }
     });
 
@@ -626,11 +632,15 @@ describe('LLM Error Pages Handler', function () {
       expect(observationMessage.data.period.end).to.match(/^\d{4}-\d{2}-\d{2}T/);
       expect(observationMessage.data.urls).to.be.an('array').with.lengthOf(1);
       const urlEntry = observationMessage.data.urls[0];
-      expect(urlEntry).to.have.all.keys('url', 'hits', 'userAgents', 'lastSeen');
+      // Wire schema uses `observedThrough` (not `lastSeen`) — see helper
+      // comment in handler.js. Pin to the audit-window end value so a
+      // future refactor that swaps in `new Date().toISOString()` would
+      // fail this test instead of silently shipping wrong semantics.
+      expect(urlEntry).to.have.all.keys('url', 'hits', 'userAgents', 'observedThrough');
       expect(urlEntry.url).to.include('/dead');
       expect(urlEntry.hits).to.equal(47);
       expect(urlEntry.userAgents).to.deep.equal(['ChatGPT']);
-      expect(urlEntry.lastSeen).to.match(/^\d{4}-\d{2}-\d{2}T/);
+      expect(urlEntry.observedThrough).to.equal(observationMessage.data.period.end);
     });
 
     it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {
@@ -746,6 +756,104 @@ describe('LLM Error Pages Handler', function () {
       entry.userAgents.forEach((ua) => {
         expect(ua.length).to.be.at.most(512);
       });
+    });
+
+    it('observation publish failure does NOT propagate (legacy publish unaffected, audit succeeds)', async () => {
+      // The whole point of dual-publish behind a flag is that the new
+      // (shadow) path cannot regress the production (legacy) path. If
+      // the observation sendMessage rejects, the audit run must still
+      // succeed and SQS must not re-deliver the inbound audit message
+      // (which would cause a DUPLICATE legacy publish).
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 5, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      // First call (legacy) succeeds, second call (observation) throws.
+      context.sqs.sendMessage
+        .onFirstCall().resolves()
+        .onSecondCall().rejects(new Error('simulated SQS throttle'));
+
+      // Must NOT throw — the helper's try/catch contains the failure.
+      const result = await runAuditAndSendToMystique(context);
+
+      // Legacy publish recorded; observation publish attempted and caught.
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      // Error logged, not thrown.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to publish observation:llm-broken-urls/),
+      );
+      // Audit result for the week is still success — the legacy path
+      // was the actual production-critical write and it succeeded.
+      expect(result.auditResult.some((r) => r.success === true)).to.be.true;
+    });
+
+    it('observation publish is skipped (with a warn log) when site has no baseURL configured', async () => {
+      // `messageBaseUrl` comes from `site.getBaseURL()`. If that returns
+      // an empty string, the legacy publish still emits relative paths
+      // (its `new URL` is gated by `messageBaseUrl ? ... : path`) but the
+      // observation publish has nothing to anchor against — emit a warn
+      // and skip rather than send a message with broken URLs.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      context.site.getBaseURL = () => '';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/x', totalRequests: 1, rawUserAgents: ['Bot1'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped (no second call).
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No baseURL available/),
+      );
+    });
+
+    it('observation publish skips when serialized message exceeds size budget', async () => {
+      // SQS standard-queue cap is 256 KB. A pathological payload (many
+      // URLs each with the maximum number of maximum-length UAs) can
+      // exceed the safety budget; skip rather than throw + fail the
+      // audit.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // 50 unique 512-char UAs per URL × 50 URLs. UAs MUST be unique
+      // because the helper stores them in a Set; identical strings
+      // collapse to one entry and the payload stays small.
+      const uniqueUas = (urlIdx) => Array.from(
+        { length: 50 },
+        (_, j) => `${'A'.repeat(500)}-u${urlIdx}-${j.toString().padStart(3, '0')}`,
+      );
+      const errorPages = Array.from({ length: 50 }, (_, i) => (
+        _consolidatedRow({ url: `/dead-${i}`, totalRequests: 1, rawUserAgents: uniqueUas(i) })
+      ));
+      mockProcessResults.returns({
+        totalErrors: errorPages.length,
+        errorPages,
+        summary: { uniqueUrls: errorPages.length, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped due to size.
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/exceeds budget/),
+      );
     });
 
     it('should generate separate Excel files for 404, 403, and 5xx', async () => {
