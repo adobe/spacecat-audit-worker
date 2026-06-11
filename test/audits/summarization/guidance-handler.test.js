@@ -691,4 +691,73 @@ describe('summarization guidance handler', () => {
     expect(keyPointsBuildKeyResult).to.equal('https://adobe.com/test-h1-key-points');
   });
 
+  describe('mergeDataFunction (LLMO-4010)', () => {
+    it('should pass a mergeDataFunction that preserves edge-deployed suggestions unchanged', async () => {
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
+      };
+
+      await handler(message, context);
+
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
+      expect(mergeDataFunction).to.be.a('function');
+
+      // When edgeDeployed is true, return existing data unchanged
+      const existingData = {
+        url: 'https://adobe.com/page1',
+        summarizationText: 'Deployed summary',
+        shouldOptimize: true,
+        edgeDeployed: true,
+        transformRules: { selector: 'h1', action: 'insertAfter' },
+      };
+      const newData = {
+        url: 'https://adobe.com/page1',
+        summarizationText: 'New audit summary',
+        shouldOptimize: false,
+        transformRules: { selector: 'h2', action: 'replace' },
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.edgeDeployed).to.equal(true);
+      expect(result.shouldOptimize).to.equal(true);
+      expect(result.summarizationText).to.equal('Deployed summary');
+      expect(result.transformRules.selector).to.equal('h1');
+    });
+
+    it('should pass a mergeDataFunction that merges normally when edgeDeployed is not set', async () => {
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
+      };
+
+      await handler(message, context);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
+
+      // When edgeDeployed is not set, new data should overwrite existing
+      const existingData = {
+        url: 'https://adobe.com/page1',
+        summarizationText: 'Old summary',
+        shouldOptimize: true,
+      };
+      const newData = {
+        url: 'https://adobe.com/page1',
+        summarizationText: 'New summary',
+        shouldOptimize: false,
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.summarizationText).to.equal('New summary');
+      expect(result.shouldOptimize).to.equal(false);
+    });
+  });
+
 });

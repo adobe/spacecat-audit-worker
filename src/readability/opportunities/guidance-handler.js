@@ -232,6 +232,11 @@ export default async function handler(message, context) {
       };
     },
     mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions
+      // already deployed to the edge CDN
+      if (existingData.edgeDeployed) {
+        return { ...existingData };
+      }
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,

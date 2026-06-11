@@ -745,6 +745,94 @@ describe('Readability Opportunities Guidance Handler', () => {
   });
 
   describe('mergeDataFunction', () => {
+    it('should preserve edge-deployed suggestions unchanged (LLMO-4010)', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction, newData } = syncArgs;
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        edgeDeployed: true,
+        shouldOptimize: true,
+        improvedText: 'Deployed improved text.',
+        transformRules: {
+          value: 'Deployed improved text.',
+          op: 'replace',
+          selector: '#content p:nth-child(1)',
+          target: 'ai-bots',
+          prerenderRequired: true,
+        },
+      };
+
+      const merged = mergeDataFunction(existingData, newData[0]);
+
+      // Must return existing data unchanged — re-audit must not overwrite deployed suggestions
+      expect(merged.edgeDeployed).to.equal(true);
+      expect(merged.shouldOptimize).to.equal(true);
+      expect(merged.improvedText).to.equal('Deployed improved text.');
+      expect(merged.transformRules.value).to.equal('Deployed improved text.');
+    });
+
+    it('should preserve edge-deployed excluded suggestions unchanged (LLMO-4010)', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#citation',
+          data: {
+            should_exclude: true,
+            exclusion_reason: 'citation_block',
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Bibliographic line excluded by classifier.',
+            current_flesch_score: 18,
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction, newData } = syncArgs;
+      const excluded = newData[0];
+
+      // Existing excluded suggestion that has been edge-deployed — must not be overwritten
+      const existingEdgeDeployed = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#citation',
+        edgeDeployed: true,
+        shouldOptimize: false,
+        suggestionStatus: 'deployed',
+      };
+
+      const merged = mergeDataFunction(existingEdgeDeployed, excluded);
+
+      expect(merged.edgeDeployed).to.equal(true);
+      expect(merged.shouldOptimize).to.equal(false);
+      expect(merged.suggestionStatus).to.equal('deployed');
+    });
+
     it('should merge AI improvements into existing suggestion data with auto-optimize enrichment', async () => {
       const message = {
         auditId: 'audit-123',
