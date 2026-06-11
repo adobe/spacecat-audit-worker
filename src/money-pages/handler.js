@@ -15,48 +15,44 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const AUDIT_TYPE = 'money-pages';
 
-/**
- * Send message to Mystique for money page generation
- * @param {Object} context - The execution context containing sqs, audit, etc.
- * @returns {Object} Status object indicating completion
- */
-export async function sendToMystiqueForGeneration(context) {
-  const {
-    log, site, finalUrl, sqs, env, audit,
-  } = context;
+export function collectAuditData(auditUrl, context, site) {
+  const { log } = context;
 
-  try {
-    const message = {
-      type: 'money-pages',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      time: new Date().toISOString(),
-      data: {
-        site_url: finalUrl,
-      },
-    };
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Collecting audit data`);
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`[${AUDIT_TYPE}] Message sent to Mystique`, message);
-
-    return {
-      status: 'complete',
-    };
-  } catch (error) {
-    log.error(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send message to Mystique: ${
-        error.message
-      }`,
-    );
-    throw error;
-  }
+  return {
+    auditResult: { siteUrl: auditUrl },
+    fullAuditRef: auditUrl,
+  };
 }
 
-/**
- * Export the audit handler with all steps configured
- * Uses AuditBuilder to chain the steps together
- */
+export async function sendToMystiqueForGeneration(finalUrl, auditData, context, site) {
+  const {
+    log, sqs, env, audit,
+  } = context;
+  const siteId = site.getId();
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${siteId}] SQS or Mystique queue not configured, skipping`);
+    return;
+  }
+
+  const message = {
+    type: AUDIT_TYPE,
+    siteId,
+    auditId: audit.getId(),
+    time: new Date().toISOString(),
+    data: {
+      site_url: finalUrl,
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.info(`[${AUDIT_TYPE}] Message sent to Mystique`, message);
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('send-message-to-mystique', sendToMystiqueForGeneration)
+  .withRunner(collectAuditData)
+  .withPostProcessors([sendToMystiqueForGeneration])
   .build();

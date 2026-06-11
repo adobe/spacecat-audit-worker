@@ -1,3 +1,45 @@
+## [1.467.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.1...v1.467.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* canonical - exclude noindex url and excludeUrl ([#2585](https://github.com/adobe/spacecat-audit-worker/issues/2585)) ([90c4a37](https://github.com/adobe/spacecat-audit-worker/commit/90c4a37b37f39a2eebbf37aaf91d4744c45ce85e))
+
+## [1.467.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.467.0...v1.467.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* **money-pages:** convert StepAudit to RunnerAudit to fix audit.getId() crash ([#2639](https://github.com/adobe/spacecat-audit-worker/issues/2639)) ([fac64fd](https://github.com/adobe/spacecat-audit-worker/commit/fac64fd41f4bd6041e19b49e4b2c686c45f6e12b))
+
+# [1.467.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.2...v1.467.0) (2026-06-10)
+
+
+### Features
+
+* replace duplicate wwwUrlResolver with shared lib delegation and persist resolved domain as overrideBaseURL ([#2628](https://github.com/adobe/spacecat-audit-worker/issues/2628)) ([4db760e](https://github.com/adobe/spacecat-audit-worker/commit/4db760efee5c57aec68e5a63f3a6093d126c1e46))
+
+## [1.466.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.1...v1.466.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** skip DRS scraping when org has no imsOrgId ([#2637](https://github.com/adobe/spacecat-audit-worker/issues/2637)) ([0e01c59](https://github.com/adobe/spacecat-audit-worker/commit/0e01c59adcac588bd0c63ffef22f80253eb3470d))
+
+## [1.466.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.466.0...v1.466.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* Llmo 5495 Auto-trigger FAQs After Related URLs Are Published ([#2627](https://github.com/adobe/spacecat-audit-worker/issues/2627)) ([2ff6842](https://github.com/adobe/spacecat-audit-worker/commit/2ff684283cc7267ad9b1546a8776c147553980fd))
+
+# [1.466.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.3...v1.466.0) (2026-06-10)
+
+
+### Features
+
+* fallback to reading data using sharepoint client ([#2636](https://github.com/adobe/spacecat-audit-worker/issues/2636)) ([50b4269](https://github.com/adobe/spacecat-audit-worker/commit/50b426926c20107b516bec5dd913163e44cff05d))
+
 ## [1.465.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.465.2...v1.465.3) (2026-06-10)
 
 
