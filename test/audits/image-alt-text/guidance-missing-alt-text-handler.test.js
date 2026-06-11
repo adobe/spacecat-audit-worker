@@ -78,6 +78,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         Opportunity: {
           allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
           create: sandbox.stub().resolves(mockOpportunity),
+          findById: sandbox.stub().resolves(mockOpportunity),
         },
         Site: {
           findById: sandbox.stub().resolves(mockSite),
@@ -834,5 +835,229 @@ describe('Missing Alt Text Guidance Handler', () => {
       [existingSuggestions[1]],
       'OUTDATED',
     );
+  });
+});
+
+describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
+  let sandbox;
+  let guidanceHandler;
+  let sendLowSuggestionCountAlertStub;
+  let mockOpportunity;
+  let mockSite;
+  let context;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    sendLowSuggestionCountAlertStub = sandbox.stub().resolves();
+
+    mockOpportunity = {
+      getId: () => 'opportunity-id',
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      getData: sandbox.stub().returns({}),
+      save: sandbox.stub(),
+      getSuggestions: sandbox.stub().returns([]),
+      addSuggestions: sandbox.stub().returns({ errorItems: [], createdItems: [] }),
+      getType: () => AuditModel.AUDIT_TYPES.ALT_TEXT,
+      getSiteId: () => 'test-site-id',
+      setUpdatedBy: sandbox.stub(),
+      setLastAuditedAt: sandbox.stub(),
+    };
+
+    mockSite = {
+      getId: () => 'test-site-id',
+      getBaseURL: () => 'https://example.com',
+    };
+
+    const mockAuditRecord = {
+      getId: () => 'test-audit-id',
+      getAuditResult: sandbox.stub().returns({ status: 'processing', statusHistory: [] }),
+    };
+
+    const freshOpportunity = {
+      getId: () => 'opportunity-id',
+      getSuggestions: sandbox.stub().returns([]),
+    };
+
+    context = {
+      log: {
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+          findById: sandbox.stub().resolves(freshOpportunity),
+        },
+        Site: { findById: sandbox.stub().resolves(mockSite) },
+        Audit: {
+          findById: sandbox.stub().resolves(mockAuditRecord),
+          updateByKeys: sandbox.stub().resolves(),
+        },
+        Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      },
+      env: {},
+    };
+
+    guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
+      '../../../src/image-alt-text/opportunityHandler.js': {
+        addAltTextSuggestions: sandbox.stub().resolves(),
+        getProjectedMetrics: sandbox.stub().resolves({ projectedTrafficLost: 0, projectedTrafficValue: 0 }),
+      },
+      '../../../src/utils/site-validation.js': {
+        checkSiteRequiresValidation: sandbox.stub().resolves(false),
+      },
+      '../../../src/support/plg-suggestion-alert.js': {
+        sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+      },
+    });
+
+    // expose freshOpportunity so individual tests can configure its getSuggestions
+    context._freshOpportunity = freshOpportunity;
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('calls sendLowSuggestionCountAlert with the NEW count when all Mystique batches complete', async () => {
+    const newSuggestions = [
+      { getStatus: () => SuggestionModel.STATUSES.NEW, getData: () => ({ recommendations: [{ pageUrl: 'https://example.com/p1' }] }) },
+      { getStatus: () => SuggestionModel.STATUSES.NEW, getData: () => ({ recommendations: [{ pageUrl: 'https://example.com/p2' }] }) },
+    ];
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    // fresh DB fetch returns the 2 NEW suggestions
+    context._freshOpportunity.getSuggestions.returns(newSuggestions);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{
+          pageUrl: 'https://example.com/p1',
+          imageId: 'img1',
+          altText: 'alt',
+          imageUrl: 'https://example.com/img1.jpg',
+          isAppropriate: true,
+          isDecorative: false,
+          language: 'en',
+          hasAltAttribute: false,
+        }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(auditTypeArg).to.equal(AuditModel.AUDIT_TYPES.ALT_TEXT);
+    expect(countArg).to.equal(2);
+  });
+
+  it('counts only NEW suggestions, not PENDING_VALIDATION or OUTDATED, when firing the alert', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    context._freshOpportunity.getSuggestions.returns([
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.PENDING_VALIDATION },
+      { getStatus: () => 'OUTDATED' },
+    ]);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{ pageUrl: 'https://example.com/p1', imageId: 'img1', altText: 'alt', imageUrl: 'https://example.com/img1.jpg', isAppropriate: true, isDecorative: false, language: 'en', hasAltAttribute: false }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(countArg).to.equal(2);
+  });
+
+  it('uses fresh DB fetch for suggestion count, not stale in-memory list', async () => {
+    // in-memory object has 0 suggestions (stale — loaded before earlier batch responses wrote theirs)
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+    mockOpportunity.getSuggestions.returns([]);
+
+    // fresh DB fetch returns 5 NEW suggestions written by earlier batch responses
+    context._freshOpportunity.getSuggestions.returns([
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+      { getStatus: () => SuggestionModel.STATUSES.NEW },
+    ]);
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{ pageUrl: 'https://example.com/p1', imageId: 'img1', altText: 'alt', imageUrl: 'https://example.com/img1.jpg', isAppropriate: true, isDecorative: false, language: 'en', hasAltAttribute: false }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    // must have re-fetched the opportunity by ID
+    expect(context.dataAccess.Opportunity.findById).to.have.been.calledWith('opportunity-id');
+    // alert receives 5, not 0
+    expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+    const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+    expect(countArg).to.equal(5);
+  });
+
+  it('does not call sendLowSuggestionCountAlert when Mystique batches are still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 3,
+    });
+
+    const message = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      id: 'msg-1',
+      data: {
+        suggestions: [{
+          pageUrl: 'https://example.com/p1',
+          imageId: 'img1',
+          altText: 'alt',
+          imageUrl: 'https://example.com/img1.jpg',
+          isAppropriate: true,
+          isDecorative: false,
+          language: 'en',
+          hasAltAttribute: false,
+        }],
+        pageUrls: ['https://example.com/p1'],
+      },
+    };
+
+    await guidanceHandler(message, context);
+
+    expect(sendLowSuggestionCountAlertStub).to.not.have.been.called;
+    // should not have done a fresh DB fetch either
+    expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
   });
 });

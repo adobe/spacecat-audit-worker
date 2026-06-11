@@ -114,6 +114,9 @@ describe('Offsite Brand Presence Handler', () => {
     site = {
       getId: sandbox.stub().returns(SITE_ID),
       getBaseURL: sandbox.stub().returns(BASE_URL),
+      getOrganization: sandbox.stub().resolves({
+        getImsOrgId: () => '1234567890ABCDEF12345678@AdobeOrg',
+      }),
     };
 
     context = { dataAccess, env, log };
@@ -1044,6 +1047,18 @@ describe('Offsite Brand Presence Handler', () => {
       expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
+    it('forwards the resolved imsOrgId to submitScrapeJob for every dataset', async () => {
+      stubBrandPresenceData(['https://youtube.com/watch?v=x', 'https://reddit.com/r/adobe/']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const calls = mockSubmitScrapeJob.getCalls();
+      expect(calls).to.not.be.empty;
+      calls.forEach((c) => {
+        expect(c.args[0].imsOrgId).to.equal('1234567890ABCDEF12345678@AdobeOrg');
+      });
+    });
+
     it('should not attach reddit_comments params by default (DRS client applies defaults)', async () => {
       stubBrandPresenceData(['https://reddit.com/r/adobe/']);
 
@@ -1287,6 +1302,35 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('DRS Scraping imsOrgId resolution', () => {
+    it('skips DRS scraping and logs an actionable warning when the organization has no imsOrgId', async () => {
+      site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/imsOrgId/),
+      );
+      expect(log.error).to.not.have.been.calledWith(
+        sinon.match(/imsOrgId/),
+      );
+    });
+
+    it('skips DRS scraping when the site has no organization', async () => {
+      site.getOrganization = sandbox.stub().resolves(null);
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+    });
+  });
+
   describe('Selective Retry', () => {
     it('should retry on 502 and succeed on second attempt', async () => {
       mockSubmitScrapeJob
@@ -1420,13 +1464,33 @@ describe('Offsite Brand Presence Handler', () => {
       expect(callText).to.include('mock-job');
     });
 
-    it('should not send a Slack message when no DRS jobs are triggered', async () => {
+    it('should send a Slack skip notification when DRS is not configured', async () => {
       mockDrsIsConfigured.returns(false);
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.not.have.been.called;
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
+      expect(callCtx).to.equal(context);
+      expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
+      expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
+      expect(callText).to.match(/skipped/i);
+      expect(callText).to.match(/not configured/i);
+      expect(callText).to.include(BASE_URL);
+    });
+
+    it('should send a Slack skip notification when the organization has no imsOrgId', async () => {
+      site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.match(/skipped/i);
+      expect(callText).to.include('imsOrgId');
+      expect(callText).to.include(BASE_URL);
     });
   });
 
