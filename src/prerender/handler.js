@@ -527,19 +527,11 @@ async function compareHtmlContent(url, context) {
 }
 
 /**
- * Parses the mode from the data field or auditContext.
- * The mode may arrive in either location:
- *   - data.mode: set via Slack command keyword arguments (legacy)
- *   - auditContext.mode: set via run-audit command's mode:ai-only flag
+ * Parses the mode from the data field
  * @param {string|Object} data - The data field from the message
- * @param {Object} [auditCtx] - The auditContext from the message
  * @returns {string|null} - The mode value or null
  */
-function getModeFromData(data, auditCtx) {
-  if (auditCtx?.mode) {
-    return auditCtx.mode;
-  }
-
+function getModeFromData(data) {
   if (!data) {
     return null;
   }
@@ -882,7 +874,7 @@ export async function importTopPages(context) {
   } = context;
 
   // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
-  const mode = getModeFromData(data, auditContext);
+  const mode = getModeFromData(data);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 1, skipping import/scraping/processing`);
     return handleAiOnlyMode(context);
@@ -928,7 +920,7 @@ export async function submitForScraping(context) {
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
-  const mode = getModeFromData(data, auditContext);
+  const mode = getModeFromData(data);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 2, skipping scraping (already handled in step 1)`);
     return { status: 'skipped', mode: MODE_AI_ONLY };
@@ -1664,7 +1656,7 @@ export async function processContentAndGenerateOpportunities(context) {
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
-  const mode = getModeFromData(data, auditContext);
+  const mode = getModeFromData(data);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 3, skipping processing (already handled in step 1)`);
     return { status: 'skipped', mode: MODE_AI_ONLY };
