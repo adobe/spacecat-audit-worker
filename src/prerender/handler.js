@@ -582,6 +582,7 @@ async function sendPrerenderGuidanceRequestToMystique(
   context,
   preBuiltCandidates,
   generatePrompts = false,
+  urlScope = null,
 ) {
   const {
     log, sqs, env, site,
@@ -680,6 +681,11 @@ async function sendPrerenderGuidanceRequestToMystique(
       suggestionsPayload = candidates;
     }
 
+    // When a URL scope is provided (CSV batch), filter to only matching URLs
+    if (urlScope && suggestionsPayload.length > 0) {
+      suggestionsPayload = suggestionsPayload.filter((s) => urlScope.has(s.url));
+    }
+
     if (suggestionsPayload.length === 0) {
       log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
@@ -730,7 +736,7 @@ async function sendPrerenderGuidanceRequestToMystique(
  */
 export async function handleAiOnlyMode(context) {
   const {
-    site, log, dataAccess, data,
+    site, log, dataAccess, data, auditContext,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
@@ -817,6 +823,14 @@ export async function handleAiOnlyMode(context) {
     };
   }
 
+  // When explicit URLs are provided (CSV batch), scope suggestions to that set.
+  const urlScope = Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+    ? new Set(auditContext.urls)
+    : null;
+  if (urlScope) {
+    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+
   // Send to Mystique using the existing function
   const auditData = {
     siteId,
@@ -832,6 +846,7 @@ export async function handleAiOnlyMode(context) {
     context,
     null, // preBuiltCandidates — build from DB suggestions in ai-only mode
     generatePrompts,
+    urlScope,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
