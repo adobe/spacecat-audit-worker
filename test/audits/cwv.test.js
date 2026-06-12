@@ -901,7 +901,7 @@ describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () =>
   });
 });
 
-describe('Per-issue OUTDATED merge helpers', () => {
+describe('Per-issue prune-on-resolve merge helpers', () => {
   // Imported lazily to keep the existing top-level imports unchanged.
   let isMetricFailing;
   let applyPerIssueOutdated;
@@ -945,15 +945,12 @@ describe('Per-issue OUTDATED merge helpers', () => {
   });
 
   describe('applyPerIssueOutdated', () => {
-    it('marks issue OUTDATED when its metric type no longer fails', () => {
+    it('drops an issue when its metric type no longer fails', () => {
       const existing = [
         { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
       ];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
-      expect(result[0].status).to.equal('OUTDATED');
-      // Other fields preserved
-      expect(result[0].id).to.equal('a');
-      expect(result[0].value).to.equal('lcp guidance');
+      expect(result).to.deep.equal([]);
     });
 
     it('keeps issue NEW when its metric type still fails', () => {
@@ -961,10 +958,11 @@ describe('Per-issue OUTDATED merge helpers', () => {
         { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
       ];
       const result = applyPerIssueOutdated(existing, entryFailingLcp);
+      expect(result).to.have.lengthOf(1);
       expect(result[0].status).to.equal('NEW');
     });
 
-    it('marks only the resolved metric OUTDATED; others stay NEW', () => {
+    it('drops only the resolved metric; others stay NEW', () => {
       const existing = [
         { id: 'a', type: 'lcp', status: 'NEW' },
         { id: 'b', type: 'cls', status: 'NEW' },
@@ -972,36 +970,46 @@ describe('Per-issue OUTDATED merge helpers', () => {
       ];
       // Only CLS and INP fail now — LCP resolved
       const result = applyPerIssueOutdated(existing, entryFailingClsAndInp);
-      expect(result[0].status).to.equal('OUTDATED'); // lcp resolved
-      expect(result[1].status).to.equal('NEW'); // cls still failing
-      expect(result[2].status).to.equal('NEW'); // inp still failing
+      expect(result).to.have.lengthOf(2);
+      expect(result.map((i) => i.id)).to.deep.equal(['b', 'c']);
+      expect(result.every((i) => i.status === 'NEW')).to.be.true;
     });
 
     it('preserves APPROVED status when metric resolves (skip list)', () => {
       const existing = [{ id: 'a', type: 'lcp', status: 'APPROVED' }];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
       expect(result[0].status).to.equal('APPROVED');
     });
 
-    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR, OUTDATED in skip list', () => {
-      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR', 'OUTDATED'];
+    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR in skip list', () => {
+      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR'];
       statuses.forEach((status) => {
         const existing = [{ id: 'a', type: 'lcp', status }];
         const result = applyPerIssueOutdated(existing, entryAllPassing);
+        expect(result, `expected ${status} preserved`).to.have.lengthOf(1);
         expect(result[0].status, `expected ${status} preserved`).to.equal(status);
       });
+    });
+
+    it('drops stale OUTDATED issues so they no longer leak to the UI', () => {
+      // OUTDATED is no longer in the preserve set — these are pruned on re-merge.
+      const existing = [{ id: 'a', type: 'lcp', status: 'OUTDATED' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.deep.equal([]);
     });
 
     it('leaves legacy issues without a type field untouched', () => {
       const existing = [{ value: 'markdown only, no type', status: 'NEW' }];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
       expect(result[0]).to.deep.equal({ value: 'markdown only, no type', status: 'NEW' });
     });
 
-    it('marks NEW issue OUTDATED even when status field is missing (defaults to OUTDATED on resolve)', () => {
+    it('drops a NEW issue even when status field is missing (no customer intent recorded)', () => {
       const existing = [{ id: 'a', type: 'lcp' }]; // no status field
       const result = applyPerIssueOutdated(existing, entryAllPassing);
-      expect(result[0].status).to.equal('OUTDATED');
+      expect(result).to.deep.equal([]);
     });
 
     it('returns empty array for empty input', () => {
@@ -1076,7 +1084,7 @@ describe('Per-issue OUTDATED merge helpers', () => {
       expect(result.jiraLink).to.equal(null);
     });
 
-    it('marks resolved-metric issues OUTDATED on re-merge', () => {
+    it('drops resolved-metric issues on re-merge so the UI does not surface them', () => {
       const existing = {
         url: 'x',
         metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.3 }],
@@ -1090,8 +1098,10 @@ describe('Per-issue OUTDATED merge helpers', () => {
         metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3 }], // lcp resolved, cls still failing
       };
       const result = mergeCwvData(existing, newItem);
-      expect(result.issues[0].status).to.equal('OUTDATED'); // lcp
-      expect(result.issues[1].status).to.equal('NEW'); // cls
+      // LCP issue is dropped entirely; only CLS remains
+      expect(result.issues).to.have.lengthOf(1);
+      expect(result.issues[0].id).to.equal('b');
+      expect(result.issues[0].status).to.equal('NEW');
       // metrics overwritten by new data
       expect(result.metrics[0].lcp).to.equal(1800);
     });
