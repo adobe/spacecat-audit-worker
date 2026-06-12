@@ -1,3 +1,10 @@
+## [1.470.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.3...v1.470.4) (2026-06-12)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate domain-wide suggestions via buildKey symmetry ([#2650](https://github.com/adobe/spacecat-audit-worker/issues/2650)) ([0a20d6d](https://github.com/adobe/spacecat-audit-worker/commit/0a20d6dfe79a648b0fd742d336c748cd2ad531ef))
+
 ## [1.470.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.2...v1.470.3) (2026-06-12)
 
 
