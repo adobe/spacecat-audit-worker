@@ -1,3 +1,10 @@
+## [1.470.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.1...v1.470.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* drop resolved per-issue entries so UI doesn't show below-threshold issues ([#2648](https://github.com/adobe/spacecat-audit-worker/issues/2648)) ([4d72976](https://github.com/adobe/spacecat-audit-worker/commit/4d729762a7c36189e81f653614f2637d82e0545b))
+
 ## [1.470.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.0...v1.470.1) (2026-06-11)
 
 
