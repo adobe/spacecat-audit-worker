@@ -1,3 +1,10 @@
+## [1.470.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.2...v1.470.3) (2026-06-12)
+
+
+### Bug Fixes
+
+* **sync:** prevent spurious updatedAt bumps on terminal suggestions ([#2593](https://github.com/adobe/spacecat-audit-worker/issues/2593)) ([081e7a9](https://github.com/adobe/spacecat-audit-worker/commit/081e7a91d5b330f336df1862cb777a61b9b8bad2))
+
 ## [1.470.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.1...v1.470.2) (2026-06-12)
 
 
