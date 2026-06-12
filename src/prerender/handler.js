@@ -21,10 +21,17 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
+import {
+  buildSuggestionKey,
+  isPaidLLMOCustomer,
+  mergeAndGetUniqueHtmlUrls,
+  normalizePathnameWithQuery,
+  toPathname,
+} from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
+  DOMAIN_WIDE_SUGGESTION_KEY,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
@@ -49,8 +56,6 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
-
-const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
 /**
  * Reads and parses the site's status.json from S3.
@@ -317,23 +322,6 @@ function normalizePathname(url) {
   try {
     const { pathname } = new URL(url);
     return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Normalizes a URL to its pathname + search string.
- * Trailing slashes on the pathname are removed (except for the root path).
- * Falls back to the raw string when the URL is not parseable.
- * @param {string} url
- * @returns {string} pathname+search, or the original string on parse failure
- */
-function normalizePathnameWithQuery(url) {
-  try {
-    const { pathname, search } = new URL(url);
-    const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-    return search ? `${normalized}${search}` : normalized;
   } catch {
     return url;
   }
@@ -1260,18 +1248,6 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
-  // Build key function that handles both individual and domain-wide suggestions
-  const buildKey = (data) => {
-    // Domain-wide suggestion has a special key field
-    if (data.key) {
-      return data.key;
-    }
-    // Key on pathname+search so that query-param variants (e.g. /page?filter=a vs /page?filter=b)
-    // produce distinct suggestions. Domain shifts only affect hostname, so migration tolerance
-    // (e.g. switching from site.getBaseURL() to getPreferredBaseUrl()) is preserved.
-    return normalizePathnameWithQuery(data.url);
-  };
-
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
     url: suggestion.url,
@@ -1304,7 +1280,7 @@ export async function processOpportunityAndSuggestions(
     opportunity,
     newData: allSuggestions,
     context,
-    buildKey,
+    buildKey: buildSuggestionKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
