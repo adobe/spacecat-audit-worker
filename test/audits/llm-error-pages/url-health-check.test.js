@@ -150,6 +150,38 @@ describe('LLM Error Pages – url-health-check', () => {
     expect(fetchStub).to.have.callCount(12);
   });
 
+  it('enforces per-host concurrency cap of 3 (observed maxInflight)', async () => {
+    let inflight = 0;
+    let maxInflight = 0;
+    fetchStub.callsFake(async () => {
+      inflight += 1;
+      maxInflight = Math.max(maxInflight, inflight);
+      // Yield so the scheduler has a chance to dispatch other queued tasks
+      // before this one resolves. Without the yield the synchronous resolution
+      // would let only one task be in-flight at a time and we wouldn't observe
+      // the cap.
+      await new Promise((r) => { setImmediate(r); });
+      inflight -= 1;
+      return { status: 200 };
+    });
+    const urls = Array.from({ length: 12 }, (_, i) => `https://same.example/${i}`);
+    await filterOutConfirmedBrokenUrls(urls, log);
+    expect(maxInflight).to.be.at.most(3);
+    expect(maxInflight).to.be.at.least(2); // sanity: scheduler IS parallelising
+  });
+
+  it('fail-open: keeps URL when the scheduler\'s awaited task rejects unexpectedly', async () => {
+    // Force isUrlSafeToFetch to throw — this rejects the awaited promise
+    // inside the scheduler BEFORE isUrlReachable's try/catch can absorb it,
+    // exercising the .catch belt-and-suspenders branch.
+    isUrlSafeToFetchStub.rejects(new TypeError('boom'));
+    const result = await filterOutConfirmedBrokenUrls(['https://a.example/x'], log);
+    expect(result).to.deep.equal(['https://a.example/x']);
+    // fetch is never reached because the safety guard threw first; what we
+    // care about is that the URL is KEPT rather than dropped.
+    expect(fetchStub).to.not.have.been.called;
+  });
+
   it('does not crash when log.debug is missing on the 405 path (optional chaining branch)', async () => {
     fetchStub.resolves({ status: 405 });
     const minimalLog = {}; // no .debug

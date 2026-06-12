@@ -165,6 +165,11 @@ async function runWithHostCap(urls, taskFn) {
           .then((value) => {
             results[idx] = value;
           })
+          // Belt-and-suspenders fail-open: if taskFn rejects unexpectedly
+          // (i.e. an error that didn't get caught inside isUrlReachable's
+          // try/catch), keep the URL rather than letting `results[idx]`
+          // stay undefined and silently drop it in the post-filter.
+          .catch(() => { results[idx] = true; })
           .finally(() => onTaskDone(host));
       }
     };

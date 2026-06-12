@@ -12,6 +12,18 @@
 
 import dns from 'dns/promises';
 
+/*
+ * Canonicality:
+ * This module is the canonical implementation of SSRF-guard helpers
+ * (isPrivateIP, resolvesToPublicAddress) for the audit-worker repo.
+ *
+ * src/site-detection/handler.js still maintains its own forked copies
+ * because lifting them out would touch unrelated audit code paths in
+ * this PR's scope. When that audit is next touched, migrate it to
+ * import from this module. Tracked as a follow-up — link in the
+ * PR description.
+ */
+
 /**
  * SSRF-related URL safety helpers. Lifted from src/site-detection/handler.js so
  * additional audits (e.g. llm-error-pages HEAD probes) can apply the same
@@ -109,6 +121,24 @@ export async function resolvesToPublicAddress(hostname, log) {
 
   return true;
 }
+
+/*
+ * Known limitation — DNS rebinding TOCTOU window:
+ * This function resolves the hostname via DNS to confirm it points to
+ * a public address. fetch() then performs its own DNS resolution when
+ * connecting. An attacker controlling DNS with a low TTL can serve a
+ * public IP on the first lookup (passing the guard) and a private IP
+ * (e.g. 169.254.169.254) on the second.
+ *
+ * Mitigations active in this Lambda environment:
+ *   - IMDSv2 hop-limit = 1 (blocks IMDS access from Lambda containers)
+ *   - VPC egress rules restrict outbound traffic
+ *   - Attacker would need Mystique data-pipeline compromise
+ *
+ * Ideal fix (out of scope for this PR): pin the resolved IP via undici
+ * lookup option so fetch connects to the validated address. Tracked as
+ * a follow-up — link in the PR description.
+ */
 
 /**
  * Convenience guard for outbound HTTP probes. Rejects:
