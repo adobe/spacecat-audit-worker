@@ -17,13 +17,13 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS, calculateConfidenceScore } from './kpi-metrics.js';
 
 /**
- * Per-issue statuses that should NOT be overwritten when re-audit detects a metric
- * has resolved. Mirrors the skip list used by `handleOutdatedSuggestions` for
- * suggestion-level statuses — preserves customer/system intent on issues that
- * already moved past NEW.
+ * Per-issue statuses that should NOT be removed when re-audit detects a metric
+ * has resolved. These represent customer/system intent (FIXED, SKIPPED, etc.) or
+ * in-flight work (APPROVED, IN_PROGRESS) — dropping them would lose history. Issues
+ * with any other status (NEW, OUTDATED) get pruned when their metric is no longer
+ * failing, so the UI never shows resolved/below-threshold issues.
  */
 const ISSUE_STATUSES_TO_PRESERVE = new Set([
-  Suggestion.STATUSES.OUTDATED,
   Suggestion.STATUSES.FIXED,
   Suggestion.STATUSES.ERROR,
   Suggestion.STATUSES.SKIPPED,
@@ -80,32 +80,34 @@ export function isMetricFailing(entry, metric) {
 }
 
 /**
- * For each existing issue in `data.issues[]`, if its metric type no longer exceeds
- * threshold in the new audit data, mark it OUTDATED — unless its status is in
- * ISSUE_STATUSES_TO_PRESERVE, in which case it's untouched.
+ * For each existing issue in `data.issues[]`, drop it if its metric type no longer
+ * exceeds threshold in the new audit data — unless its status is in
+ * ISSUE_STATUSES_TO_PRESERVE (FIXED / SKIPPED / APPROVED / IN_PROGRESS / REJECTED /
+ * ERROR), which we keep as customer/system intent.
  *
- * Issues without a `type` field (legacy data) are left untouched: we can't tell
+ * This prevents the UI from showing issue entries for metrics that have improved
+ * back below threshold. Previously these were left in the array with status
+ * OUTDATED, which leaked through to the UI.
+ *
+ * Issues without a `type` field (legacy data) are kept untouched: we can't tell
  * which metric they describe, so the safe behaviour is "no change."
  *
  * @param {Object[]} existingIssues - issues array from existing suggestion.data
  * @param {Object} newDataItem - the new CWV entry for this URL/pattern
- * @returns {Object[]} a new array (does not mutate input) with updated statuses
+ * @returns {Object[]} a new array (does not mutate input) with resolved issues removed
  */
 export function applyPerIssueOutdated(existingIssues, newDataItem) {
   if (!Array.isArray(existingIssues) || existingIssues.length === 0) {
     return existingIssues || [];
   }
-  return existingIssues.map((issue) => {
+  return existingIssues.filter((issue) => {
     if (!issue || !issue.type) {
-      return issue;
+      return true;
     }
     if (issue.status && ISSUE_STATUSES_TO_PRESERVE.has(issue.status)) {
-      return issue;
+      return true;
     }
-    if (isMetricFailing(newDataItem, issue.type)) {
-      return issue;
-    }
-    return { ...issue, status: Suggestion.STATUSES.OUTDATED };
+    return isMetricFailing(newDataItem, issue.type);
   });
 }
 
@@ -113,9 +115,11 @@ export function applyPerIssueOutdated(existingIssues, newDataItem) {
  * Custom mergeDataFunction for CWV suggestions used by syncSuggestions on re-audit.
  *
  * Default behaviour is a shallow `{...existing, ...new}` spread. We extend it with
- * per-issue OUTDATED detection: when a URL still fails some metrics but others
- * resolved between audits, only the resolved metrics' issues flip to OUTDATED.
- * The suggestion itself stays NEW because the URL is still failing overall.
+ * per-issue resolution: when a URL still fails some metrics but others resolved
+ * between audits, the resolved-metric issues are dropped from `data.issues[]` so
+ * the UI no longer surfaces them. Customer/system-touched issues (FIXED, SKIPPED,
+ * APPROVED, IN_PROGRESS, REJECTED, ERROR) are preserved for history. The suggestion
+ * itself stays NEW because the URL is still failing overall.
  *
  * The newDataItem (raw CWV entry) doesn't carry `issues`, so the existing
  * `data.issues[]` is preserved via the spread; we then post-process it.
