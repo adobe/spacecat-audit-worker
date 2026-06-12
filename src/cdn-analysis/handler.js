@@ -28,6 +28,7 @@ import {
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { weekClosingSundayKey } from '../utils/date-utils.js';
 import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
@@ -203,24 +204,6 @@ export async function findRecentUploads(s3Client, bucketName, pathId, auditDate,
 
   log.info(`Found ${detectedDays.size} byocdn-other day(s) with recent uploads`);
   return detectedDays;
-}
-
-// Key of the Sunday closing a day's ISO week, or null if that week isn't complete yet
-// (Sunday not before the audit day) — the live daily schedule rolls up the current week.
-function weekClosingSundayKey(dayKey, auditDate) {
-  const [year, month, day] = dayKey.split('/').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const dow = date.getUTCDay(); // 0 = Sunday
-  const sunday = new Date(date.getTime() + (dow === 0 ? 0 : 7 - dow) * ONE_DAY_MS);
-  const auditDayStartMs = Date.UTC(
-    auditDate.getUTCFullYear(),
-    auditDate.getUTCMonth(),
-    auditDate.getUTCDate(),
-  );
-  if (sunday.getTime() >= auditDayStartMs) {
-    return null;
-  }
-  return `${sunday.getUTCFullYear()}/${pad2(sunday.getUTCMonth() + 1)}/${pad2(sunday.getUTCDate())}`;
 }
 
 /**
