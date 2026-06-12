@@ -1260,11 +1260,14 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
-  // Build key function that handles both individual and domain-wide suggestions
+  // Build key function that handles both individual and domain-wide suggestions.
+  // Domain-wide suggestions must produce the same constant key whether they come from
+  // allSuggestions (new items have a .key field) or from existing DB records (stored
+  // data has no .key but has isDomainWide:true). Without this symmetry, syncSuggestions
+  // never matches the existing domain-wide record and creates a duplicate every audit run.
   const buildKey = (data) => {
-    // Domain-wide suggestion has a special key field
-    if (data.key) {
-      return data.key;
+    if (data.key === DOMAIN_WIDE_SUGGESTION_KEY || data.isDomainWide) {
+      return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Key on pathname+search so that query-param variants (e.g. /page?filter=a vs /page?filter=b)
     // produce distinct suggestions. Domain shifts only affect hostname, so migration tolerance

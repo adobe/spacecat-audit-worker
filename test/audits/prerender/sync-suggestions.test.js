@@ -19,9 +19,12 @@ import { toPathname } from '../../../src/prerender/utils/utils.js';
 
 use(sinonChai);
 
-// Mirrors the buildKey in processOpportunityAndSuggestions
+// Mirrors the buildKey in processOpportunityAndSuggestions.
+// Domain-wide suggestions must return the same constant regardless of whether data comes
+// from allSuggestions (has .key) or from an existing DB record (has isDomainWide:true).
+const DOMAIN_WIDE_KEY = 'domain-wide-aggregate|prerender';
 const buildKey = (data) => {
-  if (data.key) return data.key;
+  if (data.key === DOMAIN_WIDE_KEY || data.isDomainWide) return DOMAIN_WIDE_KEY;
   return toPathname(data.url);
 };
 
@@ -217,6 +220,52 @@ describe('Prerender syncSuggestions integration', () => {
     // Nothing outdated or updated
     expect(bulkUpdateStatus).to.not.have.been.called;
     expect(saveMany).to.not.have.been.called;
+  });
+
+  it('Case 6 — existing domain-wide suggestion (isDomainWide:true, no .key) is matched and updated, not duplicated', async () => {
+    // Simulates the stale DB record: stored data has isDomainWide but no .key field.
+    // Before the fix, buildKey returned a pathname-based key for the stored record and
+    // DOMAIN_WIDE_KEY for the incoming item, so they never matched and a duplicate was created.
+    const existingDomainWide = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      pathPattern: '/*',
+      allowedRegexPatterns: ['/*'],
+      wordCountBefore: 10,
+      wordCountAfter: 20,
+      contentGainRatio: 0.5,
+    }, 'OUTDATED');
+
+    // Incoming domain-wide from a new audit run — has .key field
+    const incomingDomainWide = {
+      key: DOMAIN_WIDE_KEY,
+      data: {
+        isDomainWide: true,
+        url: 'https://example.com/* (All Domain URLs)',
+        pathPattern: '/*',
+        allowedRegexPatterns: ['/*'],
+        wordCountBefore: 15,
+        wordCountAfter: 35,
+        contentGainRatio: 1.2,
+      },
+    };
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [incomingDomainWide],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d.data ?? d }),
+      existingSuggestions: [existingDomainWide],
+    });
+
+    // Existing was updated in place — no duplicate created
+    expect(saveMany).to.have.been.calledOnce;
+    expect(addSuggestions).to.not.have.been.called;
+    // Fresh aggregated data was applied
+    expect(existingDomainWide.getData().contentGainRatio).to.equal(1.2);
+    expect(existingDomainWide.getData().wordCountBefore).to.equal(15);
   });
 
   it('pathname normalization — domain shift does not create a duplicate suggestion', async () => {
