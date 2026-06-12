@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -365,17 +365,15 @@ export async function runAuditAndSendToMystique(context) {
 
               opportunityMap[code] = opportunity;
 
-              // Temporary: hide newly-created Opps from the UI until it is updated to
-              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
-              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
-              // the UI ships support for these types, drop this block and bulk-flip any
-              // accumulated IGNORED rows back to NEW.
-              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
-                opportunity.setStatus(Oppty.STATUSES.IGNORED);
-                opportunity.setUpdatedBy('system');
-                await opportunity.save();
-                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
-              }
+              // NOTE: we previously auto-flipped freshly-created Opps to
+              // IGNORED ("hide bucket-specific types from the UI pending UI
+              // support"). That broke find-or-create idempotency:
+              // `convertToOpportunity` only searches STATUS=NEW
+              // (src/common/opportunity.js), so an IGNORED opp was invisible
+              // on the next run and a DUPLICATE was created — compounded on
+              // Mondays by the two-week loop firing the bug twice per audit.
+              // The flip is removed so the same opportunity is reused weekly
+              // and the per-week suggestion history accumulates into it.
 
               existingSuggestions = await opportunity.getSuggestions();
 

@@ -2029,7 +2029,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     sandbox.restore();
   });
 
-  it('flips newly-created Opp status from NEW to IGNORED (pending UI support)', async () => {
+  it('does NOT auto-flip a newly-created NEW opportunity to IGNORED (dedup: reuse it weekly)', async () => {
     const sandbox = sinon.createSandbox();
     const setStatus = sandbox.stub();
     const setUpdatedBy = sandbox.stub();
@@ -2061,51 +2061,14 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(setStatus).to.have.been.calledOnceWith('IGNORED');
-    expect(setUpdatedBy).to.have.been.calledOnceWith('system');
-    expect(save).to.have.been.calledOnce;
-    expect(ctx.log.info).to.have.been.calledWithMatch(
-      /Marked new opportunity opp-new as IGNORED/,
-    );
-    sandbox.restore();
-  });
-
-  it('does not flip status on Opps that are already non-NEW (e.g. APPROVED, IGNORED)', async () => {
-    const sandbox = sinon.createSandbox();
-    const setStatus = sandbox.stub();
-    const save = sandbox.stub().resolves();
-    // Simulate an Opp that was previously created and the user manually set to APPROVED.
-    // convertToOpportunity filters by NEW so in practice it would create a fresh NEW Opp,
-    // but this proves the guard is in place if a non-NEW Opp ever flows through.
-    const alreadyManaged = {
-      getId: () => 'opp-managed',
-      getType: () => 'llm-error-pages-404',
-      getStatus: () => 'APPROVED',
-      setStatus,
-      setUpdatedBy: sandbox.stub(),
-      save,
-      getSuggestions: sandbox.stub().resolves([]),
-    };
-    const { handler } = await buildHandler(sandbox, {
-      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
-        if (type === 'llm-error-pages-404') return Promise.resolve(alreadyManaged);
-        return Promise.resolve({
-          getId: () => `opp-${type}`,
-          getType: () => type,
-          getStatus: () => 'NEW',
-          setStatus: sandbox.stub(),
-          setUpdatedBy: sandbox.stub(),
-          save: sandbox.stub().resolves(),
-          getSuggestions: sandbox.stub().resolves([]),
-        });
-      }),
-    });
-    const ctx = buildContext(sandbox);
-
-    await handler.runAuditAndSendToMystique(ctx);
-
+    // The auto-IGNORED flip was removed so the opp stays NEW and
+    // convertToOpportunity can find + reuse it on the next weekly run
+    // (otherwise an IGNORED opp is invisible to the NEW-only lookup and a
+    // duplicate is created every week).
     expect(setStatus).to.not.have.been.called;
+    expect(setUpdatedBy).to.not.have.been.called;
     expect(save).to.not.have.been.called;
+    expect(ctx.log.info).to.not.have.been.calledWithMatch(/Marked new opportunity/);
     sandbox.restore();
   });
 
