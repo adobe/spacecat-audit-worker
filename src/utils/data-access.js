@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
+import { deepEqual, isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import {
   Opportunity as OpportunityDataAccess,
   Suggestion as SuggestionDataAccess,
@@ -489,33 +489,59 @@ export async function syncSuggestions({
   }
 
   // Update existing suggestions - O(N) with Map lookup
+  // Only save suggestions where data or status actually changed
   const { Suggestion } = context.dataAccess;
-  const toUpdate = existingSuggestions
-    .filter((existing) => {
-      const existingKey = buildKey(existing.getData());
-      return newDataKeys.has(existingKey);
-    });
+  const toUpdate = [];
 
-  toUpdate.forEach((existing) => {
+  // Separate filter from processing for clarity
+  const matchedSuggestions = existingSuggestions.filter((existing) => {
     const existingKey = buildKey(existing.getData());
+    return newDataKeys.has(existingKey);
+  });
+
+  matchedSuggestions.forEach((existing) => {
+    const existingData = existing.getData();
+    const existingKey = buildKey(existingData);
     const newDataItem = newDataByKey.get(existingKey);
-    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+    // mergeDataFunction must return a new object (not mutate existingData)
+    // for deepEqual comparison to work correctly
+    const mergedData = mergeDataFunction(existingData, newDataItem);
+
+    // Check if data actually changed using deep equality
+    let dataChanged = !deepEqual(existingData, mergedData);
+
+    // Defensive guard: catch merge functions that mutate in place
+    // Fail open to prevent broken merge functions from silently suppressing updates
+    if (mergedData === existingData) {
+      log.warn(`mergeDataFunction returned same reference - forcing dataChanged=true to prevent silent skip. Key: ${existingKey}`);
+      dataChanged = true;
+    }
+
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
-    existing.setData(mergedData);
 
     // Use the merge status function to determine if status should change
     const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
-    // null indicates to keep existing status
-    if (newStatus !== null) {
-      existing.setStatus(newStatus);
+
+    // Only update if something actually changed
+    if (newStatus !== null || dataChanged) {
+      existing.setData(mergedData);
+      if (newStatus !== null) {
+        existing.setStatus(newStatus);
+        existing.setUpdatedBy('system'); // Only stamp 'system' on status changes
+      }
+      toUpdate.push(existing);
+    } else {
+      log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);
     }
-    existing.setUpdatedBy('system');
   });
 
   if (toUpdate.length > 0) {
     await Suggestion.saveMany(toUpdate);
+    log.info(`[syncSuggestions] Updated ${toUpdate.length} suggestions with actual changes`);
+  } else {
+    log.info('[syncSuggestions] No suggestions required updates');
   }
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
+  log.debug(`Processed ${matchedSuggestions.length} matched suggestions, updated ${toUpdate.length}`);
 
   const defaultNewSuggestionStatus = newSuggestionStatus
     ?? ((requiresValidation && !isTBYB)
