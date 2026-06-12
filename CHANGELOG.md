@@ -1,3 +1,10 @@
+## [1.471.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.0...v1.471.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** roll up completed weeks on byocdn-other past-week backfills ([#2653](https://github.com/adobe/spacecat-audit-worker/issues/2653)) ([bf27a9d](https://github.com/adobe/spacecat-audit-worker/commit/bf27a9d8bc7bb21442f0e81abed66a9a9e74f358)), closes [#2632](https://github.com/adobe/spacecat-audit-worker/issues/2632)
+
 # [1.471.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.5...v1.471.0) (2026-06-12)
 
 
