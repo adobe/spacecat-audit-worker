@@ -582,6 +582,85 @@ describe('CDN Analysis Handler', () => {
       });
     });
 
+    // S3 fake for byocdn-other: detection prefix returns the given day paths (recently
+    // modified), discovery prefix exposes byocdn-other as a provider.
+    const byocdnOtherS3Fake = (orgId, recentDate, dayPaths) => (command) => {
+      if (command.constructor.name === 'HeadBucketCommand') {
+        return Promise.resolve({});
+      }
+      if (command.constructor.name === 'ListObjectsV2Command') {
+        const { Prefix = '' } = command.input || {};
+        if (Prefix.includes('aggregated')) {
+          return Promise.resolve({ Contents: [] });
+        }
+        if (Prefix.includes('/raw/byocdn-other/')) {
+          return Promise.resolve({
+            Contents: dayPaths.map((dp) => ({
+              Key: `${orgId}/raw/byocdn-other/${dp}/file.log`,
+              LastModified: recentDate,
+            })),
+          });
+        }
+        return Promise.resolve({
+          Contents: [{ Key: `${orgId}/raw/byocdn-other/2025/06/15/file1.log` }],
+          CommonPrefixes: [{ Prefix: `${orgId}/raw/byocdn-other/` }],
+        });
+      }
+      return Promise.resolve({});
+    };
+
+    const reportDatesFor = () => context.sqs.sendMessage.getCalls()
+      .filter((call) => call.args[1].type === 'cdn-logs-report')
+      .map((call) => call.args[1].auditContext.date);
+
+    it('also triggers a report for a completed week\'s closing Sunday when no Sunday file was delivered', async () => {
+      // Past week Mon 06/02 .. Sun 06/08 2025; only Mon–Fri uploaded, audit runs 06/15.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03', '2025/06/04', '2025/06/05', '2025/06/06',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 15, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // 5 per-day reports (day+1) + the week-closing Sunday 06/08 (sent as 06/09).
+      expect(reportDates).to.have.length(6);
+      expect(reportDates).to.include('2025-06-09T00:00:00.000Z');
+    });
+
+    it('does not duplicate the Sunday report when the Sunday file was delivered', async () => {
+      // Full week Mon 06/02 .. Sun 06/08 uploaded; Sunday already produces its own report.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03', '2025/06/04', '2025/06/05', '2025/06/06', '2025/06/07', '2025/06/08',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 15, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // 7 detected days → 7 reports; the Sunday-derived 06/09 appears exactly once.
+      expect(reportDates).to.have.length(7);
+      expect(reportDates.filter((d) => d === '2025-06-09T00:00:00.000Z')).to.have.length(1);
+    });
+
+    it('does not add a Sunday report for the in-progress (incomplete) week', async () => {
+      // Mon/Tue of the current week (06/02, 06/03); audit runs mid-week 06/04, week not closed.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 4, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // Only the two per-day reports; no week-closing Sunday (06/09) added.
+      expect(reportDates).to.have.length(2);
+      expect(reportDates).to.not.include('2025-06-09T00:00:00.000Z');
+    });
+
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,
