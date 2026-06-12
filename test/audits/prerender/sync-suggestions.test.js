@@ -15,18 +15,10 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { syncSuggestions } from '../../../src/utils/data-access.js';
-import { toPathname } from '../../../src/prerender/utils/utils.js';
+import { buildSuggestionKey as buildKey, toPathname } from '../../../src/prerender/utils/utils.js';
+import { DOMAIN_WIDE_SUGGESTION_KEY as DOMAIN_WIDE_KEY } from '../../../src/prerender/utils/constants.js';
 
 use(sinonChai);
-
-// Mirrors the buildKey in processOpportunityAndSuggestions.
-// Domain-wide suggestions must return the same constant regardless of whether data comes
-// from allSuggestions (has .key) or from an existing DB record (has isDomainWide:true).
-const DOMAIN_WIDE_KEY = 'domain-wide-aggregate|prerender';
-const buildKey = (data) => {
-  if (data.key === DOMAIN_WIDE_KEY || data.isDomainWide) return DOMAIN_WIDE_KEY;
-  return toPathname(data.url);
-};
 
 // Mirrors the pathname-normalized scrapedUrlsSet created in processOpportunityAndSuggestions
 const makeScrapedUrlsSet = (urls) => {
@@ -266,6 +258,61 @@ describe('Prerender syncSuggestions integration', () => {
     // Fresh aggregated data was applied
     expect(existingDomainWide.getData().contentGainRatio).to.equal(1.2);
     expect(existingDomainWide.getData().wordCountBefore).to.equal(15);
+  });
+
+  it('Case 6b — multiple OUTDATED domain-wide duplicates: all are updated, no new one created, none re-outdated', async () => {
+    // Reproduces the production incident where 5 OUTDATED domain-wide suggestions
+    // accumulated for the same opportunity due to the buildKey mismatch bug.
+    const dup1 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.5,
+    }, 'OUTDATED');
+    const dup2 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.6,
+    }, 'OUTDATED');
+    const dup3 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.7,
+    }, 'OUTDATED');
+
+    const incomingDomainWide = {
+      key: DOMAIN_WIDE_KEY,
+      data: {
+        isDomainWide: true,
+        url: 'https://example.com/* (All Domain URLs)',
+        contentGainRatio: 2.0,
+      },
+    };
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [incomingDomainWide],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d.data ?? d }),
+      existingSuggestions: [dup1, dup2, dup3],
+    });
+
+    // All three share the same buildKey, so all are matched and data-refreshed
+    expect(saveMany).to.have.been.calledOnce;
+    const savedSuggestions = saveMany.firstCall.args[0];
+    expect(savedSuggestions).to.have.lengthOf(3);
+    savedSuggestions.forEach((s) => {
+      expect(s.getData().contentGainRatio).to.equal(2.0);
+    });
+
+    // No new suggestion created — the key is already present among existing
+    expect(addSuggestions).to.not.have.been.called;
+
+    // Domain-wide suggestions are protected by the isDomainWide guard in
+    // handleOutdatedSuggestions, so bulkUpdateStatus must not be called for them
+    const outdatedCall = bulkUpdateStatus.getCalls().find((c) => c.args[1] === 'OUTDATED');
+    expect(outdatedCall).to.be.undefined;
   });
 
   it('pathname normalization — domain shift does not create a duplicate suggestion', async () => {

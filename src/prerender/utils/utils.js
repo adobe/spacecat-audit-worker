@@ -16,6 +16,7 @@
 
 import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { DOMAIN_WIDE_SUGGESTION_KEY } from './constants.js';
 
 /**
  * Common non-HTML file extensions that should be filtered out
@@ -59,6 +60,39 @@ export function toPathname(url) {
   } catch {
     return url;
   }
+}
+
+/**
+ * Normalizes a URL to its pathname + search string.
+ * Trailing slashes on the pathname are removed (except for the root path).
+ * Falls back to the raw string when the URL is not parseable.
+ * @param {string} url
+ * @returns {string} pathname+search, or the original string on parse failure
+ */
+export function normalizePathnameWithQuery(url) {
+  try {
+    const { pathname, search } = new URL(url);
+    const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    return search ? `${normalized}${search}` : normalized;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Builds a dedup key for a prerender suggestion.
+ * Domain-wide suggestions (incoming items with `.key` or stored records with
+ * `isDomainWide:true`) always return the same constant so that syncSuggestions
+ * matches existing domain-wide records instead of creating duplicates.
+ * Individual suggestions are keyed by pathname+search.
+ * @param {Object} data - Suggestion data or incoming new-data item
+ * @returns {string} dedup key
+ */
+export function buildSuggestionKey(data) {
+  if (data.key === DOMAIN_WIDE_SUGGESTION_KEY || data.isDomainWide) {
+    return DOMAIN_WIDE_SUGGESTION_KEY;
+  }
+  return normalizePathnameWithQuery(data.url);
 }
 
 /**
