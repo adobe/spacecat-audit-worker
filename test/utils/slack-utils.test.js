@@ -15,8 +15,12 @@ import sinon from 'sinon';
 
 import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
 import {
+  formatAuditCompletionMessage,
   formatAuditFailureMessage,
+  formatBotProtectionPartialBlockMessage,
   formatBotProtectionSlackMessage,
+  formatStepCompletionMessage,
+  humanizeStepName,
   postMessage,
   postMessageOptional,
   postMessageSafe,
@@ -211,18 +215,18 @@ describe('Slack Utils', () => {
       expect(mockSlackClient.postMessage.called).to.be.false;
     });
 
-    it('logs error and does not throw when slackContext is null', async () => {
+    it('silently no-ops when slackContext is null (not triggered from Slack)', async () => {
       await say(env, log, null, 'Test');
 
-      expect(log.error.calledOnce).to.be.true;
-      expect(log.error.firstCall.args[0]).to.equal('Error sending Slack message:');
+      expect(mockSlackClient.postMessage.called).to.be.false;
+      expect(log.error.called).to.be.false;
     });
 
-    it('logs error and does not throw when slackContext is undefined', async () => {
+    it('silently no-ops when slackContext is undefined (not triggered from Slack)', async () => {
       await say(env, log, undefined, 'Test');
 
-      expect(log.error.calledOnce).to.be.true;
-      expect(log.error.firstCall.args[0]).to.equal('Error sending Slack message:');
+      expect(mockSlackClient.postMessage.called).to.be.false;
+      expect(log.error.called).to.be.false;
     });
 
     it('logs error and does not throw when postMessage rejects', async () => {
@@ -536,6 +540,98 @@ describe('Slack Utils', () => {
       expect(mockSlackClient.postMessage.calledOnce).to.be.true;
       const msg = mockSlackClient.postMessage.firstCall.args[0];
       expect(msg.text).to.include('Bot Protection Detected');
+    });
+
+    it('suppresses duplicate alerts: second call with same slackContext is a no-op', async () => {
+      const slackContext = { channelId: 'C123', threadTs: '1234.5678' };
+      const error = new Error('boom');
+
+      await sendAuditFailureNotification(notifContext, {
+        type: 'cwv',
+        siteUrl: 'https://example.com',
+        auditContext: { slackContext },
+        error,
+      });
+      // Inner reporter (RunnerAudit/StepAudit) fires once, then outer dispatcher
+      // catches the re-thrown error and calls again — second call must no-op.
+      await sendAuditFailureNotification(notifContext, {
+        type: 'cwv',
+        siteUrl: 'https://example.com',
+        auditContext: { slackContext },
+        error,
+      });
+
+      expect(mockSlackClient.postMessage.calledOnce).to.be.true;
+      expect(slackContext.notifiedAt).to.be.a('string');
+    });
+  });
+
+  describe('formatAuditCompletionMessage', () => {
+    it('renders type and site URL with a completion icon', () => {
+      const msg = formatAuditCompletionMessage('cwv', 'https://example.com');
+      expect(msg).to.include('Audit Completed');
+      expect(msg).to.include('cwv');
+      expect(msg).to.include('https://example.com');
+    });
+  });
+
+  describe('humanizeStepName', () => {
+    it('splits camelCase into title case', () => {
+      expect(humanizeStepName('collectCwvData')).to.equal('Collect Cwv Data');
+    });
+
+    it('preserves acronyms (CWV stays together)', () => {
+      expect(humanizeStepName('collectCWVDataAndImportCode'))
+        .to.equal('Collect CWV Data And Import Code');
+    });
+
+    it('returns empty string for empty / undefined input', () => {
+      expect(humanizeStepName('')).to.equal('');
+      expect(humanizeStepName(undefined)).to.equal('');
+      expect(humanizeStepName(null)).to.equal('');
+    });
+  });
+
+  describe('formatStepCompletionMessage', () => {
+    it('renders the humanized step name with type and site', () => {
+      const msg = formatStepCompletionMessage(
+        'cwv',
+        'https://example.com',
+        'collectCWVDataAndImportCode',
+      );
+      expect(msg).to.include('Collect CWV Data And Import Code');
+      expect(msg).to.include('done');
+      expect(msg).to.include('cwv');
+      expect(msg).to.include('https://example.com');
+    });
+  });
+
+  describe('formatBotProtectionPartialBlockMessage', () => {
+    it('renders summary, blocker breakdown, and resolution hint', () => {
+      const msg = formatBotProtectionPartialBlockMessage({
+        auditType: 'cwv',
+        siteUrl: 'https://example.com',
+        details: {
+          blockedUrlsCount: 3,
+          totalUrlsCount: 10,
+          byBlockerType: { cloudflare: 3 },
+        },
+      });
+      expect(msg).to.include('Partial Block');
+      expect(msg).to.include('3/10');
+      expect(msg).to.include('continuing');
+      expect(msg).to.include('Cloudflare');
+      expect(msg).to.include('Allowlist');
+    });
+
+    it('omits the blocker breakdown section when no blocker data is provided', () => {
+      const msg = formatBotProtectionPartialBlockMessage({
+        auditType: 'cwv',
+        siteUrl: 'https://example.com',
+        details: { blockedUrlsCount: 1, totalUrlsCount: 5 },
+      });
+      expect(msg).to.include('1/5');
+      expect(msg).to.not.include('By Blocker Type');
     });
   });
 });

@@ -13,7 +13,11 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
 import { isAuditEnabledForSite, parseMessageDataForRunnerAudit } from './audit-utils.js';
-import { sendAuditFailureNotification } from '../utils/slack-utils.js';
+import {
+  formatAuditCompletionMessage,
+  say,
+  sendAuditFailureNotification,
+} from '../utils/slack-utils.js';
 
 /**
  * Builds the audit context for RunnerAudit: `message.auditContext` plus optional `messageData`
@@ -63,7 +67,7 @@ export class RunnerAudit extends BaseAudit {
       const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site, auditContext);
 
-      return this.processAuditResult(
+      const response = await this.processAuditResult(
         result,
         {
           type,
@@ -73,6 +77,17 @@ export class RunnerAudit extends BaseAudit {
         },
         context,
       );
+
+      // Notify the originating Slack thread that the audit completed.
+      // No-op when the audit was not triggered from Slack.
+      await say(
+        context.env,
+        log,
+        auditContext?.slackContext,
+        formatAuditCompletionMessage(type, siteUrl),
+      );
+
+      return response;
     } catch (e) {
       await sendAuditFailureNotification(context, {
         type,

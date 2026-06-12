@@ -24,6 +24,10 @@ import { formatAllowlistMessage, hasText } from '@adobe/spacecat-shared-utils';
  * @returns {Promise<void>}
  */
 export async function say(env, log, slackContext, message) {
+  // No-op when not triggered from Slack (no channel/thread to reply on).
+  if (!hasText(slackContext?.channelId) || !hasText(slackContext?.threadTs)) {
+    return;
+  }
   try {
     const slackClientContext = {
       channelId: slackContext.channelId,
@@ -38,14 +42,12 @@ export async function say(env, log, slackContext, message) {
     };
     const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
     const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
-    if (hasText(slackContext.threadTs) && hasText(slackContext.channelId)) {
-      await slackClient.postMessage({
-        channel: slackContext.channelId,
-        thread_ts: slackContext.threadTs,
-        text: message,
-        unfurl_links: false,
-      });
-    }
+    await slackClient.postMessage({
+      channel: slackContext.channelId,
+      thread_ts: slackContext.threadTs,
+      text: message,
+      unfurl_links: false,
+    });
   } catch (error) {
     if (log) {
       log.error('Error sending Slack message:', {
@@ -266,6 +268,85 @@ export function formatAuditFailureMessage(auditType, siteUrl, error) {
 }
 
 /**
+ * Formats a warning message for partial bot-protection blocks. The audit
+ * continues with all URLs (including blocked ones) — Mystique still runs —
+ * but the originator should know some scraped data may be incomplete.
+ *
+ * @param {Object} options
+ * @param {string} options.auditType
+ * @param {string} options.siteUrl
+ * @param {Object} options.details - abort.details
+ * @returns {string}
+ */
+export function formatBotProtectionPartialBlockMessage({
+  auditType,
+  siteUrl,
+  details = {},
+}) {
+  const { blockedUrlsCount = 0, totalUrlsCount = 0, byBlockerType = {} } = details;
+  const blockerBreakdown = formatBreakdown(byBlockerType, formatBlockerType);
+  let message = ':warning: *Bot Protection — Partial Block*\n\n'
+    + `*Audit Type:* \`${auditType}\`\n`
+    + `*Site:* ${siteUrl}\n`
+    + `*Summary:* ${blockedUrlsCount}/${totalUrlsCount} URLs blocked — continuing audit for all URLs\n`;
+  if (blockerBreakdown) {
+    message += `\n*By Blocker Type:*\n${blockerBreakdown}\n`;
+  }
+  message += '\n:bulb: _Allowlist SpaceCat Bot in your CDN/WAF for the blocked URLs to ensure reliable data on the next run._';
+  return message;
+}
+
+/**
+ * Formats an audit-completion message.
+ *
+ * @param {string} auditType - Audit type (e.g. 'cwv')
+ * @param {string} siteUrl - The site URL
+ * @returns {string}
+ */
+export function formatAuditCompletionMessage(auditType, siteUrl) {
+  return ':white_check_mark: *Audit Completed*\n\n'
+    + `*Audit Type:* \`${auditType}\`\n`
+    + `*Site:* ${siteUrl}`;
+}
+
+/**
+ * Converts a camelCase or snake_case step identifier into a human-readable label.
+ * Examples:
+ *   'collectCWVDataAndImportCode' -> 'Collect CWV Data And Import Code'
+ *   'sync_opportunity_and_suggestions_step' -> 'Sync Opportunity And Suggestions Step'
+ *
+ * @param {string} stepName
+ * @returns {string}
+ */
+export function humanizeStepName(stepName) {
+  if (!hasText(stepName)) {
+    return '';
+  }
+  return stepName
+    .replace(/_/g, ' ')
+    // Insert space before each uppercase letter that follows a lowercase letter or
+    // a sequence of uppercase letters followed by a lowercase one (so 'CWVData'
+    // becomes 'CWV Data', not 'C W V Data').
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .trim()
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/**
+ * Formats a per-step completion message.
+ *
+ * @param {string} auditType - Audit type (e.g. 'cwv')
+ * @param {string} siteUrl - The site URL
+ * @param {string} stepName - The step identifier (auto-humanized for display)
+ * @returns {string}
+ */
+export function formatStepCompletionMessage(auditType, siteUrl, stepName) {
+  return `:arrows_counterclockwise: *${humanizeStepName(stepName)} — done*\n`
+    + `*Audit Type:* \`${auditType}\`  ·  *Site:* ${siteUrl}`;
+}
+
+/**
  * Sends a Slack notification when an audit fails.
  * Detects bot-protection aborts and formats a rich message with allowlist instructions;
  * all other failures get a concise error message.
@@ -297,6 +378,15 @@ export async function sendAuditFailureNotification(context, {
     return; // No Slack thread to reply to — audit was not triggered from Slack
   }
 
+  // Suppress duplicate Slack alerts when the outermost dispatcher catches an
+  // error that an inner audit class (RunnerAudit / StepAudit / handleAbort) has
+  // already reported. Without this guard, a single StepAudit failure produces
+  // two alerts: one from the step-audit catch and one from the index.js catch
+  // on the re-thrown error. The inner reporter sets this flag before re-throwing.
+  if (auditContext?.slackContext?.notifiedAt) {
+    return;
+  }
+
   let message;
 
   if (abort?.reason === 'bot-protection') {
@@ -314,6 +404,9 @@ export async function sendAuditFailureNotification(context, {
   }
 
   await say(env, log, slackContext, message);
+  // Mark the slackContext on the in-memory message so a subsequent re-throw
+  // catcher in the same Lambda invocation does not double-fire.
+  slackContext.notifiedAt = new Date().toISOString();
 }
 
 export { SLACK_TARGETS };

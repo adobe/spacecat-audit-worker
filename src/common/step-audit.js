@@ -23,7 +23,13 @@ import {
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
-import { sendAuditFailureNotification } from '../utils/slack-utils.js';
+import {
+  formatAuditCompletionMessage,
+  formatBotProtectionPartialBlockMessage,
+  formatStepCompletionMessage,
+  say,
+  sendAuditFailureNotification,
+} from '../utils/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -157,6 +163,22 @@ export class StepAudit extends BaseAudit {
               + `as ${nonBlockedCount} URLs were not blocked by bot protection, jobId=${jobId}, `
               + `Blocked URLs: [${blockedUrlsList}]`,
             );
+            // Notify the originating Slack thread that the audit is continuing
+            // despite a partial bot-protection block. No-op when not triggered
+            // from Slack.
+            await say(
+              context.env,
+              log,
+              auditContext?.slackContext,
+              formatBotProtectionPartialBlockMessage({
+                auditType: type,
+                siteUrl,
+                // abort.details is guaranteed truthy here — destructuring above
+                // produced a positive totalUrlsCount, so it must have unwrapped
+                // a real object.
+                details: abort.details,
+              }),
+            );
           }
         }
       }
@@ -208,6 +230,23 @@ export class StepAudit extends BaseAudit {
       if (!isLastStep) {
         const result = await this.chainStep(step, stepResult, stepContext);
         response = ok(result);
+        // Per-step progress update on the audit thread. Last step is
+        // intentionally NOT covered here — its success surfaces via the
+        // overall "Audit Completed" message below.
+        await say(
+          context.env,
+          log,
+          auditContext?.slackContext,
+          formatStepCompletionMessage(type, siteUrl, stepName),
+        );
+      } else {
+        // Last step done — overall audit pipeline completed end-to-end.
+        await say(
+          context.env,
+          log,
+          auditContext?.slackContext,
+          formatAuditCompletionMessage(type, siteUrl),
+        );
       }
 
       return response;
