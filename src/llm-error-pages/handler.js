@@ -49,6 +49,62 @@ const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 const TOP_404_LIMIT = 50;
 
 /**
+ * Builds one per-week history record for an llm-error-pages suggestion.
+ *
+ * The top-level suggestion `data` fields stay a "latest week" snapshot (so
+ * the existing UI keeps reading `hitCount`/`agentTypes`/… unchanged); this
+ * record captures the same metrics scoped to a single audit week so we can
+ * reconstruct week-over-week trend (TTFB drift, hit-count trajectory,
+ * which LLM bots discovered the URL when).
+ *
+ * @param {object} item       A grouped-error row for the URL this week.
+ * @param {string} periodIdentifier ISO week id (e.g. `w24-2026`).
+ * @returns {object} The per-week record stored in `data.history[]`.
+ */
+function buildWeekHistoryEntry(item, periodIdentifier) {
+  return {
+    periodIdentifier,
+    hitCount: item.hitCount,
+    httpStatus: item.httpStatus,
+    agentTypes: item.agentTypes,
+    userAgents: item.userAgents,
+    avgTtfb: item.avgTtfb,
+  };
+}
+
+/**
+ * Merges this week's history record into a suggestion's existing
+ * `data.history[]`, then orders + prunes it.
+ *
+ * - Keyed by `periodIdentifier`: re-running the SAME week (the Monday
+ *   two-week loop, or a manual backfill) REPLACES that week's record
+ *   rather than appending a duplicate — the merge is idempotent.
+ * - Ordered oldest-first by ISO week so consumers can render a trend
+ *   left-to-right without re-sorting.
+ * - Pruned to the most recent `RETENTION_WEEKS` so the array can't grow
+ *   unbounded as a URL stays broken for months. Matches the audit's
+ *   existing `RETENTION_WEEKS` retention window.
+ *
+ * @param {Array<object>} [existingHistory] Prior history (may be undefined).
+ * @param {object} weekEntry The current week's record (carries periodIdentifier).
+ * @returns {Array<object>} Merged, ordered, pruned history (oldest-first).
+ */
+export function upsertWeekHistory(existingHistory, weekEntry) {
+  const byPeriod = new Map();
+  (Array.isArray(existingHistory) ? existingHistory : []).forEach((entry) => {
+    if (entry?.periodIdentifier) {
+      byPeriod.set(entry.periodIdentifier, entry);
+    }
+  });
+  byPeriod.set(weekEntry.periodIdentifier, weekEntry);
+
+  return Array.from(byPeriod.values())
+    .sort((a, b) => parsePeriodIdentifier(a.periodIdentifier).getTime()
+      - parsePeriodIdentifier(b.periodIdentifier).getTime())
+    .slice(-RETENTION_WEEKS);
+}
+
+/**
  * Step 1: Import top pages and submit for scraping
  */
 export async function importTopPagesAndScrape(context) {
@@ -341,6 +397,13 @@ export async function runAuditAndSendToMystique(context) {
                   product: newDataItem.product,
                   category: newDataItem.category,
                   periodIdentifier,
+                  // Append this week to the per-week trend; idempotent + pruned
+                  // to RETENTION_WEEKS (see upsertWeekHistory). Top-level fields
+                  // above remain the latest-week snapshot for the existing UI.
+                  history: upsertWeekHistory(
+                    existingData.history,
+                    buildWeekHistoryEntry(newDataItem, periodIdentifier),
+                  ),
                   ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
                   ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
                   ...(existingData.confidenceScore !== undefined && {
@@ -362,6 +425,8 @@ export async function runAuditAndSendToMystique(context) {
                     product: error.product,
                     category: error.category,
                     periodIdentifier,
+                    // Seed the per-week trend with this URL's first sighting.
+                    history: [buildWeekHistoryEntry(error, periodIdentifier)],
                   },
                 }),
               });

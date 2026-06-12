@@ -15,6 +15,10 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+// Direct import of the pure history-merge helper so its ordering/pruning tests
+// run against the REAL parsePeriodIdentifier (the esmocked handler stubs that
+// dependency with a constant Date, which would defeat the sort assertions).
+import { upsertWeekHistory } from '../../../src/llm-error-pages/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1650,6 +1654,72 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     expect(merged.confidenceScore).to.be.undefined;
   });
 
+  it('mapNewSuggestion seeds data.history with this week as the first entry', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+    const mapped = mapNewSuggestion({
+      url: '/p1',
+      httpStatus: 404,
+      hitCount: 10,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+    expect(mapped.data.history).to.have.lengthOf(1);
+    expect(mapped.data.history[0]).to.deep.equal({
+      periodIdentifier: 'w15-2026',
+      hitCount: 10,
+      httpStatus: 404,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+  });
+
+  it('mergeDataFunction appends the current week to an existing data.history', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        history: [{
+          periodIdentifier: 'w14-2026',
+          hitCount: 7,
+          httpStatus: 404,
+          agentTypes: ['Chatbots'],
+          userAgents: ['ChatGPT'],
+          avgTtfb: '40.0',
+        }],
+      },
+      {
+        hitCount: 99,
+        httpStatus: 404,
+        agentTypes: ['Chatbots'],
+        userAgents: ['Claude'],
+        avgTtfb: '30.0',
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    // Top-level snapshot reflects the latest week (back-compat for the UI).
+    expect(merged.hitCount).to.equal(99);
+    // History carries both weeks; the new week is keyed by the run's periodIdentifier.
+    expect(merged.history).to.have.lengthOf(2);
+    expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
+    expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
+  });
+
   it('runs retention sweep on existing opportunity for empty buckets', async () => {
     const sandbox = sinon.createSandbox();
 
@@ -2070,5 +2140,63 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     // 403 and 5xx still synced — proves per-bucket isolation.
     expect(mockSyncSuggestions).to.have.been.calledTwice;
     sandbox.restore();
+  });
+});
+
+describe('LLM Error Pages Handler — upsertWeekHistory', () => {
+  const entry = (periodIdentifier, hitCount = 1) => ({
+    periodIdentifier,
+    hitCount,
+    httpStatus: 404,
+    agentTypes: ['Chatbots'],
+    userAgents: ['ChatGPT'],
+    avgTtfb: '50.0',
+  });
+
+  it('seeds history when there is none (undefined existing)', () => {
+    const result = upsertWeekHistory(undefined, entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('treats a non-array existing history as empty (defensive)', () => {
+    const result = upsertWeekHistory('not-an-array', entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('appends a new week and orders oldest-first by ISO week', () => {
+    const result = upsertWeekHistory([entry('w12-2026'), entry('w10-2026')], entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w10-2026', 'w12-2026', 'w15-2026']);
+  });
+
+  it('replaces (does not duplicate) a re-run of the same week — idempotent', () => {
+    const result = upsertWeekHistory([entry('w15-2026', 7)], entry('w15-2026', 99));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].hitCount).to.equal(99);
+  });
+
+  it('prunes to the most recent RETENTION_WEEKS (4) entries', () => {
+    const existing = [
+      entry('w10-2026'), entry('w11-2026'), entry('w12-2026'), entry('w13-2026'),
+    ];
+    const result = upsertWeekHistory(existing, entry('w14-2026'));
+    expect(result).to.have.lengthOf(4);
+    // Oldest (w10) dropped; window keeps w11..w14.
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal([
+      'w11-2026', 'w12-2026', 'w13-2026', 'w14-2026',
+    ]);
+  });
+
+  it('skips malformed existing entries lacking a periodIdentifier', () => {
+    const existing = [entry('w12-2026'), { hitCount: 5 }, null];
+    const result = upsertWeekHistory(existing, entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w12-2026', 'w15-2026']);
+  });
+
+  it('orders an unparseable periodIdentifier (epoch fallback) before real weeks', () => {
+    const result = upsertWeekHistory([entry('w15-2026')], entry('garbage'));
+    // parsePeriodIdentifier returns epoch (Date(0)) for non-matching ids, so it sorts first.
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['garbage', 'w15-2026']);
   });
 });
