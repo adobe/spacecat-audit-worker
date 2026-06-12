@@ -738,6 +738,60 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
+  describe('mode detection from auditContext', () => {
+    it('should detect ai-only mode from auditContext.mode', async () => {
+      context.data = JSON.stringify({ scrapeJobId: 'test-scrape-job' });
+      context.auditContext = { mode: 'ai-only' };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+    });
+
+    it('should detect ai-only mode from auditContext.mode with explicit URLs', async () => {
+      context.data = JSON.stringify({ scrapeJobId: 'test-scrape-job' });
+      context.auditContext = {
+        mode: 'ai-only',
+        urls: ['https://example.com/page1'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+      // Should scope to only the provided URL
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should filter suggestions to auditContext.urls when provided', async () => {
+      context.data = JSON.stringify({ scrapeJobId: 'test-scrape-job' });
+      context.auditContext = {
+        mode: 'ai-only',
+        urls: ['https://example.com/page2'], // Only page2
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should prefer auditContext.mode over data.mode', async () => {
+      context.data = JSON.stringify({ scrapeJobId: 'test' }); // No mode in data
+      context.auditContext = { mode: 'ai-only' };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+    });
+  });
+
   describe('generatePrompts flag in SQS payload', () => {
     it('should include generatePrompts:false in SQS message by default', async () => {
       const result = await importTopPages(context);

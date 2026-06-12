@@ -527,11 +527,19 @@ async function compareHtmlContent(url, context) {
 }
 
 /**
- * Parses the mode from the data field
+ * Parses the mode from the data field or auditContext.
+ * The mode may arrive in either location:
+ *   - data.mode: set via Slack command keyword arguments (legacy)
+ *   - auditContext.mode: set via run-audit command's mode:ai-only flag
  * @param {string|Object} data - The data field from the message
+ * @param {Object} [auditCtx] - The auditContext from the message
  * @returns {string|null} - The mode value or null
  */
-function getModeFromData(data) {
+function getModeFromData(data, auditCtx) {
+  if (auditCtx?.mode) {
+    return auditCtx.mode;
+  }
+
   if (!data) {
     return null;
   }
@@ -582,6 +590,7 @@ async function sendPrerenderGuidanceRequestToMystique(
   context,
   preBuiltCandidates,
   generatePrompts = false,
+  urlScope = null,
 ) {
   const {
     log, sqs, env, site,
@@ -680,6 +689,11 @@ async function sendPrerenderGuidanceRequestToMystique(
       suggestionsPayload = candidates;
     }
 
+    // When a URL scope is provided (CSV batch), filter to only matching URLs
+    if (urlScope && suggestionsPayload.length > 0) {
+      suggestionsPayload = suggestionsPayload.filter((s) => urlScope.has(s.url));
+    }
+
     if (suggestionsPayload.length === 0) {
       log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
@@ -730,7 +744,7 @@ async function sendPrerenderGuidanceRequestToMystique(
  */
 export async function handleAiOnlyMode(context) {
   const {
-    site, log, dataAccess, data,
+    site, log, dataAccess, data, auditContext,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
@@ -817,6 +831,14 @@ export async function handleAiOnlyMode(context) {
     };
   }
 
+  // When explicit URLs are provided (CSV batch), scope suggestions to that set.
+  const urlScope = Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+    ? new Set(auditContext.urls)
+    : null;
+  if (urlScope) {
+    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+
   // Send to Mystique using the existing function
   const auditData = {
     siteId,
@@ -832,6 +854,7 @@ export async function handleAiOnlyMode(context) {
     context,
     null, // preBuiltCandidates — build from DB suggestions in ai-only mode
     generatePrompts,
+    urlScope,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
@@ -859,7 +882,7 @@ export async function importTopPages(context) {
   } = context;
 
   // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
-  const mode = getModeFromData(data);
+  const mode = getModeFromData(data, auditContext);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 1, skipping import/scraping/processing`);
     return handleAiOnlyMode(context);
@@ -905,7 +928,7 @@ export async function submitForScraping(context) {
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
-  const mode = getModeFromData(data);
+  const mode = getModeFromData(data, auditContext);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 2, skipping scraping (already handled in step 1)`);
     return { status: 'skipped', mode: MODE_AI_ONLY };
@@ -1641,7 +1664,7 @@ export async function processContentAndGenerateOpportunities(context) {
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
-  const mode = getModeFromData(data);
+  const mode = getModeFromData(data, auditContext);
   if (mode === MODE_AI_ONLY) {
     log.info(`${LOG_PREFIX} Detected ai-only mode in step 3, skipping processing (already handled in step 1)`);
     return { status: 'skipped', mode: MODE_AI_ONLY };
