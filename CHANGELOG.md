@@ -1,3 +1,10 @@
+# [1.471.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.5...v1.471.0) (2026-06-12)
+
+
+### Features
+
+* **prerender:** support CSV URL scoping for ai-only mode batches ([#2652](https://github.com/adobe/spacecat-audit-worker/issues/2652)) ([b849fa6](https://github.com/adobe/spacecat-audit-worker/commit/b849fa6e7982c57482da69f6cd2ff5e3a7f90d92))
+
 ## [1.470.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.4...v1.470.5) (2026-06-12)
 
 
