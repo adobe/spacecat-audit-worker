@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -43,8 +43,16 @@ const STATUS_BUCKETS = [
   { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
 ];
 
-const RETENTION_WEEKS = 4;
+// Suggestion lifecycle by last-seen recency (3-tier):
+//   ≤ NEW_WINDOW_WEEKS        → stays NEW (fresh issue)
+//   NEW_WINDOW..RETENTION     → flipped to OUTDATED (kept + in history, not fresh)
+//   > RETENTION_WEEKS         → deleted (removeByIds)
+// A URL seen in the current run is always kept (and reappearing OUTDATED ones
+// transition back to NEW via syncSuggestions' defaultMergeStatusFunction).
+const RETENTION_WEEKS = 6;
 const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+const NEW_WINDOW_WEEKS = 4;
+const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
 const TOP_404_LIMIT = 50;
 
@@ -330,7 +338,8 @@ export async function runAuditAndSendToMystique(context) {
 
         const opportunityMap = {};
         const { Suggestion, Opportunity } = dataAccess;
-        const retentionCutoff = new Date(Date.now() - RETENTION_MS);
+        const deleteCutoff = new Date(Date.now() - RETENTION_MS);
+        const outdatedCutoff = new Date(Date.now() - NEW_WINDOW_MS);
         let existingOpportunities = [];
         try {
           existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
@@ -365,15 +374,17 @@ export async function runAuditAndSendToMystique(context) {
 
               opportunityMap[code] = opportunity;
 
-              // NOTE: we previously auto-flipped freshly-created Opps to
-              // IGNORED ("hide bucket-specific types from the UI pending UI
-              // support"). That broke find-or-create idempotency:
-              // `convertToOpportunity` only searches STATUS=NEW
-              // (src/common/opportunity.js), so an IGNORED opp was invisible
-              // on the next run and a DUPLICATE was created — compounded on
-              // Mondays by the two-week loop firing the bug twice per audit.
-              // The flip is removed so the same opportunity is reused weekly
-              // and the per-week suggestion history accumulates into it.
+              // Temporary: hide newly-created Opps from the UI until it is updated to
+              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
+              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
+              // the UI ships support for these types, drop this block and bulk-flip any
+              // accumulated IGNORED rows back to NEW.
+              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
+                opportunity.setStatus(Oppty.STATUSES.IGNORED);
+                opportunity.setUpdatedBy('system');
+                await opportunity.save();
+                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
+              }
 
               existingSuggestions = await opportunity.getSuggestions();
 
@@ -436,25 +447,46 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
-            const toOutdate = existingSuggestions.filter((s) => {
+            // 3-tier retention by last-seen recency (see constants block):
+            //   > RETENTION_WEEKS    → delete (removeByIds)
+            //   NEW_WINDOW..RETENTION → mark OUTDATED (kept, no longer fresh)
+            //   ≤ NEW_WINDOW_WEEKS   → leave as-is (stays NEW)
+            // Two guards: never touch a URL present in this run (it's fresh —
+            // syncSuggestions keeps/returns it to NEW), and never touch one
+            // with no periodIdentifier (age unknowable). Delete ignores status
+            // (hard purge); OUTDATED skips customer-actioned terminal states so
+            // a FIXED/APPROVED row isn't silently regressed before it's purged.
+            const toDelete = [];
+            const toOutdate = [];
+            existingSuggestions.forEach((s) => {
               const data = s.getData() || {};
               if (scrapedUrls.has(data.url)) {
-                return false;
+                return;
               }
               const lastSeen = data.periodIdentifier;
               if (!lastSeen) {
-                return false;
+                return;
               }
-              const status = s.getStatus();
-              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
-                return false;
+              const seenAt = parsePeriodIdentifier(lastSeen);
+              if (seenAt < deleteCutoff) {
+                toDelete.push(s);
+              } else if (seenAt < outdatedCutoff) {
+                const status = s.getStatus();
+                if (![
+                  'OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED',
+                ].includes(status)) {
+                  toOutdate.push(s);
+                }
               }
-              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
             });
 
+            if (toDelete.length > 0) {
+              await Suggestion.removeByIds(toDelete.map((s) => s.getId()));
+              log.info(`[LLM-ERROR-PAGES] Deleted ${toDelete.length} suggestions older than ${RETENTION_WEEKS} weeks for ${auditType}`);
+            }
             if (toOutdate.length > 0) {
               await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
-              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType}`);
+              log.info(`[LLM-ERROR-PAGES] Marked ${toOutdate.length} suggestions OUTDATED (last seen ${NEW_WINDOW_WEEKS}-${RETENTION_WEEKS} weeks ago) for ${auditType}`);
             }
           } catch (bucketError) {
             log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {
