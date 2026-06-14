@@ -28,6 +28,7 @@ import {
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { weekClosingSundayKey } from '../utils/date-utils.js';
 import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
@@ -41,7 +42,39 @@ const SQS_MAX_DELAY_SECONDS = 900;
 const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
 const CDN_LOGS_REPORT_STAGGER_SECONDS = 30;
 
+// Re-enqueue the window as a delayed sub-audit on transient Athena failures.
+// Disable with env CDN_ANALYSIS_RETRY_ENABLED=false. Delay kept under the 900s SQS cap.
+const MAX_ANALYSIS_RETRIES = 2;
+const ANALYSIS_RETRY_DELAY_SECONDS = 850;
+// Fallback only: used when the athena-client did not surface Athena's structured
+// Retryable flag (see isRetryableAthenaError). Transient (System-category) errors
+// worth retrying; user errors excluded. Prefer the structured flag — don't copy this
+// list into other handlers as the primary signal.
+const RETRYABLE_ATHENA_ERROR_PATTERNS = [
+  'exhausted resources at this scale factor',
+  'internal error',
+  'internalerror',
+  'resource limit exceeded',
+  'throttl',
+  'too many requests',
+  'rate exceeded',
+  'slow down',
+  'slowdown',
+  'service unavailable',
+  'worker node',
+];
+
 const pad2 = (n) => String(n).padStart(2, '0');
+
+function isRetryableAthenaError(error) {
+  // Trust Athena's authoritative Retryable flag when the client surfaced it;
+  // otherwise fall back to matching the message string.
+  if (typeof error.retryable === 'boolean') {
+    return error.retryable;
+  }
+  const normalized = String(error.message).toLowerCase();
+  return RETRYABLE_ATHENA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
 
 function isValidAuditContext(auditContext) {
   if (!isNonEmptyObject(auditContext)) {
@@ -174,16 +207,12 @@ export async function findRecentUploads(s3Client, bucketName, pathId, auditDate,
 }
 
 /**
- * Triggers cdn-logs-analysis sub-audits for each detected day, and one
- * date-based cdn-logs-report per detected day.
- *
- * Sub-audits include isSubAudit: true to prevent recursive scanning,
- * and forceReprocess: true because the same day may already have partial
- * aggregated data from an earlier run.
- *
- * cdn-logs-report messages are delayed by 900s so analysis finishes first.
+ * Triggers cdn-logs-analysis sub-audits per detected day, and a date-based
+ * cdn-logs-report per detected day plus each completed week's closing Sunday
+ * (so past-week backfills roll up to the weekly view even with no Sunday file).
+ * Sub-audits use isSubAudit/forceReprocess; reports are delayed so analysis finishes first.
  */
-async function triggerSubAudits(context, site, detectedDays) {
+async function triggerSubAudits(context, site, detectedDays, auditDate) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -210,11 +239,19 @@ async function triggerSubAudits(context, site, detectedDays) {
     log.info(`Triggered cdn-logs-analysis sub-audit for siteId=${siteId} day=${dayKey}`);
   }
 
-  // One date-based cdn-logs-report per detected day. cdn-logs-report exports the
-  // day BEFORE auditContext.date, so send day + 1 as the reference. Delayed by a
-  // base wait (so the analysis sub-audits above have time to finish) plus a per-day
-  // stagger, capped at the SQS max, so the reports don't all fire at once.
-  for (const [index, dayKey] of [...detectedDays].entries()) {
+  // Report per detected day + each completed week's closing Sunday (deduped). Report
+  // exports the day BEFORE auditContext.date, so send day + 1; staggered under the SQS cap.
+  const reportDayKeys = [...detectedDays];
+  const seenReportDays = new Set(detectedDays);
+  for (const dayKey of detectedDays) {
+    const sundayKey = weekClosingSundayKey(dayKey, auditDate);
+    if (sundayKey && !seenReportDays.has(sundayKey)) {
+      seenReportDays.add(sundayKey);
+      reportDayKeys.push(sundayKey);
+    }
+  }
+
+  for (const [index, dayKey] of reportDayKeys.entries()) {
     const [year, month, day] = dayKey.split('/').map(Number);
     const reportDate = new Date(Date.UTC(year, month - 1, day + 1)).toISOString();
     const delaySeconds = Math.min(
@@ -310,7 +347,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     try {
       const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, auditDate, log);
       if (recentUploads.size > 0) {
-        await triggerSubAudits(context, site, recentUploads);
+        await triggerSubAudits(context, site, recentUploads, auditDate);
       } else {
         log.info(`No recent byocdn-other files found for siteId=${siteId}, nothing to trigger`);
       }
@@ -528,8 +565,61 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   };
 }
 
+// Re-enqueues the same audit context as a delayed retry, bumping retryCount.
+async function requeueAnalysisRetry(context, site, auditContext, retryCount) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditQueue = configuration.getQueues().audits;
+  const siteId = site.getId();
+
+  await sqs.sendMessage(auditQueue, {
+    type: 'cdn-logs-analysis',
+    siteId,
+    auditContext: {
+      ...auditContext,
+      retryCount,
+    },
+  }, null, ANALYSIS_RETRY_DELAY_SECONDS);
+
+  log.info(`cdn-logs-analysis scheduled retry ${retryCount}/${MAX_ANALYSIS_RETRIES} for siteId=${siteId} in ${ANALYSIS_RETRY_DELAY_SECONDS}s`);
+}
+
 export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext);
+  const { log, env } = context;
+  try {
+    return await processCdnLogs(auditUrl, context, site, auditContext);
+  } catch (e) {
+    const retryCount = Math.max(0, Number(auditContext?.retryCount) || 0);
+    const retriesEnabled = String(env?.CDN_ANALYSIS_RETRY_ENABLED ?? 'true').toLowerCase() === 'true';
+
+    if (retriesEnabled && isRetryableAthenaError(e) && retryCount < MAX_ANALYSIS_RETRIES) {
+      try {
+        await requeueAnalysisRetry(context, site, auditContext, retryCount + 1);
+      } catch (requeueErr) {
+        // If the requeue itself fails (SQS/DB), surface the original Athena error so
+        // logs/alerts show the real reason. "failed" omitted here to avoid double-
+        // matching the alert; the framework logs the canonical failure when e rethrows.
+        log.error(`cdn-logs-analysis could not re-enqueue retry for siteId=${site.getId()}: ${requeueErr.message}`);
+        throw e;
+      }
+      // Soft result so SQS doesn't also retry this invocation (double-process).
+      return {
+        auditResult: {
+          retryScheduled: true,
+          retryCount: retryCount + 1,
+          error: e.message,
+          completedAt: new Date().toISOString(),
+        },
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    // No e.message here: the framework logs the full "... failed. Reason: ..." on
+    // throw, so including it would double-match the ("cdn-logs-analysis" "failed") alert.
+    log.error(`cdn-logs-analysis giving up for siteId=${site.getId()} after ${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}`);
+    throw e;
+  }
 }
 
 export default new AuditBuilder()

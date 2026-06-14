@@ -3443,8 +3443,9 @@ describe('Prerender Audit', () => {
         expect(buildKey({ url: 'https://example.com/some/page?filter=iphone' })).to.equal('/some/page?filter=iphone');
         expect(buildKey({ url: 'https://www.example.com/some/page?filter=mac' })).to.equal('/some/page?filter=mac');
 
-        // Domain-wide suggestions (with a `key` field) pass through unchanged
-        expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
+        // Domain-wide suggestions return the constant key regardless of how the data is stored
+        expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+        expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
 
       it('should normalize scrapedUrlsSet to pathname so domain-shifted suggestions are correctly outdated', async () => {
@@ -3713,7 +3714,11 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.be.undefined;
       });
 
-      it('should create new domain-wide suggestion when existing one is OUTDATED without deployed flags', async () => {
+      it('should pass domain-wide suggestion to syncSuggestions when existing one is OUTDATED — buildKey symmetry prevents duplicate', async () => {
+        // When the existing domain-wide is not preservable (OUTDATED, no edgeDeployed),
+        // the new domain-wide aggregate is always included in newData. The fixed buildKey
+        // returns DOMAIN_WIDE_SUGGESTION_KEY for stored data with isDomainWide:true, so
+        // syncSuggestions matches the existing record and updates it instead of creating a duplicate.
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
           getStatus: () => 'OUTDATED',
@@ -3764,6 +3769,12 @@ describe('Prerender Audit', () => {
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+
+        // Verify buildKey treats both new (data.key) and stored (isDomainWide) domain-wide
+        // records as the same key — the core fix preventing duplicates
+        const { buildKey } = syncArgs;
+        expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+        expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
 
       it('should not detect domain-wide suggestion by pathPattern alone (requires isDomainWide flag)', async () => {
@@ -8051,7 +8062,10 @@ describe('Prerender Audit', () => {
       );
     });
 
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
+    it('should pass domain-wide aggregate to syncSuggestions when existing one is not preservable — buildKey match prevents duplicate', async () => {
+      // The domain-wide item is always present in newData when no preservable one exists.
+      // The fixed buildKey returns DOMAIN_WIDE_SUGGESTION_KEY for stored isDomainWide:true data,
+      // so syncSuggestions matches and updates the existing record rather than inserting a new one.
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
         getId: () => 'outdated-domain-wide-id',
@@ -8102,9 +8116,13 @@ describe('Prerender Audit', () => {
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const { newData, buildKey } = syncSuggestionsStub.getCall(0).args[0];
       const domainWide = newData.find((item) => item.key);
       expect(domainWide).to.exist;
+
+      // buildKey must return the same constant for both new and stored domain-wide data
+      expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+      expect(buildKey({ isDomainWide: true })).to.equal('domain-wide-aggregate|prerender');
     });
 
     it('should include suggestionId in auditRunCandidates from saved suggestions', async () => {
@@ -8990,7 +9008,10 @@ describe('Prerender Audit', () => {
       );
     });
 
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
+    it('should pass domain-wide aggregate to syncSuggestions when existing one is not preservable — buildKey match prevents duplicate', async () => {
+      // The domain-wide item is always present in newData when no preservable one exists.
+      // The fixed buildKey returns DOMAIN_WIDE_SUGGESTION_KEY for stored isDomainWide:true data,
+      // so syncSuggestions matches and updates the existing record rather than inserting a new one.
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
         getId: () => 'outdated-domain-wide-id',
@@ -9041,9 +9062,13 @@ describe('Prerender Audit', () => {
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const { newData, buildKey } = syncSuggestionsStub.getCall(0).args[0];
       const domainWide = newData.find((item) => item.key);
       expect(domainWide).to.exist;
+
+      // buildKey must return the same constant for both new and stored domain-wide data
+      expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+      expect(buildKey({ isDomainWide: true })).to.equal('domain-wide-aggregate|prerender');
     });
   });
 

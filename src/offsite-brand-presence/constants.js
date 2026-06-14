@@ -24,7 +24,7 @@ export const PROVIDERS = Object.freeze([
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?\.json$/;
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
