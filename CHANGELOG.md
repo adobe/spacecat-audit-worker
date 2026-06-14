@@ -1,3 +1,10 @@
+## [1.471.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.3...v1.471.4) (2026-06-14)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** HEAD-check Mystique suggestions and write empty rows to DB ([#2635](https://github.com/adobe/spacecat-audit-worker/issues/2635)) ([a76dce5](https://github.com/adobe/spacecat-audit-worker/commit/a76dce593b8805ed2d657f00cb151290191e8e05))
+
 ## [1.471.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.2...v1.471.3) (2026-06-13)
 
 
