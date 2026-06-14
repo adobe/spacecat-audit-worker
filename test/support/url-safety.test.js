@@ -191,11 +191,5 @@ describe('support/url-safety', () => {
       const { isUrlSafeToFetch } = await load(async () => [{ address: '127.0.0.1', family: 4 }]);
       expect(await isUrlSafeToFetch('https://localhost.attacker.example/', log)).to.equal(false);
     });
-
-    it('rejects when log has no warn (optional chaining branch on malformed URL)', async () => {
-      // Verifies the `log.warn?.(...)` optional-chain branch when warn is missing.
-      const { isUrlSafeToFetch } = await load(async () => [{ address: '8.8.8.8', family: 4 }]);
-      expect(await isUrlSafeToFetch('not a url', {})).to.equal(false);
-    });
   });
 });

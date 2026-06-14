@@ -1542,10 +1542,44 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
       (c) => typeof c.args[0] === 'string' && c.args[0].includes('head-check-summary'),
     );
     expect(summaryCall, 'head-check-summary log line missing').to.exist;
-    const json = summaryCall.args[0].split('head-check-summary ')[1];
-    const parsed = JSON.parse(json);
-    expect(parsed).to.deep.equal({
+    // Structured counters are passed as the second arg (Coralogix native fields).
+    expect(summaryCall.args[1]).to.deep.equal({
       siteId: 'site-1', total: 2, kept: 1, dropped: 1,
     });
+  });
+
+  it('deduplicates a URL shared across broken links into a single HEAD check, then maps it back per-link', async () => {
+    const ctx = buildContext({
+      suggestions: [makeSuggestion('/a'), makeSuggestion('/b')],
+    });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [
+          {
+            urlFrom: 'X',
+            urlTo: 'https://example.com/a',
+            suggestedUrls: ['https://example.com/shared', 'https://example.com/only-a'],
+            aiRationale: 'ra',
+          },
+          {
+            urlFrom: 'Y',
+            urlTo: 'https://example.com/b',
+            suggestedUrls: ['https://example.com/shared'],
+            aiRationale: 'rb',
+          },
+        ],
+      },
+    }, ctx);
+
+    // The shared URL is HEAD-checked exactly once: the handler dedups into a Set
+    // before probing, so the three suggestions collapse to two unique URLs.
+    expect(filterReachableUrlsStub).to.have.been.calledOnce;
+    const probed = filterReachableUrlsStub.firstCall.args[0];
+    expect(probed).to.have.members(['https://example.com/shared', 'https://example.com/only-a']);
+    expect(probed).to.have.length(2);
   });
 });

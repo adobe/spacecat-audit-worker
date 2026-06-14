@@ -88,12 +88,14 @@ export default async function handler(message, context) {
   }
   // Structured summary line — dashboard query target. Emitted regardless of
   // whether any URLs were dropped so the absence of drops is also observable.
-  log.info(`[LLM-ERROR-PAGES] head-check-summary ${JSON.stringify({
+  // Passed as structured metadata (second arg) so Coralogix/CloudWatch can
+  // index the counters as native fields rather than re-parsing a JSON string.
+  log.info('[LLM-ERROR-PAGES] head-check-summary', {
     siteId,
     total: allSuggestedUrls.length,
     kept: reachable.size,
     dropped: droppedCount,
-  })}`);
+  });
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {

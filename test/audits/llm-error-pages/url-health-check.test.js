@@ -133,13 +133,26 @@ describe('LLM Error Pages – url-health-check', () => {
     expect(result).to.deep.equal(['https://h1.example/1', 'https://h3.example/3']);
   });
 
-  it('processes more than one global concurrency batch (>10 URLs)', async () => {
-    fetchStub.resolves({ status: 200 });
-    // Use distinct hosts so per-host cap doesn't serialize them all.
+  it('enforces the global concurrency cap of 10 across many hosts (observed maxInflight)', async () => {
+    let inflight = 0;
+    let maxInflight = 0;
+    fetchStub.callsFake(async () => {
+      inflight += 1;
+      maxInflight = Math.max(maxInflight, inflight);
+      // Yield so the scheduler can dispatch the rest of the batch before any
+      // single task resolves — otherwise we'd only ever observe 1 in flight.
+      await new Promise((r) => { setImmediate(r); });
+      inflight -= 1;
+      return { status: 200 };
+    });
+    // 25 distinct hosts so the per-host cap (3) never binds — only the global
+    // cap (10) can hold inflight down. A Promise.all refactor would blow past it.
     const urls = Array.from({ length: 25 }, (_, i) => `https://h${i}.example/x`);
     const result = await filterOutConfirmedBrokenUrls(urls, log);
     expect(result).to.have.length(25);
     expect(fetchStub).to.have.callCount(25);
+    expect(maxInflight).to.be.at.most(10);
+    expect(maxInflight).to.be.at.least(2); // sanity: scheduler IS parallelising
   });
 
   it('respects the per-host cap when many URLs share a host', async () => {

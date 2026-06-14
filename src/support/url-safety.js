@@ -29,9 +29,8 @@ import dns from 'dns/promises';
  * additional audits (e.g. llm-error-pages HEAD probes) can apply the same
  * private/loopback/link-local block list before fetching outbound URLs.
  *
- * NOTE: the site-detection module currently still uses its own private copies
- * of these helpers; both versions are kept in sync by hand for now to avoid
- * cross-audit churn.
+ * See the canonicality note above for the migration plan covering the
+ * site-detection fork of these helpers.
  */
 
 const IPV4_REGEX = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -156,12 +155,12 @@ export async function isUrlSafeToFetch(url, log) {
   try {
     parsed = new URL(url);
   } catch (e) {
-    log.warn?.(`[url-safety] invalid URL ${url}: ${e.message}`);
+    log.warn(`[url-safety] invalid URL ${url}: ${e.message}`);
     return false;
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    log.warn?.(`[url-safety] rejecting non-http(s) URL: ${url}`);
+    log.warn(`[url-safety] rejecting non-http(s) URL: ${url}`);
     return false;
   }
 
@@ -178,7 +177,7 @@ export async function isUrlSafeToFetch(url, log) {
   // dns.lookup happily returns the literal back).
   if (IP_LITERAL_HOSTNAME_REGEX.test(host)) {
     if (isPrivateIP(host)) {
-      log.warn?.(`[url-safety] rejecting URL with private IP literal host: ${url}`);
+      log.warn(`[url-safety] rejecting URL with private IP literal host: ${url}`);
       return false;
     }
     return true;
