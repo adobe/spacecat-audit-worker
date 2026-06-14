@@ -1011,6 +1011,35 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.equal('/path');
     });
 
+    // SECURITY REGRESSION PIN.
+    //
+    // The `publishObservationLlmBrokenUrls` helper in handler.js relies
+    // on this function to strip off-origin hosts from input URLs — that
+    // is the ONLY origin defense in the observation publish path. If
+    // anyone refactors toPathOnly to preserve absolute URLs (e.g.
+    // returning `parsed.href` instead of `parsed.pathname`), the helper
+    // would emit attacker-controlled hostnames into the Mystique
+    // blackboard. These three assertions pin the contract.
+    it('SECURITY: strips off-origin host from absolute attacker URL (pathname only)', () => {
+      // Different scheme + different host: must reduce to pathname.
+      expect(toPathOnly('https://evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host from protocol-relative attacker URL', () => {
+      // `//evil.com/x` resolves to `https://evil.com/x` under base
+      // `https://example.com`; we must NOT preserve evil.com.
+      expect(toPathOnly('//evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host even when input scheme matches base', () => {
+      // Same-scheme attacker URL is the easiest to miss — pathname
+      // extraction must still discard the attacker host.
+      expect(toPathOnly('https://evil.example.com/admin', 'https://example.com'))
+        .to.equal('/admin');
+    });
+
     it('returns original string when URL construction fails', () => {
       // Invalid baseUrl triggers catch block
       const result1 = toPathOnly('relative/path', 'not-a-valid-base-url');

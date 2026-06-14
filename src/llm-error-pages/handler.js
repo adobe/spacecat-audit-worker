@@ -56,6 +56,23 @@ const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
 const TOP_404_LIMIT = 50;
 
+// ---------------------------------------------------------------------------
+// observation:llm-broken-urls wire-format limits.
+//
+// These mirror the Pydantic validator in mystique PR #2490
+// (`app/tasks/llm_broken_urls_ingestion_task.py`). Keep them in lockstep:
+// if mystique raises or lowers a cap, mirror the change here.
+// ---------------------------------------------------------------------------
+const OBSERVATION_MAX_URLS = 50;
+const OBSERVATION_MAX_USER_AGENTS_PER_URL = 50;
+const OBSERVATION_MAX_USER_AGENT_LENGTH = 512;
+
+// SQS standard-queue maximum payload is 256 KB (262144 bytes). Keep a
+// safety margin so a worst-case-but-not-pathological message still fits
+// without us hitting the hard SQS reject (which would propagate as an
+// audit failure and trigger re-delivery of the inbound audit message).
+const OBSERVATION_MAX_MESSAGE_BYTES = 200 * 1024;
+
 /**
  * Builds one per-week history record for an llm-error-pages suggestion.
  *
@@ -200,6 +217,161 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'llm-error-pages',
   };
+}
+
+/**
+ * Build and publish the `observation:llm-broken-urls` message to mystique's
+ * blackboard ingestion (PR #2490 / `LlmBrokenUrlsIngestionTask`).
+ *
+ * Failure isolation: this is the shadow-validation publish. It MUST NOT fail
+ * the audit run or trigger SQS re-delivery of the legacy
+ * `guidance:llm-error-pages` message that was already sent at the call site.
+ * Every thrown error is caught here and logged.
+ *
+ * Defence layers applied here:
+ *   - per-row `try/catch` around URL parsing so one malformed Athena log row
+ *     cannot abort the whole publish
+ *   - origin re-anchoring guard so a protocol-relative or absolute attacker-
+ *     controlled path cannot smuggle an off-origin URL into the payload
+ *   - per-URL caps on user-agent count + length matching mystique limits
+ *   - serialized-size budget below the SQS 256 KB hard limit
+ *   - empty-array guard so we never emit a payload mystique's `min_length=1`
+ *     would reject at the Pydantic boundary
+ *
+ * Phase 4 cutover (post-merge of mystique PR #2490 + projector PR #200):
+ * remove the `if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true')`
+ * guard at the call site and delete the legacy `guidance:llm-error-pages`
+ * publish block above it. This helper stays in place.
+ *
+ * @param {object} args
+ * @param {object[]} args.sorted404      Pre-consolidated 404 rows (output of
+ *                                       `consolidateErrorsByUrl` + sort).
+ * @param {string}   args.messageBaseUrl Site baseURL (already verified to be
+ *                                       truthy by caller).
+ * @param {Date}     args.startDate      Audit window start.
+ * @param {Date}     args.endDate        Audit window end.
+ * @param {object}   args.site           Site model (provides id, deliveryType).
+ * @param {object}  [args.audit]         Audit model (optional, provides id).
+ * @param {object}   args.sqs            SQS client (provides `sendMessage`).
+ * @param {object}   args.env            Process env (provides queue URL).
+ * @param {object}   args.log            Logger (info/warn/error).
+ */
+async function publishObservationLlmBrokenUrls({
+  sorted404, messageBaseUrl, startDate, endDate, site, audit, sqs, env, log,
+}) {
+  try {
+    if (!messageBaseUrl) {
+      log.warn('[LLM-ERROR-PAGES] No baseURL available — skipping observation:llm-broken-urls publish');
+      return;
+    }
+
+    // Origin re-anchoring defence: protocol-relative (`//evil.com/x`) and
+    // absolute attacker-controlled URLs (`https://evil.com/x`) are
+    // neutralised by `toPathOnly`, which returns `parsed.pathname` from
+    // the input URL — discarding host and scheme. So by the time we hit
+    // `new URL(path, messageBaseUrl)` below, `path` is guaranteed
+    // relative and the result inherits `messageBaseUrl`'s origin.
+    //
+    // We intentionally do NOT re-check origin here: it would be dead
+    // code under the current architecture and a stale assertion if
+    // `toPathOnly`'s contract ever changes. Instead, the defense is
+    // pinned by a regression test in `handler.test.js` that verifies
+    // off-origin inputs are stripped to the site's own origin.
+
+    // Re-group by URL only — existing `consolidateErrorsByUrl` keys by
+    // (url, provider) so the same URL appears once per provider. The
+    // observation wire format wants ONE entry per URL with all providers
+    // unioned.
+    //
+    // We intentionally do NOT wrap this loop in a per-row try/catch: the
+    // legacy publish above (see `runAuditAndSendToMystique`) constructs
+    // the same `new URL(path, messageBaseUrl)` and would itself throw
+    // on a malformed row — so the whole week's audit would already have
+    // aborted before reaching this helper. The outer try/catch on this
+    // function is the failure-isolation boundary we actually need.
+    const byUrl = new Map();
+    sorted404.forEach((errorPage) => {
+      const path = toPathOnly(errorPage.url, messageBaseUrl);
+      const fullUrl = new URL(path, messageBaseUrl).toString();
+      const entryHits = Number(errorPage.totalRequests) || 0;
+      const entryUas = errorPage.rawUserAgents || [];
+      const existing = byUrl.get(fullUrl);
+      if (existing) {
+        existing.hits += entryHits;
+        entryUas.forEach((ua) => existing.userAgents.add(ua));
+      } else {
+        byUrl.set(fullUrl, {
+          hits: entryHits,
+          userAgents: new Set(entryUas),
+        });
+      }
+    });
+
+    const observationUrls = Array.from(byUrl.entries())
+      .slice(0, OBSERVATION_MAX_URLS)
+      .map(([fullUrl, v]) => ({
+        url: fullUrl,
+        hits: v.hits,
+        userAgents: Array.from(v.userAgents)
+          .slice(0, OBSERVATION_MAX_USER_AGENTS_PER_URL)
+          .map((ua) => String(ua).slice(0, OBSERVATION_MAX_USER_AGENT_LENGTH)),
+        // FIELD NAMING: `observedThrough` (not `lastSeen`).
+        //
+        // This value is the audit-window end — the same value for every
+        // URL in a given publish — not a per-URL last-hit timestamp.
+        // `observedThrough` makes that semantics explicit and avoids a
+        // UI label ("Last seen: ...") that would lie to customers.
+        //
+        // CROSS-REPO COORDINATION: mystique PR #2490 must accept this
+        // field name (either rename `last_seen` → `observed_through`
+        // on the Pydantic model, or add a Pydantic alias) BEFORE the
+        // OBSERVATION_LLM_BROKEN_URLS_ENABLED flag is flipped on in
+        // any environment. Safe to land unilaterally here because the
+        // flag is OFF by default.
+        observedThrough: endDate.toISOString(),
+      }));
+
+    // NOTE: `observationUrls` is guaranteed non-empty here.
+    // The legacy publish above this helper only runs when
+    // `errors404.length > 0`, and `byUrl` is keyed by URL — so
+    // `byUrl.size >= 1` whenever the helper is invoked, which means
+    // `observationUrls.length >= 1`. Mystique's `min_length=1` Pydantic
+    // constraint is therefore upheld structurally and we do not add a
+    // redundant guard here. If the upstream guard is ever removed, the
+    // Pydantic boundary will reject and surface via SQS DLQ.
+
+    const observationMessage = {
+      type: 'observation:llm-broken-urls',
+      siteId: site.getId(),
+      auditId: audit?.getId() || null,
+      baseURL: messageBaseUrl,
+      deliveryType: site?.getDeliveryType?.() || null,
+      time: new Date().toISOString(),
+      data: {
+        period: {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+        },
+        urls: observationUrls,
+      },
+    };
+
+    // SQS standard-queue maximum is 256 KB. Stay under our safety budget
+    // — if a hostile log record blows past it, skip the publish with a
+    // warn rather than throw and fail the audit.
+    const serialized = JSON.stringify(observationMessage);
+    if (serialized.length > OBSERVATION_MAX_MESSAGE_BYTES) {
+      log.warn(`[LLM-ERROR-PAGES] observation:llm-broken-urls payload size ${serialized.length} bytes exceeds budget ${OBSERVATION_MAX_MESSAGE_BYTES}; skipping publish (siteId=${site.getId()}, urls=${observationUrls.length})`);
+      return;
+    }
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, observationMessage);
+    log.info(`[LLM-ERROR-PAGES] Sent observation:llm-broken-urls with ${observationUrls.length} URLs to Mystique blackboard`);
+  } catch (err) {
+    // Shadow-validation publish must never affect the legacy path or
+    // trigger SQS re-delivery of the audit message. Log and swallow.
+    log.error(`[LLM-ERROR-PAGES] Failed to publish observation:llm-broken-urls (shadow path); legacy message already sent. siteId=${site?.getId?.()} err=${err?.message}`);
+  }
 }
 
 /**
@@ -548,6 +720,34 @@ export async function runAuditAndSendToMystique(context) {
 
             await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
             log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+
+            // Phase 3 dual-publish: also emit the new observation:llm-broken-urls
+            // message that feeds the Mysticat blackboard cascade in mystique
+            // (LlmBrokenUrlsIngestionTask → o_llm_broken_urls → verifier →
+            // alternatives → projector). The legacy guidance:llm-error-pages
+            // message above continues to feed the old crew flow during shadow
+            // validation; Phase 4 cutover removes that block.
+            //
+            // Feature-flagged so this PR can land safely before mystique's
+            // ingestion dispatcher (PR #2490) and projector (PR #200) merge.
+            // With the flag off, behaviour is unchanged.
+            //
+            // All defence/observability logic lives in the helper. Phase 4
+            // cutover = delete the legacy publish above AND this flag check;
+            // the helper call stays.
+            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true') {
+              await publishObservationLlmBrokenUrls({
+                sorted404,
+                messageBaseUrl,
+                startDate,
+                endDate,
+                site,
+                audit,
+                sqs,
+                env,
+                log,
+              });
+            }
           } else {
             log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
           }
