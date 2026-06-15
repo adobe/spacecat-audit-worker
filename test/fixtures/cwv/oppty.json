@@ -22,7 +22,7 @@
     "projectedTrafficLost": 5.1,
     "projectedTrafficValue": 5.1,
     "dataSources": [
-      "Ahrefs",
+      "SEO",
       "RUM",
       "Site"
     ]

@@ -5,7 +5,7 @@ SELECT
   CAST(statusCode AS INTEGER) AS status,
   try(url_extract_host(referer)) AS referer,
   reqHost AS host,
-  CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
+  CAST(COALESCE(NULLIF(timeToFirstByte, '-'), '0') AS DOUBLE) AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
   COALESCE(reqHost, '') as x_forwarded_host,
@@ -24,13 +24,14 @@ WHERE year  = '{{year}}'
   {{hourFilter}}
 
   -- match known LLM-related user-agents
-  AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
+  AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count text/html responses with robots.txt and sitemaps
+  -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt, llms.txt and sitemaps
   AND (
-    rspContentType LIKE 'text/html%'
-    OR rspContentType LIKE 'application/pdf%'
+    REGEXP_LIKE(lower(rspContentType), '^(text/html|application/pdf|text/markdown)')
+    OR REGEXP_LIKE(lower(reqPath), '\.md(\?.*)?$')
     OR reqPath LIKE '%robots.txt'
+    OR REGEXP_LIKE(lower(reqPath), 'llms(-full)?\.txt$')
     OR reqPath LIKE '%sitemap%'
   )
 
@@ -43,6 +44,6 @@ GROUP BY
   statusCode,
   try(url_extract_host(referer)),
   reqHost,
-  CAST(timeToFirstByte AS DOUBLE),
+  CAST(COALESCE(NULLIF(timeToFirstByte, '-'), '0') AS DOUBLE),
   '{{serviceProvider}}',
   COALESCE(reqHost, '');

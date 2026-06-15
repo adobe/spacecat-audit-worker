@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -30,10 +28,12 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   toPathOnly,
+  isValidUrlPath,
   downloadExistingCdnSheet,
-  matchErrorsWithCdnData,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
 } from '../../../src/llm-error-pages/utils.js';
-import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
+import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -77,7 +77,7 @@ describe('LLM Error Pages Utils', () => {
   describe('getLlmProviderPattern', () => {
     it('should return correct pattern for valid provider', () => {
       const result = getLlmProviderPattern('chatgpt');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     });
 
     it('should return null for invalid provider', () => {
@@ -97,7 +97,7 @@ describe('LLM Error Pages Utils', () => {
 
     it('should be case insensitive', () => {
       const result = getLlmProviderPattern('CHATGPT');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     });
   });
 
@@ -108,7 +108,7 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('chatgpt');
       expect(providers).to.include('perplexity');
       expect(providers).to.include('claude');
-      expect(providers).to.include('gemini');
+      expect(providers).to.include('googleai');
       expect(providers).to.include('copilot');
     });
   });
@@ -117,17 +117,17 @@ describe('LLM Error Pages Utils', () => {
     it('should build filter for specific providers', () => {
       const result = buildLlmUserAgentFilter(['chatgpt', 'perplexity']);
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
     });
 
     it('should build filter for all providers when none specified', () => {
       const result = buildLlmUserAgentFilter();
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
-      expect(result).to.include('Claude|Anthropic');
-      expect(result).to.include('Gemini');
+      expect(result).to.include('Claude(?!-web)');
+      expect(result).to.include('Google-NotebookLM|Google-?Agent');
       expect(result).to.include('Copilot');
     });
 
@@ -147,6 +147,7 @@ describe('LLM Error Pages Utils', () => {
       expect(normalizeUserAgentToProvider('ChatGPT-User/1.0')).to.equal('ChatGPT');
       expect(normalizeUserAgentToProvider('GPTBot/1.0')).to.equal('ChatGPT');
       expect(normalizeUserAgentToProvider('OAI-SearchBot/1.0')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('OAI-AdsBot/1.0')).to.equal('ChatGPT');
     });
 
     it('should normalize Perplexity user agents', () => {
@@ -216,7 +217,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -238,7 +239,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -270,7 +271,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -341,51 +342,76 @@ describe('LLM Error Pages Utils', () => {
   });
 
   describe('buildLlmErrorPagesQuery with site patterns', () => {
-    it('injects classification SQL when site is provided', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
-      mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({
-          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
-          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
-        }),
-      });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg).to.have.property('userAgentDisplay');
-        expect(callArg).to.have.property('agentTypeClassification');
-        expect(callArg).to.have.property('topicExtraction');
-        expect(callArg).to.have.property('pageCategoryClassification');
-        expect(callArg).to.have.property('countryExtraction');
-        expect(callArg.countryExtraction).to.include('COALESCE(');
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-  });
-
-  describe('classification fallbacks and variants', () => {
-    it('uses fallback classification when dataFolder is missing', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => undefined }) };
+    it('escapes single quotes in pattern regex and name to prevent SQL injection', async () => {
+      const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
           getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            pagePatterns: [{ name: "O'Brien Page", regex: "/o'brien/.*" }],
+            topicPatterns: [{ name: "Can't Stop", regex: "/can't/" }],
+          }),
+        },
+      });
+
+      await mocked.buildLlmErrorPagesQuery({ databaseName: 'db', tableName: 'tbl', site });
+
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.pageCategoryClassification).to.include("THEN 'O''Brien Page'");
+      expect(callArg.pageCategoryClassification).to.include("/o''brien/.*");
+      expect(callArg.topicExtraction).to.include("THEN 'Can''t Stop'");
+      expect(callArg.topicExtraction).to.include("/can''t/");
+    });
+
+    it('injects classification SQL when site is provided', async () => {
+      const site = { getId: () => 'site-id' };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchRulesStub = sinon.stub().resolves({
+        pagePatterns: [{ name: 'Help', regex: '/help' }],
+        topicPatterns: [{ name: 'Adobe', regex: '/adobe' }],
+      });
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
+        },
+      });
+
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+        context: { log: console },
+      });
+
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(fetchRulesStub).to.have.been.calledWith(site, { log: console });
+      expect(callArg).to.have.property('userAgentDisplay');
+      expect(callArg).to.have.property('agentTypeClassification');
+      expect(callArg).to.have.property('topicExtraction');
+      expect(callArg).to.have.property('pageCategoryClassification');
+      expect(callArg.pageCategoryClassification).to.include("THEN 'Help'");
+      expect(callArg.topicExtraction).to.include("THEN 'Adobe'");
+      expect(callArg).to.have.property('countryExtraction');
+      expect(callArg.countryExtraction).to.include('COALESCE(');
+    });
+  });
+
+  describe('classification fallbacks and variants', () => {
+    it('uses fallback classification when DB rules are unavailable', async () => {
+      const site = { getId: () => 'site-id' };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves(null),
         },
       });
       await mocked.buildLlmErrorPagesQuery({
@@ -398,189 +424,104 @@ describe('LLM Error Pages Utils', () => {
       expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
     });
 
-    it('uses fallback classification when fetch throws', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+    it('uses fallback classification when DB rule fetch returns an error state', async () => {
+      const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().rejects(new Error('network error'));
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg.pageCategoryClassification).to.equal("'Other'");
-        expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-
-    it('uses fallback classification when fetch fails', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
-      mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().resolves({ ok: false });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg.pageCategoryClassification).to.equal("'Other'");
-        expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            error: true,
+            source: 'postgres',
+          }),
+        },
+      });
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.pageCategoryClassification).to.equal("'Other'");
+      expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
     });
 
     it('topicExtraction handles named-only patterns', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({
-          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
-          products: { data: [{ name: 'Adobe', regex: '/adobe' }] }, // named only
-        }),
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            pagePatterns: [{ name: 'Help', regex: '/help' }],
+            topicPatterns: [{ name: 'Adobe', regex: '/adobe' }],
+          }),
+        },
       });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg.topicExtraction).to.include('CASE');
-        expect(callArg.topicExtraction).to.include("ELSE 'Other'");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.topicExtraction).to.include('CASE');
+      expect(callArg.topicExtraction).to.include("ELSE 'Other'");
     });
 
     it('topicExtraction handles extract-only patterns', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({
-          pagetype: { data: [] },
-          products: { data: [{ regex: '/product/([^/]+)' }] }, // extract-only
-        }),
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            pagePatterns: [],
+            topicPatterns: [{ regex: '/product/([^/]+)' }],
+          }),
+        },
       });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg.topicExtraction.trim().startsWith('COALESCE(')).to.be.true;
-        expect(callArg.topicExtraction).to.include("'Other'");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.topicExtraction.trim().startsWith('COALESCE(')).to.be.true;
+      expect(callArg.topicExtraction).to.include("'Other'");
     });
 
     it('topicExtraction handles mixed named and extract patterns', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({
-          pagetype: { data: [] },
-          products: { data: [{ name: 'Adobe', regex: '/adobe' }, { regex: '/product/([^/]+)' }] },
-        }),
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            pagePatterns: [],
+            topicPatterns: [
+              { name: 'Adobe', regex: '/adobe' },
+              { regex: '/product/([^/]+)' },
+            ],
+          }),
+        },
       });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
-          '@adobe/spacecat-shared-utils': {
-            getStaticContent: mockGetStaticContent,
-          },
-        });
-        await mocked.buildLlmErrorPagesQuery({
-          databaseName: 'db',
-          tableName: 'tbl',
-          site,
-        });
-        const callArg = mockGetStaticContent.firstCall.args[0];
-        expect(callArg.topicExtraction).to.include('COALESCE(');
-        expect(callArg.topicExtraction).to.include('CASE');
-        expect(callArg.topicExtraction).to.include('NULLIF(');
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-  });
-
-  describe('fetchRemotePatterns direct', () => {
-    it('returns mapped pagePatterns/topicPatterns from JSON', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({
-          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
-          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
-        }),
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
       });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
-        const patterns = await mocked.fetchRemotePatterns(site);
-        expect(patterns.pagePatterns).to.deep.equal([{ name: 'Help', regex: '/help' }]);
-        expect(patterns.topicPatterns).to.deep.equal([{ name: 'Adobe', regex: '/adobe' }]);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-
-    it('falls back to [] when JSON omits keys', async () => {
-      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
-      const fetchStub = sinon.stub().resolves({
-        ok: true,
-        json: async () => ({}),
-      });
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = fetchStub;
-      try {
-        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
-        const patterns = await mocked.fetchRemotePatterns(site);
-        expect(patterns.pagePatterns).to.deep.equal([]);
-        expect(patterns.topicPatterns).to.deep.equal([]);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.topicExtraction).to.include('COALESCE(');
+      expect(callArg.topicExtraction).to.include('CASE');
+      expect(callArg.topicExtraction).to.include('NULLIF(');
     });
   });
 
@@ -588,13 +529,13 @@ describe('LLM Error Pages Utils', () => {
   // SITE AND CONFIGURATION UTILITIES TESTS
   // ============================================================================
 
-  describe('extractCustomerDomain', () => {
+  describe('extractSiteKeyFromBaseURL', () => {
     it('should extract domain from base URL', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('example_com');
     });
 
@@ -603,149 +544,80 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://test-site.example.co.uk',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('test_site_example_co_uk');
     });
   });
 
   describe('getS3Config', () => {
-    it('should return config with resolved bucket name', async () => {
+    it('should return shared config with resolved bucket name', () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket',
-          extractCustomerDomain: () => 'example_com',
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
+      };
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
-      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/test-site-id/');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-us-east-1');
+      expect(result.siteName).to.equal('example');
+      expect(result.siteKey).to.equal('example_com');
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
       expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');
+      expect(result.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
     });
 
-    it('should use resolveConsolidatedBucketName by default', async () => {
+    it('should use site region when configured', () => {
       const mockSite = {
-        getConfig: () => ({}),
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket-name',
-          extractCustomerDomain: () => 'example_com',
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket-name');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
-    });
-
-    it('should return config with callable getAthenaTempLocation function', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://test.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'custom-bucket',
-          extractCustomerDomain: () => 'test_example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-
-      expect(result.getAthenaTempLocation).to.be.a('function');
-      expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(result.region).to.equal('eu-west-1');
+      expect(result.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
 
-    it('should throw error when resolver fails', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://www.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => { throw new Error('boom'); },
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      try {
-        await mockedUtils.getS3Config(mockSite, {});
-        expect.fail('Should have thrown error');
-      } catch (error) {
-        expect(error.message).to.equal('boom');
-      }
-    });
-
-    it('should include siteId in aggregatedLocation for consolidated bucket', async () => {
-      const mockSite = {
-        getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
-    });
-
-    it('should use siteId in aggregatedLocation regardless of config', async () => {
-      const mockSite = {
+    it('should include siteId in aggregatedLocation', () => {
+      const result = getS3Config({
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'another-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
+      }, {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
       });
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
       expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/another-site-id/');
+      expect(result.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated-referral/another-site-id/');
     });
 
-    it('should always use siteId in aggregatedLocation', async () => {
-      const mockSite = {
+    it('should throw when site base URL resolution fails', () => {
+      const badSite = {
         getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'final-site-id',
+        getBaseURL: () => { throw new Error('boom'); },
+        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/final-site-id/');
+      expect(() => getS3Config(badSite, {})).to.throw('boom');
     });
   });
 
@@ -856,8 +728,30 @@ describe('LLM Error Pages Utils', () => {
       expect(result.weeks[0]).to.have.property('startDate');
       expect(result.weeks[0]).to.have.property('endDate');
       expect(result.weeks[0]).to.have.property('dateRange');
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
+      expect(result.weeks[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
       expect(result.referenceDate).to.equal(referenceDate.toISOString());
       expect(result.columns).to.be.an('array');
+    });
+
+    it('should generate multiple weeks with weekOffsets array', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, [-2, -1, 0]);
+
+      expect(result.weeks).to.have.length(3);
+      result.weeks.forEach((week) => {
+        expect(week).to.have.property('periodIdentifier');
+        expect(week.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      });
+      expect(result.columns).to.have.length(3);
+    });
+
+    it('should accept a single numeric weekOffset', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, -2);
+
+      expect(result.weeks).to.have.length(1);
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
     });
   });
 
@@ -1117,6 +1011,35 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.equal('/path');
     });
 
+    // SECURITY REGRESSION PIN.
+    //
+    // The `publishObservationLlmBrokenUrls` helper in handler.js relies
+    // on this function to strip off-origin hosts from input URLs — that
+    // is the ONLY origin defense in the observation publish path. If
+    // anyone refactors toPathOnly to preserve absolute URLs (e.g.
+    // returning `parsed.href` instead of `parsed.pathname`), the helper
+    // would emit attacker-controlled hostnames into the Mystique
+    // blackboard. These three assertions pin the contract.
+    it('SECURITY: strips off-origin host from absolute attacker URL (pathname only)', () => {
+      // Different scheme + different host: must reduce to pathname.
+      expect(toPathOnly('https://evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host from protocol-relative attacker URL', () => {
+      // `//evil.com/x` resolves to `https://evil.com/x` under base
+      // `https://example.com`; we must NOT preserve evil.com.
+      expect(toPathOnly('//evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host even when input scheme matches base', () => {
+      // Same-scheme attacker URL is the easiest to miss — pathname
+      // extraction must still discard the attacker host.
+      expect(toPathOnly('https://evil.example.com/admin', 'https://example.com'))
+        .to.equal('/admin');
+    });
+
     it('returns original string when URL construction fails', () => {
       // Invalid baseUrl triggers catch block
       const result1 = toPathOnly('relative/path', 'not-a-valid-base-url');
@@ -1125,6 +1048,76 @@ describe('LLM Error Pages Utils', () => {
       // Null input also triggers catch block
       const result2 = toPathOnly(null, 'invalid');
       expect(result2).to.equal(null);
+    });
+  });
+
+  describe('isValidUrlPath', () => {
+    it('accepts well-formed absolute URLs', () => {
+      expect(isValidUrlPath('https://example.com/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('https://example.com/foo?x=1')).to.equal(true);
+    });
+
+    it('accepts well-formed relative paths', () => {
+      expect(isValidUrlPath('/foo/bar')).to.equal(true);
+      expect(isValidUrlPath('/foo/bar?x=1&y=2')).to.equal(true);
+      expect(isValidUrlPath('/wiki/Article_(disambiguation)')).to.equal(true);
+    });
+
+    it("accepts legitimate paths containing apostrophes (e.g. /products/o'reilly)", () => {
+      expect(isValidUrlPath("/products/o'reilly")).to.equal(true);
+      expect(isValidUrlPath("/authors/o'brien")).to.equal(true);
+    });
+
+    it('accepts query-embedded schemes (e.g. /redirect?to=https://...)', () => {
+      expect(isValidUrlPath('/redirect?to=https://example.com')).to.equal(true);
+      expect(isValidUrlPath('/auth/callback?return=https://example.com/x')).to.equal(true);
+      expect(isValidUrlPath('/share?url=https://other.com')).to.equal(true);
+    });
+
+    it('rejects non-string inputs', () => {
+      expect(isValidUrlPath(null)).to.equal(false);
+      expect(isValidUrlPath(undefined)).to.equal(false);
+      expect(isValidUrlPath(42)).to.equal(false);
+      expect(isValidUrlPath({})).to.equal(false);
+    });
+
+    it('rejects empty and whitespace-only strings', () => {
+      expect(isValidUrlPath('')).to.equal(false);
+      expect(isValidUrlPath('   ')).to.equal(false);
+    });
+
+    it('rejects non-http(s) schemes (javascript:, data:, file:)', () => {
+      expect(isValidUrlPath('javascript:alert(1)')).to.equal(false);
+      expect(isValidUrlPath('data:text/html,<script>alert(1)</script>')).to.equal(false);
+      expect(isValidUrlPath('file:///etc/passwd')).to.equal(false);
+    });
+
+    it('rejects URLs starting with characters Excel treats as formulas', () => {
+      expect(isValidUrlPath('=WEBSERVICE("https://evil")')).to.equal(false);
+      expect(isValidUrlPath('+1234')).to.equal(false);
+      expect(isValidUrlPath('-foo')).to.equal(false);
+      expect(isValidUrlPath('@import')).to.equal(false);
+    });
+
+    it('rejects paths with an embedded http(s) scheme glued to a path segment', () => {
+      expect(isValidUrlPath('/brandshttps://www.coca-colacompany.com/brands')).to.equal(false);
+      expect(isValidUrlPath('/foohttp://bar')).to.equal(false);
+      expect(isValidUrlPath('/aHTTPS://x')).to.equal(false);
+    });
+
+    it('rejects URLs containing double-encoded quote characters', () => {
+      expect(isValidUrlPath('https://example.com/%2522')).to.equal(false);
+      expect(isValidUrlPath('https://example.com/foo%2527bar')).to.equal(false);
+    });
+
+    it('rejects URLs with trailing comma or semicolon', () => {
+      expect(isValidUrlPath('https://example.com/),')).to.equal(false);
+      expect(isValidUrlPath('/foo,')).to.equal(false);
+      expect(isValidUrlPath('/foo];')).to.equal(false);
+    });
+
+    it('rejects URLs the URL constructor cannot parse', () => {
+      expect(isValidUrlPath('http://[invalid')).to.equal(false);
     });
   });
 
@@ -1266,7 +1259,8 @@ describe('LLM Error Pages Utils', () => {
 
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(18);
-      expect(processed.errorPages).to.equal(results);
+      expect(processed.errorPages).to.deep.equal(results);
+      expect(processed.droppedUrls).to.deep.equal([]);
       expect(processed.summary.uniqueUrls).to.equal(2);
       expect(processed.summary.uniqueUserAgents).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ 404: 15, 403: 3 });
@@ -1277,6 +1271,7 @@ describe('LLM Error Pages Utils', () => {
       expect(processed).to.deep.equal({
         totalErrors: 0,
         errorPages: [],
+        droppedUrls: [],
         summary: {
           uniqueUrls: 0,
           uniqueUserAgents: 0,
@@ -1301,6 +1296,23 @@ describe('LLM Error Pages Utils', () => {
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
+    });
+
+    it('drops malformed URLs from errorPages, reports them in droppedUrls, and excludes them from totals', () => {
+      const results = [
+        { url: '/legit', total_requests: '5', status: '404', user_agent: 'bot' },
+        { url: '/brandshttps://example.com/x', total_requests: '7', status: '404', user_agent: 'bot' },
+        { url: '/foo,', total_requests: '3', status: '403', user_agent: 'bot' },
+      ];
+      const processed = processErrorPagesResults(results);
+      expect(processed.errorPages).to.have.lengthOf(1);
+      expect(processed.errorPages[0].url).to.equal('/legit');
+      expect(processed.droppedUrls).to.deep.equal([
+        '/brandshttps://example.com/x',
+        '/foo,',
+      ]);
+      expect(processed.totalErrors).to.equal(5);
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 5 });
     });
   });
 
@@ -1514,277 +1526,67 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
-  describe('matchErrorsWithCdnData', () => {
-    it('should match errors with CDN data by URL and user agent', async () => {
+  describe('groupErrorsByUrl', () => {
+    it('collapses rows by URL, deduping agentTypes and userAgents', () => {
       const errors = [
         {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
+          url: '/p1', status: 404, total_requests: 10, agent_type: 'Chatbots', user_agent: 'ChatGPT', avg_ttfb_ms: 100, country_code: 'US', product: 'X', category: 'Y',
         },
         {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          total_requests: 50,
+          url: '/p1', status: 404, total_requests: 5, agent_type: 'Web search crawlers', user_agent: 'Perplexity',
+        },
+        {
+          url: '/p1', status: 404, total_requests: 3, agent_type: 'Chatbots', user_agent: 'ChatGPT',
+        },
+        {
+          url: '/p2', status: 404, total_requests: 7, agent_type: 'Chatbots', user_agent: 'Claude',
         },
       ];
 
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
+      const result = groupErrorsByUrl(errors);
 
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
+      expect(result).to.have.length(2);
+      const p1 = result.find((r) => r.url === '/p1');
+      expect(p1.hitCount).to.equal(18);
+      expect(p1.agentTypes).to.have.members(['Chatbots', 'Web search crawlers']);
+      expect(p1.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
+      expect(p1.avgTtfb).to.equal(100);
 
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        agent_type: 'Chatbot',
-        user_agent_display: 'ChatGPT',
-        number_of_hits: 100, // Uses error's total_requests
-        avg_ttfb_ms: 250,
-        country_code: 'US',
-        url: '/page1',
-        product: 'Product A',
-        category: 'Category X',
-      });
-      expect(result[1]).to.deep.equal({
-        agent_type: 'Search Engine',
-        user_agent_display: 'Perplexity',
-        number_of_hits: 50,
-        avg_ttfb_ms: 300,
-        country_code: 'UK',
-        url: '/page2',
-        product: 'Product B',
-        category: 'Category Y',
-      });
+      const p2 = result.find((r) => r.url === '/p2');
+      expect(p2.hitCount).to.equal(7);
+      expect(p2.userAgents).to.deep.equal(['Claude']);
     });
 
-    it('should handle partial URL matches', async () => {
-      const errors = [
-        {
-          url: '/page1/subpage',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/page1/subpage');
+    it('treats missing total_requests as 0 on first and subsequent rows', () => {
+      const result = groupErrorsByUrl([
+        { url: '/p', status: 404, agent_type: 'A', user_agent: 'U' },
+        { url: '/p', status: 404, agent_type: 'B', user_agent: 'V' },
+      ]);
+      expect(result[0].hitCount).to.equal(0);
     });
 
-    it('should handle partial user agent matches (case-insensitive)', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'chatgpt-user',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].user_agent_display).to.equal('ChatGPT');
-    });
-
-    it('should handle root path specially', async () => {
-      const errors = [
-        {
-          url: '/',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/');
-    });
-
-    it('should handle no matches and empty arrays', async () => {
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      // No matches found
-      const noMatchResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [{ url: '/different-page', user_agent_display: 'DifferentBot', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(noMatchResult).to.have.lengthOf(0);
-
-      // Empty errors array
-      const emptyErrorsResult = matchErrorsWithCdnData(
-        [],
-        [{ url: '/page1', user_agent_display: 'ChatGPT', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(emptyErrorsResult).to.have.lengthOf(0);
-
-      // Empty CDN data array
-      const emptyCdnResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [],
-        'https://example.com',
-      );
-      expect(emptyCdnResult).to.have.lengthOf(0);
-    });
-
-    it('should use error total_requests when available, CDN number_of_hits otherwise', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-        {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          // No total_requests
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0].number_of_hits).to.equal(100); // From error
-      expect(result[1].number_of_hits).to.equal(150); // From CDN
-    });
-
-    it('should handle CDN data with null or undefined URL', async () => {
-      const errors = [
-        {
-          url: '',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: null, // Null URL
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      // Should match because empty string matches empty string
-      expect(result).to.have.lengthOf(1);
+    it('returns empty array for empty input', () => {
+      expect(groupErrorsByUrl([])).to.deep.equal([]);
     });
   });
+
+  describe('parsePeriodIdentifier', () => {
+    it('parses w15-2026 to the Monday of ISO week 15, 2026', () => {
+      const d = parsePeriodIdentifier('w15-2026');
+      expect(d.getUTCFullYear()).to.equal(2026);
+      expect(d.getUTCDay()).to.equal(1); // Monday
+    });
+
+    it('returns epoch for unrecognised input', () => {
+      expect(parsePeriodIdentifier('not-a-period').getTime()).to.equal(0);
+      expect(parsePeriodIdentifier(undefined).getTime()).to.equal(0);
+    });
+
+    it('handles week 1 of a year correctly', () => {
+      const d = parsePeriodIdentifier('w01-2024');
+      expect(d.getUTCFullYear()).to.equal(2024);
+      expect(d.getUTCDay()).to.equal(1);
+    });
+  });
+
 });

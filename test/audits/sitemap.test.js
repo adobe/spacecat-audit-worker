@@ -9,13 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
+import sitemapAudit from '../../src/sitemap/handler.js';
 import {
   sitemapAuditRunner,
   opportunityAndSuggestions,
@@ -23,6 +22,7 @@ import {
   findSitemap,
   getPagesWithIssues,
   getSitemapsWithIssues,
+  mergeSitemapSuggestionData,
 } from '../../src/sitemap/handler.js';
 import {
   ERROR_CODES,
@@ -31,7 +31,28 @@ import {
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
+  fetchWithHeadFallback,
   getBaseUrlPagesFromSitemaps,
+  applyPageUrlProbeSampling,
+  FAST_MAX_PAGE_URLS_PROBED,
+  PAGE_URL_TIMEOUT_MS,
+  slicePageUrlsForSlowProbeSampling,
+  SITEMAP_XML_BATCH_SIZE,
+  FAST_PAGE_URL_BATCH_SIZE,
+  FAST_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_PAGE_URL_BATCH_SIZE,
+  SLOW_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_MODE_ENTRY_DELAY_MS,
+  urlLooksLike404Page,
+  formatUrlProbeErrorDetail,
+  pathnameKey,
+  HTTP_AND_HTTPS_PROTOCOLS,
+  secondUrlIsBetterChoiceThanFirstUrl,
+  extractCanonicalHrefFromHtml,
+  better,
+  readHtmlBody,
+  refineSuggestedUrl,
+  refineResponsePayload,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -41,7 +62,15 @@ use(sinonChai);
 use(chaiAsPromised);
 const sandbox = sinon.createSandbox();
 
+/** Minimal HTML returned by GET after redirect probes (no canonical tag). */
+const HTML_PROBE_EMPTY = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body></body></html>';
+
 describe('Sitemap Audit', () => {
+  it('exports default runner audit with post-processors', () => {
+    expect(sitemapAudit).to.exist;
+    expect(sitemapAudit.postProcessors).to.be.an('array').with.lengthOf(2);
+  });
+
   let context;
   const url = 'https://some-domain.adobe';
   const { protocol, domain } = extractDomainAndProtocol(url);
@@ -207,7 +236,7 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
@@ -234,7 +263,7 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
@@ -244,6 +273,33 @@ describe('Sitemap Audit', () => {
         fullAuditRef: url,
         url,
       });
+    });
+  });
+
+  describe('fetchWithHeadFallback', () => {
+    it('should use PAGE_URL_TIMEOUT_MS when options.timeout is omitted', async () => {
+      nock(url).head('/test').reply(200);
+
+      const response = await fetchWithHeadFallback(`${url}/test`, {});
+      expect(response.status).to.equal(200);
+    });
+
+    it('should retry with GET when HEAD returns 501 and GET returns 200', async () => {
+      nock(url).head('/head-501').reply(501);
+      nock(url).get('/head-501').reply(200);
+
+      const response = await fetchWithHeadFallback(`${url}/head-501`, {});
+      expect(response.status).to.equal(200);
+    });
+
+    it('should call beforeRequest before HEAD and before GET fallback', async () => {
+      nock(url).head('/spaced').reply(404);
+      nock(url).get('/spaced').reply(200);
+
+      const beforeRequest = sandbox.spy(async () => {});
+      const response = await fetchWithHeadFallback(`${url}/spaced`, { beforeRequest });
+      expect(response.status).to.equal(200);
+      expect(beforeRequest).to.have.been.calledTwice;
     });
   });
 
@@ -284,6 +340,30 @@ describe('Sitemap Audit', () => {
       await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith(
         'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
       );
+    });
+  });
+
+  describe('urlLooksLike404Page', () => {
+    it('returns false when the value cannot be parsed as a URL', () => {
+      expect(urlLooksLike404Page('not a url')).to.be.false;
+      expect(urlLooksLike404Page('')).to.be.false;
+    });
+
+    it('detects common soft-404 path patterns', () => {
+      expect(urlLooksLike404Page('https://example.com/errors/404/soft')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/404.html')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/blog/404/about')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/ok/page')).to.be.false;
+    });
+  });
+
+  describe('formatUrlProbeErrorDetail', () => {
+    it('formats Error instances with name and message', () => {
+      expect(formatUrlProbeErrorDetail(new TypeError('bad'))).to.equal('TypeError: bad');
+    });
+
+    it('stringifies non-Error rejection values', () => {
+      expect(formatUrlProbeErrorDetail('plain-rejection')).to.equal('plain-rejection');
     });
   });
 
@@ -333,12 +413,12 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
     });
 
-    it('should return FETCH_ERROR when there is a network error', async () => {
+    it('should return CANNOT_READ_SITEMAP when there is a network error', async () => {
       nock(url).get('/sitemap.xml').replyWithError('Network error');
 
       const resp = await checkSitemap();
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
+      expect(resp.reasons).to.include(ERROR_CODES.CANNOT_READ_SITEMAP);
     });
 
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
@@ -348,7 +428,7 @@ describe('Sitemap Audit', () => {
 
       const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_FORMAT);
+      expect(resp.reasons).to.include(ERROR_CODES.INVALID_SITEMAP_FORMAT);
     });
 
     it('checkSitemap returns invalid result for non-existing sitemap', async () => {
@@ -451,6 +531,38 @@ describe('Sitemap Audit', () => {
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
     });
+
+    it('should add delay between batches when processing multiple sitemaps', async () => {
+      // Create sitemap index with SITEMAP_XML_BATCH_SIZE + 1 child sitemaps to trigger batch delay
+      const sitemapIndexUrls = Array.from(
+        { length: SITEMAP_XML_BATCH_SIZE + 1 },
+        (_, i) => `${url}/sitemap_${i}.xml`,
+      );
+      const sitemapIndexContent = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + sitemapIndexUrls.map((u) => `<sitemap><loc>${u}</loc></sitemap>`).join('\n')
+        + '\n</sitemapindex>';
+
+      nock(url).get('/sitemap_index.xml').reply(200, sitemapIndexContent);
+
+      sitemapIndexUrls.forEach((sitemapUrl, i) => {
+        const path = new URL(sitemapUrl).pathname;
+        const childSitemap = '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + `<url><loc>${url}/page-${i}</loc></url>\n`
+          + '</urlset>';
+        nock(url).get(path).reply(200, childSitemap);
+      });
+
+      const result = await getBaseUrlPagesFromSitemaps(url, [
+        `${url}/sitemap_index.xml`,
+      ]);
+
+      expect(Object.keys(result)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
+      sitemapIndexUrls.forEach((sitemapUrl, i) => {
+        expect(result[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
+      });
+    });
   });
 
   describe('findSitemap', () => {
@@ -459,7 +571,7 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.equal([
         {
-          error: ERROR_CODES.INVALID_URL,
+          error: ERROR_CODES.GENERAL_ERROR,
           value: 'not a valid url',
         },
       ]);
@@ -550,6 +662,9 @@ describe('Sitemap Audit', () => {
       nock(url)
         .head('/baz')
         .reply(301, '', { Location: `${url}/zzz` });
+      nock(url)
+        .get('/zzz')
+        .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
       const result = await findSitemap('https://some-domain.adobe', {
         info: () => {},
@@ -611,7 +726,6 @@ describe('Sitemap Audit', () => {
 
     it('should handle missing details properties with fallback defaults', async () => {
       // Test the exact fallback logic directly by simulating the specific scenario
-      // This is what the code does on lines 41-42:
       // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
       // const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
 
@@ -729,6 +843,334 @@ describe('Sitemap Audit', () => {
 
       expect(result.success).to.equal(true);
       // The URLs from /en/ca and /fr should be filtered out, not audited
+    });
+
+    describe('page URL otherStatus slowdown', () => {
+      const slowBatchOpts = {
+        pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+        pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+        pageUrlHttpRequestIntervalMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+      };
+
+      it('re-probes with slow batching when otherStatus share is >= 60% with at least 10 URLs', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrls = Array.from({ length: 10 }, (_, i) => `${url}/slow-p${i}`);
+        const sitemapA = `${url}/slow-a.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [sitemapA]: tenUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub();
+        filterStub
+          .onFirstCall()
+          .resolves({
+            ok: ['a', 'b', 'c', 'd'],
+            notOk: [],
+            networkErrors: [],
+            otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+          });
+        filterStub.onSecondCall().resolves({
+          ok: [tenUrls[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const sleepStub = sandbox.stub().resolves();
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
+          },
+        });
+
+        const result = await findSitemapMocked(url, {
+          info: () => {}, debug: () => {}, warn: () => {},
+        });
+        expect(result.success).to.equal(true);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
+        expect(filterStub).to.have.been.calledTwice;
+        expect(filterStub.firstCall.args[3]).to.equal(null);
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrls[0]]);
+        expect(filterStub.secondCall.args[3]).to.deep.equal(slowBatchOpts);
+      });
+
+      it('logs a warning when otherStatus stays high while already on slow batching', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrlsA = Array.from({ length: 10 }, (_, i) => `${url}/w-a${i}`);
+        const hundredUrlsB = Array.from({ length: 100 }, (_, i) => `${url}/w-b${i}`);
+        const sitemapA = `${url}/warn-a.xml`;
+        const sitemapB = `${url}/warn-b.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: {
+              [sitemapA]: tenUrlsA,
+              [sitemapB]: hundredUrlsB,
+            },
+            filteredSitemapUrls: [],
+          },
+        });
+        const heavyOther = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const filterStub = sandbox.stub();
+        filterStub.onCall(0).resolves(heavyOther);
+        filterStub.onCall(1).resolves({
+          ok: [tenUrlsA[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+        filterStub.onCall(2).resolves(heavyOther);
+
+        const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
+
+        const sleepStub = sandbox.stub().resolves();
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
+          },
+        });
+
+        await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
+        expect(filterStub).to.have.been.calledThrice;
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
+        expect(filterStub.thirdCall.args[0]).to.have.length(10);
+        expect(filterStub.thirdCall.args[3]).to.deep.equal(slowBatchOpts);
+        const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (55%)');
+        const highOtherWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes(sitemapB));
+        expect(highOtherWarns).to.have.lengthOf(1);
+        expect(highOtherWarns[0].args[0]).to.include(`'otherStatus' count=6`);
+        expect(highOtherWarns[0].args[0]).to.include('total count=10');
+        expect(highOtherWarns[0].args[0]).to.include('(60%)');
+      });
+
+      it('does not switch to slow when fewer than 10 URLs are probed', async () => {
+        const esmock = (await import('esmock')).default;
+        const nineUrls = Array.from({ length: 9 }, (_, i) => `${url}/nine${i}`);
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/nine.xml`]: nineUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub().resolves({
+          ok: ['a', 'b', 'c'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(filterStub).to.have.been.calledOnce;
+      });
+
+      it('warns after slow re-probe when otherStatus remains >= 60%', async () => {
+        const esmock = (await import('esmock')).default;
+        const hundredUrls = Array.from({ length: 100 }, (_, i) => `${url}/still-bad${i}`);
+        const heavyOther10 = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const heavyOther100 = {
+          ok: Array.from({ length: 40 }, (_, i) => `ok${i}`),
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 60 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/still.xml`]: hundredUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub();
+        filterStub.onFirstCall().resolves(heavyOther100);
+        filterStub.onSecondCall().resolves(heavyOther10);
+
+        const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
+
+        const sleepStub = sandbox.stub().resolves();
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
+          },
+        });
+
+        await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
+        expect(filterStub).to.have.been.calledTwice;
+        expect(filterStub.secondCall.args[0]).to.have.length(10);
+        const stillHighWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes('still.xml'));
+        expect(stillHighWarns).to.have.lengthOf(1);
+        const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60%)');
+      });
+
+      it('slices sampled URLs on later sitemaps after slow mode using SLOW_MAX / FAST_MAX ratio', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrlsA = Array.from({ length: 10 }, (_, i) => `${url}/cap-a${i}`);
+        const hundredUrlsB = Array.from({ length: 100 }, (_, i) => `${url}/cap-b${i}`);
+        const sitemapA = `${url}/cap-a.xml`;
+        const sitemapB = `${url}/cap-b.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: {
+              [sitemapA]: tenUrlsA,
+              [sitemapB]: hundredUrlsB,
+            },
+            filteredSitemapUrls: [],
+          },
+        });
+        const heavyOther = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const filterStub = sandbox.stub();
+        filterStub.onCall(0).resolves(heavyOther);
+        filterStub.onCall(1).resolves({
+          ok: [tenUrlsA[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+        filterStub.onCall(2).resolves({
+          ok: hundredUrlsB.slice(0, 10),
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const sleepStub = sandbox.stub().resolves();
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
+        expect(filterStub).to.have.been.calledThrice;
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
+        expect(filterStub.thirdCall.args[0]).to.have.length(10);
+        expect(filterStub.thirdCall.args[0][0]).to.equal(`${url}/cap-b0`);
+      });
+
+      it('does not treat all-empty probe buckets as a slowdown signal when URL count >= 10', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrls = Array.from({ length: 10 }, (_, i) => `${url}/empty${i}`);
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/empty.xml`]: tenUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub().resolves({
+          ok: [],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(filterStub).to.have.been.calledOnce;
+      });
     });
   });
 
@@ -984,8 +1426,221 @@ describe('Sitemap Audit', () => {
         pageUrl: 'https://example.com/old-page',
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
-        recommendedAction: 'use this url instead: https://example.com/new-page',
+        recommendedAction: 'use this URL instead: https://example.com/new-page',
       });
+    });
+  });
+
+  describe('mergeSitemapSuggestionData', () => {
+    const newUrlPayload = {
+      type: 'url',
+      sitemapUrl: 'https://example.com/sitemap.xml',
+      pageUrl: 'https://example.com/page',
+      statusCode: 301,
+      urlsSuggested: 'https://example.com/new',
+      recommendedAction: 'use this URL instead: https://example.com/new',
+    };
+
+    it('removes null error for type url after merge', () => {
+      const existing = {
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+        statusCode: 301,
+        error: null,
+        recommendedAction: 'old',
+      };
+      const merged = mergeSitemapSuggestionData(existing, newUrlPayload);
+      expect(merged).to.deep.equal(newUrlPayload);
+      expect(merged).to.not.have.property('error');
+    });
+
+    it('removes null error when only newData would omit error', () => {
+      const existing = { type: 'url', error: null, stale: true };
+      const merged = mergeSitemapSuggestionData(existing, {
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+        statusCode: 404,
+        recommendedAction: 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+      });
+      expect(merged).to.not.have.property('error');
+      expect(merged.stale).to.equal(true);
+    });
+
+    it('keeps non-empty string error for type url', () => {
+      const merged = mergeSitemapSuggestionData(
+        { type: 'url', sitemapUrl: 'https://a.com/s.xml', pageUrl: 'https://a.com/p' },
+        { ...newUrlPayload, error: 'optional detail' },
+      );
+      expect(merged.error).to.equal('optional detail');
+    });
+
+    it('drops empty string error for type url', () => {
+      const merged = mergeSitemapSuggestionData(
+        { type: 'url', error: '' },
+        newUrlPayload,
+      );
+      expect(merged).to.not.have.property('error');
+    });
+
+    it('shallow-merges type error without stripping error string', () => {
+      const existing = { type: 'error', error: ERROR_CODES.CANNOT_READ_SITEMAP, extra: 1 };
+      const newData = {
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        recommendedAction: 'x',
+      };
+      const merged = mergeSitemapSuggestionData(existing, newData);
+      expect(merged).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        extra: 1,
+        recommendedAction: 'x',
+      });
+    });
+  });
+
+  describe('applyPageUrlProbeSampling', () => {
+    const totalProbed = (out) => Object.values(out).reduce((s, urls) => s + urls.length, 0);
+
+    /** Mirrors production: proportional floor + at least 1, capped by sitemap size. */
+    const expectedQuota = (sitemapUrlCount, grandTotal) => {
+      const floored = Math.floor((FAST_MAX_PAGE_URLS_PROBED * sitemapUrlCount) / grandTotal);
+      return Math.min(sitemapUrlCount, Math.max(floored, 1));
+    };
+
+    it('returns empty object when there are no page URLs', () => {
+      expect(applyPageUrlProbeSampling({})).to.deep.equal({});
+      expect(applyPageUrlProbeSampling({ 'https://ex.com/s.xml': [] })).to.deep.equal({});
+    });
+
+    it('treats undefined sitemap page list like empty (nullish coalescing to [])', () => {
+      expect(applyPageUrlProbeSampling({ 'https://ex.com/s.xml': undefined })).to.deep.equal({});
+    });
+
+    it('probes every URL when total is at or below FAST_MAX_PAGE_URLS_PROBED', () => {
+      const paths = {
+        'https://ex.com/a.xml': ['https://ex.com/1', 'https://ex.com/2'],
+        'https://ex.com/b.xml': ['https://ex.com/3'],
+      };
+      const out = applyPageUrlProbeSampling(paths);
+      expect(out).to.deep.equal(paths);
+      expect(totalProbed(out)).to.equal(3);
+    });
+
+    it('allocates proportional floor counts matching 10/20/40/30% split of totals (derived from FAST_MAX_PAGE_URLS_PROBED)', () => {
+      const mk = (n, prefix) => Array.from({ length: n }, (_, i) => `https://ex.com/${prefix}-${i}`);
+      const counts = [1000, 2000, 4000, 3000];
+      const keys = [
+        'https://ex.com/s1.xml',
+        'https://ex.com/s2.xml',
+        'https://ex.com/s3.xml',
+        'https://ex.com/s4.xml',
+      ];
+      const grandTotal = counts.reduce((a, b) => a + b, 0);
+      const paths = {
+        [keys[0]]: mk(counts[0], 'a'),
+        [keys[1]]: mk(counts[1], 'b'),
+        [keys[2]]: mk(counts[2], 'c'),
+        [keys[3]]: mk(counts[3], 'd'),
+      };
+      const expectedLengths = counts.map((c) => expectedQuota(c, grandTotal));
+      const out = applyPageUrlProbeSampling(paths);
+      keys.forEach((key, i) => {
+        expect(out[key].length, key).to.equal(expectedLengths[i]);
+      });
+      expect(totalProbed(out)).to.equal(expectedLengths.reduce((a, b) => a + b, 0));
+    });
+
+    it('keeps only the first FAST_MAX_PAGE_URLS_PROBED sitemaps when more sitemaps have URLs', function () {
+      this.timeout(60000);
+      const paths = {};
+      for (let i = 0; i < FAST_MAX_PAGE_URLS_PROBED + 1; i += 1) {
+        paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      const out = applyPageUrlProbeSampling(paths);
+      expect(Object.keys(out).length).to.equal(FAST_MAX_PAGE_URLS_PROBED);
+      expect(totalProbed(out)).to.equal(FAST_MAX_PAGE_URLS_PROBED);
+    });
+
+    it('slices a single large sitemap using FAST_MAX_PAGE_URLS_PROBED when discovery exceeds the cap', () => {
+      const discovered = 10000;
+      const urls = Array.from({ length: discovered }, (_, i) => `https://ex.com/u${i}`);
+      const out = applyPageUrlProbeSampling({ 'https://ex.com/s.xml': urls });
+      const expectedLen = discovered <= FAST_MAX_PAGE_URLS_PROBED
+        ? discovered
+        : expectedQuota(discovered, discovered);
+      expect(out['https://ex.com/s.xml'].length).to.equal(expectedLen);
+      expect(out['https://ex.com/s.xml'][0]).to.equal('https://ex.com/u0');
+      expect(totalProbed(out)).to.equal(expectedLen);
+    });
+
+    it('uses proportional floors across many equal-sized sitemaps', () => {
+      const numSitemaps = 200;
+      const urlsPerSitemap = 100;
+      const grandTotal = numSitemaps * urlsPerSitemap;
+      const expectedPerSitemap = expectedQuota(urlsPerSitemap, grandTotal);
+      const paths = {};
+      for (let s = 0; s < numSitemaps; s += 1) {
+        paths[`https://ex.com/s${s}.xml`] = Array.from(
+          { length: urlsPerSitemap },
+          (_, i) => `https://ex.com/p${s}-${i}`,
+        );
+      }
+      const out = applyPageUrlProbeSampling(paths);
+      const expectedTotal = numSitemaps * expectedPerSitemap;
+      expect(totalProbed(out)).to.equal(expectedTotal);
+      Object.values(out).forEach((urls) => {
+        expect(urls.length).to.equal(expectedPerSitemap);
+      });
+    });
+
+    it('logs when sitemap-count cap reduces discovered URL count below original total', function () {
+      this.timeout(60000);
+      const log = { info: sinon.spy() };
+      const paths = {};
+      for (let i = 0; i < FAST_MAX_PAGE_URLS_PROBED + 1; i += 1) {
+        paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      applyPageUrlProbeSampling(paths, log);
+      const messages = log.info.getCalls().map((c) => String(c.args[0]));
+      expect(messages.some((m) => m.includes('abundance of sitemap'))).to.equal(true);
+    });
+
+    it('warns when proportional quotas sum above FAST_MAX_PAGE_URLS_PROBED', function () {
+      this.timeout(60000);
+      const log = { warn: sinon.spy(), info: sinon.spy() };
+      const paths = {
+        'https://ex.com/huge.xml': Array.from({ length: 5000 }, (_, i) => `https://ex.com/h${i}`),
+      };
+      for (let i = 0; i < 7199; i += 1) {
+        paths[`https://ex.com/t${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      applyPageUrlProbeSampling(paths, log);
+      expect(log.warn.calledOnce).to.equal(true);
+      expect(String(log.warn.firstCall.args[0])).to.include('above the ');
+      expect(log.info.called).to.equal(true);
+    });
+  });
+
+  describe('slicePageUrlsForSlowProbeSampling', () => {
+    it('returns first floor(n * SLOW_MAX / FAST_MAX) URLs, at least 1 when non-empty', () => {
+      const urls = Array.from({ length: 100 }, (_, i) => `https://ex.com/u${i}`);
+      const out = slicePageUrlsForSlowProbeSampling(urls);
+      expect(out).to.have.length(10);
+      expect(out[0]).to.equal('https://ex.com/u0');
+    });
+
+    it('keeps the single URL when only one was sampled', () => {
+      const out = slicePageUrlsForSlowProbeSampling(['https://ex.com/only']);
+      expect(out).to.deep.equal(['https://ex.com/only']);
+    });
+
+    it('returns empty array for empty or missing input', () => {
+      expect(slicePageUrlsForSlowProbeSampling([])).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(undefined)).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(null)).to.deep.equal([]);
     });
   });
 
@@ -1160,10 +1815,9 @@ describe('Sitemap Audit', () => {
 
       // mark site as requiring validation
       context.site = { requiresValidation: true };
-      // mark site as requiring validation
-      context.site = { requiresValidation: true };
-      // mark site as requiring validation
-      context.site = { requiresValidation: true };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
@@ -1208,6 +1862,9 @@ describe('Sitemap Audit', () => {
       });
       // mark site as requiring validation
       context.site = { requiresValidation: true };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
@@ -1221,7 +1878,7 @@ describe('Sitemap Audit', () => {
       // Use sinon.match to match objects without caring about the status field
       const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
       expect(addSuggestionsCall).to.exist;
-      
+
       const actualArgs = addSuggestionsCall.args[0];
       const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
         opportunityId: opptyId,
@@ -1229,7 +1886,7 @@ describe('Sitemap Audit', () => {
         rank: 0,
         data: suggestion,
       }));
-      
+
       // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
@@ -1275,6 +1932,9 @@ describe('Sitemap Audit', () => {
       });
       // mark site as requiring validation
       context.site = { requiresValidation: true };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
@@ -1289,7 +1949,7 @@ describe('Sitemap Audit', () => {
       // Use sinon.match to match objects without caring about the status field
       const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
       expect(addSuggestionsCall).to.exist;
-      
+
       const actualArgs = addSuggestionsCall.args[0];
       const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
         opportunityId: opptyId,
@@ -1297,7 +1957,7 @@ describe('Sitemap Audit', () => {
         rank: 0,
         data: suggestion,
       }));
-      
+
       // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
@@ -1347,11 +2007,35 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
-  it('should capture final redirect URLs for 301/302 responses', async () => {
+  it('applies pageUrlBatchOptions when provided', async () => {
+    const urls = Array.from({ length: 3 }, (_, i) => `https://example.com/bopt${i}`);
+    urls.forEach((_, i) => {
+      nock('https://example.com').head(`/bopt${i}`).reply(200);
+    });
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+      pageUrlBatchDelayMs: 0,
+    });
+    expect(result.ok).to.have.lengthOf(3);
+  });
+
+  it('falls back to fast batch delay when pageUrlBatchOptions omits pageUrlBatchDelayMs', async () => {
+    const urls = Array.from({ length: 2 }, (_, i) => `https://example.com/bpartial${i}`);
+    urls.forEach((_, i) => {
+      nock('https://example.com').head(`/bpartial${i}`).reply(200);
+    });
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+    });
+    expect(result.ok).to.have.lengthOf(2);
+  });
+
+  it('should capture final redirect URLs for 301/302/303 responses', async () => {
     const urls = [
       'https://example.com/ok',
       'https://example.com/permanent-redirect',
       'https://example.com/temporary-redirect',
+      'https://example.com/see-other-redirect',
       'https://example.com/not-found',
     ];
 
@@ -1363,6 +2047,9 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/permanent-redirect')
       .reply(301, '', { Location: 'https://example.com/new-location' });
     nock('https://example.com').head('/new-location').reply(200);
+    nock('https://example.com')
+      .get('/new-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     nock('https://example.com')
       .head('/temporary-redirect')
@@ -1371,6 +2058,21 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/temporary-redirect')
       .reply(302, '', { Location: 'https://example.com/temp-location' });
     nock('https://example.com').head('/temp-location').reply(200);
+    nock('https://example.com')
+      .get('/temp-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/see-other-location' });
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/see-other-location' });
+    nock('https://example.com').head('/see-other-location').reply(200);
+    nock('https://example.com')
+      .get('/see-other-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
     nock('https://example.com').head('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
@@ -1388,13 +2090,19 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: 'https://example.com/temp-location',
       },
       {
+        url: 'https://example.com/see-other-redirect',
+        statusCode: 303,
+        urlsSuggested: 'https://example.com/see-other-location',
+      },
+      {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should suggest homepage URL for redirects to 404 status pages', async () => {
+  it('should set urlsSuggested to empty string when redirect target is invalid or 404-like; otherwise suggest terminal URL', async () => {
     const urls = [
       'https://example.com/redirect-to-404',
       'https://example.com/redirect-to-200',
@@ -1407,32 +2115,40 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-404')
       .reply(301, '', { Location: 'https://example.com/not-found' });
     nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').get('/not-found').reply(404);
 
     // Redirect to a page that returns 200
     nock('https://example.com')
       .head('/redirect-to-200')
       .reply(302, '', { Location: 'https://example.com/valid-page' });
     nock('https://example.com').head('/valid-page').reply(200);
+    nock('https://example.com')
+      .get('/valid-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     // Redirect to a URL that contains '404.html' in the path
     nock('https://example.com')
       .head('/redirect-to-404-custom-path')
       .reply(301, '', { Location: 'https://example.com/errors/404.html' });
     nock('https://example.com').head('/errors/404.html').reply(200); // Even with 200 response, path detection should work
+    nock('https://example.com')
+      .get('/errors/404.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     // Test with subdomain
     nock('https://subdomain.example.com')
       .head('/redirect-to-404')
       .reply(302, '', { Location: 'https://subdomain.example.com/not-found' });
     nock('https://subdomain.example.com').head('/not-found').reply(404);
+    nock('https://subdomain.example.com').get('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-to-404',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        statusCode: 404,
+        urlsSuggested: '',
       },
       {
         url: 'https://example.com/redirect-to-200',
@@ -1441,18 +2157,18 @@ describe('filterValidUrls with redirect handling', () => {
       },
       {
         url: 'https://example.com/redirect-to-404-custom-path',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        statusCode: 404,
+        urlsSuggested: '',
       },
       {
         url: 'https://subdomain.example.com/redirect-to-404',
-        statusCode: 302,
-        urlsSuggested: 'https://subdomain.example.com',
+        statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should handle failed redirect follows with 404 detection', async () => {
+  it('should suggest first hop when follow-up fetch to redirect target throws (e.g. network error)', async () => {
     const urls = ['https://example.com/broken-redirect'];
 
     // First request succeeds with redirect
@@ -1460,23 +2176,21 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
-    // Second request fails with network error (suggests invalid URL)
+    // Follow-up to validate redirect target fails before a usable terminal URL is known
     nock('https://example.com')
       .head('/error')
       .replyWithError('Network error');
-
-    // Third request to validate homepage suggestion
     nock('https://example.com')
-      .head('/')
-      .reply(200);
+      .get('/error')
+      .replyWithError('Network error');
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
-        urlsSuggested: 'https://example.com',
         statusCode: 301,
+        urlsSuggested: 'https://example.com/error',
       },
     ]);
   });
@@ -1529,6 +2243,9 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(301, '', { Location: 'https://example.com/new-location' });
 
     nock('https://example.com').head('/new-location').reply(200);
+    nock('https://example.com')
+      .get('/new-location')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     nock('https://example.com')
       .head('/network-error')
@@ -1548,6 +2265,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
     expect(result.networkErrors).to.deep.equal([
@@ -1596,6 +2314,27 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
+  it('should add delay between batches when processing FAST_PAGE_URL_BATCH_SIZE + 1 URLs', async function () {
+    // Timeout must accommodate 751 requests + FAST_PAGE_URL_BATCH_DELAY_MS (runs once between batches) + buffer
+    this.timeout(15000 + FAST_PAGE_URL_BATCH_DELAY_MS);
+    // Create FAST_PAGE_URL_BATCH_SIZE + 1 URLs to trigger the batch delay
+    const urls = Array.from(
+      { length: FAST_PAGE_URL_BATCH_SIZE + 1 },
+      (_, i) => `https://example.com/url${i + 1}`,
+    );
+
+    urls.forEach((url, i) => {
+      nock('https://example.com')
+        .head(`/url${i + 1}`)
+        .reply(200);
+    });
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.have.lengthOf(FAST_PAGE_URL_BATCH_SIZE + 1);
+    expect(result.notOk).to.be.empty;
+  });
+
   it('should not flag redirects to login pages as issues', async () => {
     const urls = [
       'https://example.com/myaccount',
@@ -1623,6 +2362,9 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(302, '', { Location: 'https://example.com/some-page' });
 
     nock('https://example.com').head('/some-page').reply(200);
+    nock('https://example.com')
+      .get('/some-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -1639,74 +2381,988 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
-  it('should suggest homepage for redirects with no location header', async () => {
+  it('should set urlsSuggested to empty string when redirect has no Location header', async () => {
     const urls = ['https://example.com/redirect-no-location'];
     nock('https://example.com')
       .head('/redirect-no-location')
       .reply(301, ''); // No location header
 
-    // Mock homepage validation
-    nock('https://example.com')
-      .head('/')
-      .reply(200);
-
     const result = await filterValidUrls(urls);
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-no-location',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should not suggest URL when homepage validation fails with network error', async () => {
-    const urls = ['https://example.com/redirect-no-location'];
+  it('treats self-redirect (Location same as probed URL) as ok when terminal cannot be validated', async () => {
+    const urls = ['https://example.com/self-redirect-loop'];
     nock('https://example.com')
-      .head('/redirect-no-location')
-      .reply(301, ''); // No location header
+      .head('/self-redirect-loop')
+      .reply(301, '', { Location: 'https://example.com/self-redirect-loop' });
+    nock('https://example.com').head('/self-redirect-loop').reply(404);
+    nock('https://example.com').get('/self-redirect-loop').reply(404);
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
 
-    // Mock homepage validation failure
+    const result = await filterValidUrls(urls, log);
+
+    expect(result.ok).to.deep.equal(['https://example.com/self-redirect-loop']);
+    expect(result.notOk).to.be.empty;
+    expect(log.debug).to.have.been.calledWith(sinon.match(/first hop URL equals probed/));
+  });
+
+  it('does not treat first hop as self-redirect when Location scheme differs from probed URL', async () => {
+    const probed = 'https://example.com/self-redirect-http-location';
     nock('https://example.com')
-      .head('/')
-      .replyWithError('Network error');
+      .head('/self-redirect-http-location')
+      .reply(301, '', { Location: 'http://example.com/self-redirect-http-location' });
+    nock('http://example.com').head('/self-redirect-http-location').reply(404);
+    nock('http://example.com').get('/self-redirect-http-location').reply(404);
 
-    const result = await filterValidUrls(urls);
+    const result = await filterValidUrls([probed]);
+
+    expect(result.ok).to.be.empty;
     expect(result.notOk).to.deep.equal([
       {
-        url: 'https://example.com/redirect-no-location',
-        statusCode: 301,
-        // No urlsSuggested since homepage validation failed
+        url: probed,
+        statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should fallback to homepage when redirect target validation fails', async () => {
-    const urls = ['https://example.com/broken-redirect'];
+  it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
+    const urls = ['https://example.com/redirect-waf'];
 
-    // Original redirect
     nock('https://example.com')
-      .head('/broken-redirect')
-      .reply(301, '', { Location: 'https://example.com/invalid' });
+      .head('/redirect-waf')
+      .reply(301, '', { Location: 'https://example.com/first-hop-page' });
+    nock('https://example.com').head('/first-hop-page').reply(403);
+    nock('https://example.com').get('/first-hop-page').reply(403);
 
-    // Redirect target validation fails
-    nock('https://example.com')
-      .head('/invalid')
-      .replyWithError('Network error');
+    const result = await filterValidUrls(urls);
 
-    // Homepage validation succeeds
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-waf',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com/first-hop-page',
+      },
+    ]);
+  });
+
+  it('should suggest terminal URL after multi-hop redirect when final page returns 200', async () => {
+    const urls = ['https://example.com/start'];
+
     nock('https://example.com')
-      .head('/')
+      .head('/start')
+      .reply(302, '', { Location: 'https://example.com/mid' });
+    nock('https://example.com')
+      .head('/mid')
+      .reply(302, '', { Location: 'https://example.com/end' });
+    nock('https://example.com')
+      .head('/end')
       .reply(200);
+    nock('https://example.com')
+      .get('/end')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
+
     expect(result.notOk).to.deep.equal([
       {
-        url: 'https://example.com/broken-redirect',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com', // Falls back to homepage
+        url: 'https://example.com/start',
+        statusCode: 302,
+        urlsSuggested: 'https://example.com/end',
       },
     ]);
+  });
+
+  it('promotes redirect to ok when GET HTML declares probed URL as canonical', async () => {
+    const probed = 'https://example.com/sitemap-old-url';
+    const finalPage = 'https://example.com/final-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${probed}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/sitemap-old-url')
+      .reply(301, '', { Location: finalPage });
+    nock('https://example.com').head('/final-page').reply(200);
+    nock('https://example.com')
+      .get('/final-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.ok).to.deep.equal([probed]);
+    expect(result.notOk).to.be.empty;
+  });
+
+  it('keeps terminal urlsSuggested when refine GET returns redirect with invalid Location', async () => {
+    const probed = 'https://example.com/r-invalid-loc';
+    const terminal = 'https://example.com/terminal-invalid-loc';
+
+    nock('https://example.com')
+      .head('/r-invalid-loc')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/terminal-invalid-loc').reply(200);
+    nock('https://example.com')
+      .get('/terminal-invalid-loc')
+      .reply(301, '', { Location: 'http://' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: terminal,
+      },
+    ]);
+    expect(nock.isDone()).to.be.true;
+  });
+
+  it('uses canonical href for urlsSuggested when same path as planned terminal (tracking stripped)', async () => {
+    const probed = 'https://example.com/r';
+    const terminalWithQuery = 'https://example.com/p?x=1';
+    const canonicalClean = 'https://example.com/p';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/r')
+      .reply(301, '', { Location: terminalWithQuery });
+    nock('https://example.com').head('/p').query(true).reply(200);
+    nock('https://example.com')
+      .get('/p')
+      .query(true)
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/refining the terminal URL/));
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('uses canonical href when canonical points to a different path than terminal', async () => {
+    const probed = 'https://example.com/r2';
+    const terminal = 'https://example.com/terminal';
+    const canonicalOther = 'https://example.com/other';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalOther}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/r2')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/terminal').reply(200);
+    nock('https://example.com')
+      .get('/terminal')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalOther,
+      },
+    ]);
+  });
+
+  it('uses canonical href when terminal pathname extends canonical by dot suffix (e.g. .page)', async () => {
+    const probed = 'https://example.com/r-dot';
+    const terminal = 'https://example.com/support/contact-us.page';
+    const canonicalClean = 'https://example.com/support/contact-us';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/r-dot')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/support/contact-us.page').reply(200);
+    nock('https://example.com')
+      .get('/support/contact-us.page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('GET for canonical uses non-HTML response without changing redirect notOk', async () => {
+    const probed = 'https://example.com/r-json';
+    const terminal = 'https://example.com/data.json';
+
+    nock('https://example.com')
+      .head('/r-json')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/data.json').reply(200);
+    nock('https://example.com')
+      .get('/data.json')
+      .reply(200, '{}', { 'Content-Type': 'application/json' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('leaves redirect notOk when GET for canonical document fails', async () => {
+    const probed = 'https://example.com/r-get-fail';
+    const terminal = 'https://example.com/dest-fail';
+
+    nock('https://example.com')
+      .head('/r-get-fail')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/dest-fail').reply(200);
+    nock('https://example.com')
+      .get('/dest-fail')
+      .replyWithError('ECONNRESET');
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('parses canonical when GET uses non-sniffable content-type but body starts with tag', async () => {
+    const probed = 'https://example.com/r-sniff';
+    const terminal = 'https://example.com/same-page?tracked=1';
+    const canonicalClean = 'https://example.com/same-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head></html>`;
+
+    nock('https://example.com')
+      .head('/r-sniff')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/same-page').query(true).reply(200);
+    nock('https://example.com')
+      .get('/same-page')
+      .query(true)
+      .reply(200, html, { 'Content-Type': 'application/xml' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('applies request throttle before canonical GET on redirect probes', async () => {
+    const probed = 'https://example.com/r-can-throttle';
+    const terminal = 'https://example.com/can-throttle-term';
+    const intervalMs = 35;
+
+    nock('https://example.com')
+      .head('/r-can-throttle')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/can-throttle-term').reply(200);
+    nock('https://example.com')
+      .get('/can-throttle-term')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    const started = Date.now();
+    const result = await filterValidUrls([probed], undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+      pageUrlBatchDelayMs: 0,
+      pageUrlHttpRequestIntervalMs: intervalMs,
+    });
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+    expect(Date.now() - started).to.be.at.least(intervalMs - 5);
+  });
+
+  it('skips canonical parsing when GET document returns non-OK status', async () => {
+    const probed = 'https://example.com/r-can-500';
+    const terminal = 'https://example.com/can-500-term';
+
+    nock('https://example.com')
+      .head('/r-can-500')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/can-500-term').reply(200);
+    nock('https://example.com').get('/can-500-term').reply(500);
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('treats text/html with empty body as no canonical for redirect refine', async () => {
+    const probed = 'https://example.com/r-empty-html';
+    const terminal = 'https://example.com/empty-html-term';
+
+    nock('https://example.com')
+      .head('/r-empty-html')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/empty-html-term').reply(200);
+    nock('https://example.com')
+      .get('/empty-html-term')
+      .reply(200, '', { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('parses canonical when GET omits Content-Type but body is HTML', async () => {
+    const probed = 'https://example.com/r-no-ct';
+    const terminal = 'https://example.com/same-no-ct?x=1';
+    const canonicalClean = 'https://example.com/same-no-ct';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head></html>`;
+
+    nock('https://example.com')
+      .head('/r-no-ct')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/same-no-ct').query(true).reply(200);
+    nock('https://example.com').get('/same-no-ct').query(true).reply(200, html);
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+  });
+
+  it('uses content-type only for HTML detection when body does not start with a tag', async () => {
+    const probed = 'https://example.com/r-plain-in-html';
+    const terminal = 'https://example.com/plain-in-html-term';
+
+    nock('https://example.com')
+      .head('/r-plain-in-html')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/plain-in-html-term').reply(200);
+    nock('https://example.com')
+      .get('/plain-in-html-term')
+      .reply(200, 'no angle bracket here', { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('ignores non-http(s) canonical href from HTML', async () => {
+    const probed = 'https://example.com/r-ftp';
+    const terminal = 'https://example.com/ftp-page';
+    const html = '<!DOCTYPE html><html><head>'
+      + '<link rel="canonical" href="ftp://example.com/same" />'
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/r-ftp')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/ftp-page').reply(200);
+    nock('https://example.com')
+      .get('/ftp-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      { url: probed, statusCode: 301, urlsSuggested: terminal },
+    ]);
+  });
+
+  it('keeps notOk when canonical path matches probed but href differs by trailing slash', async () => {
+    const probed = 'https://example.com/probed-trailing/';
+    const finalPage = 'https://example.com/final-ts';
+    const canonicalWithoutSlash = 'https://example.com/probed-trailing';
+    const html = '<!DOCTYPE html><html><head>'
+      + `<link rel="canonical" href="${canonicalWithoutSlash}" />`
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/probed-trailing/')
+      .reply(301, '', { Location: finalPage });
+    nock('https://example.com').head('/final-ts').reply(200);
+    nock('https://example.com')
+      .get('/final-ts')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalWithoutSlash,
+      },
+    ]);
+  });
+
+  it('keeps notOk when canonical is http but probed URL is https', async () => {
+    const probed = 'https://example.com/probed-http-canonical';
+    const terminal = 'http://example.com/terminal-http';
+    const httpCanonical = 'http://example.com/probed-http-canonical';
+    const html = '<!DOCTYPE html><html><head>'
+      + `<link rel="canonical" href="${httpCanonical}" />`
+      + '</head><body></body></html>';
+
+    nock('https://example.com')
+      .head('/probed-http-canonical')
+      .reply(301, '', { Location: terminal });
+    nock('http://example.com').head('/terminal-http').reply(200);
+    nock('http://example.com')
+      .get('/terminal-http')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: httpCanonical,
+      },
+    ]);
+  });
+
+  it('keeps notOk with https urlsSuggested when probed URL is http', async () => {
+    const probed = 'http://www.example.com/page1.html';
+    const httpsSuggested = 'https://www.example.com/page1.html';
+
+    nock('http://www.example.com')
+      .head('/page1.html')
+      .reply(301, '', { Location: httpsSuggested });
+    nock('https://www.example.com').head('/page1.html').reply(200);
+    nock('https://www.example.com')
+      .get('/page1.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: httpsSuggested,
+      },
+    ]);
+  });
+
+  it('uses https Location when refine GETs http suggested URL', async () => {
+    const probed = 'https://example.com/old-https-to-http';
+    const httpTerminal = 'http://example.com/dest-page';
+    const canonicalHttps = 'https://example.com/dest-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/old-https-to-http')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/dest-page').reply(403);
+    nock('http://example.com')
+      .get('/dest-page')
+      .reply(301, '', { Location: canonicalHttps });
+    nock('https://example.com')
+      .get('/dest-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+  });
+
+  it('refines http suggested URL to https via Location then canonical', async () => {
+    const probed = 'https://example.com/fallback-http-get';
+    const httpTerminal = 'http://example.com/http-only-page';
+    const canonicalHttps = 'https://example.com/http-only-page';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
+
+    nock('https://example.com')
+      .head('/fallback-http-get')
+      .reply(301, '', { Location: httpTerminal });
+    nock('http://example.com').head('/http-only-page').reply(200);
+    nock('http://example.com')
+      .get('/http-only-page')
+      .reply(301, '', { Location: canonicalHttps });
+    nock('https://example.com')
+      .get('/http-only-page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalHttps,
+      },
+    ]);
+  });
+});
+
+describe('better', () => {
+  it('returns null when both inputs are null', () => {
+    expect(better(null, null)).to.be.null;
+  });
+
+  it('returns null when URLs are not similar', () => {
+    expect(better(
+      'https://example.com/a.page',
+      'https://example.com/b',
+    )).to.be.null;
+  });
+
+  it('prefers https when paths match under pathnameKey', () => {
+    expect(better(
+      'http://example.com/foo',
+      'https://example.com/foo',
+    )).to.equal('https://example.com/foo');
+  });
+
+  it('returns shorter URL for dot-suffix relationship', () => {
+    expect(better(
+      'https://example.com/dir/name.page',
+      'https://example.com/dir/name',
+    )).to.equal('https://example.com/dir/name');
+  });
+
+  it('prefers URL without query when pathnameKey matches', () => {
+    expect(better(
+      'https://example.com/p?x=1',
+      'https://example.com/p',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('returns urlB when urlA is empty and urlB is set', () => {
+    expect(better('', 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when urlB is null', () => {
+    expect(better('https://example.com/p', null)).to.equal('https://example.com/p');
+  });
+
+  it('returns null when urlA is null and urlB is set', () => {
+    expect(better(null, 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlB when urlA is undefined and urlB is set', () => {
+    expect(better(undefined, 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when urlB is undefined', () => {
+    expect(better('https://example.com/p', undefined)).to.equal('https://example.com/p');
+  });
+
+  it('returns null when URL parsing fails during better after urlsAreSimilar', () => {
+    expect(better('not-a-url', 'not-a-url')).to.be.null;
+  });
+
+  it('returns null when URL parsing fails during better', () => {
+    expect(better('not-a-url', 'https://example.com/p')).to.be.null;
+  });
+
+  it('returns urlA when secondUrl is better in reverse argument order', () => {
+    expect(better(
+      'https://example.com/name',
+      'https://example.com/name.page',
+    )).to.equal('https://example.com/name');
+  });
+
+  it('prefers urlA when urlB has query and urlA does not', () => {
+    expect(better(
+      'https://example.com/p',
+      'https://example.com/p?q=1',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('prefers urlB when urlA has query and urlB does not', () => {
+    expect(better(
+      'https://example.com/p?q=1',
+      'https://example.com/p',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('strips both query strings when pathnameKey matches and both have search', () => {
+    expect(better(
+      'https://example.com/p?a=1',
+      'https://example.com/p?b=2',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when preferUrl URL parsing throws inside better', () => {
+    const OriginalURL = globalThis.URL;
+    let urlCalls = 0;
+    sandbox.stub(globalThis, 'URL').callsFake((input, base) => {
+      urlCalls += 1;
+      if (urlCalls >= 13 && urlCalls <= 15) {
+        throw new TypeError('Invalid URL');
+      }
+      return new OriginalURL(input, base);
+    });
+    expect(better(
+      'https://example.com/p?a=1',
+      'https://example.com/p?b=2',
+    )).to.equal('https://example.com/p?a=1');
+  });
+
+  it('returns shorter href when pathnameKey matches and neither has search', () => {
+    expect(better(
+      'https://example.com/foo/',
+      'https://example.com/foo',
+    )).to.equal('https://example.com/foo');
+  });
+});
+
+describe('readHtmlBody', () => {
+  it('returns null when response is not ok', async () => {
+    const result = await readHtmlBody({
+      ok: false,
+      headers: { get: () => '' },
+      text: async () => '',
+    });
+    expect(result).to.be.null;
+  });
+
+  it('returns null when response is ok but body is not HTML', async () => {
+    const result = await readHtmlBody({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      text: async () => '{"not":"html"}',
+    });
+    expect(result).to.be.null;
+  });
+});
+
+describe('refineSuggestedUrl', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('returns canonical from 200 HTML response', async () => {
+    const suggested = 'https://example.com/page';
+    const canonical = 'https://example.com/canonical-page';
+    const html = `<html><head><link rel="canonical" href="${canonical}" /></head></html>`;
+    nock('https://example.com')
+      .get('/page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(canonical);
+  });
+
+  it('uses better with Location when suggested URL redirects', async () => {
+    const log = { debug: sandbox.spy() };
+    nock('http://example.com')
+      .get('/only-http')
+      .reply(301, '', { Location: 'https://example.com/only-http' });
+
+    const suggested = 'http://example.com/only-http';
+    const result = await refineSuggestedUrl(suggested, { log });
+    expect(result).to.equal('https://example.com/only-http');
+    expect(log.debug).to.have.been.calledWith(
+      sinon.match(/refineSuggestedUrl redirect Location picked/),
+    );
+  });
+
+  it('does not log when redirect Location picks the same URL as suggested', async () => {
+    const suggested = 'https://example.com/same-path';
+    const log = { debug: sandbox.spy() };
+    nock('https://example.com')
+      .get('/same-path')
+      .reply(301, '', { Location: suggested });
+
+    const result = await refineSuggestedUrl(suggested, { log });
+    expect(result).to.equal(suggested);
+    expect(log.debug).not.to.have.been.called;
+  });
+
+  it('returns suggestedUrl when redirect has no Location header', async () => {
+    const suggested = 'https://example.com/no-loc';
+    nock('https://example.com').get('/no-loc').reply(302, '');
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when Location URL constructor throws', async () => {
+    const esmock = (await import('esmock')).default;
+    const suggested = 'https://example.com/refine-direct-loc';
+    const { refineResponsePayload: refinePayloadMocked } = await esmock(
+      '../../src/sitemap/common.js',
+      {
+        '@adobe/spacecat-shared-utils': {
+          tracingFetch: async () => ({
+            status: 301,
+            ok: false,
+            headers: {
+              get: (name) => (String(name).toLowerCase() === 'location' ? 'http://' : null),
+            },
+            text: async () => '',
+          }),
+        },
+      },
+    );
+
+    const result = await refinePayloadMocked({
+      probedUrl: 'https://example.com/other-page',
+      notOkPayload: {
+        type: 'notOk',
+        url: 'https://example.com/probed',
+        statusCode: 301,
+        urlsSuggested: suggested,
+      },
+    });
+    expect(result.urlsSuggested).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when redirect Location yields better null', async () => {
+    const suggested = 'https://example.com/a.page';
+    nock('https://example.com')
+      .get('/a.page')
+      .reply(301, '', { Location: 'https://example.com/entirely/other-path' });
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns empty string for null suggestedUrl', async () => {
+    expect(await refineSuggestedUrl(null)).to.equal('');
+  });
+
+  it('returns empty string for undefined suggestedUrl', async () => {
+    expect(await refineSuggestedUrl(undefined)).to.equal('');
+  });
+
+  it('returns suggestedUrl when redirect Location targets auth', async () => {
+    const suggested = 'https://example.com/to-auth';
+    nock('https://example.com')
+      .get('/to-auth')
+      .reply(301, '', { Location: 'https://example.com/login' });
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when fetch fails', async () => {
+    nock('https://example.com').get('/net-fail').replyWithError('ECONNRESET');
+
+    const result = await refineSuggestedUrl('https://example.com/net-fail');
+    expect(result).to.equal('https://example.com/net-fail');
+  });
+});
+
+describe('refineResponsePayload', () => {
+  it('returns notOk unchanged when urlsSuggested is empty', async () => {
+    const row = { type: 'notOk', url: 'https://example.com/x', statusCode: 301, urlsSuggested: '' };
+    const result = await refineResponsePayload({
+      probedUrl: 'https://example.com/x',
+      notOkPayload: row,
+    });
+    expect(result).to.equal(row);
+  });
+
+  it('promotes to ok when refined suggested URL equals probed exactly', async () => {
+    const probed = 'https://example.com/exact-probed';
+    const suggested = 'https://example.com/final';
+    const html = `<html><head><link rel="canonical" href="${probed}" /></head></html>`;
+    const log = { info: sandbox.spy(), debug: sandbox.spy() };
+    nock('https://example.com')
+      .get('/final')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await refineResponsePayload({
+      probedUrl: probed,
+      notOkPayload: { type: 'notOk', url: probed, statusCode: 301, urlsSuggested: suggested },
+      log,
+    });
+    expect(result).to.deep.equal({ type: 'ok', url: probed });
+    expect(log.info).to.have.been.calledWith(sinon.match(/marking OK/));
+  });
+
+  it('keeps notOk when refined URL differs from probed only by scheme', async () => {
+    const probed = 'http://www.example.com/page1.html';
+    const suggested = 'https://www.example.com/page1.html';
+    nock('https://www.example.com')
+      .get('/page1.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    const result = await refineResponsePayload({
+      probedUrl: probed,
+      notOkPayload: { type: 'notOk', url: probed, statusCode: 301, urlsSuggested: suggested },
+    });
+    expect(result).to.deep.equal({
+      type: 'notOk',
+      url: probed,
+      statusCode: 301,
+      urlsSuggested: suggested,
+    });
+  });
+});
+
+describe('pathnameKey', () => {
+  it('normalizes trailing slash on pathname (except root)', () => {
+    expect(pathnameKey('https://ExAmple.com/foo/')).to.equal('https://example.com/foo');
+    expect(pathnameKey('https://example.com/')).to.equal('https://example.com/');
+  });
+
+  it('normalizes http and https to the same https comparison key', () => {
+    expect(pathnameKey('http://ExAmple.com/foo/')).to.equal('https://example.com/foo');
+    expect(pathnameKey('http://example.com/bar')).to.equal('https://example.com/bar');
+    expect(pathnameKey('https://example.com/bar')).to.equal('https://example.com/bar');
+  });
+
+  it('preserves non-http(s) schemes for comparison keys', () => {
+    expect(pathnameKey('ftp://Example.COM/pub/')).to.equal('ftp://example.com/pub');
+  });
+
+  it('returns original string when URL parsing fails', () => {
+    expect(pathnameKey('not-a-valid-url')).to.equal('not-a-valid-url');
+  });
+});
+
+describe('secondUrlIsBetterChoiceThanFirstUrl', () => {
+  it('treats http and https as compatible for dot-suffix matching', () => {
+    expect(HTTP_AND_HTTPS_PROTOCOLS).to.deep.equal(['http:', 'https:']);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'http://www.example.com/dir/name.page',
+      'https://www.example.com/dir/name',
+    )).to.equal(true);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://www.example.com/dir/name.page',
+      'http://www.example.com/dir/name',
+    )).to.equal(true);
+  });
+
+  it('returns true when terminal path is canonical path plus dot suffix (e.g. .page)', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://www.ups.com/us/en/support/contact-us.page',
+      'https://www.ups.com/us/en/support/contact-us',
+    )).to.equal(true);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://Example.COM/a/b.html',
+      'https://example.com/a/b',
+    )).to.equal(true);
+  });
+
+  it('returns true when trailing slashes normalize to the same dot-suffix relationship', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/dir/name.page/',
+      'https://example.com/dir/name/',
+    )).to.equal(true);
+  });
+
+  it('returns false when extra segment would be another path level', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/foo/bar',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when suggested pathname does not start with canonical pathname', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/a/c.page',
+      'https://example.com/a/b',
+    )).to.equal(false);
+  });
+
+  it('returns false when dot-suffix segment contains a slash', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/can./more',
+      'https://example.com/can',
+    )).to.equal(false);
+  });
+
+  it('returns false when rest is only a dot (no suffix segment)', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/foo.',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths share a string prefix but not a dot boundary (e.g. /blog vs /blogging)', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/blogging',
+      'https://example.com/blog',
+    )).to.equal(false);
+  });
+
+  it('returns false for invalid URLs, mismatched host, or non-web protocol vs https', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl('', 'https://example.com/a')).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'not-a-url',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/a.page',
+      'not-a-url',
+    )).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://other.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'ftp://example.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/a.page',
+      'ftp://example.com/a',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths are identical (not a dot-suffix extension)', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/p',
+      'https://example.com/p',
+    )).to.equal(false);
+  });
+
+  it('returns false when suggested pathname is shorter than canonical pathname', () => {
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
+      'https://example.com/foo',
+      'https://example.com/foo/bar',
+    )).to.equal(false);
+  });
+});
+
+describe('extractCanonicalHrefFromHtml', () => {
+  it('returns null for empty or non-string body', () => {
+    expect(extractCanonicalHrefFromHtml('', 'https://example.com/')).to.be.null;
+    expect(extractCanonicalHrefFromHtml(null, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns resolved href for canonical in body when missing from head', () => {
+    const html = '<!DOCTYPE html><html><head></head><body>'
+      + '<link rel="canonical" href="/from-body" /></body></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/doc')).to.equal(
+      'https://example.com/from-body',
+    );
+  });
+
+  it('returns null when href is empty', () => {
+    const html = '<html><head><link rel="canonical" href="" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns null when href is only whitespace', () => {
+    const html = '<html><head><link rel="canonical" href="   " /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
+  });
+
+  it('returns null when documentUrl is missing', () => {
+    const html = '<html><head><link rel="canonical" href="/x" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, '')).to.be.null;
+  });
+
+  it('returns null when new URL throws for href resolution', () => {
+    const html = '<html><head><link rel="canonical" href="http://[" /></head></html>';
+    expect(extractCanonicalHrefFromHtml(html, 'https://example.com/')).to.be.null;
   });
 });
 
@@ -1766,11 +3422,12 @@ describe('filterValidUrls with status code tracking', () => {
     nock.cleanAll();
   });
 
-  it('should only track specified status codes (301, 302, 404)', async () => {
+  it('should only track specified status codes (301, 302, 303, 404)', async () => {
     const urls = [
       'https://example.com/ok',
       'https://example.com/permanent-redirect',
       'https://example.com/temp-redirect',
+      'https://example.com/see-other-redirect',
       'https://example.com/not-found',
       'https://example.com/server-error',
       'https://example.com/forbidden',
@@ -1783,6 +3440,9 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com')
       .head('/temp-redirect')
       .reply(302, '', { Location: 'https://example.com/temp' });
+    nock('https://example.com')
+      .head('/see-other-redirect')
+      .reply(303, '', { Location: 'https://example.com/other' });
     nock('https://example.com').head('/not-found').reply(404);
     nock('https://example.com').head('/server-error').reply(500);
     nock('https://example.com').head('/forbidden').reply(403);
@@ -1790,6 +3450,16 @@ describe('filterValidUrls with status code tracking', () => {
     // Mock validation of suggested URLs
     nock('https://example.com').head('/new').reply(200);
     nock('https://example.com').head('/temp').reply(200);
+    nock('https://example.com').head('/other').reply(200);
+    nock('https://example.com')
+      .get('/new')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+    nock('https://example.com')
+      .get('/temp')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+    nock('https://example.com')
+      .get('/other')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -1808,8 +3478,14 @@ describe('filterValidUrls with status code tracking', () => {
         urlsSuggested: 'https://example.com/temp',
       },
       {
+        url: 'https://example.com/see-other-redirect',
+        statusCode: 303,
+        urlsSuggested: 'https://example.com/other',
+      },
+      {
         url: 'https://example.com/not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
 
@@ -1818,7 +3494,7 @@ describe('filterValidUrls with status code tracking', () => {
     expect(result.notOk.some((item) => item.statusCode === 403)).to.be.false;
   });
 
-  it('should suggest homepage for redirects to 404 patterns and final URL for normal redirects', async () => {
+  it('should set urlsSuggested to empty string for redirects to 404 patterns and suggest terminal URL for normal redirects', async () => {
     const urls = [
       'https://example.com/redirect-to-404-page',
       'https://example.com/redirect-to-404-path',
@@ -1846,29 +3522,31 @@ describe('filterValidUrls with status code tracking', () => {
 
     // Mock validation requests for redirect targets
     nock('https://example.com').head('/404.html').reply(404);
+    nock('https://example.com').get('/404.html').reply(404);
     nock('https://example.com').head('/404/not-found').reply(404);
+    nock('https://example.com').get('/404/not-found').reply(404);
     nock('https://example.com').head('/errors/404/page').reply(404);
+    nock('https://example.com').get('/errors/404/page').reply(404);
     nock('https://example.com').head('/valid-page').reply(200);
-
-    // Mock homepage validation for 404 pattern redirects
-    nock('https://example.com').head('/').times(3).reply(200);
+    nock('https://example.com')
+      .get('/valid-page')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.have.length(4);
 
-    // Redirects to 404 patterns should suggest homepage URL
+    // Redirects to clear 404 targets: no safe replacement URL
     const redirectsTo404 = result.notOk.filter(
       (item) => item.url.includes('redirect-to-404')
         || item.url.includes('redirect-to-errors-404'),
     );
 
     redirectsTo404.forEach((item) => {
-      expect(item.statusCode).to.equal(301);
-      expect(item.urlsSuggested).to.equal('https://example.com');
+      expect(item.statusCode).to.equal(404);
+      expect(item.urlsSuggested).to.equal('');
     });
 
-    // Normal redirect should suggest the final URL
     const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
     expect(normalRedirect.statusCode).to.equal(301);
     expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
@@ -1907,15 +3585,29 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
       {
         url: 'https://example.com/truly-not-found',
         statusCode: 404,
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should not fallback to GET when HEAD returns non-404 status', async () => {
+  it('should fallback to GET when HEAD returns 403 and GET returns 200', async () => {
+    const urls = ['https://example.com/head-403-get-200'];
+
+    nock('https://example.com').head('/head-403-get-200').reply(403);
+    nock('https://example.com').get('/head-403-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-403-get-200']);
+    expect(result.notOk).to.be.empty;
+    expect(result.otherStatusCodes).to.be.empty;
+  });
+
+  it('should use GET fallback when HEAD returns 403 and classify final 403 as otherStatus', async () => {
     const urls = ['https://example.com/head-403'];
 
-    // HEAD returns 403, no GET fallback should happen
     nock('https://example.com').head('/head-403').reply(403);
+    nock('https://example.com').get('/head-403').reply(403);
 
     const result = await filterValidUrls(urls);
 
@@ -1929,6 +3621,17 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     ]);
   });
 
+  it('should fallback to GET when HEAD returns 405 and GET returns 200', async () => {
+    const urls = ['https://example.com/head-405-get-200'];
+
+    nock('https://example.com').head('/head-405-get-200').reply(405);
+    nock('https://example.com').get('/head-405-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-405-get-200']);
+  });
+
   it('should apply HEAD to GET fallback for redirect URL validation', async () => {
     const urls = ['https://example.com/redirect-to-head-404-get-200'];
 
@@ -1939,7 +3642,10 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
 
     // Target page returns 404 for HEAD but 200 for GET
     nock('https://example.com').head('/target-page').reply(404);
-    nock('https://example.com').get('/target-page').reply(200);
+    nock('https://example.com')
+      .get('/target-page')
+      .times(2)
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls(urls);
 
@@ -1950,5 +3656,129 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
         urlsSuggested: 'https://example.com/target-page',
       },
     ]);
+  });
+
+  it('should treat 200 probed URL as notOk when path looks like a 404 page', async () => {
+    const urls = ['https://example.com/errors/404/soft'];
+
+    nock('https://example.com').head('/errors/404/soft').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/errors/404/soft',
+        statusCode: 404,
+      },
+    ]);
+  });
+
+  it('calls log.debug for soft 404 classification when log is provided', async () => {
+    const urls = ['https://example.com/errors/404/soft'];
+    nock('https://example.com').head('/errors/404/soft').reply(200);
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.debug).to.have.been.calledWith(sinon.match(/soft.? 404 page/i));
+  });
+
+  it('calls log.error when redirect has no Location and log is provided', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, '');
+    const log = { error: sandbox.spy(), debug: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.error).to.have.been.calledWith(sinon.match(/no 'Location' header/));
+  });
+
+  it('does not call log.info when first hop equals terminal candidate on redirect suggestion', async () => {
+    const urls = ['https://example.com/redirect-waf'];
+    nock('https://example.com')
+      .head('/redirect-waf')
+      .reply(301, '', { Location: 'https://example.com/first-hop-page' });
+    nock('https://example.com').head('/first-hop-page').reply(403);
+    nock('https://example.com').get('/first-hop-page').reply(403);
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.info).not.to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+  });
+
+  it('calls log.info for first-hop redirect suggestion when terminal differs from first hop', async () => {
+    const urls = ['https://example.com/start'];
+    nock('https://example.com')
+      .head('/start')
+      .reply(302, '', { Location: 'https://example.com/mid' });
+    nock('https://example.com')
+      .head('/mid')
+      .reply(302, '', { Location: 'https://example.com/end' });
+    nock('https://example.com').head('/end').reply(403);
+    nock('https://example.com').get('/end').reply(403);
+    const log = { info: sandbox.spy(), debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.info).to.have.been.calledWith(sinon.match(/recommending first hop URL/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/first hop: https:\/\/example\.com\/mid/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/terminal candidate: https:\/\/example\.com\/end/));
+  });
+
+  it('calls log.debug when redirect terminal is clearly bad and log is provided', async () => {
+    const urls = ['https://example.com/orig-301-404'];
+    nock('https://example.com')
+      .head('/orig-301-404')
+      .reply(301, '', { Location: 'https://example.com/term-404' });
+    nock('https://example.com').head('/term-404').reply(404);
+    nock('https://example.com')
+      .get('/term-404')
+      .times(2)
+      .reply(404);
+    const log = { error: sandbox.spy(), debug: sandbox.spy() };
+
+    const result = await filterValidUrls(urls, log);
+
+    expect(log.debug).to.have.been.calledWith(sinon.match(/does not resolve to a valid terminal/));
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/orig-301-404',
+        statusCode: 404,
+        urlsSuggested: '',
+      },
+    ]);
+  });
+
+  it('calls log.debug on network error during URL probe', async () => {
+    nock('https://example.com').head('/network-err').replyWithError('ECONNRESET');
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    const result = await filterValidUrls(['https://example.com/network-err'], log);
+
+    expect(result.networkErrors).to.have.length(1);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/network error/i));
+  });
+
+  it('should space HEAD and GET fallback when pageUrlHttpRequestIntervalMs is set', async () => {
+    const urls = ['https://example.com/slow-head-get'];
+    const intervalMs = 40;
+
+    nock('https://example.com').head('/slow-head-get').reply(404);
+    nock('https://example.com').get('/slow-head-get').reply(200);
+
+    const started = Date.now();
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+      pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+      pageUrlHttpRequestIntervalMs: intervalMs,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(result.ok).to.deep.equal(['https://example.com/slow-head-get']);
+    expect(elapsed).to.be.at.least(intervalMs - 5);
   });
 });

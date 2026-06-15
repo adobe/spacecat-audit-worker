@@ -1,0 +1,93 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { sleep } from '../support/utils.js';
+
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
+
+function normalizeRuleRows(rows = []) {
+  return (rows || []).map((row, index) => ({
+    name: row.name,
+    regex: row.regex,
+    sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
+    source: row.source ?? 'ai',
+    sample_urls: Array.isArray(row.sample_urls) ? row.sample_urls : [],
+    derivation_method: row.derivation_method ?? null,
+  }));
+}
+
+/**
+ * Reads agentic URL classification rules from Postgres through native
+ * PostgREST table endpoints.
+ */
+export async function fetchAgenticUrlClassificationRules(site, context = {}) {
+  const log = context?.log || console;
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+  const siteId = site.getId();
+
+  if (!postgrestClient?.from) {
+    log.warn('fetchAgenticUrlClassificationRules: no PostgREST client available, skipping DB rule fetch');
+    return null;
+  }
+
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+    try {
+      // Exclude customer-soft-deleted rules. Requires data-service migration
+      // 20260602140944 (adds `status`) to deploy before this filter.
+      // eslint-disable-next-line no-await-in-loop
+      const [categoryResult, pageTypeResult] = await Promise.all([
+        postgrestClient
+          .from('agentic_url_category_rules')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
+          .eq('site_id', siteId)
+          .eq('status', 'active')
+          .order('sort_order', { ascending: true })
+          .order('name', { ascending: true }),
+        postgrestClient
+          .from('agentic_url_page_type_rules')
+          .select('name,regex,sort_order,source,sample_urls,derivation_method')
+          .eq('site_id', siteId)
+          .eq('status', 'active')
+          .order('sort_order', { ascending: true })
+          .order('name', { ascending: true }),
+      ]);
+
+      if (categoryResult.error) {
+        throw categoryResult.error;
+      }
+      if (pageTypeResult.error) {
+        throw pageTypeResult.error;
+      }
+
+      const topicPatterns = normalizeRuleRows(categoryResult.data);
+      const pagePatterns = normalizeRuleRows(pageTypeResult.data);
+
+      log.info(`fetchAgenticUrlClassificationRules: loaded ${pagePatterns.length} page patterns, ${topicPatterns.length} topic patterns for site ${siteId}`);
+
+      return {
+        pagePatterns,
+        topicPatterns,
+      };
+    } catch (error) {
+      if (attempt <= MAX_RETRIES) {
+        log.warn(`fetchAgenticUrlClassificationRules: attempt ${attempt} failed for site ${siteId}: ${error.message}, retrying in ${RETRY_DELAY_MS * attempt}ms...`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(RETRY_DELAY_MS * attempt);
+      } else {
+        log.error(`fetchAgenticUrlClassificationRules: failed to load rules for site ${siteId} after ${attempt} attempts: ${error.message}`);
+      }
+    }
+  }
+
+  return { error: true, source: 'postgres' };
+}

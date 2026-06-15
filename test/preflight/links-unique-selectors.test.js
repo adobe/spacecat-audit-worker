@@ -10,14 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { MockContextBuilder } from '../shared.js';
-import { preflightAudit } from '../../src/preflight/handler.js';
 
 use(sinonChai);
 
@@ -28,6 +26,7 @@ describe('Preflight Links - Unique Selector Tests', () => {
   let job;
   let s3Client;
   let configuration;
+  let preflightAudit;
 
   // Simplified HTML based on user's real page structure
   const testHtml = `
@@ -127,12 +126,18 @@ describe('Preflight Links - Unique Selector Tests', () => {
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
     const mockTierClient = {
-      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
     };
     if (TierClient.createForSite && TierClient.createForSite.restore) {
       TierClient.createForSite.restore();
     }
     sinon.stub(TierClient, 'createForSite').resolves(mockTierClient);
+
+    const { preflightAudit: preflightAuditFn } = await esmock('../../src/preflight/handler.js', {
+      '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+      '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
+    });
+    preflightAudit = preflightAuditFn;
   });
 
   afterEach(() => {

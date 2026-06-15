@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -40,6 +38,7 @@ describe('Index siteId handling and validation flag', () => {
           }),
         },
       },
+      env: {},
       log: {
         debug: sandbox.spy(),
         info: sandbox.spy(),

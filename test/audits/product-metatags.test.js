@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -642,14 +641,11 @@ describe('Product MetaTags', () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
         const result = await submitForScraping(context);
+        // PDFs are pre-filtered by getMergedAuditInputUrls
         expect(result.urls).to.deep.equal([
           { url: 'http://example.com/product1' },
           { url: 'http://example.com/product2' },
         ]);
-
-        // Verify PDF files were logged as skipped
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/catalog.pdf');
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/guide.PDF');
       });
 
       it('should handle malformed URLs gracefully in isPdfUrl', async () => {
@@ -1427,6 +1423,7 @@ describe('Product MetaTags', () => {
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
+            saveMany: sinon.stub().resolves(),
           },
         };
         context = {
@@ -1594,8 +1591,8 @@ describe('Product MetaTags', () => {
           toOverride: true,
         });
 
-        // Verify the suggestion was saved
-        expect(existingSuggestion.save).to.be.calledOnce;
+        // Verify the suggestions were saved via saveMany
+        expect(dataAccessStub.Suggestion.saveMany).to.be.calledOnce;
       });
 
       it('should throw error if suggestions fail to create', async () => {
@@ -2103,7 +2100,7 @@ describe('Product MetaTags', () => {
     });
 
     it('should generate AI suggestions for product metatags', async () => {
-      const result = await localProductMetatagsAutoSuggest(allTags, context, siteStub);
+      const result = await localProductMetatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
 
       expect(result).to.deep.equal({
         '/product1': {
@@ -2127,11 +2124,8 @@ describe('Product MetaTags', () => {
       expect(log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Generated AI suggestions for Product-metatags using Genvar.');
     });
 
-    it('should return original detected tags when auto-suggest is disabled', async () => {
-      Configuration.findLatest.resolves({
-        isHandlerEnabledForSite: sinon.stub().returns(false),
-      });
-
+    it('should return original detected tags when forceAutoSuggest is false', async () => {
+      // No options = forceAutoSuggest false, so we return early without calling Genvar
       const result = await localProductMetatagsAutoSuggest(allTags, context, siteStub);
 
       expect(result).to.deep.equal(allTags.detectedTags);
@@ -2175,7 +2169,7 @@ describe('Product MetaTags', () => {
     it('should handle errors from Genvar API', async () => {
       genvarClientStub.generateSuggestions.rejects(new Error('Genvar API Error'));
 
-      await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub))
+      await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true }))
         .to.be.rejectedWith('Genvar API Error');
 
       expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
@@ -2184,7 +2178,7 @@ describe('Product MetaTags', () => {
     it('should handle invalid response from Genvar API', async () => {
       genvarClientStub.generateSuggestions.resolves('invalid response');
 
-      await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub))
+      await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true }))
         .to.be.rejectedWith('Invalid response received from Genvar API: "invalid response"');
 
       expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
@@ -2215,7 +2209,7 @@ describe('Product MetaTags', () => {
         },
       });
 
-      const result = await productMetatagsAutoSuggestMocked.default(allTags, context, siteStub);
+      const result = await productMetatagsAutoSuggestMocked.default(allTags, context, siteStub, { forceAutoSuggest: true });
 
       // The presigned URL will be empty string, but the suggestions should still be generated
       expect(mockGetPresignedUrl).to.have.been.called;
@@ -2563,8 +2557,7 @@ describe('Product MetaTags', () => {
       expect(result.projectedTrafficValue).to.be.a('number');
     });
 
-    it('should return empty object when RUM API fails', async function () {
-      this.timeout(5000);
+    it('should return empty object when RUM API fails', async () => {
       const detectedTags = {
         '/page1': { title: { issue: 'Missing Title', tagName: 'title' } },
       };
@@ -2576,6 +2569,12 @@ describe('Product MetaTags', () => {
               query: sinon.stub().rejects(new Error('RUM API error')),
             }),
           },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
         },
       });
 
@@ -3135,6 +3134,73 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       // Verify the function executed successfully with site config handling
       expect(logStub.info).to.have.been.called;
+    });
+
+    it('should skip remote config when commerceLlmoConfig is set', async () => {
+      const siteWithManualConfig = {
+        getId: sinon.stub().returns('site123'),
+        getBaseURL: sinon.stub().returns('https://example.com'),
+        getDeliveryConfig: sinon.stub().returns({ useHostnameOnly: false }),
+        getConfig: sinon.stub().returns({
+          state: {
+            commerceLlmoConfig: {
+              'https://example.com': {
+                environmentId: 'env-1',
+                websiteCode: 'web-1',
+                storeCode: 'store-1',
+                storeViewCode: 'view-1',
+              },
+            },
+          },
+          getIncludedURLs: sinon.stub().returns([]),
+          getFetchConfig: sinon.stub().returns({ overrideBaseURL: null }),
+          getDeliveryConfig: sinon.stub().returns({}),
+          getHandlers: sinon.stub().returns({}),
+        }),
+      };
+
+      mockDataAccess.Site = {
+        findById: sinon.stub().resolves(siteWithManualConfig),
+      };
+
+      mockDataAccess.Opportunity.create.resolves({
+        getId: () => 'opportunity123',
+        getSiteId: () => 'site123',
+        addSuggestions: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves([]),
+      });
+
+      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([]),
+        },
+        '../../src/product-metatags/product-metatags-auto-suggest.js': {
+          default: sinon.stub().resolves({}),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: () => ({
+              query: sinon.stub().resolves([]),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
+      });
+
+      const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
+
+      const result = await mockedRunAudit(mockContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Audit completed successfully');
     });
 
     it('should handle missing site config', async function () {
@@ -3977,7 +4043,7 @@ describe('Product MetaTags', () => {
       const site = { getBaseURL: () => 'https://example.com' };
       const allTags = { detectedTags: {}, extractedTags: {}, healthyTags: [] };
 
-      await productMetatagsAutoSuggest.default(allTags, ctx, site);
+      await productMetatagsAutoSuggest.default(allTags, ctx, site, { forceAutoSuggest: true });
 
       // Verify that generateSuggestions was called with the fallback endpoint
       expect(mockGenvarClient.generateSuggestions).to.have.been.calledWith(
@@ -4022,7 +4088,7 @@ describe('Product MetaTags', () => {
 
       const site = { getBaseURL: () => 'https://example.com' };
       const allTags = { detectedTags: {}, extractedTags: {}, healthyTags: [] };
-      await productMetatagsAutoSuggest.default(allTags, mockContext, site);
+      await productMetatagsAutoSuggest.default(allTags, mockContext, site, { forceAutoSuggest: true });
 
       // Verify that generateSuggestions was called with the custom endpoint
       expect(mockGenvarClient.generateSuggestions).to.have.been.calledWith(
@@ -4135,7 +4201,7 @@ describe('Product MetaTags', () => {
         },
       };
       // Call the function - this should trigger line 82 fallback
-      await productMetatagsAutoSuggest.default(allTags, context, site);
+      await productMetatagsAutoSuggest.default(allTags, context, site, { forceAutoSuggest: true });
 
       // Verify that generateSuggestions was called with the default endpoint (fallback)
       expect(mockGenvarClient.generateSuggestions).to.have.been.calledWith(
@@ -4144,24 +4210,23 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should cover line 700 branch when scrapeResultPaths is undefined', async () => {
+    it('should cover line 700 branch when scrapeResultPaths is undefined', async function () {
+      this.timeout(5000);
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves({
-            seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
-            detectedTags: {},
-            extractedTags: {},
-          }),
-          calculateProjectedTraffic: sinon.stub().resolves({
-            projectedTrafficLost: 0,
-            projectedTrafficValue: 0,
-          }),
-        },
         '../../src/product-metatags/product-metatags-auto-suggest.js': {
           default: sinon.stub().resolves({}),
         },
         '../../src/utils/data-access.js': {
           syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: { createFrom: () => ({ query: () => Promise.resolve({}) }) },
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: () => Promise.resolve('example.com'),
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: () => Promise.resolve(0),
         },
       });
 
@@ -4215,6 +4280,16 @@ describe('Product MetaTags', () => {
         '../../src/utils/data-access.js': {
           syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
         },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: sinon.stub().returns({
+              query: sinon.stub().resolves({ rows: [] }),
+            }),
+          },
+        },
       });
 
       const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
@@ -4267,6 +4342,16 @@ describe('Product MetaTags', () => {
         },
         '../../src/utils/data-access.js': {
           syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: sinon.stub().returns({
+              query: sinon.stub().resolves({ rows: [] }),
+            }),
+          },
         },
       });
 
@@ -4804,6 +4889,7 @@ describe('Product MetaTags', () => {
         },
         Suggestion: {
           bulkUpdateStatus: sinon.stub(),
+          saveMany: sinon.stub().resolves(),
         },
       };
       context = {
@@ -4887,7 +4973,7 @@ describe('Product MetaTags', () => {
             }),
           },
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]), create: sinon.stub() },
-          Suggestion: { bulkUpdateStatus: sinon.stub() },
+          Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
         },
       };
     });
@@ -5033,7 +5119,7 @@ describe('Product MetaTags', () => {
           }),
         },
         Site: { findById: sinon.stub().resolves(null) },
-        Suggestion: { bulkUpdateStatus: sinon.stub() },
+        Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
       };
       context = {
         log: logStub,

@@ -12,19 +12,20 @@
 
 /* eslint-disable no-use-before-define */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
-import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
-import { getSignedUrl } from '../utils/getPresignedUrl.js';
-import { createMystiqueMessage } from './handler.js';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
+import { createLLMOSharepointClient, readFromSharePointWithRetry } from '../utils/report-uploader.js';
+import { getImsOrgId } from '../utils/data-access.js';
+import { resolveBrandIdForSite } from '../utils/brand-resolver.js';
 import {
   refreshDirectoryS3Key,
   refreshMetadataFileS3Key,
   refreshSheetResultFileName,
-  transformWebSearchProviderForMystique,
+  normalizeWebSearchProvider,
   writeSheetRefreshResultFailed,
   writeSheetRefreshResultSkipped,
 } from './util.js';
@@ -35,7 +36,7 @@ import {
  */
 
 const AUDIT_NAME = 'GEO_BRAND_PRESENCE_REFRESH';
-const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-(?<dateSuffix>\d+))?$/;
 
 /* c8 ignore start */
 
@@ -52,7 +53,8 @@ function filterPathsByLastFourWeeks(paths, log) {
   log.debug(`${AUDIT_NAME}: Filtering paths to last 4 weeks: ${Array.from(validWeeks).join(', ')}`);
 
   const filteredPaths = paths.filter((path) => {
-    const match = RE_SHEET_NAME.exec(path);
+    const filename = path.split('/').pop();
+    const match = RE_SHEET_NAME.exec(filename);
     if (!match) {
       log.debug(`${AUDIT_NAME}: Skipping invalid path format: ${path}`);
       return false;
@@ -63,7 +65,7 @@ function filterPathsByLastFourWeeks(paths, log) {
     const isValid = validWeeks.has(weekKey);
 
     if (!isValid) {
-      log.debug(`${AUDIT_NAME}: Excluding path ${path} (${weekKey}) - outside last 4 weeks`);
+      log.debug(`${AUDIT_NAME}: Excluding path ${filename} (${weekKey}) - outside last 4 weeks`);
     }
 
     return isValid;
@@ -96,7 +98,7 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
   // Read the query-index.xlsx file from SharePoint
   const readStartTime = Date.now();
-  const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
+  const queryIndexBuffer = await readFromSharePointWithRetry('query-index.xlsx', dataFolder, sharepointClient, log);
   const readDuration = Date.now() - readStartTime;
 
   log.info(`%s: Query-index file downloaded for siteId: ${siteId} (${queryIndexBuffer.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
@@ -122,7 +124,9 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
     worksheet.eachRow((row, rowNumber) => {
       // Skip header row
-      if (rowNumber === 1) return;
+      if (rowNumber === 1) {
+        return;
+      }
 
       // Look for path-like data in the first column or any column that contains path information
       row.eachCell((cell) => {
@@ -140,15 +144,12 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
               }
             }
           } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
-            // Then check for regular brand-presence/ (fallback)
-            const filename = cellValue.split('/').pop();
-            if (filename) {
-              // Remove .json extension
-              const filenameWithoutExt = filename.replace(/\.json$/i, '');
-              if (!regularPaths.includes(filenameWithoutExt)) {
-                regularPaths.push(filenameWithoutExt);
-                log.debug(`%s: Found regular path for siteId: ${siteId}, path: ${filenameWithoutExt}`, AUDIT_NAME);
-              }
+            // Preserve relative path from brand-presence/ (e.g. "w18/brandpresence-...")
+            const marker = '/brand-presence/';
+            const relPath = cellValue.slice(cellValue.indexOf(marker) + marker.length).replace(/\.\w+$/i, '');
+            if (relPath && !regularPaths.includes(relPath)) {
+              regularPaths.push(relPath);
+              log.debug(`%s: Found regular path for siteId: ${siteId}, path: ${relPath}`, AUDIT_NAME);
             }
           }
         }
@@ -195,17 +196,6 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     throw new Error(`${AUDIT_NAME}: Site not found for siteId: ${siteId}`);
   }
 
-  // Priority: context (for wrapper) > site config > default
-  const brandPresenceCadence = context.brandPresenceCadence
-    || site.getConfig()?.getBrandPresenceCadence?.()
-    || 'weekly';
-  const isDaily = brandPresenceCadence === 'daily';
-
-  log.info(
-    `%s: Processing refresh with cadence: ${brandPresenceCadence} for siteId: ${siteId}, isDaily: ${isDaily}`,
-    AUDIT_NAME,
-  );
-
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
   log.info(`%s: Creating SharePoint client for siteId: ${siteId}`, AUDIT_NAME);
@@ -237,14 +227,8 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   log.info(`%s: Source folder: ${sourceFolder}, Sheets to refresh: ${sheets.length} for siteId: ${siteId}`, AUDIT_NAME);
   log.debug(`%s: Sheet names for siteId: ${siteId}: ${sheets.join(', ')}`, AUDIT_NAME);
 
-  // save metadata for S3 to track progress
-
-  // const audit = await createAudit({
-  //   // audit data goes here
-  // }, context);
-
   // Create S3 folder for audit tracking
-  const { s3Client, env, sqs } = context;
+  const { s3Client, env } = context;
   const bucketName = env?.S3_IMPORTER_BUCKET_NAME;
 
   if (!bucketName || !s3Client) {
@@ -257,6 +241,33 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const folderKey = refreshDirectoryS3Key(auditId);
 
   log.info(`%s: Created audit ID ${auditId} for siteId: ${siteId}, S3 folder: ${folderKey}`, AUDIT_NAME);
+
+  const drsClient = DrsClient.createFrom(context);
+  if (!drsClient.isS3Configured()) {
+    log.error(`%s: DRS S3 not configured for siteId: ${siteId}`, AUDIT_NAME);
+    return internalServerError('DRS S3 not configured');
+  }
+
+  log.info(`%s: DRS S3 is configured, routing refresh via DRS for siteId: ${siteId}`, AUDIT_NAME);
+
+  // LLMO-4716: resolve v2 brand_id once per audit (per site), thread onto every
+  // SNS publish below so the DRS Fargate runner branches v1/v2 correctly. 404
+  // returns null (v1 / brandalf-migration / no active brand). 5xx throws so
+  // SQS retries — silently continuing without brand_id for a brandalf=true org
+  // would degrade to stale-config v1 reads with no surfaced error.
+  //
+  // Resolved BEFORE the S3 metadata write so a fail-closed throw doesn't leave
+  // an orphaned `metadata.json` for an audit that never ran. The throw bypasses
+  // the outer catch block too, so DLQ messages preserve the original
+  // `[BrandResolver]` error context instead of being rewrapped as
+  // "Failed to create S3 folder".
+  const orgId = site.getOrganizationId?.() ?? null;
+  let brandId = null;
+  if (orgId) {
+    brandId = await resolveBrandIdForSite(orgId, siteId, env, log);
+  } else {
+    log.warn(`%s: site ${siteId} has no organizationId — skipping brand_id resolution`, AUDIT_NAME);
+  }
 
   try {
     // Create a metadata file to establish the folder structure
@@ -274,11 +285,6 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       files,
     };
 
-    // In our metadata directory, we write the following files:
-    // - metadata.json: contains a list of sheets to be processed, and their expected result files.
-    // - <sheetName>.metadata.json: for each sheet, a metadata file indicating
-    //                              success or failure of processing.
-
     log.info(`%s: Writing metadata to S3 for auditId: ${auditId}, siteId: ${siteId}, bucket: ${bucketName}, key: ${refreshMetadataFileS3Key(auditId)}`, AUDIT_NAME);
     const metadataStartTime = Date.now();
 
@@ -292,11 +298,11 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     const metadataDuration = Date.now() - metadataStartTime;
     log.info(`%s: Metadata written to S3 for auditId: ${auditId}, siteId: ${siteId} in ${metadataDuration}ms`, AUDIT_NAME);
 
-    const baseURL = site.getBaseURL();
-    const deliveryType = site.getDeliveryType();
     const { configVersion } = auditContext;
+    const imsOrgId = await getImsOrgId(site, dataAccess, log);
+    const brand = site.getConfig()?.getLlmoBrand?.() ?? null;
 
-    log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, baseURL: ${baseURL}, deliveryType: ${deliveryType}, configVersion: ${configVersion || 'none'}`, AUDIT_NAME);
+    log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, configVersion: ${configVersion || 'none'}, brandId: ${brandId || 'none'}`, AUDIT_NAME);
 
     log.info(`%s: Processing ${sheets.length} sheets for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     const processingStartTime = Date.now();
@@ -305,76 +311,63 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     const results = await Promise.allSettled(sheets.map(async (sheetName, index) => {
       log.info(`%s: Processing sheet ${index + 1}/${sheets.length} for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME);
 
-      const match = RE_SHEET_NAME.exec(sheetName);
+      const sheetFilename = sheetName.split('/').pop();
+      const match = RE_SHEET_NAME.exec(sheetFilename);
       if (!match) {
         log.warn(`%s: Skipping invalid sheet name ${sheetName} for auditId: ${auditId}, siteId: ${siteId}. Expected format: brandpresence-<webSearchProvider>-w<WW>-<YYYY>`, AUDIT_NAME);
         return false;
       }
-      const { webSearchProvider, week, year } = match.groups;
+      const {
+        webSearchProvider, week, year, dateSuffix,
+      } = match.groups;
+      const runFrequency = dateSuffix ? 'daily' : 'weekly';
 
-      log.debug(`%s: Sheet ${sheetName} parsed for auditId: ${auditId}, siteId: ${siteId}, provider: ${webSearchProvider}, week: ${week}, year: ${year}`, AUDIT_NAME);
+      log.debug(`%s: Sheet ${sheetName} parsed for auditId: ${auditId}, siteId: ${siteId}, provider: ${webSearchProvider}, week: ${week}, year: ${year}, runFrequency: ${runFrequency}`, AUDIT_NAME);
 
       log.info(`%s: Reading sheet from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, source: ${sourceFolder}`, AUDIT_NAME);
       const readStartTime = Date.now();
-      const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+      const sheet = await readFromSharePointWithRetry(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
       const readDuration = Date.now() - readStartTime;
 
       log.info(`%s: Sheet read from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheet.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
 
-      log.info(`%s: Uploading sheet to S3 for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, key: ${folderKey}/${sheetName}.xlsx`, AUDIT_NAME);
-      const s3UploadStartTime = Date.now();
+      try {
+        const jobId = `spacecat-${randomUUID()}`;
+        log.info(`%s: Uploading sheet ${sheetName} to DRS S3 for jobId: ${jobId}, siteId: ${siteId}`, AUDIT_NAME);
+        const resultLocation = await drsClient.uploadExcelToDrs(siteId, jobId, sheet);
+        log.info(`%s: Sheet uploaded to DRS S3: ${resultLocation}`, AUDIT_NAME);
 
-      await s3Client.send(new PutObjectCommand({
-        Bucket: bucketName,
-        Key: `${folderKey}/${sheetName}.xlsx`,
-        Body: sheet,
-        ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }));
+        const publishedJobId = await drsClient.publishBrandPresenceAnalyze(siteId, {
+          jobId,
+          resultLocation,
+          webSearchProvider: normalizeWebSearchProvider(webSearchProvider),
+          configVersion,
+          week: +week,
+          year: +year,
+          runFrequency,
+          brand,
+          imsOrgId,
+          brandId,
+        });
+        log.info(
+          `%s: DRS analyze triggered for sheet ${sheetName}, siteId: ${siteId}, jobId: ${publishedJobId}`,
+          AUDIT_NAME,
+        );
+      } catch (drsError) {
+        log.error(
+          `%s: DRS triggerBrandPresenceAnalyze failed for sheet ${sheetName}, siteId: ${siteId}: ${errorMsg(drsError)}`,
+          AUDIT_NAME,
+        );
+        await writeSheetRefreshResultFailed({
+          message: errorMsg(drsError),
+          outputDir: folderKey,
+          s3Client,
+          s3Bucket: bucketName,
+          sheetName,
+        });
+        throw drsError;
+      }
 
-      const s3UploadDuration = Date.now() - s3UploadStartTime;
-      log.info(`%s: Sheet uploaded to S3 for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheet.length} bytes in ${s3UploadDuration}ms)`, AUDIT_NAME);
-
-      log.debug(`%s: Generating presigned URL for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME);
-      const url = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
-        { expiresIn: 86_400 /* seconds, 24h */ },
-      );
-
-      log.debug(`%s: Presigned URL generated for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, url: ${url}`, AUDIT_NAME);
-
-      // Determine message type based on cadence
-      const messageType = isDaily
-        ? 'refresh:geo-brand-presence-daily'
-        : 'refresh:geo-brand-presence';
-
-      log.debug(
-        `%s: Creating Mystique message for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, type: ${messageType}`,
-        AUDIT_NAME,
-      );
-      const msg = createMystiqueMessage({
-        type: messageType,
-        auditId,
-        baseURL,
-        siteId,
-        deliveryType,
-        calendarWeek: { week: +week, year: +year },
-        url,
-        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
-        configVersion,
-        date: null, // TODO support daily refreshes
-        source: triggerSource,
-        initiator,
-      });
-
-      log.info(
-        `%s: Sending message to Mystique queue for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}, provider: ${webSearchProvider}, week: ${week}, year: ${year}`,
-        AUDIT_NAME,
-      );
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
-
-      const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.info(`%s%s: Sent sheet ${sheetName} to Mystique for processing, auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME, cadenceLabel);
       return true;
     }));
 
@@ -430,8 +423,8 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     log[logLevel](logMsg, ...logArgs);
   } catch (error) {
     log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, errorMsg(error));
-    errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
-    throw new Error(errMsg);
+    errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}: ${errorMsg(error)}`;
+    throw new Error(errMsg, { cause: error });
   }
 
   log.info('Site: %s, Audit: %s, Context:', site, {}, auditContext);

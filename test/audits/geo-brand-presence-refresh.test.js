@@ -15,37 +15,61 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import ExcelJS from 'exceljs';
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
 
-describe('Geo Brand Presence Refresh Handler - 4 Week Filter', () => {
+describe('Geo Brand Presence Refresh Handler', () => {
   let context;
   let sandbox;
   let site;
   let log;
   let s3Client;
-  let sqs;
   let dataAccess;
   let sharepointClient;
   let getLastNumberOfWeeksStub;
   let refreshGeoBrandPresenceSheetsHandler;
   let createLLMOSharepointClientStub;
-  let readFromSharePointStub;
-  let getSignedUrlStub;
-  let createMystiqueMessageStub;
+  let readFromSharePointWithRetryStub;
+  let uploadExcelToDrsStub;
+  let publishBrandPresenceAnalyzeStub;
+  let drsClientStub;
+  let drsCreateFromStub;
+  let resolveBrandIdForSiteStub;
+
+  // last 4 weeks used across most tests
+  const LAST_4_WEEKS = [
+    { week: 44, year: 2025 },
+    { week: 45, year: 2025 },
+    { week: 46, year: 2025 },
+    { week: 47, year: 2025 },
+  ];
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
-    // Create stubs before esmock
-    getLastNumberOfWeeksStub = sandbox.stub();
+    getLastNumberOfWeeksStub = sandbox.stub().returns(LAST_4_WEEKS);
     createLLMOSharepointClientStub = sandbox.stub();
-    readFromSharePointStub = sandbox.stub();
-    getSignedUrlStub = sandbox.stub();
-    createMystiqueMessageStub = sandbox.stub();
+    readFromSharePointWithRetryStub = sandbox.stub();
+
+    uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
+    publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-123');
+
+    drsClientStub = {
+      isS3Configured: sandbox.stub().returns(true),
+      uploadExcelToDrs: uploadExcelToDrsStub,
+      publishBrandPresenceAnalyze: publishBrandPresenceAnalyzeStub,
+    };
+
+    drsCreateFromStub = sandbox.stub().returns(drsClientStub);
+
+    // Default: brand resolver returns null (v1 / brandalf-migration / no active brand).
+    // Tests that need a non-null brandId override per-test.
+    resolveBrandIdForSiteStub = sandbox.stub().resolves(null);
 
     log = {
       info: sandbox.stub(),
@@ -54,80 +78,58 @@ describe('Geo Brand Presence Refresh Handler - 4 Week Filter', () => {
       error: sandbox.stub(),
     };
 
-    s3Client = {
-      send: sandbox.stub(),
-    };
-
-    sqs = {
-      sendMessage: sandbox.stub().resolves({}),
-    };
+    s3Client = { send: sandbox.stub().resolves({}) };
 
     site = {
       getId: () => 'test-site-123',
       getBaseURL: () => 'https://example.com',
       getDeliveryType: () => 'aem_edge',
+      getOrganizationId: () => 'test-org-id',
       getConfig: () => ({
         getLlmoDataFolder: () => '/data/llmo',
         getBrandPresenceCadence: () => 'weekly',
+        getLlmoBrand: () => 'test-brand',
       }),
     };
 
     dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves(site),
-      },
+      Site: { findById: sandbox.stub().resolves(site) },
+      Organization: { findById: sandbox.stub().resolves({ getImsOrgId: () => 'test-ims-org-id' }) },
     };
-
-    sharepointClient = {
-      getFile: sandbox.stub(),
-    };
+    sharepointClient = { getFile: sandbox.stub() };
 
     context = {
       log,
       s3Client,
-      sqs,
       dataAccess,
       env: {
         S3_IMPORTER_BUCKET_NAME: 'test-bucket',
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        DRS_API_URL: 'https://drs.example.com',
+        DRS_API_KEY: 'test-key',
       },
     };
 
-    // Set up SharePoint stubs
     createLLMOSharepointClientStub.resolves(sharepointClient);
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') {
-        return createMockQueryIndexExcel();
+        return createMockQueryIndexExcel([]);
       }
-      // Mock sheet files
       return Buffer.from('mock-sheet-data');
     });
 
-    // Set up other stubs
-    getSignedUrlStub.resolves('https://s3.amazonaws.com/presigned-url');
-    createMystiqueMessageStub.callsFake((params) => ({
-      type: params.type,
-      auditId: params.auditId,
-      baseURL: params.baseURL,
-      siteId: params.siteId,
-      calendarWeek: params.calendarWeek,
-      webSearchProvider: params.webSearchProvider,
-    }));
-
-    // Mock the handler with esmock
     const handlerModule = await esmock('../../src/geo-brand-presence/geo-brand-presence-refresh-handler.js', {
       '@adobe/spacecat-shared-utils': {
         getLastNumberOfWeeks: getLastNumberOfWeeksStub,
       },
+      '@adobe/spacecat-shared-drs-client': {
+        default: { createFrom: drsCreateFromStub },
+      },
       '../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
-        readFromSharePoint: readFromSharePointStub,
+        readFromSharePointWithRetry: readFromSharePointWithRetryStub,
       },
-      '../../src/utils/getPresignedUrl.js': {
-        getSignedUrl: getSignedUrlStub,
-      },
-      '../../src/geo-brand-presence/handler.js': {
-        createMystiqueMessage: createMystiqueMessageStub,
+      '../../src/utils/brand-resolver.js': {
+        resolveBrandIdForSite: resolveBrandIdForSiteStub,
       },
     });
 
@@ -138,371 +140,311 @@ describe('Geo Brand Presence Refresh Handler - 4 Week Filter', () => {
     sandbox.restore();
   });
 
-  /**
-   * Helper function to create a mock Excel file with brand presence paths
-   */
   async function createMockQueryIndexExcel(paths = []) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Query Index');
-
-    // Add header
     worksheet.addRow(['Path', 'Status']);
-
-    // Add data rows
-    paths.forEach((path) => {
-      worksheet.addRow([path, 'active']);
-    });
-
+    paths.forEach((path) => worksheet.addRow([path, 'active']));
     return workbook.xlsx.writeBuffer();
   }
 
-  /**
-   * Helper to stub S3 responses
-   */
-  function stubS3Operations() {
-    // Stub metadata file write
-    s3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-
-    // Stub presigned URL generation
-    s3Client.send.withArgs(sinon.match.instanceOf(GetObjectCommand)).resolves({});
+  function withSheets(paths) {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
+      if (filename === 'query-index.xlsx') return createMockQueryIndexExcel(paths);
+      return Buffer.from('mock-sheet-data');
+    });
   }
 
-  describe('4-week filtering logic', () => {
-    it('should only process sheets from the last 4 weeks', async () => {
-      // Mock current date to be a specific week for predictable testing
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
+  const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025.json';
+  const SHEET_W46 = '/data/llmo/brand-presence/latest/brandpresence-gemini-w46-2025.json';
+  const SHEET_OLD = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w40-2025.json';
+  const SHEET_AI_MODE = '/data/llmo/brand-presence/latest/brandpresence-ai-mode-w45-2025.json';
+  const SHEET_GOOGLE_AI = '/data/llmo/brand-presence/latest/brandpresence-google-ai-overviews-w45-2025.json';
 
-      // Create paths with some inside and some outside the 4-week window
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w44-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w46-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w47-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w43-2025.json', // Outside 4 weeks
-        '/data/llmo/brand-presence/latest/brandpresence-bing-w40-2025.json', // Outside 4 weeks
-      ];
+  const MESSAGE = {
+    siteId: 'test-site-123',
+    auditContext: { configVersion: 'abc123', triggerSource: 'manual' },
+  };
 
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
+  // ─── DRS routing ─────────────────────────────────────────────────────────────
+
+  describe('DRS routing', () => {
+    it('calls uploadExcelToDrs with correct siteId and a spacecat-prefixed jobId', async () => {
+      withSheets([SHEET_W45]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+      expect(uploadExcelToDrsStub).to.have.been.calledWith(
+        'test-site-123',
+        sinon.match(/^spacecat-/),
+        sinon.match.instanceOf(Buffer),
+      );
+    });
+
+    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId, brandId', async () => {
+      withSheets([SHEET_W45]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      const uploadJobId = uploadExcelToDrsStub.firstCall.args[1];
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledWith('test-site-123', {
+        jobId: uploadJobId,
+        resultLocation: 's3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx',
+        webSearchProvider: 'chatgpt',
+        configVersion: 'abc123',
+        week: 45,
+        year: 2025,
+        runFrequency: 'weekly',
+        brand: 'test-brand',
+        imsOrgId: 'test-ims-org-id',
+        brandId: null,
+      });
+    });
+
+    it('forwards brandId resolved from spacecat-api-service to publishBrandPresenceAnalyze (v2 org)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves('brand-uuid-42');
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.have.been.calledOnceWith(
+        'test-org-id',
+        'test-site-123',
+        context.env,
+        log,
+      );
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({
+        brandId: 'brand-uuid-42',
+      });
+    });
+
+    it('passes brandId=null when resolver returns null (v1 org / no active brand)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves(null);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
+    });
+
+    it('propagates resolver errors with original message so DLQ shows the real cause', async () => {
+      withSheets([SHEET_W45]);
+      const cause = new Error('SpaceCat 503');
+      resolveBrandIdForSiteStub.rejects(cause);
+
+      // Brand resolution runs BEFORE the S3 metadata write and outside the
+      // outer try/catch, so the original `[BrandResolver]` message is preserved
+      // for DLQ triage rather than being rewrapped as "Failed to create S3
+      // folder".
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/SpaceCat 503/);
+      expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+      // Metadata write must NOT fire when the resolver fails — otherwise we'd
+      // litter S3 with orphaned metadata.json files (one per SQS retry).
+      expect(s3Client.send).to.not.have.been.called;
+    });
+
+    it('skips brand resolution and logs warning when site has no organizationId', async () => {
+      withSheets([SHEET_W45]);
+      site.getOrganizationId = () => null;
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/has no organizationId/),
+        sinon.match.any,
+      );
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
+    });
+
+    it('normalizes hyphenated providers to underscores before publishing to DRS', async () => {
+      withSheets([SHEET_AI_MODE, SHEET_GOOGLE_AI]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledTwice;
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ webSearchProvider: 'ai_mode' });
+      expect(publishBrandPresenceAnalyzeStub.secondCall.args[1]).to.include({ webSearchProvider: 'google_ai_overviews' });
+    });
+
+    it('sends one DRS call per sheet when multiple sheets exist', async () => {
+      withSheets([SHEET_W45, SHEET_W46]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(uploadExcelToDrsStub).to.have.been.calledTwice;
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledTwice;
+    });
+
+    it('logs the DRS jobId on success', async () => {
+      withSheets([SHEET_W45]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/DRS analyze triggered.*spacecat-job-123/),
+        sinon.match.any,
+      );
+    });
+
+    it('marks sheet failed in S3 and continues when DRS throws', async () => {
+      withSheets([SHEET_W45, SHEET_W46]);
+      uploadExcelToDrsStub
+        .onFirstCall().rejects(new Error('DRS S3 upload error'))
+        .onSecondCall().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(log.error).to.have.been.calledWith(sinon.match(/DRS triggerBrandPresenceAnalyze failed/), sinon.match.any);
+      expect(uploadExcelToDrsStub).to.have.been.calledTwice;
+    });
+
+    it('records failed sheet and still processes sibling sheet when XLSX retry exhausted', async () => {
+      readFromSharePointWithRetryStub.callsFake(async (filename) => {
+        if (filename === 'query-index.xlsx') return createMockQueryIndexExcel([SHEET_W45, SHEET_W46]);
+        if (filename.includes('brandpresence-chatgpt')) {
+          throw new Error('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
         }
         return Buffer.from('mock-sheet-data');
       });
 
-      stubS3Operations();
+      const result = await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
 
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: {
-          configVersion: 'v1',
-          triggerSource: 'manual',
-        },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      // Verify that only 4 messages were sent (for the 4 valid weeks)
-      expect(sqs.sendMessage).to.have.callCount(4);
-
-      // Verify that only sheets from the last 4 weeks were processed
-      const sentMessages = sqs.sendMessage.getCalls().map((call) => call.args[1]);
-      const processedWeeks = sentMessages.map((msg) => msg.calendarWeek);
-
-      expect(processedWeeks).to.deep.equal([
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ]);
-
-      // Verify logging
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Filtered \d+ paths to 4 paths from last 4 weeks/),
+      // Handler resolves (does not throw out of Promise.allSettled)
+      expect(result.status).to.equal(200);
+      // Sibling sheet (gemini) still reaches DRS
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+      // Failed chatgpt sheet is recorded in S3 with a failure-record Key
+      expect(s3Client.send).to.have.been.calledWith(
+        sinon.match.has('input', sinon.match.has('Key', sinon.match(/brandpresence-chatgpt.*\.metadata\.json$/))),
+      );
+      // Retry-exhaustion rejection is logged by the results-processing loop
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/%s:Failed to process sheet/),
+        sinon.match.any,
+        sinon.match(/brandpresence-chatgpt/),
+        sinon.match(/non-XLSX content after 3 attempts/),
       );
     });
 
-    it('should handle sheets across year boundaries', async () => {
-      // Test case where the last 4 weeks span two years
-      const last4Weeks = [
+    it('returns internalServerError when DRS S3 is not configured', async () => {
+      drsClientStub.isS3Configured.returns(false);
+      withSheets([SHEET_W45]);
+
+      const result = await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(result.status).to.equal(500);
+      expect(uploadExcelToDrsStub).to.not.have.been.called;
+      expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+    });
+  });
+
+  // ─── 4-week filtering ─────────────────────────────────────────────────────────
+
+  describe('4-week filtering', () => {
+    it('filters out sheets outside the last 4 weeks', async () => {
+      withSheets([SHEET_W45, SHEET_OLD]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      // Only SHEET_W45 is within last 4 weeks
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+    });
+
+    it('throws when no sheets match the last 4 weeks', async () => {
+      withSheets([SHEET_OLD]);
+
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/No paths found in query-index file for the last 4 weeks/);
+    });
+
+    it('skips sheets with invalid name format', async () => {
+      withSheets([
+        SHEET_W45,
+        '/data/llmo/brand-presence/latest/invalid-name.json',
+      ]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+    });
+
+    it('handles year boundaries correctly', async () => {
+      getLastNumberOfWeeksStub.returns([
         { week: 51, year: 2024 },
         { week: 52, year: 2024 },
         { week: 1, year: 2025 },
         { week: 2, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
+      ]);
 
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w51-2024.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w52-2024.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w01-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w02-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w50-2024.json', // Outside
-        '/data/llmo/brand-presence/latest/brandpresence-google-w03-2025.json', // Outside
-      ];
+      withSheets([
+        '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w51-2024.json',
+        '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w52-2024.json',
+        '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w01-2025.json',
+        '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w02-2025.json',
+        '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w50-2024.json',
+      ]);
 
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
 
-      stubS3Operations();
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      expect(sqs.sendMessage).to.have.callCount(4);
-
-      const processedWeeks = sqs.sendMessage.getCalls()
-        .map((call) => call.args[1].calendarWeek);
-
-      expect(processedWeeks).to.deep.include({ week: 51, year: 2024 });
-      expect(processedWeeks).to.deep.include({ week: 52, year: 2024 });
-      expect(processedWeeks).to.deep.include({ week: 1, year: 2025 });
-      expect(processedWeeks).to.deep.include({ week: 2, year: 2025 });
+      expect(uploadExcelToDrsStub).to.have.callCount(4);
     });
 
-    it('should handle sheets with multiple providers', async () => {
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
+    it('uses regular brand-presence folder when no latest paths exist', async () => {
+      withSheets([
+        '/data/llmo/brand-presence/brandpresence-chatgpt-w45-2025.json',
+      ]);
 
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-bing-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-duckduckgo-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w40-2025.json', // Outside
-      ];
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
 
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
-
-      stubS3Operations();
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      // Should process 3 sheets (all from week 45, different providers)
-      expect(sqs.sendMessage).to.have.callCount(3);
-    });
-
-    it('should skip sheets with invalid name format', async () => {
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
-
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/latest/invalid-format.json', // Invalid format
-        '/data/llmo/brand-presence/latest/brandpresence-google-2025.json', // Missing week
-      ];
-
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
-
-      stubS3Operations();
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      // Only 1 valid sheet should be processed
-      expect(sqs.sendMessage).to.have.callCount(1);
-
-      // Verify debug logging for skipped sheets
-      expect(log.debug).to.have.been.calledWith(
-        sinon.match(/Skipping invalid path format/),
-      );
-    });
-
-    it('should throw error when no sheets match the last 4 weeks', async () => {
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
-
-      // All paths are outside the 4-week window
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w40-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-bing-w41-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-duckduckgo-w42-2025.json',
-      ];
-
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      try {
-        await refreshGeoBrandPresenceSheetsHandler(message, context);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('No paths found in query-index file for the last 4 weeks');
-      }
-    });
-
-    it('should handle regular brand-presence folder (fallback)', async () => {
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
-
-      // Paths in regular folder (not latest)
-      const allPaths = [
-        '/data/llmo/brand-presence/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/brandpresence-bing-w45-2025.json',
-      ];
-
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
-
-      stubS3Operations();
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      expect(sqs.sendMessage).to.have.callCount(2);
-    });
-
-    it('should log excluded paths for debugging', async () => {
-      const last4Weeks = [
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-        { week: 48, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
-
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w40-2025.json', // Old
-        '/data/llmo/brand-presence/latest/brandpresence-google-w35-2025.json', // Very old
-      ];
-
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
-
-      stubS3Operations();
-
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
-
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
-
-      // Verify debug logging for excluded paths
-      expect(log.debug).to.have.been.calledWith(
-        sinon.match(/Excluding path.*w40-2025.*outside last 4 weeks/),
-      );
-      expect(log.debug).to.have.been.calledWith(
-        sinon.match(/Excluding path.*w35-2025.*outside last 4 weeks/),
-      );
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
     });
   });
 
-  describe('daily cadence support', () => {
-    it('should apply 4-week filter for daily cadence', async () => {
-      const last4Weeks = [
-        { week: 44, year: 2025 },
-        { week: 45, year: 2025 },
-        { week: 46, year: 2025 },
-        { week: 47, year: 2025 },
-      ];
-      getLastNumberOfWeeksStub.returns(last4Weeks);
+  // ─── Error handling ───────────────────────────────────────────────────────────
 
-      // Override site config to return daily cadence
-      site.getConfig = () => ({
-        getLlmoDataFolder: () => '/data/llmo',
-        getBrandPresenceCadence: () => 'daily',
-      });
+  describe('error handling', () => {
+    it('throws when site is not found', async () => {
+      dataAccess.Site.findById.resolves(null);
 
-      const allPaths = [
-        '/data/llmo/brand-presence/latest/brandpresence-google-w45-2025.json',
-        '/data/llmo/brand-presence/latest/brandpresence-google-w40-2025.json', // Outside
-      ];
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/Site not found/);
+    });
 
-      readFromSharePointStub.callsFake(async (filename) => {
-        if (filename === 'query-index.xlsx') {
-          return createMockQueryIndexExcel(allPaths);
-        }
-        return Buffer.from('mock-sheet-data');
-      });
+    it('throws when S3 client is not available', async () => {
+      withSheets([SHEET_W45]);
+      context.s3Client = null;
 
-      stubS3Operations();
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/S3 bucket name or client not available/);
+    });
 
-      const message = {
-        siteId: 'test-site-123',
-        auditContext: { configVersion: 'v1' },
-      };
+    it('throws when SharePoint query-index fetch fails', async () => {
+      readFromSharePointWithRetryStub.rejects(new Error('SharePoint unavailable'));
 
-      await refreshGeoBrandPresenceSheetsHandler(message, context);
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/Failed to read query-index from SharePoint/);
+    });
 
-      // Only 1 sheet from last 4 weeks should be processed
-      expect(sqs.sendMessage).to.have.callCount(1);
+    it('throws when site has no LLMO data folder configured', async () => {
+      site.getConfig = () => ({ getLlmoDataFolder: () => null, getBrandPresenceCadence: () => 'weekly' });
 
-      // Verify message type is daily
-      const sentMessage = sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.type).to.equal('refresh:geo-brand-presence-daily');
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/No LLMO data folder/);
+    });
+
+    it('writes S3 metadata before processing sheets', async () => {
+      withSheets([SHEET_W45]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(s3Client.send).to.have.been.calledWith(
+        sinon.match.instanceOf(PutObjectCommand),
+      );
     });
   });
 });

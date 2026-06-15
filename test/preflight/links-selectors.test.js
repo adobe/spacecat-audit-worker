@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
@@ -112,7 +110,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
     const mockTierClient = {
-      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
     };
     if (TierClient.createForSite && TierClient.createForSite.restore) {
       TierClient.createForSite.restore();
@@ -168,8 +166,10 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -227,8 +227,10 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -291,8 +293,10 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;
@@ -350,8 +354,10 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
       });
 
       preflightAuditFunction = module.preflightAudit;

@@ -10,23 +10,25 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
-import { ELMO_LIVE_HOST } from '../common/constants.js';
+import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-export const LLM_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
-  perplexity: '(?i)Perplexity',
-  claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini',
-  copilot: '(?i)Copilot',
-};
+// LLM providers to track — subset of PROVIDER_USER_AGENT_PATTERNS (excludes search bots)
+const LLM_PROVIDERS = ['chatgpt', 'perplexity', 'claude', 'googleai', 'copilot'];
+
+export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
+  LLM_PROVIDERS.map((key) => [key, PROVIDER_USER_AGENT_PATTERNS[key]]),
+);
+
+// Maximum rows returned per status code (404, 403, 5xx) in a single Athena query.
+// Each status is capped independently so no single status can dominate results.
+export const ROWS_PER_STATUS = 300;
 
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
@@ -63,9 +65,11 @@ export function buildLlmUserAgentFilter(providers = null) {
 }
 
 export function normalizeUserAgentToProvider(rawUserAgent) {
-  if (!rawUserAgent || typeof rawUserAgent !== 'string') return 'Unknown';
+  if (!rawUserAgent || typeof rawUserAgent !== 'string') {
+    return 'Unknown';
+  }
 
-  if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
+  if (/chatgpt|gptbot|oai-searchbot|oai-adsbot/i.test(rawUserAgent)) {
     return 'ChatGPT';
   }
   if (/perplexity/i.test(rawUserAgent)) {
@@ -128,6 +132,10 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
+function sqlEscape(s) {
+  return String(s).replace(/'/g, "''");
+}
+
 function buildCountryExtractionSQL() {
   const extracts = DEFAULT_COUNTRY_PATTERNS
     .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
@@ -136,40 +144,13 @@ function buildCountryExtractionSQL() {
   return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
 }
 
-export async function fetchRemotePatterns(site) {
-  const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
-  if (!dataFolder) {
-    return null;
-  }
-
-  try {
-    const url = `${ELMO_LIVE_HOST}/${dataFolder}/agentic-traffic/patterns/patterns.json`;
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'spacecat-audit-worker',
-        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
-      },
-    });
-    if (!res.ok) {
-      return null;
-    }
-    const data = await res.json();
-    return {
-      pagePatterns: data.pagetype?.data || [],
-      topicPatterns: data.products?.data || [],
-    };
-  } catch {
-    return null;
-  }
-}
-
 function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
   if (patterns.length === 0) {
     return "'Other'";
   }
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${sqlEscape(pattern.regex)}') THEN '${sqlEscape(pattern.name)}'`)
     .join('\n');
   return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
 }
@@ -181,9 +162,9 @@ function buildTopicExtractionSQL(remotePatterns = null) {
     const extractPatterns = [];
     patterns.forEach(({ regex, name }) => {
       if (name) {
-        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${sqlEscape(regex)}') THEN '${sqlEscape(name)}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${sqlEscape(regex)}', 1), '')`);
       }
     });
     if (namedPatterns.length > 0 && extractPatterns.length > 0) {
@@ -208,6 +189,7 @@ export async function buildLlmErrorPagesQuery(options) {
     llmProviders = null,
     siteFilters = [],
     site = null,
+    context = {},
   } = options;
 
   const conditions = [];
@@ -219,7 +201,7 @@ export async function buildLlmErrorPagesQuery(options) {
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
-  const remotePatterns = site ? await fetchRemotePatterns(site) : null;
+  const remotePatterns = site ? await fetchAgenticUrlClassificationRules(site, context) : null;
 
   return getStaticContent({
     databaseName,
@@ -233,31 +215,9 @@ export async function buildLlmErrorPagesQuery(options) {
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     // country extraction
     countryExtraction: buildCountryExtractionSQL(),
+    // per-status row cap
+    rowsPerStatus: ROWS_PER_STATUS,
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
-}
-
-// ============================================================================
-// SITE AND CONFIGURATION UTILITIES
-// ============================================================================
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-  const siteId = site.getId();
-  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    aggregatedLocation,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
 }
 
 // ============================================================================
@@ -266,15 +226,6 @@ export async function getS3Config(site, context) {
 
 export function formatDateString(date) {
   return date.toISOString().split('T')[0];
-}
-
-function getWeekNumber(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  /* c8 ignore next */
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
@@ -318,36 +269,38 @@ export function generatePeriodIdentifier(startDate, endDate) {
 
   const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
   if (diffDays === 7) {
-    const year = startDate.getUTCFullYear();
-    const weekNum = getWeekNumber(startDate);
+    const { week: weekNum, year } = isoCalendarWeek(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
 
   return `${start}_to_${end}`;
 }
 
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
+export function generateReportingPeriods(referenceDate = new Date(), weekOffsets = [-1]) {
+  const offsets = Array.isArray(weekOffsets) ? weekOffsets : [weekOffsets];
 
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
+  const weeks = offsets.map((offset) => {
+    const { weekStart, weekEnd } = getWeekRange(offset, referenceDate);
+    const { week: weekNumber, year } = isoCalendarWeek(weekStart);
 
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+    return {
+      weekNumber,
+      year,
+      weekLabel: `Week ${weekNumber}`,
+      startDate: weekStart,
+      endDate: weekEnd,
+      dateRange: {
+        start: formatDateString(weekStart),
+        end: formatDateString(weekEnd),
+      },
+      periodIdentifier: `w${String(weekNumber).padStart(2, '0')}-${year}`,
+    };
+  });
 
   return {
     weeks,
     referenceDate: referenceDate.toISOString(),
-    columns: [`Week ${weekNumber}`],
+    columns: weeks.map((w) => w.weekLabel),
   };
 }
 
@@ -355,11 +308,85 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 // PROCESSING RESULTS
 // ============================================================================
 
+/**
+ * Conservative validity check for URLs surfaced from CDN logs. Bot impersonators
+ * that pass the user-agent regex sometimes request malformed paths (e.g.
+ * `/brandshttps://...`, `/),`, `/%2522`). Those add noise to the 404 opportunity
+ * without being actionable, so we drop them before building suggestions.
+ *
+ * Tracked stopgap: the right long-term fix is upstream UA / IP-fingerprint
+ * hardening so impersonators are rejected before ingestion. See LLMO-5282.
+ *
+ * Rejects:
+ *   - non-strings / empty / whitespace
+ *   - URLs the `URL` constructor cannot parse
+ *   - non-http(s) schemes (javascript:, data:, etc.)
+ *   - leading characters Excel re-interprets as formulas (`= + - @`)
+ *   - paths with an http(s) scheme glued to a path segment (`/foohttps://bar`),
+ *     while still allowing query-embedded schemes (`/redirect?to=https://...`)
+ *   - paths containing double-encoded quote characters (`%2522`, `%2527`)
+ *   - paths whose final non-whitespace char is a comma or semicolon
+ */
+export function isValidUrlPath(url) {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  // Excel / Sheets / Calc treat a leading =, +, -, @ as a formula. URLs
+  // beginning with those characters get re-interpreted on open and have been
+  // used for exfiltration via WEBSERVICE/HYPERLINK. Reject at the validity
+  // boundary so we don't have to remember to sentinel them at every sink.
+  if (/^[=+\-@]/.test(trimmed)) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed, 'https://example.com');
+  } catch {
+    return false;
+  }
+
+  // The base in the constructor lets relative paths parse; restrict the
+  // resulting protocol so javascript:, data:, file:, etc. are rejected even
+  // when supplied as absolute URLs.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  // Embedded http(s):// glued to a path segment (e.g. `/brandshttps://...`).
+  // The negative class before the scheme keeps legitimate query-embedded
+  // URLs like `/redirect?to=https://example.com` allowed.
+  if (/[^/?&=#]https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+
+  // Double-encoded quote characters never appear in legitimate browser or
+  // crawler URLs. Raw and single-encoded quotes can legitimately occur in
+  // paths like `/products/o'reilly` so we leave those alone.
+  if (/%2522|%2527/i.test(trimmed)) {
+    return false;
+  }
+
+  // Trailing comma / semicolon catches copy-paste fragments like `/foo),`
+  // or `/foo];` without rejecting legitimate Wikipedia-style `/foo_(disambig)`.
+  if (/[,;]$/.test(trimmed)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function processErrorPagesResults(results) {
   if (!results || results.length === 0) {
     return {
       totalErrors: 0,
       errorPages: [],
+      droppedUrls: [],
       summary: {
         uniqueUrls: 0,
         uniqueUserAgents: 0,
@@ -368,11 +395,24 @@ export function processErrorPagesResults(results) {
     };
   }
 
+  // Filter malformed URLs at the data boundary so `errorPages`, the per-status
+  // categorization, the Excel export, the opportunity sync, and the Mystique
+  // payload all share one consistent view.
+  const errorPages = [];
+  const droppedUrls = [];
+  results.forEach((row) => {
+    if (isValidUrlPath(row.url)) {
+      errorPages.push(row);
+    } else {
+      droppedUrls.push(row.url);
+    }
+  });
+
   const statusCodes = {};
   const uniqueUrls = new Set();
   const uniqueUserAgents = new Set();
 
-  results.forEach((row) => {
+  errorPages.forEach((row) => {
     const totalRequestsParsed = parseInt(row.total_requests, 10);
     // eslint-disable-next-line no-param-reassign
     row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
@@ -386,7 +426,8 @@ export function processErrorPagesResults(results) {
 
   return {
     totalErrors,
-    errorPages: results,
+    errorPages,
+    droppedUrls,
     summary: {
       uniqueUrls: uniqueUrls.size,
       uniqueUserAgents: uniqueUserAgents.size,
@@ -406,13 +447,19 @@ export function categorizeErrorsByStatusCode(errorPages) {
   errorPages.forEach((error) => {
     const statusCode = error.status?.toString();
     if (statusCode === '404') {
-      if (!categorized[404]) categorized[404] = [];
+      if (!categorized[404]) {
+        categorized[404] = [];
+      }
       categorized[404].push(error);
     } else if (statusCode === '403') {
-      if (!categorized[403]) categorized[403] = [];
+      if (!categorized[403]) {
+        categorized[403] = [];
+      }
       categorized[403].push(error);
     } else if (statusCode && statusCode.startsWith('5')) {
-      if (!categorized['5xx']) categorized['5xx'] = [];
+      if (!categorized['5xx']) {
+        categorized['5xx'] = [];
+      }
       categorized['5xx'].push(error);
     }
   });
@@ -526,7 +573,9 @@ export async function downloadExistingCdnSheet(
     const rows = [];
 
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
+      if (rowNumber === 1) {
+        return;
+      }
 
       const { values } = row;
       rows.push({
@@ -551,52 +600,68 @@ export async function downloadExistingCdnSheet(
 }
 
 /**
- * Matches error data with existing CDN data and enriches it
- * @param {Array} errors - Error data from Athena
- * @param {Array} cdnData - Existing CDN data from sheet
- * @param {string} baseUrl - Base URL for path conversion
- * @returns {Array} - Enriched error data with CDN fields
+ * Collapses Athena rows (one per URL × user_agent) into one entry per URL.
+ * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
+ * yields a single Suggestion with both arrays populated.
+ *
+ * @param {Array<Object>} errors - Categorized error rows.
+ * @returns {Array<Object>} One entry per unique URL with aggregated metrics.
  */
-export function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
-  const enrichedErrors = [];
+export function groupErrorsByUrl(errors) {
+  const urlMap = new Map();
 
-  errors.forEach((error) => {
-    const errorUrl = toPathOnly(error.url, baseUrl);
-    const errorUserAgent = error.user_agent;
-    const match = cdnData.find((cdnRow) => {
-      let cdnUrl;
-      if (cdnRow.url === '/') {
-        cdnUrl = '/';
-      } else {
-        cdnUrl = cdnRow.url || '';
-      }
-
-      const urlMatch = errorUrl === cdnUrl
-        || errorUrl.includes(cdnUrl)
-        || cdnUrl.includes(errorUrl);
-
-      const userAgentMatch = cdnRow.user_agent_display === errorUserAgent
-        || (cdnRow.user_agent_display && errorUserAgent
-          && cdnRow.user_agent_display.toLowerCase().includes(errorUserAgent.toLowerCase()))
-        || (errorUserAgent && cdnRow.user_agent_display
-          && errorUserAgent.toLowerCase().includes(cdnRow.user_agent_display.toLowerCase()));
-
-      return urlMatch && userAgentMatch;
-    });
-
-    if (match) {
-      enrichedErrors.push({
-        agent_type: match.agent_type,
-        user_agent_display: match.user_agent_display,
-        number_of_hits: error.total_requests || match.number_of_hits,
-        avg_ttfb_ms: match.avg_ttfb_ms,
-        country_code: match.country_code,
-        url: errorUrl,
-        product: match.product,
-        category: match.category,
-      });
+  for (const error of errors) {
+    const { url } = error;
+    let entry = urlMap.get(url);
+    if (!entry) {
+      entry = {
+        url,
+        httpStatus: error.status,
+        hitCount: 0,
+        agentTypes: new Set(),
+        userAgents: new Set(),
+        avgTtfb: error.avg_ttfb_ms,
+        countryCode: error.country_code,
+        product: error.product,
+        category: error.category,
+      };
+      urlMap.set(url, entry);
     }
-  });
+    entry.hitCount += (error.total_requests ?? 0);
+    if (error.agent_type) {
+      entry.agentTypes.add(error.agent_type);
+    }
+    if (error.user_agent) {
+      entry.userAgents.add(error.user_agent);
+    }
+  }
 
-  return enrichedErrors;
+  return Array.from(urlMap.values()).map((entry) => ({
+    ...entry,
+    agentTypes: [...entry.agentTypes],
+    userAgents: [...entry.userAgents],
+  }));
+}
+
+/**
+ * Parses a period identifier 'wWW-YYYY' (case-insensitive, zero-padded week)
+ * into the Monday of that ISO week (UTC). Returns epoch for unrecognised
+ * inputs so unknown periods are treated as stale.
+ */
+export function parsePeriodIdentifier(periodIdentifier) {
+  const match = /^w(\d{2})-(\d{4})$/i.exec(periodIdentifier);
+  if (!match) {
+    return new Date(0);
+  }
+  const weekNum = parseInt(match[1], 10);
+  const year = parseInt(match[2], 10);
+
+  // ISO 8601: Jan 4 is always in week 1.
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+  const target = new Date(week1Monday);
+  target.setUTCDate(week1Monday.getUTCDate() + (weekNum - 1) * 7);
+  return target;
 }

@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -48,6 +46,7 @@ describe('Summarization Handler', () => {
       getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-id-123',
       getDeliveryType: () => 'aem',
+      getConfig: () => ({ getIncludedURLs: () => [] }),
     };
 
     audit = {
@@ -55,6 +54,8 @@ describe('Summarization Handler', () => {
       getAuditType: () => 'summarization',
       getFullAuditRef: () => 'https://adobe.com',
       getAuditResult: sandbox.stub(),
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     log = {
@@ -78,6 +79,12 @@ describe('Summarization Handler', () => {
       Site: {
         findById: sandbox.stub(),
       },
+      Opportunity: {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      },
+      Audit: {
+        updateByKeys: sandbox.stub().resolves(),
+      },
     };
 
     context = {
@@ -86,6 +93,13 @@ describe('Summarization Handler', () => {
       env,
       site,
       audit,
+      auditContext: {
+        summarizationUrls: [
+          'https://adobe.com/page1',
+          'https://adobe.com/page2',
+          'https://adobe.com/page3',
+        ],
+      },
       dataAccess,
       // Default: all 3 URLs have scrape results (100% availability)
       // scrapeResultPaths is a Map<URL, S3Path>
@@ -120,10 +134,10 @@ describe('Summarization Handler', () => {
       });
       expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         'site-id-123',
-        'ahrefs',
+        'seo',
         'global',
       );
-      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Found 3 top pages for site site-id-123');
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Found 3 top pages for site site-id-123 (using max 200)');
     });
 
     it('should handle when no top pages are found', async () => {
@@ -135,12 +149,14 @@ describe('Summarization Handler', () => {
         type: 'top-pages',
         siteId: 'site-id-123',
         auditResult: {
-          success: false,
+          success: true,
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
       });
-      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No top pages found for site');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
+      );
     });
 
     it('should handle errors gracefully', async () => {
@@ -173,6 +189,13 @@ describe('Summarization Handler', () => {
       const result = await submitForScraping(context);
 
       expect(result).to.deep.equal({
+        auditContext: {
+          summarizationUrls: [
+            'https://adobe.com/page1',
+            'https://adobe.com/page2',
+            'https://adobe.com/page3',
+          ],
+        },
         urls: [
           { url: 'https://adobe.com/page1' },
           { url: 'https://adobe.com/page2' },
@@ -194,6 +217,7 @@ describe('Summarization Handler', () => {
       const result = await submitForScraping(context);
 
       expect(result.urls).to.have.lengthOf(200);
+      expect(result.auditContext.summarizationUrls).to.have.lengthOf(200);
       expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 200 pages for scraping');
     });
 
@@ -206,14 +230,53 @@ describe('Summarization Handler', () => {
       expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] Audit failed, skipping scraping');
     });
 
-    it('should throw error when no top pages to submit', async () => {
+    it('should throw error when no URLs to submit', async () => {
       audit.getAuditResult.returns({ success: true });
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       await expect(submitForScraping(context)).to.be.rejectedWith(
-        'No top pages to submit for scraping',
+        'No URLs to submit for scraping',
       );
-      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No top pages to submit for scraping');
+      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No URLs to submit for scraping');
+    });
+
+    it('should include site-config URLs when submitting for scraping', async () => {
+      audit.getAuditResult.returns({ success: true });
+      site.getConfig = () => ({
+        getIncludedURLs: () => ['https://adobe.com/included-page'],
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://adobe.com/included-page' },
+        { url: 'https://adobe.com/page1' },
+        { url: 'https://adobe.com/page2' },
+        { url: 'https://adobe.com/page3' },
+      ]);
+      expect(result.auditContext.summarizationUrls).to.deep.equal([
+        'https://adobe.com/included-page',
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+    });
+
+    it('should handle null SEO top pages when included URLs are present', async () => {
+      audit.getAuditResult.returns({ success: true });
+      site.getConfig = () => ({
+        getIncludedURLs: () => ['https://adobe.com/included-page'],
+      });
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://adobe.com/included-page' },
+      ]);
+      expect(result.auditContext.summarizationUrls).to.deep.equal([
+        'https://adobe.com/included-page',
+      ]);
     });
   });
 
@@ -253,6 +316,9 @@ describe('Summarization Handler', () => {
         getUrl: () => `https://adobe.com/page${i}`,
       }));
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+      context.auditContext = {
+        summarizationUrls: manyPages.map((page) => page.getUrl()),
+      };
       
       // Provide scrape results for 120 pages (80% availability, exceeds 100 page limit)
       const scrapeMap = new Map();
@@ -305,12 +371,12 @@ describe('Summarization Handler', () => {
       );
     });
 
-    it('should throw error when no top pages found', async () => {
-      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+    it('should throw error when no submitted URLs are available', async () => {
+      context.auditContext = {};
 
-      await expect(sendToMystique(context)).to.be.rejectedWith('No top pages found');
+      await expect(sendToMystique(context)).to.be.rejectedWith('No submitted URLs found');
       expect(log.warn).to.have.been.calledWith(
-        '[SUMMARIZATION] No top pages found, skipping Mystique message',
+        '[SUMMARIZATION] No submitted URLs found in audit context, skipping Mystique message',
       );
       expect(sqs.sendMessage).not.to.have.been.called;
     });
@@ -355,6 +421,14 @@ describe('Summarization Handler', () => {
         { getUrl: () => 'https://adobe.com/page4' },
       ];
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(fourPages);
+      context.auditContext = {
+        summarizationUrls: [
+          'https://adobe.com/page1',
+          'https://adobe.com/page2',
+          'https://adobe.com/page3',
+          'https://adobe.com/page4',
+        ],
+      };
       
       context.scrapeResultPaths = new Map([
         ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
@@ -406,17 +480,377 @@ describe('Summarization Handler', () => {
 
       const result = await sendToMystique(context);
 
-      // 5/3 = 166.7% - should pass easily
       expect(result).to.deep.equal({ status: 'complete' });
       expect(log.info).to.have.been.calledWith(
-        '[SUMMARIZATION] Scrape availability: 5/3 (166.7%)',
+        '[SUMMARIZATION] Scrape availability: 3/3 (100.0%)',
       );
       expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages.map((page) => page.page_url)).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+    });
+
+    it('should exclude pages that already have both summary and key points (LLMO-3493)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(
+        new Map([
+          ['https://adobe.com/page1', { hasSummary: true, hasKeyPoints: true }],
+          ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false }],
+          ['https://adobe.com/page3', { hasSummary: true, hasKeyPoints: false }],
+        ]),
+      );
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(mockDetectExistingContent).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page2');
+      expect(pageUrls).to.include('https://adobe.com/page3');
+      expect(pageUrls).not.to.include('https://adobe.com/page1');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Sent 2 pages to Mystique for site site-id-123',
+      );
+    });
+
+    it('should skip pre-check when s3Client or bucket not configured', async () => {
+      context.s3Client = null;
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+    });
+
+    it('should include site-config URLs when sending to Mystique', async () => {
+      site.getConfig = () => ({
+        getIncludedURLs: () => ['https://adobe.com/included-page'],
+      });
+      context.scrapeResultPaths = new Map([
+        ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
+        ['https://adobe.com/page2', 'scrapes/site-id-123/page2/scrape.json'],
+        ['https://adobe.com/page3', 'scrapes/site-id-123/page3/scrape.json'],
+        ['https://adobe.com/included-page', 'scrapes/site-id-123/included-page/scrape.json'],
+      ]);
+      context.auditContext = {
+        summarizationUrls: [
+          'https://adobe.com/page1',
+          'https://adobe.com/page2',
+          'https://adobe.com/page3',
+          'https://adobe.com/included-page',
+        ],
+      };
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages.map((page) => page.page_url)).to.include('https://adobe.com/included-page');
+    });
+
+    it('should skip pages with unchanged content hash (LLMO-4454)', async () => {
+      const hash1 = 'changed-hash';
+      const hash2 = 'same-hash';
+      const hash3 = 'new-page-hash';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash1 }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash2 }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash3 }],
+      ]));
+
+      const mockSuggestion = {
+        getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash2 }),
+      };
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page1');
+      expect(pageUrls).to.include('https://adobe.com/page3');
+      expect(pageUrls).not.to.include('https://adobe.com/page2');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Skipped 1 page(s) with unchanged content',
+      );
+    });
+
+    it('should return early when all pages have unchanged content (LLMO-4454)', async () => {
+      const hash = 'same-hash-for-all';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+      ]));
+
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: hash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).not.to.have.been.called;
+      expect(dataAccess.Audit.updateByKeys).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] No pages to send to Mystique after filtering',
+      );
+    });
+
+    it('should store scrapedUrlsSent and urlToContentHash in audit result (LLMO-4454)', async () => {
+      const hash1 = 'hash-page1';
+      const hash2 = 'hash-page2';
+      const hash3 = 'hash-page3';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash1 }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash2 }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash3 }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      await handler.sendToMystique(context);
+
+      expect(dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      const [keyArg, updateArg] = dataAccess.Audit.updateByKeys.getCall(0).args;
+      expect(keyArg).to.deep.equal({ auditId: 'audit-id-456' });
+      expect(updateArg.auditResult.scrapedUrlsSent).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+      expect(updateArg.auditResult.urlToContentHash).to.deep.equal({
+        'https://adobe.com/page1': hash1,
+        'https://adobe.com/page2': hash2,
+        'https://adobe.com/page3': hash3,
+      });
+    });
+
+    it('should store empty urlToContentHash in audit result when s3Client is not configured (LLMO-4454)', async () => {
+      context.s3Client = null;
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      await sendToMystique(context);
+
+      expect(dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      const [keyArg, updateArg] = dataAccess.Audit.updateByKeys.getCall(0).args;
+      expect(keyArg).to.deep.equal({ auditId: 'audit-id-456' });
+      expect(updateArg.auditResult.urlToContentHash).to.deep.equal({});
+      expect(updateArg.auditResult.scrapedUrlsSent).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+    });
+
+    it('should send all pages when no matching summarization opportunity exists (LLMO-4454)', async () => {
+      const nonMatchingOpportunity = {
+        getType: () => 'some-other-type',
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([nonMatchingOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+      expect(log.warn).to.have.been.calledWithMatch(
+        "Found 1 active opportunities but none matched type 'summarization'",
+      );
+    });
+
+    it('should use first hash when a URL has two suggestions (summary + key points) (LLMO-4454)', async () => {
+      const hash = 'shared-page-hash';
+
+      // All three context pages are present so none slip through the filter
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+      ]));
+
+      // page1 appears twice in suggestions (one page-summary + one key-points entry),
+      // both carrying the same hash — the duplicate guard should keep just one map entry.
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: hash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      // All three pages have matching hashes — all skipped, no Mystique call
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Skipped 3 page(s) with unchanged content',
+      );
+    });
+
+    it('should send pages when current content hash is null (LLMO-4454)', async () => {
+      const storedHash = 'stored-hash';
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: null }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'different-hash' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: storedHash }],
+      ]));
+
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: storedHash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: storedHash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      // page1: null hash → sent (can't match), page2: different hash → sent, page3: matching hash → skipped
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page1');
+      expect(pageUrls).to.include('https://adobe.com/page2');
+      expect(pageUrls).not.to.include('https://adobe.com/page3');
+    });
+
+    it('should send all pages when Opportunity is not in dataAccess (LLMO-4454)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess = { ...context.dataAccess, Opportunity: undefined };
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+    });
+
+    it('should gracefully handle when fetching opportunity hashes fails (LLMO-4454)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] Failed to fetch existing suggestion hashes: DB error',
+      );
     });
   });
 });
 
-describe('Summarization Handler - Athena/Ahrefs fallback', () => {
+describe('Summarization Handler - Athena/SEO fallback', () => {
   let sandbox;
   let mockGetTopAgenticUrlsFromAthena;
 
@@ -428,7 +862,7 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     sandbox.restore();
   });
 
-  it('should use Ahrefs URLs in importTopPages (importTopPages only uses Ahrefs)', async () => {
+  it('should use SEO URLs in importTopPages (importTopPages only uses SEO)', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
       'https://adobe.com/athena-page1',
       'https://adobe.com/athena-page2',
@@ -441,8 +875,8 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     });
 
     const topPages = [
-      { getUrl: () => 'https://adobe.com/ahrefs-page1' },
-      { getUrl: () => 'https://adobe.com/ahrefs-page2' },
+      { getUrl: () => 'https://adobe.com/seo-page1' },
+      { getUrl: () => 'https://adobe.com/seo-page2' },
     ];
 
     const context = {
@@ -460,22 +894,22 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
 
     const result = await handler.importTopPages(context);
 
-    // importTopPages only uses Ahrefs, not Athena
+    // importTopPages only uses SEO, not Athena
     expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([
-      'https://adobe.com/ahrefs-page1',
-      'https://adobe.com/ahrefs-page2',
+      'https://adobe.com/seo-page1',
+      'https://adobe.com/seo-page2',
     ]);
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
       'site-123',
-      'ahrefs',
+      'seo',
       'global',
     );
     // Athena is not used in importTopPages
     expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
   });
 
-  it('should return failure in importTopPages when no Ahrefs pages found (importTopPages only uses Ahrefs)', async () => {
+  it('should keep importTopPages successful when no SEO pages are found', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/summarization/handler.js', {
@@ -499,13 +933,11 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
 
     const result = await handler.importTopPages(context);
 
-    // importTopPages only uses Ahrefs, not Athena, so when Ahrefs returns empty, it fails
-    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([]);
-    expect(context.log.warn).to.have.been.calledWith(
-      '[SUMMARIZATION] No top pages found for site',
+    expect(context.log.info).to.have.been.calledWith(
+      '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
     );
-    // Athena is not used in importTopPages
     expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
   });
 
@@ -525,6 +957,7 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
       site: {
         getBaseURL: () => 'https://adobe.com',
         getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
       },
       audit: { getAuditResult: () => ({ success: true }) },
       dataAccess: {
@@ -537,10 +970,11 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     const result = await handler.submitForScraping(context);
 
     expect(result.urls).to.deep.equal([{ url: 'https://adobe.com/athena-page1' }]);
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+    expect(result.auditContext.summarizationUrls).to.deep.equal(['https://adobe.com/athena-page1']);
   });
 
-  it('should fall back to Ahrefs in submitForScraping when Athena returns empty', async () => {
+  it('should use SEO URLs in submitForScraping when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/summarization/handler.js', {
@@ -549,13 +983,14 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://adobe.com/ahrefs-page1' }];
+    const topPages = [{ getUrl: () => 'https://adobe.com/seo-page1' }];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
       site: {
         getBaseURL: () => 'https://adobe.com',
         getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
       },
       audit: { getAuditResult: () => ({ success: true }) },
       dataAccess: {
@@ -567,9 +1002,79 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
 
     const result = await handler.submitForScraping(context);
 
-    expect(result.urls).to.deep.equal([{ url: 'https://adobe.com/ahrefs-page1' }]);
+    expect(result.urls).to.deep.equal([{ url: 'https://adobe.com/seo-page1' }]);
+    expect(result.auditContext.summarizationUrls).to.deep.equal(['https://adobe.com/seo-page1']);
+  });
+
+  it('should exclude dynamic page URLs in submitForScraping', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/search',
+      'https://adobe.com/about',
+      'https://adobe.com/cart',
+      'https://adobe.com/contact',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) } },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://adobe.com/about' },
+      { url: 'https://adobe.com/contact' },
+    ]);
+    expect(result.auditContext.summarizationUrls).to.deep.equal([
+      'https://adobe.com/about',
+      'https://adobe.com/contact',
+    ]);
     expect(context.log.info).to.have.been.calledWith(
-      '[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs',
+      '[SUMMARIZATION] Excluded 2 dynamic page(s) from summarization',
+    );
+  });
+
+  it('should throw when all URLs are dynamic in submitForScraping', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/search',
+      'https://adobe.com/cart',
+      'https://adobe.com/login',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) } },
+    };
+
+    await expect(handler.submitForScraping(context)).to.be.rejectedWith(
+      'No URLs to submit for scraping (all excluded as dynamic)',
+    );
+    expect(context.log.warn).to.have.been.calledWith(
+      '[SUMMARIZATION] No static pages left after filtering dynamic content',
     );
   });
 
@@ -594,14 +1099,27 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
         getBaseURL: () => 'https://adobe.com',
         getId: () => 'site-123',
         getDeliveryType: () => 'aem',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
       },
       audit: {
         getId: () => 'audit-123',
         getAuditResult: () => ({ success: true }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        summarizationUrls: [
+          'https://adobe.com/athena-page1',
+          'https://adobe.com/athena-page2',
+          'https://adobe.com/athena-page3',
+        ],
       },
       dataAccess: {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+        Audit: {
+          updateByKeys: sandbox.stub().resolves(),
         },
       },
       scrapeResultPaths: new Map([
@@ -617,7 +1135,7 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
-  it('should fall back to Ahrefs in sendToMystique when Athena returns empty', async () => {
+  it('should use SEO URLs in sendToMystique when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/summarization/handler.js', {
@@ -627,8 +1145,8 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     });
 
     const topPages = [
-      { getUrl: () => 'https://adobe.com/ahrefs-page1' },
-      { getUrl: () => 'https://adobe.com/ahrefs-page2' },
+      { getUrl: () => 'https://adobe.com/seo-page1' },
+      { getUrl: () => 'https://adobe.com/seo-page2' },
     ];
 
     const context = {
@@ -639,27 +1157,154 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
         getBaseURL: () => 'https://adobe.com',
         getId: () => 'site-123',
         getDeliveryType: () => 'aem',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
       },
       audit: {
         getId: () => 'audit-123',
         getAuditResult: () => ({ success: true }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        summarizationUrls: [
+          'https://adobe.com/seo-page1',
+          'https://adobe.com/seo-page2',
+        ],
       },
       dataAccess: {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
         },
+        Audit: {
+          updateByKeys: sandbox.stub().resolves(),
+        },
       },
       scrapeResultPaths: new Map([
-        ['https://adobe.com/ahrefs-page1', 'path1'],
-        ['https://adobe.com/ahrefs-page2', 'path2'],
+        ['https://adobe.com/seo-page1', 'path1'],
+        ['https://adobe.com/seo-page2', 'path2'],
       ]),
     };
 
     const result = await handler.sendToMystique(context);
 
     expect(result).to.deep.equal({ status: 'complete' });
-    expect(context.log.info).to.have.been.calledWith(
-      '[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs',
+  });
+
+  it('should throw when sendToMystique is missing submitted URLs in audit context', async () => {
+    const handler = await esmock('../../../src/summarization/handler.js', {});
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditResult: () => ({ success: true }),
+      },
+      auditContext: {},
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+      scrapeResultPaths: new Map([
+        ['https://adobe.com/search', 'path1'],
+      ]),
+    };
+
+    await expect(handler.sendToMystique(context)).to.be.rejectedWith('No submitted URLs found');
+    expect(context.log.warn).to.have.been.calledWith(
+      '[SUMMARIZATION] No submitted URLs found in audit context, skipping Mystique message',
     );
+  });
+
+  it('should prioritize included URLs, then Athena, then SEO sorted by traffic in submitForScraping', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/agentic-page1',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [
+      { getUrl: () => 'https://adobe.com/seo-page1', getTraffic: () => 100 },
+      { getUrl: () => 'https://adobe.com/seo-page2', getTraffic: () => 500 },
+    ];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => ['https://adobe.com/included-page1'] }),
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://adobe.com/included-page1' },
+      { url: 'https://adobe.com/agentic-page1' },
+      { url: 'https://adobe.com/seo-page2' },
+      { url: 'https://adobe.com/seo-page1' },
+    ]);
+  });
+
+  it('should keep included URLs first, then Athena, then SEO when cutting off at 200', async () => {
+    const includedUrls = Array.from({ length: 3 }, (_, i) => `https://adobe.com/included-${i}`);
+    const athenaUrls = Array.from({ length: 3 }, (_, i) => `https://adobe.com/athena-${i}`);
+    const seoPages = Array.from({ length: 250 }, (_, i) => ({
+      getUrl: () => `https://adobe.com/seo-${i}`,
+      getTraffic: () => 1000 - i,
+    }));
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves(athenaUrls);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => includedUrls }),
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(seoPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(200);
+    expect(result.auditContext.summarizationUrls.slice(0, 6)).to.deep.equal([
+      'https://adobe.com/included-0',
+      'https://adobe.com/included-1',
+      'https://adobe.com/included-2',
+      'https://adobe.com/athena-0',
+      'https://adobe.com/athena-1',
+      'https://adobe.com/athena-2',
+    ]);
+    expect(result.auditContext.summarizationUrls[199]).to.equal('https://adobe.com/seo-193');
   });
 });

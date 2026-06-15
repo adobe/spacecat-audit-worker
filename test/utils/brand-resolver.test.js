@@ -1,0 +1,780 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* eslint-env mocha */
+
+import { expect, use } from 'chai';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
+
+import {
+  applyBrandScope,
+  applyScopeToOpportunity,
+  BRAND_RESOLUTION_TIMEOUT_MS,
+  findActiveBrandForSite,
+  resolveBrandForSite,
+  resolveBrandResultForSite,
+} from '../../src/utils/brand-resolver.js';
+
+use(sinonChai);
+use(chaiAsPromised);
+
+// ---------------------------------------------------------------------------
+// PostgREST-based resolver tests (offsite audit handlers)
+// ---------------------------------------------------------------------------
+
+describe('brand-resolver (PostgREST)', () => {
+  let sandbox;
+  let log;
+  let site;
+
+  const siteId = 'site-1';
+  const orgId = 'org-1';
+
+  /**
+   * Build a single PostgREST query chain mock that resolves (or rejects) on the
+   * third `.eq()` call (matching the new 3-eq query pattern: org, status, site_id).
+   */
+  function makeChain(resolveData, throwWith, postgrestError = null) {
+    const chain = {
+      select: sandbox.stub().returnsThis(),
+      eq: sandbox.stub().returnsThis(),
+      order: sandbox.stub().returnsThis(),
+    };
+    if (throwWith) {
+      chain.limit = sandbox.stub().rejects(throwWith);
+    } else {
+      chain.limit = sandbox.stub().resolves({ data: resolveData, error: postgrestError });
+    }
+    return chain;
+  }
+
+  /**
+   * Build a full Lambda context with a PostgREST client mock that supports the
+   * two-query structure: directChain for Q1 (site_id match), joinChain for Q2
+   * (brand_sites join fallback).
+   *
+   * @param {object} opts
+   * @param {Array}  [opts.directBrands=[]] - rows returned by Q1 (direct site_id match)
+   * @param {Array}  [opts.joinBrands=[]]   - rows returned by Q2 (brand_sites join)
+   * @param {Error}  [opts.throws=null]     - if set, Q1 rejects with this error (Q2 never runs)
+   */
+  function buildContext({ directBrands = [], joinBrands = [], throws = null } = {}) {
+    const directChain = makeChain(throws ? null : directBrands, throws);
+    const joinChain = makeChain(joinBrands, null);
+    return {
+      log,
+      dataAccess: {
+        services: {
+          postgrestClient: {
+            from: sandbox.stub()
+              .onFirstCall()
+              .returns(directChain)
+              .onSecondCall()
+              .returns(joinChain),
+          },
+        },
+      },
+    };
+  }
+
+  /** Return the last structured outcome log call across all log levels. */
+  function lastOutcome() {
+    const calls = [...log.info.getCalls(), ...log.warn.getCalls(), ...log.debug.getCalls()]
+      .filter((c) => /\[brand-resolver\] outcome/.test(c.args[0] || ''));
+    return calls[calls.length - 1];
+  }
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    log = {
+      debug: sandbox.stub(),
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    site = {
+      getId: sandbox.stub().returns(siteId),
+      getOrganizationId: sandbox.stub().returns(orgId),
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  describe('findActiveBrandForSite', () => {
+    it('returns null and emits missing_input outcome at debug when context is missing', async () => {
+      const result = await findActiveBrandForSite(undefined, { orgId, siteId });
+      expect(result).to.be.null;
+      // No log available; just verify the call doesn't throw and returns null.
+    });
+
+    it('returns null and logs missing_input at debug when orgId is missing', async () => {
+      const ctx = buildContext({ directBrands: [] });
+      const result = await findActiveBrandForSite(ctx, { siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call).to.exist;
+      expect(call.proxy).to.equal(log.debug);
+      expect(call.args[1]).to.include({ result: 'missing_input', siteId });
+    });
+
+    it('returns null and logs missing_input when params is omitted entirely', async () => {
+      const ctx = buildContext({ directBrands: [] });
+      const result = await findActiveBrandForSite(ctx);
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.args[1]).to.include({ result: 'missing_input' });
+    });
+
+    it('returns null and logs no_client at warn when postgrestClient is unavailable', async () => {
+      const ctx = { log, dataAccess: { services: {} } };
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'no_client', orgId, siteId });
+    });
+
+    it('resolves brand via direct baseSiteId match and logs success at info', async () => {
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.deep.equal({ brandId: 'brand-1' });
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.info);
+      expect(call.args[1]).to.include({
+        result: 'success', orgId, siteId, brandId: 'brand-1', via: 'baseSiteId',
+      });
+      expect(call.args[1].durationMs).to.be.a('number');
+    });
+
+    it('falls back to brand_sites join match when no direct baseSiteId match exists', async () => {
+      const ctx = buildContext({ directBrands: [], joinBrands: [{ id: 'brand-2' }] });
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.deep.equal({ brandId: 'brand-2' });
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.info);
+      expect(call.args[1]).to.include({ result: 'success', via: 'brand_sites' });
+    });
+
+    it('returns null and logs no_match at info when no brand matches either query', async () => {
+      const ctx = buildContext();
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.info);
+      expect(call.args[1]).to.include({ result: 'no_match' });
+    });
+
+    it('handles undefined data array from Q1 gracefully and falls through to Q2', async () => {
+      const ctx = buildContext({ directBrands: undefined, joinBrands: [] });
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+    });
+
+    it('returns null and logs error at warn with errorName (not errorMessage) when query throws', async () => {
+      const err = new Error('boom');
+      err.name = 'PostgrestError';
+      const ctx = buildContext({ throws: err });
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      // errorMessage must NOT appear in the warn payload (may contain DB internals)
+      expect(call.args[1]).to.not.have.property('errorMessage');
+      // but error detail (message + stack) must appear at debug level
+      expect(log.debug).to.have.been.calledWithMatch(/\[brand-resolver\] error detail/);
+      const debugCall = log.debug.getCalls().find((c) => /error detail/.test(c.args[0]));
+      expect(debugCall.args[1]).to.have.property('errorMessage', 'boom');
+    });
+
+    it('returns null and logs timeout at warn when query exceeds BRAND_RESOLUTION_TIMEOUT_MS', async () => {
+      const clock = sandbox.useFakeTimers();
+      const neverChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().returns(new Promise(() => {})),
+      };
+      // limit() returns a promise that never settles
+
+      const ctx = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: { from: sandbox.stub().returns(neverChain) },
+          },
+        },
+      };
+
+      const resultP = findActiveBrandForSite(ctx, { orgId, siteId });
+      await clock.tickAsync(BRAND_RESOLUTION_TIMEOUT_MS + 1);
+      const result = await resultP;
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'timeout', orgId, siteId });
+    });
+
+    it('returns null and logs error at warn when Q2 returns a PostgREST error response', async () => {
+      const postgrestErr = { message: 'permission denied', code: '42501' };
+      const okChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: [], error: null }),
+      };
+      const errorChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: null, error: postgrestErr }),
+      };
+      const ctx = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: {
+              from: sandbox.stub()
+                .onFirstCall()
+                .returns(okChain)
+                .onSecondCall()
+                .returns(errorChain),
+            },
+          },
+        },
+      };
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      expect(call.args[1]).to.not.have.property('errorMessage');
+    });
+
+    it('returns null and logs error at warn when Q1 returns a PostgREST error response', async () => {
+      const postgrestErr = { message: 'RLS policy violation', code: '42501' };
+      const errorChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: null, error: postgrestErr }),
+      };
+      const ctx = {
+        log,
+        dataAccess: { services: { postgrestClient: { from: sandbox.stub().returns(errorChain) } } },
+      };
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      expect(call.args[1]).to.not.have.property('errorMessage');
+    });
+
+    it('does not throw when log is missing across all outcomes', async () => {
+      // success via direct match
+      const okCtx = buildContext({ directBrands: [{ id: 'brand-z' }] });
+      delete okCtx.log;
+      expect(await findActiveBrandForSite(okCtx, { orgId, siteId }))
+        .to.deep.equal({ brandId: 'brand-z' });
+
+      // success via brand_sites join
+      const joinCtx = buildContext({ joinBrands: [{ id: 'brand-j' }] });
+      delete joinCtx.log;
+      expect(await findActiveBrandForSite(joinCtx, { orgId, siteId }))
+        .to.deep.equal({ brandId: 'brand-j' });
+
+      // error path
+      const errCtx = buildContext({ throws: new Error('silent') });
+      delete errCtx.log;
+      expect(await findActiveBrandForSite(errCtx, { orgId, siteId })).to.be.null;
+
+      // missing_input path
+      const missCtx = buildContext({ directBrands: [] });
+      delete missCtx.log;
+      expect(await findActiveBrandForSite(missCtx, { siteId })).to.be.null;
+
+      // no_client path
+      expect(
+        await findActiveBrandForSite({ dataAccess: { services: {} } }, { orgId, siteId }),
+      ).to.be.null;
+
+      // no_match path
+      const noMatchCtx = buildContext();
+      delete noMatchCtx.log;
+      expect(await findActiveBrandForSite(noMatchCtx, { orgId, siteId })).to.be.null;
+    });
+  });
+
+  describe('resolveBrandForSite', () => {
+    it('delegates to findActiveBrandForSite using site getters', async () => {
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
+
+      const result = await resolveBrandForSite(ctx, site);
+
+      expect(result).to.deep.equal({ brandId: 'brand-1' });
+      expect(site.getId).to.have.been.called;
+      expect(site.getOrganizationId).to.have.been.called;
+    });
+
+    it('returns null when site is missing (no getters)', async () => {
+      const result = await resolveBrandForSite(buildContext({ directBrands: [] }), undefined);
+      expect(result).to.be.null;
+    });
+
+    it('returns null when site is missing on null context', async () => {
+      const result = await resolveBrandForSite(undefined, undefined);
+      expect(result).to.be.null;
+    });
+  });
+
+  describe('resolveBrandResultForSite (discriminated result)', () => {
+    it('returns { brand, resolved: true } on a direct match', async () => {
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: { brandId: 'brand-1' }, resolved: true });
+    });
+
+    it('returns { brand: null, resolved: true } when both queries miss', async () => {
+      const ctx = buildContext({ directBrands: [], joinBrands: [] });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: true });
+    });
+
+    it('returns { brand: null, resolved: false } when site getters are missing', async () => {
+      const ctx = buildContext({ directBrands: [] });
+      const result = await resolveBrandResultForSite(ctx, undefined);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when context lacks dataAccess.services.postgrestClient', async () => {
+      // Note `no_client` outcome path.
+      const result = await resolveBrandResultForSite({ log }, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when context itself is undefined', async () => {
+      const result = await resolveBrandResultForSite(undefined, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when PostgREST throws', async () => {
+      const ctx = buildContext({ throws: new Error('connection refused') });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+      expect(log.warn).to.have.been.calledWithMatch(/outcome/, sinon.match({ result: 'error' }));
+    });
+
+    it('returns { brand: null, resolved: false } when the query times out', async () => {
+      // Simulate a never-resolving promise to trip the timeout path.
+      const ctx = buildContext({});
+      // Replace the first chain's `.limit()` with a never-resolving promise.
+      ctx.dataAccess.services.postgrestClient.from = sandbox.stub().returns({
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().returns(new Promise(() => {})),
+      });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+      expect(log.warn).to.have.been.calledWithMatch(/outcome/, sinon.match({ result: 'timeout' }));
+    }).timeout(BRAND_RESOLUTION_TIMEOUT_MS + 1000);
+
+    it('falls back to the brand_sites join when the direct match misses', async () => {
+      const ctx = buildContext({
+        directBrands: [],
+        joinBrands: [{ id: 'brand-joined' }],
+      });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: { brandId: 'brand-joined' }, resolved: true });
+    });
+  });
+
+  describe('applyBrandScope', () => {
+    it('returns the message unchanged when brand is null', () => {
+      const message = { type: 't', siteId: 'orig', data: { foo: 1 } };
+      const out = applyBrandScope(message, null);
+      expect(out).to.equal(message);
+    });
+
+    it('returns the message unchanged when brand is undefined', () => {
+      const message = { type: 't', siteId: 'orig' };
+      const out = applyBrandScope(message, undefined);
+      expect(out).to.equal(message);
+    });
+
+    it('returns the message unchanged when brand has no brandId', () => {
+      const message = { type: 't', siteId: 'orig' };
+      const out = applyBrandScope(message, { someOtherField: 'x' });
+      expect(out).to.equal(message);
+    });
+
+    it('adds scope fields, does NOT mutate siteId, and does not mutate the original message', () => {
+      const message = { type: 't', siteId: 'orig-site', data: { foo: 1 } };
+      const out = applyBrandScope(message, { brandId: 'b-1' });
+
+      expect(out).to.not.equal(message);
+      expect(out).to.deep.equal({
+        type: 't',
+        siteId: 'orig-site',
+        data: { foo: 1 },
+        scopeType: 'brand',
+        brandId: 'b-1',
+      });
+      // original message untouched
+      expect(message).to.deep.equal({ type: 't', siteId: 'orig-site', data: { foo: 1 } });
+    });
+
+    it('sets scopeType to the exact string "brand"', () => {
+      const out = applyBrandScope({ type: 't', siteId: 's' }, { brandId: 'b-2' });
+      expect(out.scopeType).to.equal('brand');
+      expect(out.brandId).to.equal('b-2');
+    });
+  });
+
+  describe('applyScopeToOpportunity', () => {
+    let mockOpportunity;
+
+    beforeEach(() => {
+      mockOpportunity = {
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
+      };
+    });
+
+    it("sets scopeType='brand' and scopeId when brand is resolved", () => {
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'brand-abc' }, resolved: true },
+        log,
+        '[Test]',
+      );
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-abc');
+    });
+
+    it('clears scope only when resolved=true and no brand matched', () => {
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: true },
+        log,
+        '[Test]',
+      );
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
+    });
+
+    it('PRESERVES existing scope when resolution failed (resolved=false)', () => {
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: false },
+        log,
+        '[Test]',
+      );
+
+      // Neither setter is called — existing scope on the opportunity is intact.
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('treats null/undefined result as "preserve existing scope"', () => {
+      applyScopeToOpportunity(mockOpportunity, null, log, '[Test]');
+      applyScopeToOpportunity(mockOpportunity, undefined, log, '[Test]');
+
+      // Defensive null-default: a bare null is treated as resolved=false, NOT as
+      // "confirmed no brand". This avoids accidentally wiping scope on a caller bug.
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('rolls back scopeType to null when setScopeId throws (partial-write rollback)', () => {
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeId.firstCall).to.have.been.calledWith('b');
+      expect(mockOpportunity.setScopeId.secondCall).to.have.been.calledWith(null);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scope/);
+    });
+
+    it('swallows rollback failures and still logs the original setScopeId error', () => {
+      // Worst case: setScopeId throws, then the rollback setScopeType(null) ALSO throws.
+      // applyScopeToOpportunity must not propagate either error.
+      mockOpportunity.setScopeType.onFirstCall().returns(undefined); // initial 'brand' succeeds
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+      mockOpportunity.setScopeType.onSecondCall().throws(new Error('rollback also failed'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scope/);
+    });
+
+    it('does not throw when setScopeType throws on a brand match', () => {
+      mockOpportunity.setScopeType.throws(new Error('validation error'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeType; preserving existing scope/);
+      // setScopeId never runs because the first setter failed.
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('uses empty logPrefix when not provided', () => {
+      mockOpportunity.setScopeType.throws(new Error('oops'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeType/);
+    });
+
+    it('logs a warning when the clear-scope path itself throws (resolved=true, brand=null)', () => {
+      // Defensive: the model's setScopeType can throw on invalid state — even when
+      // we're clearing scope on confirmed-no-brand. The function must not propagate.
+      mockOpportunity.setScopeType.throws(new Error('model rejected null'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to clear stale scope/);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// API-based resolver tests (geo-brand-presence handlers, LLMO-4716)
+// ---------------------------------------------------------------------------
+
+describe('brand-resolver (API, LLMO-4716)', () => {
+  let sandbox;
+  let mockFetch;
+  let resolveBrandIdForSite;
+  let log;
+
+  const ORG_ID = 'org-uuid-1';
+  const SITE_ID = 'site-uuid-1';
+  const ENV = {
+    SPACECAT_API_BASE_URL: 'https://spacecat.example.com/api/v1',
+    SPACECAT_API_KEY: 'test-key',
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockFetch = sandbox.stub();
+    log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mod = await esmock('../../src/utils/brand-resolver.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: mockFetch,
+      },
+    });
+    resolveBrandIdForSite = mod.resolveBrandIdForSite;
+  });
+
+  afterEach(() => sandbox.restore());
+
+  function makeResponse({
+    status, ok, body, throwOnText, throwOnJson,
+  }) {
+    return {
+      status,
+      statusText: status === 200 ? 'OK' : 'Error',
+      ok: ok !== undefined ? ok : status >= 200 && status < 300,
+      json: throwOnJson
+        ? sandbox.stub().rejects(new Error('bad json'))
+        : sandbox.stub().resolves(body),
+      text: throwOnText
+        ? sandbox.stub().rejects(new Error('cannot read body'))
+        : sandbox.stub().resolves(typeof body === 'string' ? body : JSON.stringify(body)),
+    };
+  }
+
+  it('throws when SPACECAT_API_BASE_URL is missing', async () => {
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, { SPACECAT_API_KEY: 'k' }, log))
+      .to.be.rejectedWith(/SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/);
+  });
+
+  it('throws when SPACECAT_API_KEY is missing', async () => {
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, { SPACECAT_API_BASE_URL: 'http://x' }, log))
+      .to.be.rejectedWith(/SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/);
+  });
+
+  it('throws when env is undefined', async () => {
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, undefined, log))
+      .to.be.rejectedWith(/SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/);
+  });
+
+  it('throws when orgId is missing', async () => {
+    await expect(resolveBrandIdForSite('', SITE_ID, ENV, log))
+      .to.be.rejectedWith(/orgId and siteId are required/);
+  });
+
+  it('throws when siteId is missing', async () => {
+    await expect(resolveBrandIdForSite(ORG_ID, '', ENV, log))
+      .to.be.rejectedWith(/orgId and siteId are required/);
+  });
+
+  it('returns the brand id on 200', async () => {
+    mockFetch.resolves(makeResponse({
+      status: 200,
+      body: { id: 'brand-uuid-42', name: 'Acme', status: 'active' },
+    }));
+
+    const result = await resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log);
+
+    expect(result).to.equal('brand-uuid-42');
+    expect(mockFetch).to.have.been.calledOnce;
+    const [url, opts] = mockFetch.firstCall.args;
+    expect(url).to.equal(
+      `${ENV.SPACECAT_API_BASE_URL}/v2/orgs/${ORG_ID}/sites/${SITE_ID}/brand`,
+    );
+    expect(opts.headers).to.include({
+      'x-api-key': ENV.SPACECAT_API_KEY,
+      'User-Agent': 'spacecat-audit-worker/brand-resolver',
+    });
+    expect(opts.timeout).to.equal(30000);
+  });
+
+  it('returns null on 404', async () => {
+    mockFetch.resolves(makeResponse({ status: 404, ok: false, body: 'Not Found' }));
+
+    const result = await resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log);
+
+    expect(result).to.be.null;
+    expect(log.info).to.have.been.calledWith(
+      sinon.match(/No v2 brand for org=/),
+    );
+  });
+
+  it('throws on 5xx (fail-closed)', async () => {
+    mockFetch.resolves(makeResponse({
+      status: 503, ok: false, body: 'Service Unavailable',
+    }));
+
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log))
+      .to.be.rejectedWith(/503/);
+  });
+
+  it('handles 5xx body-read failure gracefully', async () => {
+    mockFetch.resolves(makeResponse({
+      status: 502, ok: false, throwOnText: true, body: 'unused',
+    }));
+
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log))
+      .to.be.rejectedWith(/502/);
+  });
+
+  it('throws on network error', async () => {
+    mockFetch.rejects(new Error('connect ECONNREFUSED'));
+
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log))
+      .to.be.rejectedWith(/network\/timeout/);
+  });
+
+  it('throws on non-JSON 200 body', async () => {
+    mockFetch.resolves(makeResponse({
+      status: 200, throwOnJson: true, body: '<html>',
+    }));
+
+    await expect(resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log))
+      .to.be.rejectedWith(/non-JSON/);
+  });
+
+  it('returns null on 200 body with no id (treated as no brand)', async () => {
+    mockFetch.resolves(makeResponse({ status: 200, body: { name: 'No-id' } }));
+
+    const result = await resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log);
+    expect(result).to.be.null;
+    expect(log.warn).to.have.been.calledWith(
+      sinon.match(/returned no id/),
+    );
+  });
+
+  it('returns null on 200 body that is null', async () => {
+    mockFetch.resolves(makeResponse({ status: 200, body: null }));
+
+    const result = await resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log);
+    expect(result).to.be.null;
+  });
+
+  it('returns null on 200 body where id is empty string', async () => {
+    mockFetch.resolves(makeResponse({ status: 200, body: { id: '' } }));
+
+    const result = await resolveBrandIdForSite(ORG_ID, SITE_ID, ENV, log);
+    expect(result).to.be.null;
+  });
+
+  it('url-encodes orgId and siteId path segments', async () => {
+    mockFetch.resolves(makeResponse({ status: 200, body: { id: 'b1' } }));
+
+    await resolveBrandIdForSite('org with space', 'site/with/slashes', ENV, log);
+
+    const [url] = mockFetch.firstCall.args;
+    expect(url).to.equal(
+      `${ENV.SPACECAT_API_BASE_URL}/v2/orgs/org%20with%20space/sites/site%2Fwith%2Fslashes/brand`,
+    );
+  });
+});

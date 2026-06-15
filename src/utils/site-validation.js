@@ -16,24 +16,47 @@ import { Entitlement } from '@adobe/spacecat-shared-data-access';
 const ASO_PRODUCT_CODE = Entitlement.PRODUCT_CODES.ASO;
 
 /**
+ * Audit types (SQS message `type`) for LLMO flows that skip PAID-tier suggestion validation
+ * gating — suggestions sync as if requiresValidation were false for these audits.
+ */
+export const IS_LLMO_OPPTY = [
+  'prerender',
+];
+
+/**
  * Checks if a site requires suggestion validation before showing in UI
  * @param {Object} site - The site object
- * @returns {boolean} - True if site requires validation, false otherwise
+ * @param {Object} context - Lambda context
+ * @param {string} [auditType] - Audit `type` from the job message (e.g. prerender)
+ * @returns {Promise<boolean>} - True if site requires validation, false otherwise
  */
-export async function checkSiteRequiresValidation(site, context) {
+export async function checkSiteRequiresValidation(site, context, auditType) {
+  const siteId = site?.getId?.();
+
   if (!site) {
     return false;
   }
+  if (auditType && IS_LLMO_OPPTY.includes(auditType)) {
+    return false;
+  }
+
+  // Internal/demo orgs bypass suggestion validation regardless of PAID tier
+  const rawExcludedOrgs = process.env.ASO_PLG_EXCLUDED_ORGS;
+  if (rawExcludedOrgs) {
+    const excludedOrgIds = rawExcludedOrgs.split(',')
+      .map((id) => id.trim()).filter((id) => id.length > 0);
+    const orgId = site.getOrganizationId?.();
+    if (orgId && excludedOrgIds.includes(orgId)) {
+      return false;
+    }
+  }
+
   // LA customers override via env
   let laSiteIds = [];
-
   if (process.env.LA_VALIDATION_SITE_IDS) {
     laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
   }
-  const siteId = site.getId?.();
-  const isLABySite = siteId && laSiteIds.includes(siteId);
-
-  if (isLABySite) {
+  if (siteId && laSiteIds.includes(siteId)) {
     return true;
   }
 
@@ -48,9 +71,8 @@ export async function checkSiteRequiresValidation(site, context) {
       return true;
     }
   } catch (e) {
-    context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
+    context?.log?.warn?.(`Entitlement check failed for site ${siteId}: ${e.message}`);
   }
 
-  // No PAID ASO entitlement: do not require validation
   return false;
 }

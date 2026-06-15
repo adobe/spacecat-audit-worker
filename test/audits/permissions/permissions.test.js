@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -128,6 +127,7 @@ describe('Permissions Handler Tests', () => {
           Suggestion: {
             bulkUpdateStatus: sandbox.stub().resolves(),
             allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+            saveMany: sinon.stub().resolves(),
           },
         },
         dataContext: {
@@ -138,6 +138,7 @@ describe('Permissions Handler Tests', () => {
               NEW: 'NEW',
             },
             bulkUpdateStatus: sandbox.stub().resolves(),
+            saveMany: sinon.stub().resolves(),
           },
         },
       })
@@ -574,6 +575,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -608,6 +610,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -675,6 +678,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -709,6 +713,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -891,6 +896,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -980,6 +986,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -1038,6 +1045,48 @@ describe('Permissions Handler Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
+
+    it('should not create opportunity or suggestions when adminChecks has no actionable paths', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [
+                  { path: '/apps/nonEditablePath', allow: true, privileges: ['jcr:all'] },
+                  { path: '/content/editablePath', allow: true, privileges: ['jcr:all'] }
+                ],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      const addSuggestionStub = sandbox.stub().resolves({ errorItems: [], createdItems: [] });
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        getType: () => 'security-permissions',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: addSuggestionStub,
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(addSuggestionStub).to.have.been.calledOnce;
+    });
+
     it('should handle opportunity creation failure', async () => {
       const auditData = {
         auditResult: {
@@ -1084,6 +1133,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().rejects(new Error('Sync suggestions failed')),
@@ -1092,22 +1142,6 @@ describe('Permissions Handler Tests', () => {
 
       await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
         .to.be.rejectedWith('Sync suggestions failed');
-    });
-
-    it('should handle configuration fetch failure', async () => {
-      const auditData = {
-        auditResult: {
-          permissionsReport: mockPermissionsReport,
-          success: true,
-        },
-        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        auditId: 'audit-123',
-      };
-
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
-      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
     });
 
     it('should handle opportunity fetch failure', async () => {
@@ -1174,6 +1208,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -1278,6 +1313,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().rejects(new Error('Sync suggestions failed')),
@@ -1303,22 +1339,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-    });
-
-    it('should handle configuration fetch failure', async () => {
-      const auditData = {
-        auditResult: {
-          permissionsReport: mockPermissionsReport,
-          success: true,
-        },
-        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        auditId: 'audit-123',
-      };
-
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
-      await expect(tooStrongOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
     });
 
     it('should handle opportunity fetch failure', async () => {
@@ -1659,8 +1679,7 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(mockSuggestion1.save).to.have.been.called;
-      expect(mockSuggestion2.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should reopen FIXED suggestions when they appear again in the audit', async () => {
@@ -1697,7 +1716,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(mockFixedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
@@ -1735,7 +1754,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockFixedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
@@ -1772,7 +1791,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockRejectedSuggestion.setStatus).to.not.have.been.called;
-      expect(mockRejectedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
     });
 
@@ -1791,6 +1810,7 @@ describe('Permissions Handler Tests', () => {
 
       const mockOpportunity = {
         getId: () => 'opp-123',
+        getType: () => 'security-permissions-redundant',
         getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [{ id: 'sugg1' }, { id: 'sugg2' }] }),

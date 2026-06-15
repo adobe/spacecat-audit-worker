@@ -14,41 +14,65 @@ import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
+const MISALIGNED_SCORES = new Set(['poor', 'fair']);
+
 /**
- * Formats a number with K suffix for thousands
+ * Formats a currency value with $ prefix and K suffix for thousands.
  * @param {number} num - The number to format
- * @returns {string} Formatted number string
+ * @returns {string} Formatted currency string (e.g., "$1.2K", "$500")
  */
-function formatNumberWithK(num) {
-  if (num == null || num === undefined) {
-    return '0';
+function formatCurrency(num) {
+  /* c8 ignore next 3 -- defensive guard; reduce() always yields a number */
+  if (num == null) {
+    return '$0';
   }
   if (num >= 1000) {
-    return `${(num / 1000).toFixed(1)}K`;
+    return `$${(num / 1000).toFixed(1)}K`;
   }
-  return num.toString();
+  return `$${Math.round(num)}`;
 }
 
 /**
- * Checks if the guidance body indicates a low severity issue
- * @param {Object} guidanceBody - The guidance body object (guidance[0].body)
- * @returns {boolean} True if severity is low or none
- */
-export function isLowSeverityGuidanceBody(guidanceBody) {
-  if (guidanceBody && guidanceBody.issueSeverity) {
-    const sev = guidanceBody.issueSeverity.toLowerCase();
-    return sev.includes('none') || sev.includes('low');
-  }
-
-  return false;
-}
-
-/**
- * Maps audit data to an ad-intent-mismatch opportunity entity.
+ * Assigns composite ranks to cluster results based on tiered ordering:
+ * - Tier 0: Mismatched (has recommendation, analysisStatus ok) by misaligned spend desc
+ * - Tier 1: Aligned (no recommendation, analysisStatus ok) by cluster traffic desc
+ * - Tier 2: Failed (analysisStatus failed) by cluster traffic desc
  *
- * Reads guidance data from message.data.guidance[0] (GuidanceWithBody pattern).
- * The guidance entry contains insight/rationale/recommendation at top level,
- * and cpc/sumTraffic/url/issueSeverity in its body dict.
+ * @param {Array} clusterResults - Array of cluster result objects
+ * @returns {Array} Clusters with rank field added, ordered by composite rank
+ */
+export function assignClusterRanks(clusterResults) {
+  if (!clusterResults || clusterResults.length === 0) {
+    return [];
+  }
+
+  // Ranking tiers use "has recommendation" (not alignment score) intentionally:
+  // clusters with any recommendation sort first so the UI surfaces them at top,
+  // even if the alignment is "good" (minor heading tweak). The separate
+  // misalignedClusters count in the opportunity uses MISALIGNED_SCORES instead.
+  const isMismatched = (c) => c.analysisStatus !== 'failed' && c.recommendation;
+  const isAligned = (c) => c.analysisStatus !== 'failed' && !c.recommendation;
+  const isFailed = (c) => c.analysisStatus === 'failed';
+
+  const tier0 = clusterResults
+    .filter(isMismatched)
+    .sort((a, b) => (b.clusterMisalignedSpend || 0) - (a.clusterMisalignedSpend || 0));
+
+  const tier1 = clusterResults
+    .filter(isAligned)
+    .sort((a, b) => (b.clusterTraffic || 0) - (a.clusterTraffic || 0));
+
+  const tier2 = clusterResults
+    .filter(isFailed)
+    .sort((a, b) => (b.clusterTraffic || 0) - (a.clusterTraffic || 0));
+
+  const ordered = [...tier0, ...tier1, ...tier2];
+  return ordered.map((cluster, index) => ({ ...cluster, rank: index + 1 }));
+}
+
+/**
+ * Maps audit data to an ad-intent-mismatch opportunity entity for the
+ * cluster-based format. One opportunity per URL.
  *
  * @param {string} siteId - The site ID
  * @param {Object} audit - The audit object
@@ -56,25 +80,47 @@ export function isLowSeverityGuidanceBody(guidanceBody) {
  * @returns {Object} Opportunity entity
  */
 export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
-  const stats = audit.getAuditResult();
   const { guidance } = message.data;
-  const guidanceEntry = guidance?.[0] || {};
+  const guidanceBody = guidance?.[0]?.body || {};
+  const url = message.data?.url;
   const {
-    insight, rationale, recommendation, body,
-  } = guidanceEntry;
-  const url = body?.url;
-  const cpc = body?.cpc;
-  const sumTraffic = body?.sumTraffic;
+    clusterResults = [],
+    portfolioMetrics = {},
+  } = guidanceBody;
+  /**
+   * Page-level context fields emitted by mystique (additive, both optional).
+   *
+   * Distinct from per-cluster
+   * `gapAnalysis.{keywordToPageGap,adToPageGap}.relevantExtractedTopics`,
+   * which are LLM-filtered subsets of `pageTopics` filtered for cluster-
+   * specific intent relevance. `pageTopics` here is the full page-level set.
+   *
+   * Use `??` (nullish coalescing) instead of ES destructure defaults so that
+   * a future regression emitting `pageTopics: null` (instead of omitting the
+   * key) still results in an empty array on the consumer side. ES destructure
+   * defaults only fire for `undefined`, not `null`.
+   */
+  const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
+  const pageTopics = guidanceBody.pageTopics ?? [];
+  const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
-  // Look up per-page data from predominantlyPaidPages
-  const paidPages = stats.predominantlyPaidPages || [];
-  const pageData = paidPages.find((p) => p.url === url) || {};
-  const pageBounceRate = pageData.bounceRate ?? 0;
-  const pageViews = pageData.pageViews ?? 0;
-  const avgBounceRate = stats.averageBounceRate ?? 0;
-  const impact = pageBounceRate > avgBounceRate
-    ? (pageBounceRate - avgBounceRate) * pageViews
-    : pageViews;
+  const hasConflictingHeadlineRecommendations = clusterResults.filter(
+    (cr) => cr.recommendation?.type === 'modify_heading',
+  ).length > 1;
+
+  const totalClusters = clusterResults.length;
+  const misalignedClusters = clusterResults.filter(
+    (c) => c.analysisStatus !== 'failed' && c.recommendation
+      && MISALIGNED_SCORES.has(c.overallAlignmentScore),
+  ).length;
+  const totalMisalignedSpend = clusterResults.reduce(
+    (sum, c) => sum + (c.clusterMisalignedSpend || 0),
+    0,
+  );
+
+  const description = 'Multiple keyword intent groups target this page. '
+    + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
+    + `Estimated misaligned spend: ~${formatCurrency(totalMisalignedSpend)}/month (based on Semrush data).`;
 
   return {
     siteId,
@@ -82,40 +128,27 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     auditId: audit.getAuditId(),
     type: 'ad-intent-mismatch',
     origin: 'AUTOMATION',
-    title: 'Low-performing paid search page detected',
-    description: 'Page with predominantly paid search traffic and high bounce rate. '
-      + `Average bounce rate: ${(stats.averageBounceRate * 100).toFixed(1)}%, `
-      + `Total page views: ${formatNumberWithK(stats.totalPageViews)}.`,
-    guidance: {
-      recommendations: [
-        {
-          insight,
-          rationale,
-          recommendation,
-          type: 'guidance',
-        },
-      ],
-    },
+    title: 'Ad intent mismatch detected across keyword clusters',
+    description,
+    guidance: null,
     data: {
       dataSources: [
         DATA_SOURCES.SITE,
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
+        DATA_SOURCES.SEO,
       ],
       url,
       page: url,
-      cpc,
-      sumTraffic,
-      totalPageViews: stats.totalPageViews,
-      averageBounceRate: stats.averageBounceRate,
-      temporalCondition: stats.temporalCondition,
-      pageViews,
-      trackedPageKPIName: 'Bounce Rate',
-      trackedPageKPIValue: pageBounceRate,
-      trackedKPISiteAverage: avgBounceRate,
-      opportunityImpact: impact,
-      metrics: [],
-      samples: 0,
+      portfolioMetrics,
+      hasConflictingHeadlineRecommendations,
+      langfuseTraceId,
+      langfuseTraceUrl,
+      totalClusters,
+      misalignedClusters,
+      totalMisalignedSpend,
+      resolvedPageHeading,
+      pageTopics,
     },
     status: 'NEW',
     tags: [
@@ -126,33 +159,71 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
 }
 
 /**
- * Maps guidance data to an ad-intent-mismatch suggestion entity.
- *
- * Reads variation data from message.data.guidance[0].body.suggestions.
+ * Maps a single cluster to a suggestion entity.
+ * Lifts recommendation.type to recommendationType (sibling field)
+ * and removes type from the nested recommendation object.
  *
  * @param {Object} context - The execution context
  * @param {string} opportunityId - The opportunity ID
- * @param {Object} message - The SQS message from mystique
+ * @param {Object} cluster - Cluster data with rank assigned
  * @returns {Object} Suggestion entity
  */
-export function mapToKeywordOptimizerSuggestion(
-  context,
-  opportunityId,
-  message = {},
-) {
-  const { guidance } = message.data || {};
-  const variations = guidance?.[0]?.body?.suggestions || [];
+export function mapClusterToSuggestion(context, opportunityId, cluster) {
+  const {
+    clusterId,
+    representativeKeyword,
+    serpTitle,
+    keywords,
+    clusterTraffic,
+    clusterCpc,
+    clusterMisalignedSpend,
+    analysisStatus,
+    gapAnalysis,
+    overallAlignmentScore,
+    keywordAnalysis,
+    adAnalysis,
+    recommendation,
+    rank,
+  } = cluster;
+
+  // Lift recommendation.type to recommendationType and remove it from nested object
+  let recommendationType;
+  let cleanedRecommendation;
+  if (recommendation) {
+    const { type: recType, ...rest } = recommendation;
+    recommendationType = recType;
+    cleanedRecommendation = rest;
+  }
 
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
-    rank: 1,
+    rank,
     status: context.site?.requiresValidation
       ? SuggestionModel.STATUSES.PENDING_VALIDATION
       : SuggestionModel.STATUSES.NEW,
     data: {
-      variations,
-      kpiDeltas: { estimatedKPILift: 0 },
+      cluster: {
+        clusterId,
+        representativeKeyword,
+        serpTitle,
+        keywords: keywords || [],
+        clusterTraffic: clusterTraffic || 0,
+        clusterCpc: clusterCpc ?? null,
+        clusterMisalignedSpend: clusterMisalignedSpend ?? null,
+        analysisStatus: analysisStatus || 'unknown',
+        gapAnalysis: gapAnalysis || {},
+        overallAlignmentScore: overallAlignmentScore || null,
+        keywordAnalysis: keywordAnalysis || [],
+        // `?? null` (not `|| {}`): mystique emits an explicit `null` when the
+        // cluster lacks sufficient ad-copy signal, and the UI hides the
+        // "What the ad promises" block on that signal. Coercing null to {}
+        // would silently break the hide-when-missing branch. See spec
+        // products/aso/ad-intent-cluster-ad-analysis.md (B.1 + Decision #3).
+        adAnalysis: adAnalysis ?? null,
+      },
+      ...(recommendationType && { recommendationType }),
+      ...(cleanedRecommendation && { recommendation: cleanedRecommendation }),
     },
   };
 }

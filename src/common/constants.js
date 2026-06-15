@@ -14,7 +14,7 @@
  * Data sources for opportunities
  */
 export const DATA_SOURCES = {
-  AHREFS: 'Ahrefs',
+  SEO: 'SEO',
   GSC: 'GSC',
   RUM: 'RUM',
   SITE: 'Site',

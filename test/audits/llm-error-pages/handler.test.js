@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { upsertWeekHistory } from '../../../src/llm-error-pages/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -96,9 +95,9 @@ describe('LLM Error Pages Handler', function () {
     // Setup mocks for esmock
     mockAthenaClient = { query: sandbox.stub().resolves([]) };
 
-    mockGetS3Config = sandbox.stub().resolves({
+    mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
-      customerName: 'test-customer',
+      siteName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
       getAthenaTempLocation: () => 's3://test-bucket/temp/',
@@ -110,6 +109,7 @@ describe('LLM Error Pages Handler', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
 
@@ -168,7 +168,7 @@ describe('LLM Error Pages Handler', function () {
       category: 'Test',
     })));
 
-    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to Ahrefs)
+    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to SEO top pages)
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     // Mock ExcelJS
@@ -200,6 +200,7 @@ describe('LLM Error Pages Handler', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { return this; }
+          withPersister() { return this; }
           build() { return {}; }
         },
       },
@@ -207,14 +208,12 @@ describe('LLM Error Pages Handler', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: mockBuildQuery,
         getAllLlmProviders: mockGetAllLlmProviders,
         categorizeErrorsByStatusCode: mockCategorizeErrorsByStatusCode,
         downloadExistingCdnSheet: mockDownloadExistingCdnSheet,
-        matchErrorsWithCdnData: mockMatchErrorsWithCdnData,
         consolidateErrorsByUrl: (errors) => errors,
         sortErrorsByTrafficVolume: (errors) => errors,
         toPathOnly: (url) => url,
@@ -227,6 +226,10 @@ describe('LLM Error Pages Handler', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       '../../../src/utils/agentic-urls.js': {
         getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
@@ -348,10 +351,10 @@ describe('LLM Error Pages Handler', function () {
 
       expect(result.type).to.equal('audit-result');
       expect(result.siteId).to.equal('site-id-123');
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult[0].totalErrors).to.equal(3);
+      expect(result.auditResult[0].categorizedResults).to.exist;
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
@@ -362,18 +365,84 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('should handle audit failure gracefully', async () => {
+    it('logs a sample of malformed URLs filtered upstream in processErrorPagesResults', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          { user_agent: 'ChatGPT', url: '/legit-page', status: 404, total_requests: 10 },
+        ],
+        droppedUrls: [
+          '/brandshttps://example.com/brands',
+          '/),',
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 10 } },
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].categorizedResults[404]).to.have.lengthOf(1);
+      expect(result.auditResult[0].categorizedResults[404][0].url).to.equal('/legit-page');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Filtered 2 malformed URL\(s\); sample: \[.*brandshttps.*\]/),
+      );
+    });
+
+    it('should produce two weeks when run on a Monday without weekOffset', async () => {
+      const monday = new Date('2025-08-18T12:00:00Z'); // Monday
+      const clock = sinon.useFakeTimers(monday.getTime());
+      try {
+        mockGenerateReportingPeriods.returns({
+          weeks: [
+            { weekNumber: 33, year: 2025, startDate: new Date('2025-08-11'), endDate: new Date('2025-08-17'), periodIdentifier: 'w33-2025' },
+            { weekNumber: 34, year: 2025, startDate: new Date('2025-08-18'), endDate: new Date('2025-08-24'), periodIdentifier: 'w34-2025' },
+          ],
+        });
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(2);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1, 0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should use current week only when not Monday and no weekOffset', async () => {
+      const wednesday = new Date('2025-08-20T12:00:00Z'); // Wednesday
+      const clock = sinon.useFakeTimers(wednesday.getTime());
+      try {
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Database error');
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Failed for/),
         sinon.match.instanceOf(Error),
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should handle audit failure gracefully when setup fails before week loop', async () => {
+      mockCreateLLMOSharepointClient.rejects(new Error('SharePoint connection failed'));
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('SharePoint connection failed');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: SharePoint connection failed/),
+        sinon.match.instanceOf(Error),
+      );
     });
 
     it('should skip Mystique when SQS not configured', async () => {
@@ -381,7 +450,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -392,7 +461,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -407,7 +476,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -431,7 +500,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.data.brokenLinks.length).to.be.at.most(50);
@@ -469,6 +538,396 @@ describe('LLM Error Pages Handler', function () {
       expect(brokenLink.urlFrom).to.include('Perplexity');
     });
 
+    // =========================================================================
+    // observation:llm-broken-urls dual-publish (Phase 3 shadow validation).
+    // Feature-flagged behind OBSERVATION_LLM_BROKEN_URLS_ENABLED. Off by default
+    // so PR 4 can land safely before mystique PR #2490 + #200 merge.
+    // =========================================================================
+
+    it('does not publish observation:llm-broken-urls when feature flag is unset', async () => {
+      // Default: env flag absent → only legacy message published (current behaviour).
+      await runAuditAndSendToMystique(context);
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.firstCall.args;
+      expect(message.type).to.equal('guidance:llm-error-pages');
+    });
+
+    it('does not publish observation:llm-broken-urls when flag is anything except literal "true"', async () => {
+      // Strict 'true' comparison — '1', 'yes', 'on', boolean true, even
+      // 'true ' with trailing space all do nothing. Matches the
+      // explicit-opt-in posture for a feature gating production traffic.
+      // Also verifies the single call is the LEGACY message — not an
+      // accidental observation publish — so a future flip of the
+      // conditional inside the helper would fail this test.
+      for (const v of ['false', '1', 'yes', 'on', 'TRUE', '', 'true ', ' true', true]) {
+        context.sqs.sendMessage.resetHistory();
+        context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = v;
+        // eslint-disable-next-line no-await-in-loop
+        await runAuditAndSendToMystique(context);
+        expect(context.sqs.sendMessage, `value=${v}`).to.have.been.calledOnce;
+        const [, message] = context.sqs.sendMessage.firstCall.args;
+        expect(message.type, `value=${v}`).to.equal('guidance:llm-error-pages');
+      }
+    });
+
+    // Helper: tests upstream of this block identity-mock consolidateErrorsByUrl,
+    // so test fixtures use the raw Athena shape (user_agent / total_requests).
+    // The observation publish reads the *consolidated* shape produced by the
+    // real `consolidateErrorsByUrl` (totalRequests / rawUserAgents), so these
+    // tests provide pre-consolidated rows directly.
+    const _consolidatedRow = ({
+      url, totalRequests, rawUserAgents, userAgent = rawUserAgents[0],
+    }) => ({
+      url,
+      status: 404,
+      userAgent,
+      rawUserAgents,
+      totalRequests,
+      // Snake-case fallbacks so the OTHER (legacy) message-build code path
+      // that reads `user_agent` / `total_requests` doesn't see undefined.
+      user_agent: userAgent,
+      total_requests: totalRequests,
+    });
+
+    it('publishes observation:llm-broken-urls alongside the legacy message when flag is on', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          _consolidatedRow({ url: '/dead-1', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+          _consolidatedRow({ url: '/dead-2', totalRequests: 9, rawUserAgents: ['GPTBot'] }),
+        ],
+        summary: { uniqueUrls: 2, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      expect(observationMessage.type).to.equal('observation:llm-broken-urls');
+    });
+
+    it('observation message body matches the mystique wire schema', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage).to.have.property('type', 'observation:llm-broken-urls');
+      expect(observationMessage).to.have.property('siteId', 'site-id-123');
+      expect(observationMessage).to.have.property('auditId');
+      expect(observationMessage).to.have.property('baseURL', 'https://example.com');
+      expect(observationMessage).to.have.property('deliveryType');
+      expect(observationMessage).to.have.property('time').that.is.a('string');
+      expect(observationMessage.data).to.have.property('period');
+      expect(observationMessage.data.period.start).to.match(/^\d{4}-\d{2}-\d{2}T/);
+      expect(observationMessage.data.period.end).to.match(/^\d{4}-\d{2}-\d{2}T/);
+      expect(observationMessage.data.urls).to.be.an('array').with.lengthOf(1);
+      const urlEntry = observationMessage.data.urls[0];
+      // Wire schema uses `observedThrough` (not `lastSeen`) — see helper
+      // comment in handler.js. Pin to the audit-window end value so a
+      // future refactor that swaps in `new Date().toISOString()` would
+      // fail this test instead of silently shipping wrong semantics.
+      expect(urlEntry).to.have.all.keys(
+        'url', 'hits', 'userAgents', 'observedThrough',
+        // CDN-log trend facets (spacecat #2655) the ELMO UI renders.
+        'periodIdentifier', 'agentTypes', 'avgTtfb', 'category', 'product', 'countryCode',
+      );
+      expect(urlEntry.url).to.include('/dead');
+      expect(urlEntry.hits).to.equal(47);
+      expect(urlEntry.userAgents).to.deep.equal(['ChatGPT']);
+      expect(urlEntry.observedThrough).to.equal(observationMessage.data.period.end);
+      // This row carries no facet fields → safe defaults (proves the
+      // backwards-compatible path; a facet-rich row is covered separately).
+      expect(urlEntry.periodIdentifier).to.be.a('string');
+      expect(urlEntry.agentTypes).to.deep.equal([]);
+      expect(urlEntry.avgTtfb).to.equal('');
+      expect(urlEntry.category).to.equal('');
+      expect(urlEntry.product).to.equal(null);
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation carries CDN-log trend facets (agentTypes/avgTtfb/category/product/countryCode) when present', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // A raw categorized row carrying the facets groupErrorsByUrl aggregates.
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          agent_type: 'Training bots',
+          avg_ttfb_ms: 131,
+          country_code: 'US',
+          product: 'Other',
+          category: 'static asset',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.agentTypes).to.deep.equal(['Training bots']);
+      // avgTtfb stringified to match mystique's string field.
+      expect(urlEntry.avgTtfb).to.equal('131');
+      expect(urlEntry.category).to.equal('static asset');
+      expect(urlEntry.product).to.equal('Other');
+      expect(urlEntry.countryCode).to.equal('US');
+    });
+
+    it('observation falls back to safe defaults for empty periodIdentifier and country_code', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Empty periodIdentifier exercises the `periodIdentifier || ''` fallback;
+      // an explicit empty country_code survives the `?? 'GLOBAL'` build-stage
+      // default and exercises the output-stage `countryCode || 'GLOBAL'` fallback.
+      mockGenerateReportingPeriods.returns({
+        weeks: [{
+          weekNumber: 34,
+          year: 2025,
+          startDate: new Date('2025-08-18T00:00:00Z'),
+          endDate: new Date('2025-08-24T23:59:59Z'),
+          periodIdentifier: '',
+        }],
+      });
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          country_code: '',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.periodIdentifier).to.equal('');
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {
+      // Existing consolidateErrorsByUrl keys by (url, provider) — same URL hit
+      // by N providers produces N entries. The observation wire format wants
+      // ONE entry per URL with userAgents unioned.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          _consolidatedRow({ url: '/same-page', totalRequests: 10, rawUserAgents: ['ChatGPT'] }),
+          _consolidatedRow({ url: '/same-page', totalRequests: 5, rawUserAgents: ['Perplexity'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.data.urls).to.have.lengthOf(1);
+      const entry = observationMessage.data.urls[0];
+      expect(entry.url).to.include('/same-page');
+      // Hits are summed across providers.
+      expect(entry.hits).to.equal(15);
+      // userAgents are unioned across providers.
+      expect(entry.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
+    });
+
+    it('observation publish is skipped when baseURL is missing even with flag on', async () => {
+      // Defense in depth: a misconfigured site without a baseURL would emit a
+      // payload mystique rejects at the HttpUrl boundary. Skip cleanly with
+      // a warning instead of generating poison messages.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Make getBaseURL return falsy
+      context.site.getBaseURL = () => '';
+
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 5, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy message still sent (baseURL absence handled within its own block);
+      // observation publish skipped.
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No baseURL available — skipping observation:llm-broken-urls/),
+      );
+    });
+
+    it('observation publish handles missing optional fields with safe fallbacks', async () => {
+      // Defensive: covers the `|| 0`, `|| []`, `|| null` fallback branches
+      // for entries with missing totalRequests / rawUserAgents and a site
+      // without auditId / deliveryType.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      context.audit = null; // → auditId resolves to null
+      context.site.getDeliveryType = undefined; // → deliveryType resolves to null
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          // Missing totalRequests and rawUserAgents — but include legacy
+          // snake_case fields so the legacy message-build path doesn't crash.
+          {
+            url: '/sparse',
+            status: 404,
+            userAgent: 'Bot',
+            user_agent: 'Bot',
+            total_requests: 1,
+          },
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.auditId).to.be.null;
+      expect(observationMessage.deliveryType).to.be.null;
+      const entry = observationMessage.data.urls[0];
+      expect(entry.hits).to.equal(0); // totalRequests missing → fallback to 0
+      expect(entry.userAgents).to.deep.equal([]); // rawUserAgents missing → fallback to []
+    });
+
+    it('observation publish caps user-agents at 50 per URL and 512 chars each (defense in depth)', async () => {
+      // Mystique-side enforces these caps via Pydantic. Audit-worker normalizes
+      // UAs so the cap is rarely hit, but a hostile log record shouldn't be
+      // able to blow up the SQS body. Cover the slice/truncate path.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      const longUa = 'A'.repeat(1000); // > 512 chars
+      const manyUas = Array.from({ length: 60 }, (_, i) => `ua-${i}`); // > 50 cap
+      manyUas.push(longUa);
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/popular', totalRequests: 100, rawUserAgents: manyUas }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 61 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.data.urls).to.have.lengthOf(1);
+      const entry = observationMessage.data.urls[0];
+      expect(entry.userAgents.length).to.be.at.most(50);
+      entry.userAgents.forEach((ua) => {
+        expect(ua.length).to.be.at.most(512);
+      });
+    });
+
+    it('observation publish failure does NOT propagate (legacy publish unaffected, audit succeeds)', async () => {
+      // The whole point of dual-publish behind a flag is that the new
+      // (shadow) path cannot regress the production (legacy) path. If
+      // the observation sendMessage rejects, the audit run must still
+      // succeed and SQS must not re-deliver the inbound audit message
+      // (which would cause a DUPLICATE legacy publish).
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 5, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      // First call (legacy) succeeds, second call (observation) throws.
+      context.sqs.sendMessage
+        .onFirstCall().resolves()
+        .onSecondCall().rejects(new Error('simulated SQS throttle'));
+
+      // Must NOT throw — the helper's try/catch contains the failure.
+      const result = await runAuditAndSendToMystique(context);
+
+      // Legacy publish recorded; observation publish attempted and caught.
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      // Error logged, not thrown.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to publish observation:llm-broken-urls/),
+      );
+      // Audit result for the week is still success — the legacy path
+      // was the actual production-critical write and it succeeded.
+      expect(result.auditResult.some((r) => r.success === true)).to.be.true;
+    });
+
+    it('observation publish is skipped (with a warn log) when site has no baseURL configured', async () => {
+      // `messageBaseUrl` comes from `site.getBaseURL()`. If that returns
+      // an empty string, the legacy publish still emits relative paths
+      // (its `new URL` is gated by `messageBaseUrl ? ... : path`) but the
+      // observation publish has nothing to anchor against — emit a warn
+      // and skip rather than send a message with broken URLs.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      context.site.getBaseURL = () => '';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/x', totalRequests: 1, rawUserAgents: ['Bot1'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped (no second call).
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No baseURL available/),
+      );
+    });
+
+    it('observation publish skips when serialized message exceeds size budget', async () => {
+      // SQS standard-queue cap is 256 KB. A pathological payload (many
+      // URLs each with the maximum number of maximum-length UAs) can
+      // exceed the safety budget; skip rather than throw + fail the
+      // audit.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // 50 unique 512-char UAs per URL × 50 URLs. UAs MUST be unique
+      // because the helper stores them in a Set; identical strings
+      // collapse to one entry and the payload stays small.
+      const uniqueUas = (urlIdx) => Array.from(
+        { length: 50 },
+        (_, j) => `${'A'.repeat(500)}-u${urlIdx}-${j.toString().padStart(3, '0')}`,
+      );
+      const errorPages = Array.from({ length: 50 }, (_, i) => (
+        _consolidatedRow({ url: `/dead-${i}`, totalRequests: 1, rawUserAgents: uniqueUas(i) })
+      ));
+      mockProcessResults.returns({
+        totalErrors: errorPages.length,
+        errorPages,
+        summary: { uniqueUrls: errorPages.length, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped due to size.
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/exceeds budget/),
+      );
+    });
+
     it('should generate separate Excel files for 404, 403, and 5xx', async () => {
       mockProcessResults.returns({
         totalErrors: 6,
@@ -485,7 +944,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockSaveExcelReport).to.have.been.calledThrice;
     });
 
@@ -497,7 +956,6 @@ describe('LLM Error Pages Handler', function () {
           AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
         },
         '../../../src/llm-error-pages/utils.js': {
-          getS3Config: mockGetS3Config,
           generateReportingPeriods: mockGenerateReportingPeriods,
           processErrorPagesResults: () => ({
             totalErrors: 2,
@@ -521,6 +979,10 @@ describe('LLM Error Pages Handler', function () {
         },
         '../../../src/utils/cdn-utils.js': {
           buildSiteFilters: mockBuildSiteFilters,
+          getS3Config: mockGetS3Config,
+          getCdnAwsRuntime: () => ({
+            createAthenaClient: () => mockAthenaClient,
+          }),
         },
         exceljs: {
           default: {
@@ -566,7 +1028,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
     });
 
@@ -575,7 +1037,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
@@ -643,7 +1105,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -652,7 +1114,7 @@ describe('LLM Error Pages Handler', function () {
   });
 });
 
-describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
+describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
   this.timeout(10000);
   let sandbox;
   let mockGetTopAgenticUrlsFromAthena;
@@ -700,11 +1162,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       'https://example.com/athena-page1',
       'https://example.com/athena-page2',
     ]);
-    // Ahrefs should NOT be called when Athena returns data
+    // SEO should NOT be called when Athena returns data
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
-  it('should fall back to Ahrefs in importTopPagesAndScrape when Athena returns empty', async () => {
+  it('should fall back to SEO top pages in importTopPagesAndScrape when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
@@ -717,8 +1179,8 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     });
 
     const topPages = [
-      { getUrl: () => 'https://example.com/ahrefs-page1' },
-      { getUrl: () => 'https://example.com/ahrefs-page2' },
+      { getUrl: () => 'https://example.com/seo-page1' },
+      { getUrl: () => 'https://example.com/seo-page2' },
     ];
 
     const context = {
@@ -738,14 +1200,14 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([
-      'https://example.com/ahrefs-page1',
-      'https://example.com/ahrefs-page2',
+      'https://example.com/seo-page1',
+      'https://example.com/seo-page2',
     ]);
-    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages');
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'seo', 'global');
   });
 
-  it('should return failure when both Athena and Ahrefs return empty in importTopPagesAndScrape', async () => {
+  it('should return failure when both Athena and SEO return empty in importTopPagesAndScrape', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
@@ -777,14 +1239,14 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages found for site');
   });
 
-  it('should use Ahrefs URLs in submitForScraping', async () => {
+  it('should use SEO URLs in submitForScraping', async () => {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-page1' }];
+    const topPages = [{ getUrl: () => 'https://example.com/seo-page1' }];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -802,11 +1264,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.submitForScraping(context);
 
-    expect(result.urls).to.deep.equal([{ url: 'https://example.com/ahrefs-page1' }]);
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/seo-page1' }]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'seo', 'global');
   });
 
-  it('should throw error when no Ahrefs pages in submitForScraping', async () => {
+  it('should throw error when no SEO pages in submitForScraping', async () => {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
@@ -864,10 +1326,10 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: sandbox.stub().resolves({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -883,6 +1345,13 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
@@ -907,18 +1376,16 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Athena URLs were used
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
     expect(sentMessage.data.alternativeUrls).to.deep.equal([
       'https://example.com/athena-alt1',
       'https://example.com/athena-alt2',
     ]);
-    // Ahrefs was NOT called
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
-  it('should fall back to Ahrefs for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
+  it('should fall back to SEO top pages for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
@@ -942,11 +1409,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
         getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: sandbox.stub().resolves({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
-          getAthenaTempLocation: () => 's3://test/temp/',
-        }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -962,13 +1425,20 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-alt1' }];
+    const topPages = [{ getUrl: () => 'https://example.com/seo-alt1' }];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -988,12 +1458,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Ahrefs URLs were used as fallback
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/seo-alt1']);
       expect(context.log.info).to.have.been.calledWith(
-        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs',
+        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages',
       );
     });
 });
@@ -1031,9 +1500,9 @@ describe('LLM Error Pages Handler (isolated)', function () {
       },
     };
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
-    const mockGetS3Config = sandbox.stub().resolves({
+    const mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
-      customerName: 'test-customer',
+      siteName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
       getAthenaTempLocation: () => 's3://test-bucket/temp/',
@@ -1044,6 +1513,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
     const mockBuildSiteFilters = sandbox.stub().returns('');
@@ -1066,6 +1536,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
           withUrlResolver() { return this; }
           addStep() { return this; }
           withRunner() { return this; }
+          withPersister() { return this; }
           build() { return {}; }
         },
       },
@@ -1073,7 +1544,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: () => ({
           totalErrors: 2,
@@ -1094,6 +1564,13 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: sandbox.stub().resolves({}),
         saveExcelReport: mockSaveExcelReport,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: {
@@ -1120,5 +1597,1190 @@ describe('LLM Error Pages Handler (isolated)', function () {
     sinon.assert.match(dataRows[0][6], '');
     sinon.assert.match(dataRows[0][7], '');
     sinon.assert.match(dataRows[1][2], 0);
+  });
+});
+
+describe('LLM Error Pages Handler – default export routing', function () {
+  this.timeout(10000);
+
+  it('routes to backfillAudit when weekOffset is present', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          withPersister() { return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({ auditContext: { weekOffset: -1 } }, {});
+    expect(mockBackfillRun).to.have.been.calledOnce;
+    expect(mockStepRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('routes to stepAudit when weekOffset is absent', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          withPersister() { return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({}, {});
+    expect(mockStepRun).to.have.been.calledOnce;
+    expect(mockBackfillRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('backfillAudit runner pre-creates the Audit row and forwards it via context', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedRunner;
+    let capturedPersister;
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner(runner) { capturedRunner = runner; return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns({ query: sandbox.stub().resolves([]) }) },
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          databaseName: 'db', tableName: 'tbl', siteName: 'test',
+          getAthenaTempLocation: () => 's3://tmp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({ totalErrors: 0, errorPages: [], summary: { uniqueUrls: 0 } }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: sandbox.stub().returns({}),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    expect(capturedRunner).to.be.a('function');
+    expect(capturedPersister).to.be.a('function');
+
+    const preCreatedAudit = {
+      getId: () => 'pre-created-audit',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    const auditCreate = sandbox.stub().resolves(preCreatedAudit);
+    const mockSite = {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getIsLive: () => true,
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+    };
+    const mockContext = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      dataAccess: { Audit: { create: auditCreate } },
+    };
+
+    const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
+    expect(result).to.have.property('auditResult');
+    expect(auditCreate).to.have.been.calledOnce;
+    const createPayload = auditCreate.firstCall.args[0];
+    expect(createPayload).to.include({
+      siteId: 'site-1',
+      auditType: 'llm-error-pages',
+      fullAuditRef: 'https://example.com',
+      isLive: true,
+    });
+    expect(createPayload.auditResult).to.deep.equal({ backfill: true, weekOffset: -1 });
+    // Verify context.audit is mutated so the persister (which receives the original
+    // context, not enrichedContext) can access and update the pre-created audit row.
+    expect(mockContext.audit).to.equal(preCreatedAudit);
+
+    sandbox.restore();
+  });
+
+  it('backfill persister updates the pre-created audit and returns it (no duplicate row)', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedPersister;
+
+    await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+    });
+
+    expect(capturedPersister).to.be.a('function');
+
+    const setAuditResult = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    const audit = { setAuditResult, save };
+    const finalAuditResult = [{ success: true, periodIdentifier: 'w17-2026' }];
+
+    const persisted = await capturedPersister(
+      { auditResult: finalAuditResult },
+      { audit },
+    );
+
+    expect(persisted).to.equal(audit);
+    expect(setAuditResult).to.have.been.calledOnceWith(finalAuditResult);
+    expect(save).to.have.been.calledOnce;
+
+    sandbox.restore();
+  });
+
+  it('backfill persister no-ops gracefully when audit is missing', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedPersister;
+
+    await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          withPersister(persister) { capturedPersister = persister; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+    });
+
+    const persisted = await capturedPersister({ auditResult: [] }, {});
+    expect(persisted).to.be.undefined;
+
+    sandbox.restore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB dual-write paths (Opportunity + Suggestion sync alongside Excel write)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('LLM Error Pages Handler — DB dual-write', function () {
+  this.timeout(10000);
+
+  const buildHandler = async (sandbox, overrides = {}) => {
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockGenerateReportingPeriods = sandbox.stub().returns({
+      weeks: [{
+        weekNumber: 15,
+        year: 2026,
+        startDate: new Date('2026-04-06T00:00:00Z'),
+        endDate: new Date('2026-04-12T23:59:59Z'),
+        periodIdentifier: 'w15-2026',
+      }],
+    });
+    const defaultErrorPages = [
+      { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      { user_agent: 'Perplexity', agent_type: 'Web search crawlers', url: '/p2', status: 403, total_requests: 5 },
+      { user_agent: 'Claude', agent_type: 'Chatbots', url: '/p3', status: 503, total_requests: 3 },
+    ];
+    const errorPages = overrides.errorPages || defaultErrorPages;
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: errorPages.length,
+      errorPages,
+      summary: { uniqueUrls: errorPages.length, uniqueUserAgents: errorPages.length },
+    });
+    const mockCategorize = sandbox.stub().callsFake((errors) => ({
+      404: errors.filter((e) => e.status === 404),
+      403: errors.filter((e) => e.status === 403),
+      '5xx': errors.filter((e) => e.status >= 500),
+    }));
+
+    const mockGroupErrorsByUrl = sandbox.stub().callsFake((errors) => errors.map((e) => ({
+      url: e.url,
+      httpStatus: e.status,
+      hitCount: e.total_requests || 0,
+      agentTypes: [e.agent_type],
+      userAgents: [e.user_agent],
+      avgTtfb: e.avg_ttfb_ms,
+      countryCode: e.country_code,
+      product: e.product,
+      category: e.category,
+    })));
+
+    const mockParsePeriod = overrides.parsePeriodIdentifier
+      || sandbox.stub().returns(new Date('2026-04-06T00:00:00Z'));
+
+    const mockConvertToOpportunity = overrides.convertToOpportunity
+      || sandbox.stub().callsFake((url, audit, ctx, mapper, type) => Promise.resolve({
+        getId: () => `opp-${type}`,
+        getType: () => type,
+        getStatus: () => 'NEW',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(overrides.existingSuggestionsByType?.[type] || []),
+      }));
+    const mockSyncSuggestions = overrides.syncSuggestions || sandbox.stub().resolves();
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+        Opportunity: { STATUSES: { NEW: 'NEW', IGNORED: 'IGNORED' } },
+      },
+      '@adobe/spacecat-shared-tier-client': { default: {} },
+      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class {
+          withUrlResolver() { return this; } addStep() { return this; }
+          withRunner() { return this; } withPersister() { return this; }
+          build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': { default: {} },
+      '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+      '../../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+      '../../../src/llm-error-pages/opportunity-data-mapper.js': {
+        createOpportunityData: sandbox.stub().returns({}),
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        generateReportingPeriods: mockGenerateReportingPeriods,
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorize,
+        groupErrorsByUrl: mockGroupErrorsByUrl,
+        parsePeriodIdentifier: mockParsePeriod,
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: overrides.saveExcelReport || sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          databaseName: 'db',
+          tableName: 't',
+          siteName: 'c',
+          getAthenaTempLocation: () => 's3://x/',
+        }),
+        getCdnAwsRuntime: () => ({ createAthenaClient: () => mockAthenaClient }),
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]),
+      },
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        validateCountryCode: () => 'US',
+      },
+      exceljs: {
+        default: { Workbook: function W() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    return { handler, mockConvertToOpportunity, mockSyncSuggestions };
+  };
+
+  const buildContext = (sandbox, overrides = {}) => ({
+    log: {
+      info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
+    },
+    sqs: { sendMessage: sandbox.stub().resolves({}) },
+    env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+    site: {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getDeliveryType: () => 'aem_edge',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'c' }),
+    },
+    audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
+    dataAccess: {
+      SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      Opportunity: {
+        allBySiteIdAndStatus: sandbox.stub().resolves(overrides.existingOpportunities || []),
+      },
+      Suggestion: {
+        bulkUpdateStatus: sandbox.stub().resolves(),
+        removeByIds: sandbox.stub().resolves(),
+      },
+    },
+    ...overrides.contextOverrides,
+  });
+
+  it('creates Opportunities and syncs suggestions per non-empty bucket', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockConvertToOpportunity, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(mockConvertToOpportunity).to.have.been.calledThrice;
+    const auditTypes = mockConvertToOpportunity.args.map((a) => a[4]);
+    expect(auditTypes).to.have.members([
+      'llm-error-pages-404', 'llm-error-pages-403', 'llm-error-pages-5xx',
+    ]);
+    expect(mockSyncSuggestions).to.have.been.calledThrice;
+    sandbox.restore();
+  });
+
+  it('passes opportunityId from DB into the Mystique message', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const sent = ctx.sqs.sendMessage.firstCall.args[1];
+    expect(sent.data.opportunityId).to.equal('opp-llm-error-pages-404');
+    sandbox.restore();
+  });
+
+  it('writes hitCount, agentTypes, and userAgents into the new Suggestion data', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const callArgs = mockSyncSuggestions.args.find((a) => {
+      const sample = a[0].newData[0];
+      return sample && sample.url === '/p1';
+    });
+    expect(callArgs).to.exist;
+    const { mapNewSuggestion } = callArgs[0];
+    const fixture = {
+      url: '/p1', httpStatus: 404, hitCount: 10, agentTypes: ['Chatbots'], userAgents: ['ChatGPT'],
+    };
+    const mapped = mapNewSuggestion(fixture);
+    expect(mapped.data.userAgents).to.deep.equal(['ChatGPT']);
+    expect(mapped.data.agentTypes).to.deep.equal(['Chatbots']);
+    expect(mapped.data.hitCount).to.equal(10);
+    expect(mapped.data.periodIdentifier).to.equal('w15-2026');
+    sandbox.restore();
+  });
+
+  it('preserves AI-enriched fields via mergeDataFunction', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        suggestedUrls: ['/alt'],
+        aiRationale: 'great',
+        confidenceScore: 0.9,
+        someOldField: 'keepme',
+      },
+      {
+        hitCount: 99,
+        agentTypes: ['Chatbots'],
+        userAgents: ['ChatGPT'],
+        avgTtfb: 50,
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.hitCount).to.equal(99);
+    expect(merged.userAgents).to.deep.equal(['ChatGPT']);
+    expect(merged.suggestedUrls).to.deep.equal(['/alt']);
+    expect(merged.aiRationale).to.equal('great');
+    expect(merged.confidenceScore).to.equal(0.9);
+    expect(merged.someOldField).to.equal('keepme');
+  });
+
+  it('mergeDataFunction omits AI fields when not present on existing data', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction({ url: '/p1' }, { hitCount: 1, agentTypes: ['A'], userAgents: ['U'] });
+    expect(merged.suggestedUrls).to.be.undefined;
+    expect(merged.aiRationale).to.be.undefined;
+    expect(merged.confidenceScore).to.be.undefined;
+  });
+
+  it('mapNewSuggestion seeds data.history with this week as the first entry', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+    const mapped = mapNewSuggestion({
+      url: '/p1',
+      httpStatus: 404,
+      hitCount: 10,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+    expect(mapped.data.history).to.have.lengthOf(1);
+    expect(mapped.data.history[0]).to.deep.equal({
+      periodIdentifier: 'w15-2026',
+      hitCount: 10,
+      httpStatus: 404,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+  });
+
+  it('mergeDataFunction appends the current week to an existing data.history', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        history: [{
+          periodIdentifier: 'w14-2026',
+          hitCount: 7,
+          httpStatus: 404,
+          agentTypes: ['Chatbots'],
+          userAgents: ['ChatGPT'],
+          avgTtfb: '40.0',
+        }],
+      },
+      {
+        hitCount: 99,
+        httpStatus: 404,
+        agentTypes: ['Chatbots'],
+        userAgents: ['Claude'],
+        avgTtfb: '30.0',
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.hitCount).to.equal(99);
+    expect(merged.history).to.have.lengthOf(2);
+    expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
+    expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
+  });
+
+  it('runs retention sweep on existing opportunity for empty buckets', async () => {
+    const sandbox = sinon.createSandbox();
+
+    const staleSuggestion = {
+      getId: () => 'sug-403-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2025' }),
+      getStatus: () => 'NEW',
+    };
+    const staleOpportunity = {
+      getId: () => 'opp-403-stale',
+      getType: () => 'llm-error-pages-403',
+      getSuggestions: sandbox.stub().resolves([staleSuggestion]),
+    };
+
+    // Only 404 errors — 403 and 5xx buckets empty so retention runs via stale lookup.
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+    });
+    const ctx = buildContext(sandbox);
+    ctx.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([staleOpportunity]);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(staleOpportunity.getSuggestions).to.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledWith(['sug-403-stale']);
+    sandbox.restore();
+  });
+
+  it('does NOT delete a suggestion with no periodIdentifier (age unknowable)', async () => {
+    const sandbox = sinon.createSandbox();
+    const sugWithoutPeriod = {
+      getId: () => 'sug-legacy',
+      getData: () => ({ url: '/legacy' }),
+      getStatus: () => 'NEW',
+    };
+    const oldOpp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod]),
+    };
+    const { handler, mockConvertToOpportunity } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().resolves(oldOpp),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(mockConvertToOpportunity).to.have.been.called;
+    sandbox.restore();
+  });
+
+  const sweepWith = async (sandbox, { status, parseResult }) => {
+    const staleSug = {
+      getId: () => 'sug-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => status,
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(parseResult),
+    });
+    const ctx = buildContext(sandbox);
+    await handler.runAuditAndSendToMystique(ctx);
+    return ctx;
+  };
+
+  it('DELETES a stale system-managed (NEW) suggestion past the window', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledOnceWith(['sug-stale']);
+    sandbox.restore();
+  });
+
+  it('does NOT delete a customer-actioned terminal suggestion (FIXED audit trail), even when stale', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'FIXED', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete/outdate a suggestion with an unparseable periodIdentifier (epoch sentinel → skip)', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date(0) });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT outdate a SKIPPED suggestion in the middle tier (customer action preserved)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'SKIPPED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT re-outdate an already-OUTDATED suggestion in the middle tier (only NEW ages out)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'OUTDATED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('skips the retention sweep entirely in backfill mode (weekOffset set)', async () => {
+    const sandbox = sinon.createSandbox();
+    const staleSug = {
+      getId: () => 'sug-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date('2020-01-01T00:00:00Z')),
+    });
+    const ctx = buildContext(sandbox);
+    ctx.auditContext = { weekOffset: -1 };
+    await handler.runAuditAndSendToMystique(ctx);
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete a suggestion whose URL appears in the current run', async () => {
+    const sandbox = sinon.createSandbox();
+    const currentUrlSug = {
+      getId: () => 'sug-current',
+      getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([currentUrlSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  const weeksAgo = (n) => new Date(Date.now() - n * 7 * 24 * 60 * 60 * 1000);
+
+  it('marks a suggestion OUTDATED when last seen 5-6 weeks ago (middle tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const midTier = {
+      getId: () => 'sug-mid',
+      getData: () => ({ url: '/gone', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([midTier]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith([midTier], 'OUTDATED');
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('leaves a suggestion NEW when last seen within 4 weeks (fresh tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fresh = {
+      getId: () => 'sug-fresh',
+      getData: () => ({ url: '/recent', periodIdentifier: 'w22-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fresh]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(2)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT flip a terminal-state suggestion to OUTDATED in the middle tier', async () => {
+    const sandbox = sinon.createSandbox();
+    const fixedMid = {
+      getId: () => 'sug-fixed-mid',
+      getData: () => ({ url: '/fixed', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'FIXED',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fixedMid]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('logs and continues when DB sync throws (best-effort independence)', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().rejects(new Error('boom')),
+    });
+    const ctx = buildContext(sandbox);
+
+    const result = await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/DB sync failed/);
+    // Mystique message still sent (Excel + send-to-mystique path is independent of DB).
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    expect(result.auditResult[0].success).to.be.true;
+    sandbox.restore();
+  });
+
+  it('logs and continues when Excel write throws (best-effort independence)', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox, {
+      saveExcelReport: sandbox.stub().rejects(new Error('sharepoint-down')),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Excel write failed/);
+    // DB sync still ran.
+    expect(mockSyncSuggestions).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('handles categorizedResults missing a status code key', async () => {
+    const sandbox = sinon.createSandbox();
+    // Custom buildHandler with categorize returning only 404 (no 403 / 5xx keys).
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+        Opportunity: { STATUSES: { NEW: 'NEW', IGNORED: 'IGNORED' } },
+      },
+      '@adobe/spacecat-shared-tier-client': { default: {} },
+      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class {
+          withUrlResolver() { return this; } addStep() { return this; }
+          withRunner() { return this; } withPersister() { return this; }
+          build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': { default: {} },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'opp-404',
+          getType: () => 't',
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        }),
+      },
+      '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
+      '../../../src/llm-error-pages/opportunity-data-mapper.js': {
+        createOpportunityData: sandbox.stub().returns({}),
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2026' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({
+          totalErrors: 1,
+          errorPages: [{ url: '/p', status: 404, total_requests: 1, agent_type: 'A', user_agent: 'U' }],
+          summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+        }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        // Returns only 404 — 403 and 5xx are undefined → triggers `|| []` branch.
+        categorizeErrorsByStatusCode: () => ({ 404: [{ url: '/p', status: 404, total_requests: 1, agent_type: 'A', user_agent: 'U' }] }),
+        groupErrorsByUrl: (e) => e.map((x) => ({ ...x, hitCount: x.total_requests })),
+        parsePeriodIdentifier: () => new Date(),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          databaseName: 'db', tableName: 't', siteName: 'c', getAthenaTempLocation: () => 's3://x/',
+        }),
+        getCdnAwsRuntime: () => ({ createAthenaClient: () => mockAthenaClient }),
+      },
+      '../../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]) },
+      '../../../src/cdn-logs-report/utils/report-utils.js': { validateCountryCode: () => 'US' },
+      exceljs: { default: { Workbook: function W() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } } },
+    });
+
+    const ctx = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'c' }),
+      },
+      audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+        Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(ctx);
+    expect(result.auditResult[0].success).to.be.true;
+    sandbox.restore();
+  });
+
+  it('opportunityId in Mystique message is undefined if 404 bucket has no errors', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    // Override processedResults to only include 403 errors
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // 404 bucket has errors in default fixture, so opportunityId is set.
+    // This test confirms the default path includes a real id (not the old string template).
+    const sent = ctx.sqs.sendMessage.firstCall.args[1];
+    expect(sent.data.opportunityId).to.match(/^opp-/);
+    expect(sent.data.opportunityId).to.not.match(/^llm-404-w/);
+    sandbox.restore();
+  });
+
+  it('retention sweep skips suggestions whose URL was synced this run', async () => {
+    const sandbox = sinon.createSandbox();
+    // Stale-by-period suggestion whose URL IS in this run's scraped set.
+    // Without the scrapedUrlsSet guard, this would be marked OUTDATED.
+    const justSynced = {
+      getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const oppFor404 = {
+      getId: () => 'opp-llm-error-pages-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([justSynced]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(oppFor404);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // would mark stale
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('retention filter handles suggestions whose getData returns null', async () => {
+    const sandbox = sinon.createSandbox();
+    const sugWithNullData = {
+      getData: () => null,
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-llm-error-pages-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([sugWithNullData]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().resolves(opp),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('logs and continues when pre-fetch of existing opportunities fails', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+    ctx.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('list-down'));
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Failed to pre-fetch opportunities/);
+    // Per-bucket sync still proceeded — convertToOpportunity is called per bucket.
+    expect(mockSyncSuggestions).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('flips newly-created Opp status from NEW to IGNORED (pending UI support)', async () => {
+    const sandbox = sinon.createSandbox();
+    const setStatus = sandbox.stub();
+    const setUpdatedBy = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    const newlyCreatedOpp = {
+      getId: () => 'opp-new',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus,
+      setUpdatedBy,
+      save,
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(newlyCreatedOpp);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(setStatus).to.have.been.calledOnceWith('IGNORED');
+    expect(setUpdatedBy).to.have.been.calledOnceWith('system');
+    expect(save).to.have.been.calledOnce;
+    expect(ctx.log.info).to.have.been.calledWithMatch(
+      /Marked new opportunity opp-new as IGNORED/,
+    );
+    sandbox.restore();
+  });
+
+  it('does not flip status on Opps that are already non-NEW (e.g. APPROVED, IGNORED)', async () => {
+    const sandbox = sinon.createSandbox();
+    const setStatus = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    // Simulate an Opp that was previously created and the user manually set to APPROVED.
+    // convertToOpportunity filters by NEW so in practice it would create a fresh NEW Opp,
+    // but this proves the guard is in place if a non-NEW Opp ever flows through.
+    const alreadyManaged = {
+      getId: () => 'opp-managed',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'APPROVED',
+      setStatus,
+      setUpdatedBy: sandbox.stub(),
+      save,
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(alreadyManaged);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(setStatus).to.not.have.been.called;
+    expect(save).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('one bucket failure does not block the other two (per-bucket isolation)', async () => {
+    const sandbox = sinon.createSandbox();
+    const convertStub = sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+      if (type === 'llm-error-pages-404') {
+        return Promise.reject(new Error('404 bucket exploded'));
+      }
+      return Promise.resolve({
+        getId: () => `opp-${type}`,
+        getType: () => type,
+        getStatus: () => 'NEW',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+    });
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox, {
+      convertToOpportunity: convertStub,
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // 404 bucket failed and was logged with bucket context.
+    expect(ctx.log.error).to.have.been.calledWithMatch(
+      /DB sync failed for bucket/,
+      sinon.match({ bucket: 404, auditType: 'llm-error-pages-404' }),
+    );
+    // 403 and 5xx still synced — proves per-bucket isolation.
+    expect(mockSyncSuggestions).to.have.been.calledTwice;
+    sandbox.restore();
+  });
+});
+
+describe('LLM Error Pages Handler — upsertWeekHistory', () => {
+  const entry = (periodIdentifier, hitCount = 1) => ({
+    periodIdentifier,
+    hitCount,
+    httpStatus: 404,
+    agentTypes: ['Chatbots'],
+    userAgents: ['ChatGPT'],
+    avgTtfb: '50.0',
+  });
+
+  it('seeds history when there is none (undefined existing)', () => {
+    const result = upsertWeekHistory(undefined, entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('treats a non-array existing history as empty (defensive)', () => {
+    const result = upsertWeekHistory('not-an-array', entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('appends a new week and orders oldest-first by ISO week', () => {
+    const result = upsertWeekHistory([entry('w12-2026'), entry('w10-2026')], entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w10-2026', 'w12-2026', 'w15-2026']);
+  });
+
+  it('replaces (does not duplicate) a re-run of the same week — idempotent', () => {
+    const result = upsertWeekHistory([entry('w15-2026', 7)], entry('w15-2026', 99));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].hitCount).to.equal(99);
+  });
+
+  it('prunes to the most recent RETENTION_WEEKS (6) entries', () => {
+    const existing = [
+      entry('w10-2026'), entry('w11-2026'), entry('w12-2026'),
+      entry('w13-2026'), entry('w14-2026'), entry('w15-2026'),
+    ];
+    const result = upsertWeekHistory(existing, entry('w16-2026'));
+    expect(result).to.have.lengthOf(6);
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal([
+      'w11-2026', 'w12-2026', 'w13-2026', 'w14-2026', 'w15-2026', 'w16-2026',
+    ]);
+  });
+
+  it('skips malformed existing entries lacking a periodIdentifier', () => {
+    const existing = [entry('w12-2026'), { hitCount: 5 }, null];
+    const result = upsertWeekHistory(existing, entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w12-2026', 'w15-2026']);
+  });
+
+  it('orders an unparseable periodIdentifier (epoch fallback) before real weeks', () => {
+    const result = upsertWeekHistory([entry('w15-2026')], entry('garbage'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['garbage', 'w15-2026']);
   });
 });

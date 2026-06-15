@@ -12,33 +12,58 @@
 
 import { ContentAIClient } from '../utils/content-ai.js';
 
+export const RELATED_URLS_COLUMN_HEADER = 'Related URLs';
+export const RELATED_URLS_DELIMITER = '; ';
+
 /**
- * Column indices for the brand presence spreadsheet.
- * Excel uses 1-based indexing for columns.
+ * Builds a column-name-to-index map by scanning the header row.
+ * Matching is case-insensitive so the spreadsheet layout can evolve
+ * without breaking consumers.
+ * @param {Object} worksheet - ExcelJS worksheet
+ * @returns {Object} Map of lowercase header text to 1-based column index
  */
-export const SPREADSHEET_COLUMNS = {
-  CATEGORY: 1,
-  TOPICS: 2,
-  PROMPT: 3,
-  ORIGIN: 4,
-  REGION: 5,
-  VOLUME: 6,
-  URL: 7,
-  ANSWER: 8,
-  SOURCES: 9,
-  CITATIONS: 10,
-  MENTIONS: 11,
-  SENTIMENT: 12,
-  BUSINESS_COMPETITORS: 13,
-  ORGANIC_COMPETITORS: 14,
-  CONTENT_AI_RESULT: 15,
-  IS_ANSWERED: 16,
-  SOURCE_TO_ANSWER: 17,
-  POSITION: 18,
-  VISIBILITY_SCORE: 19,
-  DETECTED_BRAND_MENTIONS: 20,
-  EXECUTION_DATE: 21,
-};
+export function buildColumnMap(worksheet) {
+  const headerRow = worksheet.getRow(1);
+  const headerValues = headerRow?.values || [];
+  const map = {};
+  for (let i = 1; i < headerValues.length; i += 1) {
+    const text = headerValues[i]?.toString?.().trim();
+    if (text) {
+      map[text.toLowerCase()] = i;
+    }
+  }
+  return map;
+}
+
+/**
+ * Gets the 1-based column index for a header name from the column map.
+ * @param {Object} columnMap - Map from buildColumnMap
+ * @param {string} headerName - Header text to look up (case-insensitive)
+ * @returns {number} 1-based column index, or 0 if not found
+ */
+export function getColumn(columnMap, headerName) {
+  return columnMap[headerName.toLowerCase()] || 0;
+}
+
+/**
+ * Normalizes URLs for overlap comparisons.
+ * @param {string} url - URL to normalize
+ * @returns {string} Normalized URL or empty string
+ */
+function normalizeUrlForComparison(url) {
+  if (!url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    const normalizedPath = parsed.pathname.replace(/\/$/, '') || '/';
+    return `${parsed.origin}${normalizedPath}${parsed.search}`;
+  } catch {
+    return url.toString().trim().replace(/\/$/, '');
+  }
+}
 
 /**
  * Normalizes sources to an array of URL strings
@@ -65,16 +90,70 @@ function normalizeSources(sources) {
 }
 
 /**
+ * Selects the final target URL for an FAQ suggestion.
+ * Priority:
+ * 1. Top related URL overlapping with customer desired URLs
+ * 2. Top related URL overlapping with FAQ sources
+ * 3. Top related URL from prompt-to-URL analysis
+ * 4. Original URL column
+ * 5. Empty URL for generic FAQs
+ * @param {Object} options - URL selection inputs
+ * @param {string[]} [options.relatedUrls] - Related URLs from prompt-to-URL analysis
+ * @param {Set<string>} [options.includedURLsSet] - Site desired URLs
+ * @param {string} [options.originalUrl] - Original spreadsheet URL column value
+ * @param {Array} [options.sources] - FAQ sources from Mystique
+ * @returns {string} Final URL for the FAQ suggestion
+ */
+export function decorateFaqSuggestionUrl({
+  relatedUrls = [],
+  includedURLsSet = new Set(),
+  originalUrl = '',
+  sources = [],
+} = {}) {
+  const normalizedIncludedUrls = new Set(
+    [...includedURLsSet]
+      .map((url) => normalizeUrlForComparison(url))
+      .filter(Boolean),
+  );
+  const normalizedSources = new Set(
+    normalizeSources(sources)
+      .map((url) => normalizeUrlForComparison(url))
+      .filter(Boolean),
+  );
+
+  const relatedUrlOverlap = (candidateSet) => relatedUrls.find(
+    (url) => candidateSet.has(normalizeUrlForComparison(url)),
+  );
+
+  return relatedUrlOverlap(normalizedIncludedUrls)
+    || relatedUrlOverlap(normalizedSources)
+    || relatedUrls[0]
+    || originalUrl
+    || '';
+}
+
+/**
  * Generates JSON FAQ suggestions with transform rules for code changes
  * Each suggestion has nested FAQs array
  * @param {Array} suggestions - Array of suggestions from Mystique
+ * @param {Object} [options] - FAQ decoration options
+ * @param {Set<string>} [options.includedURLsSet] - Site desired URLs
+ * @param {Function} [options.getRelatedUrls] - Returns related URLs for a suggestion
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
-export function getJsonFaqSuggestion(suggestions) {
+export function getJsonFaqSuggestion(suggestions, options = {}) {
   const suggestionValues = [];
+  const includedURLsSet = options.includedURLsSet || new Set();
+  const getRelatedUrls = options.getRelatedUrls || ((suggestion) => suggestion.relatedUrls || []);
 
   suggestions.forEach((suggestion) => {
-    const { url, topic, faqs } = suggestion;
+    const {
+      url,
+      originalUrl = url || '',
+      topic,
+      faqs,
+    } = suggestion;
+    const relatedUrls = getRelatedUrls(suggestion);
 
     // Filter only suitable FAQs
     const suitableFaqs = (faqs || []).filter(
@@ -87,10 +166,17 @@ export function getJsonFaqSuggestion(suggestions) {
 
     // Create one suggestion per FAQ question
     suitableFaqs.forEach((faq) => {
+      const decoratedUrl = decorateFaqSuggestionUrl({
+        relatedUrls,
+        includedURLsSet,
+        originalUrl,
+        sources: faq.sources,
+      });
+
       suggestionValues.push({
         headingText: 'FAQs',
         shouldOptimize: true, // Default to true, will be updated based on analysis
-        url: url || '',
+        url: decoratedUrl,
         topic: topic || '',
         transformRules: {
           selector: 'body',

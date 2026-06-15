@@ -30,6 +30,10 @@ export const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
 export const RAGECLICK_OPPTY_TYPE = 'rageclick';
 export const HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE = 'high-inorganic-high-bounce-rate';
 
+// KILL SWITCH: when true, HOTLCTR opportunities are not dispatched to Mystique
+// for any site. Flip to false (or revert this change) to re-enable.
+const HOTLCTR_DISABLED = true;
+
 const OPPTY_QUERIES = [
   RAGECLICK_OPPTY_TYPE,
   HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE,
@@ -57,6 +61,11 @@ export async function generateOpportunityAndSuggestions(context) {
   const {
     log, sqs, env, site, audit,
   } = context;
+  if (HOTLCTR_DISABLED) {
+    log.info(`HOTLCTR is disabled — skipping Mystique dispatch for site ${site.getId()}, audit ${audit.getId()}`);
+    return;
+  }
+  /* c8 ignore start */
   const auditResult = audit.getAuditResult();
   log.debug('auditResult in generateOpportunityAndSuggestions: ', JSON.stringify(auditResult, null, 2));
 
@@ -85,6 +94,7 @@ export async function generateOpportunityAndSuggestions(context) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
+  /* c8 ignore stop */
 }
 
 export function getHighOrganicLowCtrOpportunity(experimentationOpportunities) {

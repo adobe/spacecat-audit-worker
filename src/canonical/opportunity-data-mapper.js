@@ -26,7 +26,7 @@ const OpptyData = {
   },
   tags: ['Traffic Acquisition', 'SEO', 'tech-seo'],
   data: {
-    dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+    dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.SITE],
   },
 };
 
@@ -50,7 +50,7 @@ export function createOpportunityDataForElmo() {
     tags: [...OpptyData.tags, 'llm'],
     data: {
       ...OpptyData.data,
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.SITE],
       additionalMetrics: [
         {
           value: 'canonical',

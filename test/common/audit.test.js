@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -19,6 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   BaseAudit,
   defaultMessageSender,
@@ -105,7 +104,7 @@ describe('Audit tests', () => {
 
     // Mock TierClient for entitlement checks
     const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
     };
     sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
@@ -224,7 +223,7 @@ describe('Audit tests', () => {
       expect(finalURL).to.equal('https://www.spacekitty.cat');
     });
 
-    it('audit run skips when audit is disabled', async () => {
+    it('audit run skips when audit is disabled for site', async () => {
       configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
@@ -233,13 +232,15 @@ describe('Audit tests', () => {
       context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
 
       const audit = new AuditBuilder()
-        .withRunner(() => 123)
+        .withUrlResolver(noopUrlResolver)
+        .withRunner(() => ({ auditResult: {}, fullAuditRef: 's3://test' }))
         .build();
 
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.dataAccess.Audit.create).not.to.have.been.called;
     });
 
     it('audit runs as expected with post processors', async () => {
@@ -427,7 +428,11 @@ describe('Audit tests', () => {
 
     it('wwwUrlResolver resolves to www using rum api client', async () => {
       const base = 'http://spacecat.com';
-      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves();
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
       const resolvedURL = await wwwUrlResolver({
         getBaseURL: () => base, getConfig: () => {},
       }, context);
@@ -437,12 +442,98 @@ describe('Audit tests', () => {
 
     it('wwwUrlResolver resolves to www for baseURLs with path using rum api client', async () => {
       const base = 'http://spacecat.com/us/en';
-      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves();
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
       const resolvedURL = await wwwUrlResolver({
         getBaseURL: () => base, getConfig: () => {},
       }, context);
       expect(resolvedURL).to.equal('www.spacecat.com');
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledOnce;
+    });
+
+    it('wwwUrlResolver falls back to apex when www-toggled has a key but no bundle data (ghost key)', async () => {
+      const base = 'http://spacecat.com';
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('ghost-key');
+      context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').resolves();
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'ghost-key' })
+        .reply(200, { rumBundles: [] });
+      const resolvedURL = await wwwUrlResolver({
+        getBaseURL: () => base, getConfig: () => {},
+      }, context);
+      expect(resolvedURL).to.equal('spacecat.com');
+      expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
+    });
+
+    it('wwwUrlResolver persists overrideBaseURL when resolved hostname differs from baseURL', async () => {
+      const base = 'http://spacecat.com';
+      const siteConfig = Config.fromDynamoItem({});
+      const persistSite = {
+        getBaseURL: () => base,
+        getConfig: () => siteConfig,
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
+
+      const resolvedURL = await wwwUrlResolver(persistSite, context);
+
+      expect(resolvedURL).to.equal('www.spacecat.com');
+      expect(persistSite.setConfig).to.have.been.calledOnce;
+      const savedConfig = persistSite.setConfig.firstCall.args[0];
+      expect(savedConfig.fetchConfig).to.deep.equal({ overrideBaseURL: 'https://www.spacecat.com' });
+      expect(persistSite.save).to.have.been.calledOnce;
+    });
+
+    it('wwwUrlResolver does not call save when overrideBaseURL already matches', async () => {
+      const base = 'http://spacecat.com';
+      const siteConfig = Config.fromDynamoItem({ fetchConfig: { overrideBaseURL: 'https://www.spacecat.com' } });
+      const persistSite = {
+        getBaseURL: () => base,
+        getConfig: () => siteConfig,
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
+
+      const resolvedURL = await wwwUrlResolver(persistSite, context);
+
+      expect(resolvedURL).to.equal('www.spacecat.com');
+      expect(persistSite.save).to.not.have.been.called;
+    });
+
+    it('wwwUrlResolver logs error when save fails', async () => {
+      const base = 'http://spacecat.com';
+      const siteConfig = Config.fromDynamoItem({});
+      const persistSite = {
+        getBaseURL: () => base,
+        getConfig: () => siteConfig,
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('db write failed')),
+      };
+      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('dom-key');
+      nock('https://bundles.aem.page')
+        .get('/bundles/www.spacecat.com/2023/03/12')
+        .query({ domainkey: 'dom-key' })
+        .reply(200, { rumBundles: [{ weight: 1 }] });
+
+      const resolvedURL = await wwwUrlResolver(persistSite, context);
+
+      expect(resolvedURL).to.equal('www.spacecat.com');
+      expect(persistSite.save).to.have.been.calledOnce;
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to persist overrideBaseURL/));
     });
 
     it('wwwUrlResolver resolves to apex using rum api client', async () => {

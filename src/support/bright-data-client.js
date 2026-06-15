@@ -100,7 +100,14 @@ export function extractLocaleFromUrl(url) {
       return null;
     }
     const firstSegment = segments[0].toLowerCase();
-    return isValidLocale(firstSegment) ? firstSegment : null;
+    if (!isValidLocale(firstSegment)) {
+      return null;
+    }
+    // Detect two-level locale structures like /hk/zh_HK/ or /us/en/ (region + language)
+    if (segments.length > 1 && isValidLocale(segments[1])) {
+      return `${firstSegment}/${segments[1].toLowerCase()}`;
+    }
+    return firstSegment;
   } catch {
     return null;
   }
@@ -120,7 +127,9 @@ export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
   const searchUrl = prependSchema(baseUrl);
   const parsedBaseUrl = new URL(searchUrl);
   const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
-  if (hasBaseSubpath) return searchUrl;
+  if (hasBaseSubpath) {
+    return searchUrl;
+  }
   const locale = extractLocaleFromUrl(brokenLinkUrl);
   return locale ? `${searchUrl}/${locale}` : searchUrl;
 }
@@ -135,8 +144,12 @@ export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
  * @returns {boolean}
  */
 export function localesMatch(locale1, locale2) {
-  if (!locale1 && !locale2) return true;
-  if (!locale1 || !locale2) return false;
+  if (!locale1 && !locale2) {
+    return true;
+  }
+  if (!locale1 || !locale2) {
+    return false;
+  }
   return locale1.toLowerCase() === locale2.toLowerCase();
 }
 
@@ -281,6 +294,10 @@ class BrightDataClient {
       // Match any first path segment that is a valid locale (dk, uk, apac, emea, etc.)
       const segments = path.split('/').filter((seg) => seg.length > 0);
       if (segments.length > 0 && isValidLocale(segments[0])) {
+        // Detect two-level locale structures like /hk/zh_HK/ or /us/en/ (region + language)
+        if (segments.length > 1 && isValidLocale(segments[1])) {
+          return `${segments[0].toLowerCase()}/${segments[1].toLowerCase()}`;
+        }
         return segments[0].toLowerCase();
       }
 
@@ -318,6 +335,10 @@ class BrightDataClient {
       // Match any first path segment that is a valid locale (dk, uk, apac, emea, etc.)
       const segments = path.split('/').filter((seg) => seg.length > 0);
       if (segments.length > 0 && isValidLocale(segments[0])) {
+        // Detect two-level locale structures like /hk/zh_HK/ or /us/en/ (region + language)
+        if (segments.length > 1 && isValidLocale(segments[1])) {
+          return `${segments[0].toLowerCase()}/${segments[1].toLowerCase()}`;
+        }
         return segments[0].toLowerCase();
       }
 
@@ -423,11 +444,19 @@ class BrightDataClient {
    */
   // eslint-disable-next-line class-methods-use-this
   isUsefulToken(token) {
-    if (!token) return false;
+    if (!token) {
+      return false;
+    }
     const trimmed = token.trim();
-    if (trimmed.length < 2) return false;
-    if (/^\d+$/.test(trimmed)) return false;
-    if (!/[a-z]/i.test(trimmed)) return false;
+    if (trimmed.length < 2) {
+      return false;
+    }
+    if (/^\d+$/.test(trimmed)) {
+      return false;
+    }
+    if (!/[a-z]/i.test(trimmed)) {
+      return false;
+    }
     return true;
   }
 
@@ -437,9 +466,13 @@ class BrightDataClient {
   // eslint-disable-next-line class-methods-use-this
   stripFileExtension(segment) {
     const match = segment.match(/^(.+)\.([a-z0-9]{1,5})$/i);
-    if (!match) return segment;
+    if (!match) {
+      return segment;
+    }
     const extension = match[2].toLowerCase();
-    if (!FILE_EXTENSIONS.has(extension)) return segment;
+    if (!FILE_EXTENSIONS.has(extension)) {
+      return segment;
+    }
     return match[1];
   }
 
@@ -448,7 +481,9 @@ class BrightDataClient {
    */
   // eslint-disable-next-line class-methods-use-this
   trimTokensByCharLimit(tokens, maxChars, { fromStart = false } = {}) {
-    if (!maxChars || maxChars <= 0) return tokens;
+    if (!maxChars || maxChars <= 0) {
+      return tokens;
+    }
     const trimmed = [];
     let length = 0;
     if (fromStart) {
@@ -544,6 +579,20 @@ class BrightDataClient {
       return { hl: null, gl: null };
     }
     const normalized = locale.toLowerCase();
+
+    // Two-level locale: us/en or hk/zh_hk -> use the last (most specific) part for hl/gl
+    if (normalized.includes('/')) {
+      const lastPart = normalized.split('/').pop();
+      const lastFullMatch = lastPart.match(/^([a-z]{2})[_-]([a-z]{2})$/);
+      if (lastFullMatch && KNOWN_LOCALES.has(lastFullMatch[1])) {
+        return { hl: lastFullMatch[1], gl: lastFullMatch[2].toUpperCase() };
+      }
+      if (KNOWN_LOCALES.has(lastPart)) {
+        const country = LOCALE_TO_COUNTRY[lastPart];
+        return { hl: lastPart, gl: country };
+      }
+      return { hl: null, gl: null };
+    }
 
     // Full locale: xx_yy or xx-yy -> hl=xx, gl=YY (only if language is in whitelist)
     const fullMatch = normalized.match(/^([a-z]{2})[_-]([a-z]{2})$/);

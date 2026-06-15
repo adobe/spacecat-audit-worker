@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -19,6 +17,8 @@ import sinonChai from 'sinon-chai';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
+  getTopPagesForSiteId,
+  getAuditTargetUrls,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
   getImsOrgId,
@@ -29,6 +29,10 @@ import {
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
+  warnOnInvalidSuggestionData,
+  isTBYBSite,
+  SUMMIT_PLG_HANDLER,
+  resolveOpportunityIfNoIssues,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -89,6 +93,303 @@ describe('data-access', () => {
     });
   });
 
+  describe('getAuditTargetUrls', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns URL strings from config.auditTargetURLs', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/page1', source: 'manual' },
+            { url: 'https://example.com/page2', source: 'manual' },
+          ],
+        }),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 custom audit target URLs from site config');
+    });
+
+    it('returns empty array when config has no getAuditTargetURLs', () => {
+      const site = {
+        getConfig: () => ({}),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.info).to.not.have.been.called;
+    });
+
+    it('returns empty array when getConfig returns null', () => {
+      const site = {
+        getConfig: () => null,
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+    });
+
+    it('filters out entries without a url field', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/valid', source: 'manual' },
+            { source: 'manual' },
+            { url: '', source: 'manual' },
+          ],
+        }),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal(['https://example.com/valid']);
+    });
+
+    it('returns empty array and logs warning on config error', () => {
+      const site = {
+        getConfig: () => { throw new Error('config broken'); },
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.warn).to.have.been.calledWith('Failed to read audit target URLs: config broken');
+    });
+
+    it('returns empty array when custom URLs are disabled via SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=false', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = 'false';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1', source: 'manual' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal([]);
+        expect(mockLog.info).to.not.have.been.called;
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
+
+    it('returns empty array when custom URLs are disabled via SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=0', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = '0';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1', source: 'manual' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal([]);
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
+
+    it('returns custom URLs when SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=1', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = '1';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/explicit', source: 'manual' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal(['https://example.com/explicit']);
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
+
+    it('returns all URLs when enableMoneyPageUrls is true', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => true,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/money1',
+      ]);
+    });
+
+    it('returns all URLs when enableMoneyPageUrls flag is absent (default enabled)', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+          ],
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/money1',
+      ]);
+    });
+
+    it('filters out moneyPages URLs when enableMoneyPageUrls is false', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+            { url: 'https://example.com/money2', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal(['https://example.com/manual1']);
+    });
+
+    it('always returns manual URLs regardless of enableMoneyPageUrls flag', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/manual2', source: 'manual' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/manual2',
+      ]);
+    });
+
+    it('excludes unknown sources by default', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/unknown1', source: 'informational' },
+          ],
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal(['https://example.com/manual1']);
+    });
+
+    it('filters out moneyPages but keeps all manual URLs when both sources are present and flag is false', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+            { url: 'https://example.com/manual2', source: 'manual' },
+            { url: 'https://example.com/money2', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/manual2',
+      ]);
+    });
+  });
+
+  describe('getTopPagesForSiteId', () => {
+    let mockDataAccess;
+    let mockLog;
+
+    beforeEach(() => {
+      mockDataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub(),
+        },
+      };
+
+      mockLog = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns mapped top-page urls when seo pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: sinon.stub().returns('https://example.com/one') },
+        { getUrl: sinon.stub().returns('https://example.com/two') },
+      ]);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([
+        { url: 'https://example.com/one' },
+        { url: 'https://example.com/two' },
+      ]);
+      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledOnceWith('site-1', 'seo', 'global');
+      expect(mockLog.info).to.have.been.calledWith('Received top pages response:', sinon.match.string);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 top pages');
+    });
+
+    it('returns an empty array when no top pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.info).to.have.been.calledWith('No top pages found');
+    });
+
+    it('logs and rethrows errors from SiteTopPage lookup', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('lookup failed'));
+
+      await expect(getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog))
+        .to.be.rejectedWith('lookup failed');
+      expect(mockLog.error).to.have.been.calledWith('Error retrieving top pages for site site-1: lookup failed');
+    });
+  });
+
   describe('syncSuggestions', () => {
     let mockOpportunity;
     let mockLogger;
@@ -111,6 +412,7 @@ describe('data-access', () => {
         getSuggestions: sandbox.stub(),
         addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
+        getType: () => 'test-type',
       };
 
       mockLogger = {
@@ -124,8 +426,8 @@ describe('data-access', () => {
         .withSandbox(sandbox)
         .withOverrides({
           env: {
-            AHREFS_API_BASE_URL: 'https://ahrefs.com',
-            AHREFS_API_KEY: 'ahrefs-api',
+            SEO_API_BASE_URL: 'https://seo-api.example.com',
+            SEO_API_KEY: 'test-seo-key',
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           },
           s3Client: {
@@ -209,6 +511,183 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should use newSuggestionStatus override when provided', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+    });
+
+    it('should use status returned by mapNewSuggestion when present (overrides default and newSuggestionStatus)', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      const mapSkipped = (data) => ({
+        ...mapNewSuggestion(data),
+        status: 'SKIPPED',
+      });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion: mapSkipped,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('SKIPPED');
+    });
+
+    it('should default to PENDING_VALIDATION when newSuggestionStatus is null and site requires validation', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: null,
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should throw error when newSuggestionStatus is invalid', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      context.site = { requiresValidation: true };
+
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'INVALID_STATUS',
+      })).to.be.rejectedWith('Invalid newSuggestionStatus: INVALID_STATUS');
+    });
+
+    it('should use NEW status for PLG sites when bypassValidationForPlg is true', async () => {
+      const newData = [{ key: '1' }, { key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      const mockSite = {
+        requiresValidation: true,
+        getId: sandbox.stub().returns('plg-site-id'),
+      };
+      context.site = mockSite;
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        bypassValidationForPlg: true,
+      });
+
+      expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, mockSite);
+      expect(mockLogger.info).to.have.been.calledWith(
+        '[syncSuggestions] PLG site plg-site-id - skipping manual validation for suggestions',
+      );
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+      expect(actualArgs[1].status).to.equal('NEW');
+    });
+
+    it('should use PENDING_VALIDATION for non-PLG sites even when bypassValidationForPlg is true', async () => {
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      const mockSite = {
+        requiresValidation: true,
+        getId: sandbox.stub().returns('regular-site-id'),
+      };
+      context.site = mockSite;
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        bypassValidationForPlg: true,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, mockSite);
+      expect(mockLogger.info).to.not.have.been.calledWith(
+        sinon.match('skipping manual validation'),
+      );
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should not check PLG config when bypassValidationForPlg is false', async () => {
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        bypassValidationForPlg: false,
+      });
+
+      expect(context.dataAccess.Configuration.findLatest).to.not.have.been.called;
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
       const newData = [{ key: '1' }];
       const suggestionsResult = {
@@ -221,6 +700,7 @@ describe('data-access', () => {
       const opportunityWithoutSiteId = {
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves(suggestionsResult),
+        getType: () => 'test-type',
       };
 
       await syncSuggestions({
@@ -333,7 +813,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should update OUTDATED suggestions to NEW when site does not require validation', async () => {
@@ -369,7 +850,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have
         .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
@@ -406,10 +888,12 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
-      // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      // With no data changes and no status change, save should be skipped
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      // Verify that setData is NOT called when data hasn't changed
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      // Verify that skip log is called
+      expect(mockLogger.debug).to.have.been.calledWith(sinon.match(/Skipping update for suggestion/));
     });
 
     it('should preserve REJECTED status when data changes', async () => {
@@ -446,8 +930,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -491,8 +976,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -534,8 +1020,178 @@ describe('data-access', () => {
       // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should update suggestion when status changes but data does not', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Same data (data unchanged)
+      const newData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify status changed (ERROR -> NEW per defaultMergeStatusFunction)
+      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+      // Verify setData called even though data unchanged (required for update path)
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify setUpdatedBy called only on status change
+      expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should preserve attribution when only data changes (no status change)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed but status stays NEW (defaultMergeStatusFunction returns null for NEW)
+      const newData = [
+        { key: '1', title: 'new title', description: 'new description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify data updated
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify status NOT changed (defaultMergeStatusFunction returns null for NEW -> NEW)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify setUpdatedBy NOT called (preserves original human attribution)
+      expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should warn when mergeDataFunction returns same reference (defensive guard)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'title', count: 5 },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', count: 10 },
+      ];
+
+      // Merge function that mutates in place (contract violation)
+      const badMergeFunction = sinon.stub().callsFake((existing, newItem) => {
+        // eslint-disable-next-line no-param-reassign
+        existing.title = newItem.title;
+        // eslint-disable-next-line no-param-reassign
+        existing.count = newItem.count;
+        return existing; // Returns same reference - triggers warning
+      });
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        mergeDataFunction: badMergeFunction,
+      });
+
+      // Verify warning was logged
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/forcing dataChanged=true to prevent silent skip/),
+      );
+      // Verify the merge function was called
+      expect(badMergeFunction).to.have.been.called;
+      // Verify fail-open behavior: update still happens despite broken merge function
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
+      const suggestionsData = [{ key: '1', title: 'old title' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [{ key: '1', title: 'new title' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(mockLogger.info).to.have.been.calledWith(
+        'ERROR suggestion found in audit. Transitioning to NEW for re-dispatch.',
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
@@ -684,9 +1340,9 @@ describe('data-access', () => {
       const existingSuggestions = [
         {
           id: '1',
-          data: { url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 },
+          data: { url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 },
           getId: sinon.stub().returns('1'),
-          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 }),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 }),
           getStatus: sinon.stub().returns('NEW'),
         },
         {
@@ -732,6 +1388,73 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
+    it('should not mark prerender domain-wide or covered suggestions as OUTDATED', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
+
+      const domainWideSuggestion = {
+        id: 'domain-wide',
+        data: {
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        },
+        getId: sinon.stub().returns('domain-wide'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/* (All Domain URLs)',
+          isDomainWide: true,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const coveredSuggestion = {
+        id: 'covered',
+        data: {
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        },
+        getId: sinon.stub().returns('covered'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page1',
+          key: 'page1',
+          coveredByDomainWide: 'domain-wide',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const normalSuggestion = {
+        id: 'normal',
+        data: { url: 'https://example.com/page2', key: 'page2' },
+        getId: sinon.stub().returns('normal'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      const scrapedUrlsSet = new Set([
+        'https://example.com/* (All Domain URLs)',
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves([
+        domainWideSuggestion,
+        coveredSuggestion,
+        normalSuggestion,
+      ]);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [normalSuggestion],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
@@ -768,7 +1491,8 @@ describe('data-access', () => {
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
         .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
     });
@@ -805,7 +1529,8 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should log errors if there are items with errors', async () => {
@@ -1332,12 +2057,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*7/);
-        // Check that full sample is logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*7:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 7 matched suggestions, updated 7/);
       });
 
       it('should log only first 10 items when there are more than 10 updated suggestions', async () => {
@@ -1362,12 +2083,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*12/);
-        // Check that only first 10 are logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*12:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 12 matched suggestions, updated 12/);
       });
 
       it('should log full data when there are 1-10 new suggestions', async () => {
@@ -1639,7 +2356,125 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.not.have.been.called;
       // Verify the pre-fetched suggestions were used
       expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith(prefetchedSuggestions);
+    });
+
+    describe('warnOnInvalidSuggestionData integration', () => {
+      it('should warn on update path when merged data is invalid for schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        const existingSuggestions = [{
+          id: '1',
+          data: { key: '1', url: 'not-a-valid-uri' },
+          getData: sinon.stub().returns({ key: '1', url: 'not-a-valid-uri' }),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          getStatus: sinon.stub().returns('NEW'),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }];
+        const newData = [{ key: '1', url: 'still-not-valid' }];
+
+        structuredDataOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        // Verify warnOnInvalidSuggestionData logged a warning with correct opportunity type
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning \[structured-data\]/),
+        );
+      });
+
+      it('should warn on create path when new suggestion data is invalid for schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1', url: 'invalid-uri' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning \[structured-data\]/),
+        );
+      });
+
+      it('should not warn on create path when result.data is null', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          // mapNewSuggestion returns object without data property
+          mapNewSuggestion: () => ({
+            opportunityId: '123', type: 'TYPE', rank: 1,
+          }),
+        });
+
+        // Should not warn since result.data is undefined (null guard)
+        expect(mockLogger.warn).to.not.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning/),
+        );
+      });
+
+      it('should not warn when data is valid for a known schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1', url: 'https://example.com' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        expect(mockLogger.warn).to.not.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning/),
+        );
+      });
     });
   });
 
@@ -1815,6 +2650,7 @@ describe('data-access', () => {
   describe('reconcileDisappearedSuggestions', () => {
     let mockLogger;
     let mockOpportunity;
+    let mockSuggestionCollection;
 
     beforeEach(() => {
       mockLogger = {
@@ -1826,6 +2662,9 @@ describe('data-access', () => {
       mockOpportunity = {
         getId: sinon.stub().returns('opp-id'),
         addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+      };
+      mockSuggestionCollection = {
+        saveMany: sinon.stub().resolves(),
       };
     });
 
@@ -1854,10 +2693,11 @@ describe('data-access', () => {
           status: 'PUBLISHED',
           suggestions: [s.getId()],
         }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
-      expect(suggestion.save).to.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.have.been.called;
       expect(mockOpportunity.addFixEntities).to.have.been.called;
     });
 
@@ -1906,6 +2746,7 @@ describe('data-access', () => {
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: buildFixEntityPayloadStub,
         isAuthorOnly: true,
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(buildFixEntityPayloadStub).to.have.been.calledWith(
@@ -1915,14 +2756,17 @@ describe('data-access', () => {
       );
     });
 
-    it('should log warning when suggestion.save() throws', async () => {
+    it('should log warning when Suggestion.saveMany() throws', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
         getData: sinon.stub().returns({ key: '1' }),
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      const failingSuggestionCollection = {
+        saveMany: sinon.stub().rejects(new Error('DB error')),
       };
 
       await reconcileDisappearedSuggestions({
@@ -1931,10 +2775,11 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub(),
+        Suggestion: failingSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
-        'Failed to mark suggestion sugg-1 as FIXED: DB error',
+        'Failed to mark 1 suggestions as FIXED: DB error',
       );
     });
 
@@ -1954,6 +2799,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().throws(new Error('Payload error')),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -1968,7 +2814,6 @@ describe('data-access', () => {
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockOpportunity.addFixEntities.rejects(new Error('Add fix entities error'));
@@ -1979,6 +2824,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().returns({ id: 'fix-1' }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -2042,6 +2888,7 @@ describe('data-access', () => {
       mockDataAccess = {
         FixEntity: {
           allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          saveMany: sinon.stub().resolves(),
         },
         Suggestion: {
           getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
@@ -2226,11 +3073,11 @@ describe('data-access', () => {
       });
 
       expect(fixEntity.setStatus).to.have.been.called;
-      expect(fixEntity.save).to.have.been.called;
+      expect(mockDataAccess.FixEntity.saveMany).to.have.been.called;
       expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-5');
     });
 
-    it('should log debug when fixEntity.save() throws', async () => {
+    it('should log debug when FixEntity.saveMany() throws', async () => {
       const suggestion = {
         getData: sinon.stub().returns({ key: 'resolved-key' }),
       };
@@ -2239,10 +3086,11 @@ describe('data-access', () => {
         getId: sinon.stub().returns('fix-6'),
         getSuggestionIds: sinon.stub().returns(['sugg-1']),
         setStatus: sinon.stub(),
-        save: sinon.stub().rejects(new Error('Save error')),
+        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.FixEntity.saveMany.rejects(new Error('Save error'));
       mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
@@ -2251,7 +3099,7 @@ describe('data-access', () => {
         isIssueResolvedOnProduction: sinon.stub().resolves(true),
       });
 
-      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entity: Save error');
+      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entities: Save error');
     });
 
     it('should log warning on outer catch when unexpected error occurs', async () => {
@@ -2295,6 +3143,7 @@ describe('data-access', () => {
         dataAccess: {
           Suggestion: {
             bulkUpdateStatus: sinon.stub().resolves(),
+            saveMany: sinon.stub().resolves(),
             getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
           },
           FixEntity: {
@@ -2432,6 +3281,336 @@ describe('data-access', () => {
       // Verify getSuggestions is only called ONCE, not twice
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+    });
+
+    it('should return false when context.dataAccess is null', async () => {
+      const result = await isTBYBSite({ site: context.site, dataAccess: null, log: mockLogger });
+      expect(result).to.be.false;
+    });
+
+    it('should run reconcile step when context.site is absent', async () => {
+      context.site = undefined;
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(isIssueFixedStub).to.have.been.called;
+    });
+
+    it('should skip reconcile step for TBYB sites', async () => {
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().resolves(mockConfiguration),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({});
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, context.site);
+      expect(isIssueFixedStub).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        '[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site',
+      );
+    });
+
+    it('should run reconcile step for non-TBYB sites', async () => {
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().resolves(mockConfiguration),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, context.site);
+      expect(isIssueFixedStub).to.have.been.called;
+    });
+
+    it('should run reconcile step when Configuration.findLatest throws', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith('Failed to check TBYB status', sinon.match.instanceOf(Error));
+      expect(isIssueFixedStub).to.have.been.called;
+    });
+  });
+
+  describe('warnOnInvalidSuggestionData', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        warn: sinon.stub(),
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    it('passes silently when data is valid for a real schema type', () => {
+      // Use a real opportunity type with a registered schema to confirm valid data passes
+      warnOnInvalidSuggestionData({ url: 'https://example.com', type: 'Product', errors: [] }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('passes silently when opportunity type has no schema', () => {
+      warnOnInvalidSuggestionData({ key: 'value' }, 'unknown-type', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('logs a warning when validation fails', () => {
+      // Use a real opportunity type with a schema so null data triggers validation
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('Suggestion data validation warning');
+    });
+
+    it('includes suggestion identifier in warning message', () => {
+      const validData = { url: 'https://example.com' };
+      warnOnInvalidSuggestionData(validData, 'structured-data', mockLog);
+      // structured-data requires url (valid uri) which passes,
+      // so use invalid data with identifier
+      const invalidData = { aggregationKey: 'my-key' };
+      warnOnInvalidSuggestionData(invalidData, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[my-key]');
+    });
+
+    it('uses url as identifier fallback when aggregationKey is absent', () => {
+      warnOnInvalidSuggestionData({ url: 'not-a-valid-uri' }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[not-a-valid-uri]');
+    });
+
+    it('uses "unknown" as identifier when no identifying fields exist', () => {
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[unknown]');
+    });
+
+    it('truncates long error messages to 500 characters', () => {
+      // Stub validateData to throw an error with a message > 500 chars
+      const longMessage = 'x'.repeat(600);
+      const validateStub = sinon.stub(SuggestionDataAccess, 'validateData').throws(new Error(longMessage));
+      try {
+        warnOnInvalidSuggestionData({ url: 'test' }, 'structured-data', mockLog);
+        expect(mockLog.warn).to.have.been.calledOnce;
+        const warnMsg = mockLog.warn.firstCall.args[0];
+        expect(warnMsg).to.include('...[truncated]');
+        // Verify the truncated portion is max 500 chars of the original message
+        expect(warnMsg).to.not.include(longMessage);
+      } finally {
+        validateStub.restore();
+      }
+    });
+
+    it('does not throw even when validation fails', () => {
+      expect(() => warnOnInvalidSuggestionData(null, 'structured-data', mockLog)).to.not.throw();
+    });
+  });
+
+  describe('resolveOpportunityIfNoIssues', () => {
+    let log;
+    let dataAccess;
+    let bulkUpdateStatusStub;
+
+    beforeEach(() => {
+      log = { info: sinon.stub(), error: sinon.stub() };
+      bulkUpdateStatusStub = sinon.stub().resolves();
+      dataAccess = {
+        Opportunity: { allBySiteIdAndStatus: sinon.stub() },
+        Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+      };
+    });
+
+    it('does nothing when no existing NEW opportunity is found', async () => {
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+    });
+
+    it('does nothing when existing opportunity has a different audit type', async () => {
+      const otherOppty = { getType: () => 'broken-backlinks' };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([otherOppty]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+    });
+
+    it('resolves matching opportunity and marks NEW/PENDING_VALIDATION suggestions OUTDATED', async () => {
+      const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+      const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([newSuggestion, pendingSuggestion]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(opportunity.setStatus).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
+      expect(opportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('preserves FIXED, SKIPPED, REJECTED suggestions and does not call bulkUpdateStatus', async () => {
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([
+          { getId: () => 's-fixed', getStatus: () => 'FIXED' },
+          { getId: () => 's-skipped', getStatus: () => 'SKIPPED' },
+          { getId: () => 's-rejected', getStatus: () => 'REJECTED' },
+        ]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('handles null suggestions returned by getSuggestions without error', async () => {
+      const opportunity = {
+        getId: sinon.stub().returns('oppty-1'),
+        getType: () => 'canonical',
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves(null),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(opportunity.save).to.have.been.calledOnce;
+    });
+
+    it('logs error and does not throw when allBySiteIdAndStatus rejects', async () => {
+      dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to resolve canonical opportunity.*DB error/),
+      );
     });
   });
 });

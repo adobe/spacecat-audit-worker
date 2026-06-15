@@ -11,79 +11,47 @@
  */
 
 import {
-  getLastNumberOfWeeks, isNonEmptyObject, llmoConfig,
+  getLastNumberOfWeeks, llmoConfig, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs, areCategoryNamesDifferent,
+  compareConfigs,
 } from './utils.js';
+import {
+  isBrandalfEnabled,
+  resolveOrganizationIdForSite,
+} from '../utils/brandalf-utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
-import { ContentAIClient } from '../utils/content-ai.js';
+import { findActiveBrandForSite } from '../utils/brand-resolver.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
+const REFERRAL_TRAFFIC_DAILY_AUDIT = 'llmo-referral-traffic-daily';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-
-const GEO_FREE_SPLIT_COUNT = 23;
-const GEO_FREE_SPLITS = Array.from(
-  { length: GEO_FREE_SPLIT_COUNT },
-  (_, i) => `geo-brand-presence-free-${i + 1}`,
-);
-
-/**
- * Finds the geo-brand-presence-free split with the fewest enabled sites.
- * @param {object} configuration - Configuration instance
- * @returns {string} The split audit type to assign
- */
-function findBestFreeSplit(configuration) {
-  let bestSplit = GEO_FREE_SPLITS[0];
-  let minCount = Infinity;
-
-  for (const split of GEO_FREE_SPLITS) {
-    const count = configuration.getEnabledSiteIdsForHandler(split).length;
-    if (count < minCount) {
-      minCount = count;
-      bestSplit = split;
-      if (count === 0) break;
-    }
-  }
-
-  return bestSplit;
-}
-
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
- * @param {object} site A site object
- * @param {object} context The request context object
- * @param {string[]} audits Array of audit types to enable
- * @param {object} [options]
- * @param {object} [options.configuration] A global configuration object.
+ * Enables each listed audit handler for the site and persists configuration.
+ * Intentionally does not call isHandlerEnabledForSite — callers must only invoke this on
+ * first-time flows (e.g. no previousConfigVersion) so disabled handlers are not re-toggled
+ * on every LLMO analysis.
+ *
+ * @param {object} site
+ * @param {object} context
+ * @param {string[]} audits
+ * @param {{ configuration: object }} options
  */
-async function enableAudits(site, context, audits = [], options = undefined) {
-  const { dataAccess } = context;
-  const { Configuration } = dataAccess;
-
-  const configuration = options?.configuration ?? await Configuration.findLatest();
-
-  let hasChanges = false;
+async function enableAudits(site, context, audits, options) {
+  const { configuration } = options;
   audits.forEach((audit) => {
-    if (!configuration.isHandlerEnabledForSite(audit, site)) {
-      configuration.enableHandlerForSite(audit, site);
-      hasChanges = true;
-    }
+    configuration.enableHandlerForSite(audit, site);
   });
-
-  if (hasChanges) {
-    await configuration.save();
-  }
-  /* c8 ignore stop */
+  await configuration.save();
 }
 
 async function enableImports(siteId, context, imports = []) {
@@ -124,6 +92,108 @@ async function checkOptelData(domain, context) {
   }
 }
 
+/**
+ * Creates a brand presence schedule in DRS and triggers it immediately.
+ * This is called during first-time onboarding so that brand presence data
+ * collection starts right away instead of waiting for the next scheduled run.
+ *
+ * @param {object} context - Universal context with env and log
+ * @param {string} siteId - SpaceCat site ID
+ * @param {string} domain - Site domain for the schedule description
+ * @param {object} [options]
+ * @param {string} [options.brandId] - Brand UUID for v2 schedules (required for v2 scheduler)
+ * @param {string} [options.organizationId] - SpaceCat org UUID for v2 schedules
+ */
+export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain, opts = {}) {
+  const { brandId, organizationId } = opts;
+  const { env, log } = context;
+  const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
+
+  if (!drsApiUrl || !drsApiKey) {
+    throw new Error('DRS API URL or key not configured; skipping brand presence schedule creation');
+  }
+
+  // Strip trailing slashes from the API URL
+  let baseUrl = drsApiUrl;
+  while (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': drsApiKey,
+  };
+
+  const schedulePayload = {
+    site_id: siteId,
+    ...(brandId && { brand_id: brandId }),
+    ...(organizationId && { spacecat_org_id: organizationId }),
+    frequency: 'weekly',
+    cron_expression: 'auto',
+    description: `Onboarding brand presence: ${domain} (${siteId})`,
+    job_config: {
+      provider_ids: ['brightdata', 'google_ai_overviews', 'openai_web_search'],
+      priority: 'LOW',
+      enable_brand_presence: true,
+      cadence: 'weekly',
+      provider_parameters: {
+        brightdata: {
+          siteId,
+          metadata: { site: siteId },
+          dataset_id: 'chatgpt_free,perplexity,gemini,copilot,aimode',
+          platforms: ['chatgpt_free', 'perplexity', 'gemini', 'copilot', 'aimode'],
+        },
+        google_ai_overviews: {
+          siteId,
+          metadata: { site: siteId },
+        },
+        openai_web_search: {
+          siteId,
+          metadata: { site: siteId },
+        },
+      },
+    },
+  };
+
+  // Step 1: Create the schedule
+  log.info(`Creating brand presence schedule for site ${siteId}`);
+  const createResponse = await fetch(`${baseUrl}/schedules`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(schedulePayload),
+  });
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    throw new Error(`Failed to create brand presence schedule: ${createResponse.status} - ${errorText}`);
+  }
+
+  const schedule = await createResponse.json();
+  const scheduleId = schedule.schedule_id || schedule.id;
+
+  if (!scheduleId) {
+    throw new Error('DRS schedule creation succeeded but no schedule_id returned');
+  }
+
+  log.info(`Brand presence schedule created: ${scheduleId} for site ${siteId}`);
+
+  // Step 2: Trigger the schedule immediately
+  log.info(`Triggering brand presence schedule ${scheduleId} for site ${siteId}`);
+  const triggerResponse = await fetch(`${baseUrl}/schedules/${siteId}/${scheduleId}/trigger`, {
+    method: 'POST',
+    headers,
+  });
+
+  if (!triggerResponse.ok) {
+    const errorText = await triggerResponse.text();
+    throw new Error(`Failed to trigger brand presence schedule: ${triggerResponse.status} - ${errorText}`);
+  }
+
+  log.info(`Brand presence schedule ${scheduleId} triggered successfully for site ${siteId}`);
+
+  return scheduleId;
+}
+
 export async function triggerReferralTrafficImports(context, site) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
@@ -150,218 +220,58 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site) {
+async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
-
-  log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
-
-  // first send with categoriesUpdated flag for last week
+  log.info('Triggering geo-brand-presence-trigger-refresh for site: %s', siteId);
   await sqs.sendMessage(configuration.getQueues().audits, {
-    type: 'cdn-logs-report',
-    siteId,
-    auditContext: {
-      weekOffset: -1,
-      categoriesUpdated: true,
-    },
-  });
-
-  log.info('Successfully triggered cdn-logs-report audit');
-}
-
-export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const siteId = site.getSiteId();
-
-  // Priority: auditContext > site config > default
-  const cadence = auditContext?.brandPresenceCadence
-    || site.getConfig()?.getBrandPresenceCadence?.()
-    || 'weekly';
-
-  const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
-
-  log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
-
-  // Check if the selected audit type is enabled
-  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
-  if (!isAuditEnabled) {
-    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
-    return;
-  }
-
-  // Optional: Warn if the opposite audit type is also enabled
-  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
-  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
-  if (isOppositeEnabled) {
-    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
-  }
-
-  const geoBrandPresenceMessage = {
-    type: auditType,
-    siteId,
-    data: getLastSunday(),
-  };
-
-  await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
-
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-
-export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const auditType = 'geo-brand-presence-trigger-refresh';
-  const siteId = site.getSiteId();
-
-  log.info('Triggering %s audit for site: %s', auditType, siteId);
-
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: auditType,
+    type: 'geo-brand-presence-trigger-refresh',
     siteId,
     auditContext: { configVersion },
   });
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-
-async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
-  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
-
-  await triggerGeoBrandPresence(context, site, auditContext);
-  triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-}
-
-async function triggerMystiqueCategorization(context, siteId, domain) {
-  const {
-    env, log, s3Client,
-  } = context;
-
-  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
-  const mystiqueApiBaseUrl = env.MYSTIQUE_API_BASE_URL;
-  const categorizationEndpoint = `${mystiqueApiBaseUrl}/v1/categorization/site`;
-
-  const {
-    config,
-    exists,
-  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket });
-
-  if (exists && isNonEmptyObject(config.categories)) {
-    log.info('Config categories already exist; skipping Mystique categorization');
-    return;
-  }
-
-  log.info(`Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`);
-  const imsContext = {
-    log,
-    env: {
-      IMS_HOST: env.IMS_HOST,
-      IMS_CLIENT_ID: env.IMS_CLIENT_ID,
-      IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
-      IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
-    },
-  };
-  const imsClient = ImsClient.createFrom(imsContext);
-  const { access_token: accessToken } = await imsClient.getServiceAccessToken();
-
-  try {
-    const response = await fetch(categorizationEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorization: accessToken,
-      },
-      body: JSON.stringify({
-        url: domain,
-      }),
-      timeout: 60000,
-    });
-
-    const data = await response.json();
-    const { categories } = data.categories;
-    config.categories = categories;
-    await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket });
-  } catch (error) {
-    log.error(`Failed to trigger Mystique categorization: ${error.message}`);
-  }
-}
-
-async function getBaseUrlBySiteId(siteId, context) {
-  const { dataAccess, log } = context;
-  const { Site } = dataAccess;
-
-  try {
-    const site = await Site.findById(siteId);
-    /* c8 ignore next */
-    return site?.getBaseURL() || '';
-  } catch /* c8 ignore start */ {
-    log.info(`Unable to fetch base URL for siteId: ${siteId}`);
-    return '';
-  } /* c8 ignore stop */
+  log.info('Successfully triggered geo-brand-presence-trigger-refresh');
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
   } = context;
+  const { Configuration } = context.dataAccess;
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
-  // Ensure relevant audits and imports are enabled
-  try {
-    const { Configuration } = context.dataAccess;
-    const configuration = await Configuration.findLatest();
+  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
+  const isFirstTimeOnboarding = !previousConfigVersion;
 
-    const auditsToEnable = [
-      'scrape-top-pages',
-      'headings',
-      'llm-blocked',
-      'llm-error-pages',
-      'summarization',
-      'faqs',
-      REFERRAL_TRAFFIC_AUDIT,
-      'cdn-logs-report',
-      'readability',
-      'wikipedia-analysis',
-    ];
-    const [isDailyEnabled, isPaidEnabled] = await Promise.all([
-      configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
-      configuration.isHandlerEnabledForSite('geo-brand-presence-paid', site),
-    ]);
-
-    // don't tamper with configuration if daily geo brand presence is already enabled.
-    if (!isDailyEnabled) {
-      auditsToEnable.push('geo-brand-presence');
-      // only enable free geo brand presence if paid is not already enabled
-      if (!isPaidEnabled) {
-        const targetSplit = findBestFreeSplit(configuration);
-        auditsToEnable.push(targetSplit);
-      }
+  if (isFirstTimeOnboarding) {
+    try {
+      const configuration = await Configuration.findLatest();
+      const auditsToEnable = [
+        'scrape-top-pages',
+        'headings',
+        'llm-blocked',
+        'llm-error-pages',
+        'summarization',
+        REFERRAL_TRAFFIC_AUDIT,
+        REFERRAL_TRAFFIC_DAILY_AUDIT,
+        'readability',
+        'wikipedia-analysis',
+      ];
+      // enableAudits intentionally bypasses isHandlerEnabledForSite (see its JSDoc); only
+      // call it from first-time onboarding paths so previously disabled handlers are not
+      // silently re-toggled on subsequent runs.
+      await enableAudits(site, context, auditsToEnable, { configuration });
+    } catch (error) {
+      log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);
     }
-
-    await enableAudits(site, context, auditsToEnable, { configuration });
-  } catch (error) {
-    log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);
-  }
-
-  // Enable ContentAI for the site
-  try {
-    const contentAIClient = new ContentAIClient(context);
-    await contentAIClient.initialize();
-    await contentAIClient.createConfiguration(site);
-    log.info(`Successfully processed ContentAI for site ${siteId}`);
-  } catch (error) {
-    log.error(`Failed to process ContentAI for site ${siteId}: ${error.message}`);
   }
 
   try {
     await enableImports(siteId, context, [
       { type: REFERRAL_TRAFFIC_IMPORT },
-      { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
       { type: 'top-pages' },
     ]);
   } catch (error) {
@@ -372,12 +282,47 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion } = auditContext;
-  const isFirstTimeOnboarding = !previousConfigVersion;
 
+  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts.
+  // If onboardingMode is explicitly 'v1' (set by api-service for mixed-state orgs with
+  // pre-Brandalf sites), skip v2 brand resolution — the org has brandalf=true but was
+  // onboarded via the v1 path, so no customer config brand exists yet.
+  let brandId;
+  let organizationId;
   if (isFirstTimeOnboarding) {
-    await triggerMystiqueCategorization(context, siteId, domain);
+    const orgId = await resolveOrganizationIdForSite({
+      site,
+      fallbackOrganizationId: auditContext.imsOrgId,
+      log,
+    });
+    if (orgId) {
+      const isV2 = onboardingMode !== 'v1'
+        && await isBrandalfEnabled(orgId, context.dataAccess?.services?.postgrestClient, log);
+      if (isV2) {
+        organizationId = orgId;
+        const brand = await findActiveBrandForSite(context, { orgId, siteId });
+        if (brand) {
+          brandId = brand.brandId;
+          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+        } else {
+          log.warn(`No brand resolved for site ${siteId} in org ${organizationId} for v2 BP schedule`);
+        }
+      }
+    }
+  }
+
+  let bpScheduleId;
+  if (isFirstTimeOnboarding) {
     await sendOnboardingNotification(context, site, 'first_onboarding');
+
+    // Create and trigger brand presence schedule via DRS API (non-fatal)
+    try {
+      const bpOpts = { brandId, organizationId };
+      bpScheduleId = await createAndTriggerBrandPresenceSchedule(context, siteId, domain, bpOpts);
+      triggeredSteps.push('brand-presence-schedule');
+    } catch (error) {
+      log.error(`Failed to create/trigger brand presence schedule for site ${siteId}: ${error.message}`);
+    }
   }
 
   // Handle referral traffic imports for first-time onboarding
@@ -391,17 +336,17 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  // If no config version provided, trigger all steps
+  // If no config version provided, skip config comparison (no config to compare)
   if (!configVersion) {
-    log.info('No config version provided; triggering all relevant audits');
-    await triggerAllSteps(context, site, log, triggeredSteps, auditContext);
+    log.info('No config version provided; skipping config comparison');
 
     return {
       auditResult: {
         status: 'completed',
-        configChangesDetected: true,
-        message: 'All audits triggered (no config version provided)',
+        configChangesDetected: false,
+        message: 'No config version provided; skipping config comparison',
         triggeredSteps,
+        brandPresenceScheduleId: bpScheduleId,
         previousConfigVersion,
         configVersion,
       },
@@ -433,8 +378,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
-  const hasCdnLogsChanges = changes.categories
-    && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
   if (changes.cdnBucketConfig) {
     try {
@@ -464,37 +407,23 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     }
   }
 
-  if (hasCdnLogsChanges) {
-    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-    await triggerCdnLogsReport(context, site);
-    triggeredSteps.push('cdn-logs-report');
-  }
-
-  const brandPresenceCadence = auditContext?.brandPresenceCadence || 'weekly';
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  const baseUrl = await getBaseUrlBySiteId(siteId, context);
-  const isAdobe = baseUrl.startsWith('https://adobe.com');
-
-  if (hasBrandPresenceChanges && !isAdobe) {
-    const isAICategorizationOnly = changes.metadata?.isAICategorizationOnly || false;
-
-    if (isAICategorizationOnly) {
-      log.info('LLMO config changes detected from AI categorization flow; triggering geo-brand-presence refresh');
-      await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-      triggeredSteps.push('geo-brand-presence-refresh');
+  if (hasBrandPresenceChanges) {
+    const drsClient = DrsClient.createFrom(context);
+    if (drsClient.isConfigured()) {
+      await drsClient.triggerBrandDetection(siteId);
+      triggeredSteps.push('drs-brand-detection');
     } else {
-      log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
-      await triggerGeoBrandPresence(context, site, auditContext);
-      triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+      log.warn('DRS not configured; skipping brand detection trigger');
     }
   }
-  if (needsBrandPresenceRefresh && !isAdobe) {
-    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
+
+  if (needsBrandPresenceRefresh) {
     await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-    triggeredSteps.push('geo-brand-presence-refresh');
+    triggeredSteps.push('geo-brand-presence-trigger-refresh');
   }
 
   if (triggeredSteps.length > 0) {
@@ -505,6 +434,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         status: 'completed',
         configChangesDetected: true,
         triggeredSteps,
+        brandPresenceScheduleId: bpScheduleId,
         previousConfigVersion,
         configVersion,
       },

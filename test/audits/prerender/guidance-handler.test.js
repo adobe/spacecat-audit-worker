@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -32,25 +30,20 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let handler;
   let mockIsPaidLLMOCustomer;
 
-  // Helper to mock successful fetch response
+  // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(data),
-    });
+    fetchStub.resolves(data);
   };
 
-  // Helper to mock failed fetch response
+  // Helper to mock failed fetch response (mirrors fetchAnalysisFromPresignedUrl's
+  // rejection shape on non-ok response).
   const mockFetchFailure = (statusCode = 500, statusText = 'Internal Server Error') => {
-    fetchStub.resolves({
-      ok: false,
-      status: statusCode,
-      statusText,
-    });
+    fetchStub.rejects(new Error(`Prerender - analysis fetch failed: ${statusCode} ${statusText}`));
   };
 
   beforeEach(async () => {
     log = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       warn: sinon.stub(),
       error: sinon.stub(),
@@ -95,6 +88,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getId: sinon.stub().returns('opportunity-123'),
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
+      getType: () => 'prerender',
     };
 
     Site = {
@@ -106,7 +100,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     };
 
     Suggestion = {
-      _saveMany: sinon.stub().resolves(),
+      saveMany: sinon.stub().resolves(),
       STATUSES: {
         NEW: 'NEW',
         PENDING_VALIDATION: 'PENDING_VALIDATION',
@@ -119,17 +113,19 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
-    // Mock global fetch for presigned URL downloads
-    // Using sinon.stub(global, 'fetch') properly saves and restores the original
-    fetchStub = sinon.stub(global, 'fetch');
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
-    // Import handler with mocked isPaidLLMOCustomer
+    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+      },
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
     });
 
@@ -191,8 +187,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(result).to.exist;
       expect(result.status).to.equal(200);
 
-      // Verify fetch was called with presigned URL
-      expect(fetchStub).to.have.been.calledWith(presignedUrl);
+      // Verify fetch helper was called with presigned URL (and options object).
+      expect(fetchStub).to.have.been.calledWith(presignedUrl, sinon.match.object);
 
       expect(Site.findById).to.have.been.calledWith('site-123');
       expect(Opportunity.findById).to.have.been.calledWith('opportunity-123');
@@ -204,8 +200,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockSuggestions[2].setData).to.not.have.been.called; // OUTDATED, skipped
 
       // Verify batch save was called
-      expect(Suggestion._saveMany).to.have.been.called;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.called;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2); // Only 2 non-OUTDATED suggestions
     });
 
@@ -325,11 +321,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // Should log the fetch error
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to download from presigned URL: 404 Not Found/),
-      );
-      // Should also log the catch block error with opportunityId
+      // The new fetch helper throws `analysis fetch failed: 404 Not Found`; that
+      // bubbles into the outer catch which logs the opportunityId-tagged message.
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
@@ -471,11 +464,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No existing suggestions found/));
+      expect(log.debug).to.have.been.calledWith(sinon.match(/No existing suggestions found/));
     });
 
     it('should handle batch save errors gracefully', async () => {
-      Suggestion._saveMany.rejects(new Error('DynamoDB batch write failed'));
+      Suggestion.saveMany.rejects(new Error('DynamoDB batch write failed'));
       mockFetchSuccess({
         opportunityId: 'opportunity-123',
         suggestions: [
@@ -548,7 +541,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       // OUTDATED suggestion should be filtered out
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWith(sinon.match(/No valid suggestions to update/));
     });
 
@@ -598,7 +591,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No updateable suggestions found \(all are OUTDATED\)/),
       );
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
     });
 
     it('should update suggestions with various statuses except OUTDATED', async () => {
@@ -658,7 +651,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // OUTDATED should NOT be updated
       expect(allStatusSuggestions[3].setData).to.not.have.been.called;
 
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(3);
     });
 
@@ -686,7 +679,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/Skipping Mystique suggestion without URL/));
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
     });
 
     it('should handle null elements in suggestions array gracefully', async () => {
@@ -715,8 +708,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         sinon.match(/Skipping Mystique suggestion without URL/),
       );
       // Should still update the valid suggestions
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
     });
 
@@ -741,8 +734,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       // Should update suggestions with empty string for aiSummary
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // Verify aiSummary is set to empty string
@@ -751,6 +744,47 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       );
       expect(savedSuggestions[1].setData).to.have.been.calledWith(
         sinon.match({ aiSummary: '' }),
+      );
+    });
+
+    it('should preserve existing valuable flag when aiSummary is invalid', async () => {
+      // Suggestion already has valuable=false and a valid aiSummary from a previous run
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        aiSummary: 'Previous valid summary',
+        valuable: false,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: null, // Invalid — should preserve existing
+            valuable: true, // New value — should NOT overwrite
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
+      expect(savedSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({
+          aiSummary: 'Previous valid summary', // Preserved
+          valuable: false, // Preserved (not overwritten with true)
+        }),
       );
     });
 
@@ -777,8 +811,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       // Should treat "Not available" as empty string for better UX (case-insensitive)
       // Note: page3 is OUTDATED so will be skipped, only 2 suggestions will be saved
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // Verify all variations are converted to empty string
@@ -817,8 +851,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockIsPaidLLMOCustomer).to.have.been.calledOnce;
 
       // Both suggestions should be saved
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // First suggestion should have valuable=true (defaulted)
@@ -893,6 +927,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const mockOpp = {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
+        getType: () => 'prerender',
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',
@@ -926,8 +961,52 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(setDataStub).to.have.been.calledWith({
         aiSummary: 'Summary 1',
         valuable: true,
+        prompts: [], // no prompts from Mystique, currentData null → default []
       });
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
+    it('should fall back to raw URL when suggestion URL is not parseable', async () => {
+      // Use an invalid URL that will cause new URL() to throw
+      const invalidUrlSuggestion = {
+        getId: sinon.stub().returns('suggestion-invalid'),
+        getData: sinon.stub().returns({
+          url: 'not-a-valid-url',
+          isDomainWide: false,
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([invalidUrlSuggestion]);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'not-a-valid-url',
+            aiSummary: 'Summary for invalid URL',
+            valuable: true,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // The invalid URL should still match via the catch fallback (raw string comparison)
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(invalidUrlSuggestion.setData).to.have.been.calledOnce;
+      const setDataArg = invalidUrlSuggestion.setData.firstCall.args[0];
+      expect(setDataArg.aiSummary).to.equal('Summary for invalid URL');
     });
 
     it('should skip suggestions that do not match existing URLs', async () => {
@@ -954,7 +1033,213 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/No existing suggestion found for URL/));
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
+    });
+  });
+
+  describe('Prompts field — preserve-or-update logic', () => {
+    it('should store new prompts when Mystique returns them', async () => {
+      const newPrompts = [
+        {
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'What is prerendering?', type: 'Branded',
+          topic: 'Performance', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
+      ];
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Good summary',
+            valuable: true,
+            prompts: newPrompts,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: newPrompts }),
+      );
+    });
+
+    it('should preserve existing prompts when Mystique returns empty prompts array', async () => {
+      const existingPrompts = [{
+        id: 'prompt-uuid-old', origin: 'ai', source: 'audit',
+        prompt: 'Old question?', type: 'Non-Branded',
+        topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+      }];
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: 'Previous summary',
+        prompts: existingPrompts,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Updated summary',
+            valuable: true,
+            prompts: [], // Empty — Mystique generated nothing new
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: existingPrompts }), // Existing preserved
+      );
+    });
+
+    it('should preserve existing prompts when Mystique omits the prompts field', async () => {
+      const existingPrompts = [{
+        id: 'prompt-uuid-existing', origin: 'ai', source: 'audit',
+        prompt: 'Existing?', type: 'Non-Branded',
+        topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+      }];
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: 'Previous summary',
+        prompts: existingPrompts,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Updated summary',
+            valuable: true,
+            // prompts field absent
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: existingPrompts }), // Still preserved
+      );
+    });
+
+    it('should default prompts to [] when neither Mystique nor existing data has them', async () => {
+      // Suggestion has no prompts in existing data
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: '',
+        // no prompts field
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'New summary',
+            valuable: true,
+            // no prompts field from Mystique either
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: [] }),
+      );
+    });
+
+    it('should log suggestionsWithPrompts and totalPromptCount in metrics', async () => {
+      const prompts = [
+        {
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'Q1?', type: 'Branded',
+          topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
+        {
+          id: 'prompt-uuid-2', origin: 'ai', source: 'audit',
+          prompt: 'Q2?', type: 'Non-Branded',
+          topic: 'Content', category: 'SEO', intent: 'Informational', regions: ['US'],
+        },
+      ];
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Summary with prompts',
+            valuable: true,
+            prompts,
+          },
+          {
+            url: 'https://example.com/page2',
+            aiSummary: 'Summary without prompts',
+            valuable: true,
+            // no prompts
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/prerender_ai_summary_metrics/)
+          .and(sinon.match(/suggestionsWithPrompts=1/))
+          .and(sinon.match(/totalPromptCount=2/)),
+      );
+    });
+
+    it('should log zero prompt metrics when no suggestions have prompts', async () => {
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/page1', aiSummary: 'Summary', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/prerender_ai_summary_metrics/)
+          .and(sinon.match(/suggestionsWithPrompts=0/))
+          .and(sinon.match(/totalPromptCount=0/)),
+      );
     });
   });
 

@@ -10,12 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { toPathname } from '../../../src/prerender/utils/utils.js';
 
 use(sinonChai);
 
@@ -253,7 +252,7 @@ describe('Prerender Utils', () => {
       expect(result.filteredCount).to.equal(0);
     });
 
-    it('should handle URLs with query parameters', () => {
+    it('should handle URLs with query parameters (default: dedup by pathname only)', () => {
       const urls1 = ['https://example.com/page?foo=bar'];
       const urls2 = ['https://example.com/page?baz=qux'];
 
@@ -263,6 +262,52 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(1);
       expect(result.urls[0]).to.equal('https://example.com/page?foo=bar');
       expect(result.filteredCount).to.equal(0);
+    });
+
+    it('should keep URLs with different query params when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?filter=iphone',
+        'https://example.com/page?filter=mac',
+        'https://example.com/page',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls).to.deep.equal(urls);
+    });
+
+    it('should still dedup identical URLs when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?filter=iphone',
+        'https://example.com/page?filter=iphone',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(1);
+    });
+
+    it('should keep URLs with same query params in different order when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?b=2&a=1',
+        'https://example.com/page?a=1&b=2',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      // Raw query strings differ, so both are kept (exact CSV input preserved)
+      expect(result.urls).to.have.lengthOf(2);
+    });
+
+    it('should work with multiple arrays and includeQueryParams option', () => {
+      const urls1 = ['https://example.com/page?a=1'];
+      const urls2 = ['https://example.com/page?b=2'];
+      const urls3 = ['https://example.com/other'];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2, urls3, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(3);
     });
 
     it('should handle URLs with hash fragments', () => {
@@ -395,5 +440,87 @@ describe('Prerender Utils', () => {
       expect(result.filteredCount).to.equal(3);
     });
   });
-});
 
+  describe('toPathname', () => {
+    it('should return the pathname for a valid URL', () => {
+      expect(toPathname('https://www.adobe.com/test/page')).to.equal('/test/page');
+    });
+
+    it('should return the raw string for an invalid URL', () => {
+      expect(toPathname('not-a-valid-url')).to.equal('not-a-valid-url');
+    });
+
+    it('should strip trailing slash from non-root paths', () => {
+      expect(toPathname('https://www.adobe.com/test/page/')).to.equal('/test/page');
+    });
+
+    it('should preserve / for root path', () => {
+      expect(toPathname('https://adobe.com/')).to.equal('/');
+    });
+
+    it('should return / for a bare domain with no path', () => {
+      expect(toPathname('https://adobe.com')).to.equal('/');
+    });
+  });
+
+  describe('pathname-based suggestion key dedup', () => {
+    const AUDIT_TYPE = 'prerender';
+    const buildKey = (data) => (data.key ? data.key : `${toPathname(data.url)}|${AUDIT_TYPE}`);
+
+    // Case 1: existing suggestion updated in place after domain shift (no duplicate created)
+    it('should match existing and new suggestion by pathname when domain shifts (www → no-www)', () => {
+      const existing = [{ url: 'https://www.adobe.com/test' }];
+      const newData = [{ url: 'https://adobe.com/test' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const updatedInPlace = existing.filter((s) => newDataKeySet.has(buildKey(s)));
+      const createdNew = newData.filter(
+        (d) => !new Set(existing.map(buildKey)).has(buildKey(d)),
+      );
+
+      expect(updatedInPlace).to.have.lengthOf(1);
+      expect(createdNew).to.have.lengthOf(0);
+    });
+
+    // Case 1: trailing slash variant treated as same page (no duplicate)
+    it('should match existing and new suggestion by pathname when trailing slash differs', () => {
+      const existing = [{ url: 'https://adobe.com/products' }];
+      const newData = [{ url: 'https://adobe.com/products/' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const updatedInPlace = existing.filter((s) => newDataKeySet.has(buildKey(s)));
+      const createdNew = newData.filter(
+        (d) => !new Set(existing.map(buildKey)).has(buildKey(d)),
+      );
+
+      expect(updatedInPlace).to.have.lengthOf(1);
+      expect(createdNew).to.have.lengthOf(0);
+    });
+
+    // Case 2: existing suggestion marked outdated when page is scraped but no longer needs prerender
+    it('should identify existing suggestion as outdated when its pathname is not in new audit data', () => {
+      const existing = [{ url: 'https://adobe.com/old-page' }];
+      const newData = [{ url: 'https://adobe.com/new-page' }];
+
+      const newDataKeySet = new Set(newData.map(buildKey));
+      const outdated = existing.filter((s) => !newDataKeySet.has(buildKey(s)));
+
+      expect(outdated).to.have.lengthOf(1);
+    });
+
+    // Case 5: genuinely new page creates a new suggestion
+    it('should identify new audit data as a new suggestion when no existing suggestion matches its pathname', () => {
+      const existing = [{ url: 'https://adobe.com/existing-page' }];
+      const newData = [
+        { url: 'https://adobe.com/existing-page' },
+        { url: 'https://adobe.com/brand-new-page' },
+      ];
+
+      const existingKeySet = new Set(existing.map(buildKey));
+      const createdNew = newData.filter((d) => !existingKeySet.has(buildKey(d)));
+
+      expect(createdNew).to.have.lengthOf(1);
+      expect(createdNew[0].url).to.equal('https://adobe.com/brand-new-page');
+    });
+  });
+});

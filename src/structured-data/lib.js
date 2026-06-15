@@ -58,7 +58,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn(`SDA: Failed to create Google client for site with url ${finalUrl}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
+    log.debug(`SDA: Failed to create Google client for site with url ${finalUrl}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
     return [];
   }
 
@@ -165,8 +165,12 @@ export function includeIssue(context, issue, flag) {
   const customerTypes = [Site.DELIVERY_TYPES.AEM_CS, Site.DELIVERY_TYPES.AEM_AMS];
   const isAffectedCustomer = customerTypes.includes(context.site.getDeliveryType());
 
-  if (!isError) return false;
-  if (!isImageObject) return true;
+  if (!isError) {
+    return false;
+  }
+  if (!isImageObject) {
+    return true;
+  }
 
   if (isImageObject && isAffectedCustomer) {
     const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';

@@ -12,8 +12,8 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import {
   mapToKeywordOptimizerOpportunity,
-  mapToKeywordOptimizerSuggestion,
-  isLowSeverityGuidanceBody,
+  mapClusterToSuggestion,
+  assignClusterRanks,
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
 
@@ -22,15 +22,20 @@ const GUIDANCE_TYPE = 'ad-intent-mismatch';
 /**
  * Handler for ad intent mismatch guidance responses from mystique.
  *
- * Message format (GuidanceWithBody pattern):
+ * New cluster-based message format:
  * {
  *   auditId, siteId,
  *   data: {
- *     url, guidance: [{
- *       insight, rationale, recommendation, type,
- *       body: { issueSeverity, suggestions, cpc, sumTraffic, url }
- *     }],
- *     suggestions: []
+ *     url,
+ *     guidance: [{
+ *       body: {
+ *         clusterResults: [...],
+ *         portfolioMetrics: {...},
+ *         observability: {...},
+ *         langfuseTraceId, langfuseTraceUrl,
+ *         hasConflictingHeadlineRecommendations
+ *       }
+ *     }]
  *   }
  * }
  * @param {Object} message - Message from mystique
@@ -41,9 +46,27 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
+
+  if (!data) {
+    log.warn('[ad-intent-mismatch] Received message with no data, skipping');
+    return ok();
+  }
+
+  // Handle failure envelope from Mystique — URL-level analysis failed
+  if (data.status === 'failed') {
+    log.info({
+      trace_id: data?.error?.langfuseTraceId,
+      audit_id: auditId,
+      site_id: siteId,
+      url: data?.url,
+      error_type: data?.error?.type,
+    }, '[ad-intent-mismatch] URL-level failure from Mystique');
+    return ok();
+  }
+
   const { guidance } = data;
   const guidanceBody = guidance?.[0]?.body;
-  const url = guidanceBody?.url || data?.url;
+  const url = data?.url;
   const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
   paidLog.received(siteId, url, auditId);
@@ -54,41 +77,76 @@ export default async function handler(message, context) {
     return notFound();
   }
 
-  // Check for empty guidance or low severity and skip if so
-  if (!guidance || guidance.length === 0 || isLowSeverityGuidanceBody(guidanceBody)) {
-    paidLog.skipping('low issue severity or empty guidance', siteId, url, auditId);
+  const auditResult = audit.getAuditResult();
+  if (!auditResult) {
+    paidLog.failed('audit has no result data', siteId, url, auditId);
     return ok();
   }
 
+  // Gate: skip when body is null, clusterResults absent, or clusterResults empty
+  if (!guidanceBody || !guidanceBody.clusterResults || guidanceBody.clusterResults.length === 0) {
+    paidLog.skipping('no clusterResults in guidance body', siteId, url, auditId);
+    return ok();
+  }
+
+  const { clusterResults, observability } = guidanceBody;
+
+  // Log structured observability fields from Mystique
+  if (observability) {
+    log.info({
+      ...observability,
+      site_id: siteId,
+      url,
+      audit_id: auditId,
+    }, '[ad-intent-mismatch] Mystique observability data');
+  }
+
+  // Replace-on-re-audit: find existing NEW/IN_PROGRESS opportunities on same
+  // (siteId, url, type="ad-intent-mismatch") and mark as IGNORED
+  const [newOpportunities, inProgressOpportunities] = await Promise.all([
+    Opportunity.allBySiteIdAndStatus(siteId, 'NEW'),
+    Opportunity.allBySiteIdAndStatus(siteId, 'IN_PROGRESS'),
+  ]);
+
+  const existingToIgnore = [...newOpportunities, ...inProgressOpportunities]
+    .filter((oppty) => oppty.getType() === GUIDANCE_TYPE)
+    .filter((oppty) => url && oppty.getData()?.url === url);
+
+  if (existingToIgnore.length > 0) {
+    existingToIgnore.forEach((oppty) => {
+      oppty.setStatus('IGNORED');
+    });
+    await Opportunity.saveMany(existingToIgnore);
+    existingToIgnore.forEach((oppty) => {
+      paidLog.markedIgnored(oppty.getId(), siteId, url, auditId);
+    });
+  }
+
+  // Create the opportunity (1 per URL)
   const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
   const opportunity = await Opportunity.create(entity);
-  paidLog.createdOpportunity(siteId, url, auditId);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
-  // Create suggestion for the new opportunity
-  const suggestionData = mapToKeywordOptimizerSuggestion(
+  // Assign composite ranks to clusters
+  const rankedClusters = assignClusterRanks(clusterResults);
+
+  // Create 1 suggestion per cluster
+  const suggestions = rankedClusters.map((cluster) => mapClusterToSuggestion(
     context,
     opportunity.getId(),
-    message,
+    cluster,
+  ));
+
+  // Bulk-create suggestions
+  await Promise.all(suggestions.map((s) => Suggestion.create(s)));
+  suggestions.forEach(() => {
+    paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
+  });
+
+  log.info(
+    `[ad-intent-mismatch] Created opportunity ${opportunity.getId()} with `
+    + `${suggestions.length} cluster suggestions for site ${siteId}, url ${url}`,
   );
-  await Suggestion.create(suggestionData);
-  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
-
-  // Only after suggestion is successfully created,
-  // find and mark existing NEW system opportunities for the SAME URL as IGNORED
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  const existingMatches = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'ad-intent-mismatch')
-    .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
-    .filter((oppty) => oppty.getData()?.url === url) // Only match same URL
-    .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
-
-  if (existingMatches.length > 0) {
-    await Promise.all(existingMatches.map(async (oldOppty) => {
-      oldOppty.setStatus('IGNORED');
-      await oldOppty.save();
-      paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
-    }));
-  }
 
   return ok();
 }

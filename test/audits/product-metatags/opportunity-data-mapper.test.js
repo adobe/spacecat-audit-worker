@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { createOpportunityData } from '../../../src/product-metatags/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
@@ -44,7 +42,7 @@ describe('Product Metatags Opportunity Data Mapper', () => {
       expect(result.data).to.have.property('magentoEnvironmentId', 'magento-env-123');
       expect(result.data).to.have.property('projectedTrafficLost', 500);
       expect(result.data.dataSources).to.deep.equal([
-        DATA_SOURCES.AHREFS,
+        DATA_SOURCES.SEO,
         DATA_SOURCES.RUM,
         DATA_SOURCES.SITE,
       ]);
@@ -85,7 +83,7 @@ describe('Product Metatags Opportunity Data Mapper', () => {
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.data).to.have.property('dataSources');
       expect(result.data.dataSources).to.deep.equal([
-        DATA_SOURCES.AHREFS,
+        DATA_SOURCES.SEO,
         DATA_SOURCES.RUM,
         DATA_SOURCES.SITE,
       ]);

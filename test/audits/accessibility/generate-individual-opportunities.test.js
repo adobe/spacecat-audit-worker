@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import * as chai from 'chai';
 import sinon from 'sinon';
 import chaiAsPromised from 'chai-as-promised';
@@ -1206,6 +1204,7 @@ describe('createIndividualOpportunity', () => {
       getId: sandbox.stub().returns('test-id'),
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
+      getType: () => 'accessibility',
     };
     mockContext = {
       log: {
@@ -1294,6 +1293,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
+      getType: () => 'accessibility',
     };
     mockLog = {
       info: sandbox.stub(),
@@ -1872,6 +1872,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
   let mockGetAuditData;
   let mockCreateAssistiveOppty;
   let mockSyncSuggestions;
+  let mockResolveOpportunityIfNoIssues;
   let mockIsAuditEnabledForSite;
   let createAccessibilityIndividualOpportunities;
 
@@ -1879,12 +1880,14 @@ describe('createAccessibilityIndividualOpportunities', () => {
     sandbox = sinon.createSandbox();
     mockSite = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getId: sandbox.stub().returns('test-site'),
     };
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
+      getType: () => 'accessibility',
     };
     mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
@@ -1942,6 +1945,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
     });
 
     mockSyncSuggestions = sandbox.stub().resolves();
+    mockResolveOpportunityIfNoIssues = sandbox.stub().resolves();
 
     // Fix: Mock all dependencies before importing the module under test
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
@@ -1963,6 +1967,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
+        resolveOpportunityIfNoIssues: mockResolveOpportunityIfNoIssues,
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
@@ -2046,6 +2051,20 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.status).to.equal('NO_OPPORTUNITIES');
     expect(result.message).to.equal('No accessibility issues found in tracked categories');
     expect(result.data).to.deep.equal([]);
+    // SITES-40450: resolve any stale NEW opportunity for every tracked a11y type
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledTwice;
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledWith(
+      'test-site',
+      'a11y-assistive',
+      mockContext.dataAccess,
+      mockContext.log,
+    );
+    expect(mockResolveOpportunityIfNoIssues).to.have.been.calledWith(
+      'test-site',
+      'a11y-usability',
+      mockContext.dataAccess,
+      mockContext.log,
+    );
   });
 
   it('should handle errors during opportunity creation', async () => {
@@ -2882,14 +2901,12 @@ describe('sendMessageToMystiqueForRemediation', () => {
   });
 
   it('should skip when feature toggle is disabled', async () => {
-    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
-
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
       },
       '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+        isAuditEnabledForSite: sandbox.stub().resolves(false), // Mock for a11y-mystique-auto-fix
       },
     });
 
@@ -2900,7 +2917,8 @@ describe('sendMessageToMystiqueForRemediation', () => {
     );
 
     expect(result).to.deep.equal({ success: true });
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+    // The log message about being disabled should no longer be called
+    expect(mockLog.info).to.not.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
 
   it('should use fallback logic for siteId and auditId', async () => {
@@ -3282,6 +3300,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     const mockOpportunity = {
       getId: () => 'oppty-123',
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3439,6 +3458,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should return error when suggestion not found', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-different',
@@ -3518,6 +3538,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
 
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3624,6 +3645,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle empty remediations array', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
@@ -3671,6 +3693,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle multiple remediations with unique suggestionIds', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3768,6 +3791,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle missing suggestionId in some remediations', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3857,6 +3881,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle all suggestions not found', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-different',
@@ -3923,6 +3948,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle suggestion save failures', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -4980,19 +5006,25 @@ describe('sendOpportunitySuggestionsToMystique', () => {
     sandbox.restore();
   });
 
-  it('should skip when mystique is disabled for site', async () => {
-    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
-
+  it('should proceed without mystique skip check (enablement checked upstream)', async () => {
     module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/common/audit-utils.js': {
         isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
 
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSuggestions: () => Promise.resolve([]),
+    };
     const mockContext = {
       log: mockLog,
       site: { getId: () => 'site-1' },
-      dataAccess: {},
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
       sqs: {},
       env: {},
     };
@@ -5001,7 +5033,7 @@ describe('sendOpportunitySuggestionsToMystique', () => {
 
     expect(result.success).to.be.true;
     expect(result.messagesProcessed).to.equal(0);
-    expect(mockLog.info).to.have.been.calledWith('[A11yCodefix] Mystique suggestions are disabled for site, skipping message sending');
+    expect(mockLog.info).to.not.have.been.calledWith('[A11yCodefix] Mystique suggestions are disabled for site, skipping message sending');
   });
 
   it('should skip mystique check when skipMystiqueEnabledCheck is true', async () => {
@@ -5099,14 +5131,18 @@ describe('sendOpportunitySuggestionsToMystique', () => {
   it('should handle errors gracefully', async () => {
     module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: sandbox.stub().rejects(new Error('Database error')),
+        isAuditEnabledForSite: sandbox.stub().resolves(true),
       },
     });
 
     const mockContext = {
       log: mockLog,
       site: { getId: () => 'site-1' },
-      dataAccess: {},
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().rejects(new Error('Database error')),
+        },
+      },
       sqs: {},
       env: {},
     };

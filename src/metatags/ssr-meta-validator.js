@@ -43,7 +43,7 @@ export async function validateMetaTagsViaSSR(url, log) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title = $('title').first().text()?.trim() || null;
+    const title = $('head title').first().text()?.trim() || null;
     const description = $('meta[name="description"]').attr('content')?.trim() || null;
 
     const h1Tags = [];

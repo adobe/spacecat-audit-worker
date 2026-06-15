@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -50,7 +48,7 @@ describe('LLMO Customer Analysis Handler', () => {
         audits: 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
       }),
       enableHandlerForSite: sandbox.stub(),
-      isHandlerEnabledForSite: sandbox.stub().returns(false),
+      isHandlerEnabledForSite: sandbox.stub().callsFake((auditType) => auditType === 'cdn-logs-report'),
       getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().resolves(),
@@ -107,9 +105,20 @@ describe('LLMO Customer Analysis Handler', () => {
     let mockLlmoConfig;
     let mockRUMAPIClient;
     let mockGetRUMUrl;
+    let mockFetch;
+    let mockIsBrandalfEnabled;
+    let mockResolveOrganizationIdForSite;
+    let triggerBrandDetectionStub;
+    let drsCreateFromStub;
 
     beforeEach(async () => {
       sqs.sendMessage.resetHistory();
+
+      triggerBrandDetectionStub = sandbox.stub().resolves();
+      drsCreateFromStub = sandbox.stub().returns({
+        isConfigured: sandbox.stub().returns(true),
+        triggerBrandDetection: triggerBrandDetectionStub,
+      });
 
       mockLlmoConfig = {
         readConfig: sandbox.stub(),
@@ -132,6 +141,29 @@ describe('LLMO Customer Analysis Handler', () => {
 
       mockGetRUMUrl = sandbox.stub().resolves('example.com');
 
+      // Default mock fetch for DRS schedule API calls
+      mockFetch = sandbox.stub();
+      // POST /schedules - create schedule
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      // POST /schedules/{site_id}/{schedule_id}/trigger - trigger schedule
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockIsBrandalfEnabled = sandbox.stub().resolves(false);
+      mockResolveOrganizationIdForSite = sandbox.stub().callsFake(
+        async ({ site: helperSite, fallbackOrganizationId }) => (
+          helperSite?.getOrganizationId?.() || fallbackOrganizationId || null
+        ),
+      );
+
+      context.env.DRS_API_URL = 'https://drs.example.com/api';
+      context.env.DRS_API_KEY = 'test-drs-key';
+
       mockHandler = await esmock('../../src/llmo-customer-analysis/handler.js', {
         '@adobe/spacecat-shared-utils': {
           getLastNumberOfWeeks: () => [
@@ -141,6 +173,11 @@ describe('LLMO Customer Analysis Handler', () => {
             { week: 4, year: 2025 },
           ],
           llmoConfig: mockLlmoConfig,
+          tracingFetch: mockFetch,
+        },
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled: mockIsBrandalfEnabled,
+          resolveOrganizationIdForSite: mockResolveOrganizationIdForSite,
         },
         '@adobe/spacecat-shared-rum-api-client': {
           default: mockRUMAPIClientClass,
@@ -177,74 +214,10 @@ describe('LLMO Customer Analysis Handler', () => {
             }),
           },
         },
-      });
-    });
-
-    it('should trigger geo-brand-presence-refresh when changes are AI categorization only', async () => {
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: {
-            'cat-1': { name: 'AI Generated Category', region: 'us', origin: 'ai' },
-          },
-          topics: {},
-          ai_topics: {
-            'topic-1': {
-              name: 'AI Generated Topic',
-              category: 'cat-1',
-              prompts: [
-                {
-                  prompt: 'AI Generated Prompt',
-                  regions: ['us'],
-                  origin: 'ai',
-                  source: 'api',
-                },
-              ],
-            },
-          },
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
+        '@adobe/spacecat-shared-drs-client': {
+          default: { createFrom: drsCreateFromStub },
         },
       });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          ai_topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      // Should trigger cdn-logs-report (1 call) + geo-brand-presence-refresh (1 call)
-      expect(sqs.sendMessage).to.have.callCount(2);
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
-      );
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
-      expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
@@ -273,6 +246,8 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
     });
 
     it('should not trigger referral traffic imports on subsequent config updates', async () => {
@@ -419,7 +394,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should trigger geo-brand-presence when entities change', async () => {
+    it('should trigger drs-brand-detection when entities change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -452,14 +427,12 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
-      );
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
     it('should trigger geo-brand-presence-trigger-refresh when brands change', async () => {
@@ -498,23 +471,16 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh', siteId: 'site-123' }),
       );
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
-    it('should trigger all audits when no config version provided', async () => {
+    it('should trigger referral imports and brand presence when no config version provided', async () => {
       const auditContext = {};
-
-      // Mock readConfig for triggerMystiqueCategorization call
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          categories: {},
-        },
-        exists: true,
-      });
 
       const result = await mockHandler.runLlmoCustomerAnalysis(
         'https://example.com',
@@ -524,15 +490,16 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.message).to.equal('All audits triggered (no config version provided)');
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.message).to.equal('No config version provided; skipping config comparison');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
-      // 4 referral traffic imports + 1 audit (geo-brand-presence)
-      expect(sqs.sendMessage).to.have.callCount(5);
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
+      // 4 referral traffic imports via SQS
+      expect(sqs.sendMessage).to.have.callCount(4);
     });
 
-    it('should handle multiple changes and trigger multiple steps', async () => {
+    it('should handle multiple changes and trigger brand detection + geo-brand-presence refresh', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -565,14 +532,20 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(3);
+      // geo-brand-presence-trigger-refresh
+      expect(sqs.sendMessage).to.have.callCount(1);
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+      );
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
-    it('should trigger geo-brand-presence when topics change', async () => {
+    it('should trigger drs-brand-detection when topics change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -605,14 +578,12 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
-      );
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
     it('should trigger geo-brand-presence-trigger-refresh when competitors change', async () => {
@@ -651,59 +622,12 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh', siteId: 'site-123' }),
       );
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
-    });
-
-    it('should trigger both cdn-logs-report and geo-brand-presence when only categories change', async () => {
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: { 'cat-1': { name: 'Category A' }, 'cat-2': { name: 'Category B' } },
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(sqs.sendMessage).to.have.callCount(2);
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
-      );
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
     it('should handle error when llmoConfig.readConfig fails for current version', async () => {
@@ -847,7 +771,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(log.error).to.have.been.calledWith('Error processing CDN bucket configuration changes for siteId: site-123');
     });
 
-    it('should trigger both referral imports and config-based audits on first-time onboarding with config changes', async () => {
+    it('should trigger referral imports and brand presence on first-time onboarding with config changes', async () => {
       const auditContext = {
         configVersion: 'v1',
         // Initial onboarding, hence no previousConfigVersion
@@ -871,80 +795,33 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       // Should trigger:
-      // - 4 referral traffic imports (one for each of the 4 weeks)
-      // - 1 cdn-logs-report (categories changed)
-      // - 1 geo-brand-presence (brands and categories changed)
-      // Total: 6 SQS messages
-      expect(sqs.sendMessage).to.have.callCount(6);
+      // - 4 referral traffic imports (one for each of the 4 weeks) via SQS
+      // Total: 4 SQS messages
+      expect(sqs.sendMessage).to.have.callCount(4);
 
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/imports-queue',
         sinon.match({ type: 'traffic-analysis' }),
       );
 
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
-      );
-
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
-    it('should trigger geo-brand-presence-daily when brandPresenceCadence is daily', async () => {
-      const auditContext = {
-        brandPresenceCadence: 'daily',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence-daily' }),
-      );
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-daily');
-    });
-
-    it('should warn when both geo-brand-presence and geo-brand-presence-daily are enabled', async () => {
+    it('should trigger drs-brand-detection when only entities change without other triggered steps', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
-        brandPresenceCadence: 'daily',
       };
 
       mockLlmoConfig.readConfig.onFirstCall().resolves({
         config: {
-          entities: {},
-          categories: {
-            "96922bc8-8da7-4fb7-961a-0bf1574560a1": {
-              name: "Category A",
-              region: "ch",
-            },
-          },
+          entities: { 'uuid-1': { type: 'product', name: 'Product A' } },
+          categories: {},
           topics: {},
           brands: { aliases: [] },
           competitors: { competitors: [] },
@@ -961,295 +838,18 @@ describe('LLMO Customer Analysis Handler', () => {
         },
       });
 
-      // Create a mock where both audit types are enabled
-      const mockBothEnabled = await esmock('../../src/llmo-customer-analysis/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          getLastNumberOfWeeks: () => [
-            { week: 1, year: 2025 },
-            { week: 2, year: 2025 },
-            { week: 3, year: 2025 },
-            { week: 4, year: 2025 },
-          ],
-          llmoConfig: mockLlmoConfig,
-        },
-        '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: sandbox.stub().returns(mockRUMAPIClient),
-          },
-        },
-        '../../src/support/utils.js': {
-          getRUMUrl: mockGetRUMUrl,
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: sandbox.stub().resolves(true),
-        },
-        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
-          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
-        },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { return; }
-          },
-        },
-        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
-          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
-        },
-      });
-
-      const result = await mockBothEnabled.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(log.warn).to.have.been.calledWith(sinon.match(/Both.*and.*are enabled for site/));
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
-    it('should skip geo-brand-presence when audit is not enabled', async () => {
-      // Create a mock where isAuditEnabledForSite returns false
-      const mockIsAuditDisabled = sandbox.stub().resolves(false);
-
-      const testMockRUMAPIClientClass = {
-        createFrom: sandbox.stub().returns(mockRUMAPIClient),
-      };
-
-      const mockHandlerDisabled = await esmock('../../src/llmo-customer-analysis/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          getLastNumberOfWeeks: () => [
-            { week: 1, year: 2025 },
-            { week: 2, year: 2025 },
-            { week: 3, year: 2025 },
-            { week: 4, year: 2025 },
-          ],
-          llmoConfig: mockLlmoConfig,
-        },
-        '@adobe/spacecat-shared-rum-api-client': {
-          default: testMockRUMAPIClientClass,
-        },
-        '../../src/support/utils.js': {
-          getRUMUrl: mockGetRUMUrl,
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: mockIsAuditDisabled,
-        },
-        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
-          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
-        },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { return; }
-          },
-        },
-        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
-          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
-        },
-      });
-
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.onFirstCall().resolves({
-        config: {
-          entities: {},
-          categories: {
-            "96922bc8-8da7-4fb7-961a-0bf1574560a1": {
-              name: "Category A",
-              region: "ch",
-            },
-          },
-          topics: {},
-          brands: {},
-          competitors: { competitors: [] },
-        },
-      });
-
-      mockLlmoConfig.readConfig.onSecondCall().resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      await mockHandlerDisabled.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      // The warning should be logged
-      expect(log.warn).to.have.been.calledWith(sinon.match(/audit is not enabled for site.*skipping/));
-    });
-
-    it('should use getBrandPresenceCadence from site config when available (covering line 140 branch)', async () => {
-      // Create a site with getBrandPresenceCadence function that returns 'daily'
-      const siteWithGetBrandPresenceCadence = {
-        getSiteId: () => 'site-123',
-        getBaseURL: () => 'https://example.com',
-        getOrganizationId: () => 'org-123',
-        getConfig: () => ({
-          enableImport: sandbox.stub().resolves(),
-          isImportEnabled: sandbox.stub().returns(false),
-          getBrandPresenceCadence: () => 'daily',
-        }),
-        save: sandbox.stub().resolves(),
-        setConfig: sandbox.stub().resolves(),
-      };
-
-      const auditContext = {}; // No brandPresenceCadence in auditContext
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
       const result = await mockHandler.runLlmoCustomerAnalysis(
         'https://example.com',
         context,
-        siteWithGetBrandPresenceCadence,
-        auditContext,
-      );
-
-      // Should trigger geo-brand-presence-daily since site config returns 'daily'
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence-daily' }),
-      );
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
-    it('should handle errors from enableContentAI gracefully', async () => {
-      const auditContext = {
-        configVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      // Create a mock handler with enableContentAI that throws an error
-      const mockEnableContentAIError = await esmock('../../src/llmo-customer-analysis/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          getLastNumberOfWeeks: () => [
-            { week: 1, year: 2025 },
-            { week: 2, year: 2025 },
-            { week: 3, year: 2025 },
-            { week: 4, year: 2025 },
-          ],
-          llmoConfig: mockLlmoConfig,
-        },
-        '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: sandbox.stub().returns(mockRUMAPIClient),
-          },
-        },
-        '../../src/support/utils.js': {
-          getRUMUrl: mockGetRUMUrl,
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: sandbox.stub().resolves(true),
-        },
-        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
-          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
-        },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { throw new Error('ContentAI service unavailable'); }
-          },
-        },
-        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
-          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
-        },
-        '@adobe/spacecat-shared-ims-client': {
-          ImsClient: {
-            createFrom: sandbox.stub().returns({
-              getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
-            }),
-          },
-        },
-      });
-
-      const result = await mockEnableContentAIError.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
         site,
         auditContext,
       );
 
-      // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to process ContentAI for site site-123: ContentAI service unavailable');
-
-      // Should still complete successfully despite the error
+      expect(triggerBrandDetectionStub).to.have.been.calledOnce;
+      expect(triggerBrandDetectionStub).to.have.been.calledWith('site-123');
       expect(result.auditResult.status).to.equal('completed');
-    });
-
-    it('should handle errors from enableAudits gracefully', async () => {
-      // Use previousConfigVersion to skip first-time onboarding path
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      // Create a context with Configuration.findLatest that throws an error
-      const errorConfiguration = {
-        findLatest: sandbox.stub().rejects(new Error('Configuration service unavailable')),
-      };
-
-      const errorContext = {
-        sqs,
-        log,
-        dataAccess: {
-          Configuration: errorConfiguration,
-          Site: dataAccess.Site,
-          LatestAudit: dataAccess.LatestAudit,
-        },
-        s3Client: {},
-        env: context.env,
-      };
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        errorContext,
-        site,
-        auditContext,
-      );
-
-      // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
-
-      // Should still complete successfully despite the error
-      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
     it('should handle errors from enableImports gracefully', async () => {
@@ -1399,7 +999,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should enable audits and save configuration when enableAudits is called', async () => {
+    it('enables baseline LLMO audit handlers only on first-time analysis (no previousConfigVersion)', async () => {
       const auditContext = {
         configVersion: 'v1',
       };
@@ -1421,242 +1021,955 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify enableHandlerForSite was called for each expected audit type
       const expectedAudits = [
         'scrape-top-pages',
         'headings',
         'llm-blocked',
         'llm-error-pages',
         'summarization',
-        'faqs',
         'llmo-referral-traffic',
-        'cdn-logs-report',
+        'llmo-referral-traffic-daily',
         'readability',
         'wikipedia-analysis',
-        'geo-brand-presence',
-        'geo-brand-presence-free-1',
       ];
-
-      for (const audit of expectedAudits) {
+      expectedAudits.forEach((audit) => {
         expect(configuration.enableHandlerForSite).to.have.been.calledWith(audit, site);
-      }
-
-      // Verify configuration.save was called
+      });
       expect(configuration.save).to.have.been.called;
     });
 
-  });
+    it('does not enable handlers when previousConfigVersion is present', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
 
-  describe('triggerMystiqueCategorization', () => {
-    let mockHandler;
-    let mockLlmoConfig;
-    let mockFetch;
-    let mockIsNonEmptyObject;
-
-    beforeEach(async () => {
-      mockLlmoConfig = {
-        readConfig: sandbox.stub(),
-        writeConfig: sandbox.stub().resolves(),
-        defaultConfig: sandbox.stub().returns({
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
           entities: {},
           categories: {},
           topics: {},
           brands: { aliases: [] },
           competitors: { competitors: [] },
-        }),
-      };
-
-      mockIsNonEmptyObject = sandbox.stub();
-      mockFetch = sandbox.stub(globalThis, 'fetch');
-
-      mockHandler = await esmock('../../src/llmo-customer-analysis/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          getLastNumberOfWeeks: () => [
-            { week: 1, year: 2025 },
-          ],
-          llmoConfig: mockLlmoConfig,
-          isNonEmptyObject: mockIsNonEmptyObject,
         },
-        '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: sandbox.stub().returns({
-              query: sandbox.stub().resolves({ pageviews: 100 }),
-            }),
-          },
-        },
-        '../../src/support/utils.js': {
-          getRUMUrl: sandbox.stub().resolves('example.com'),
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: sandbox.stub().resolves(true),
-        },
-        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
-          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
-        },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { return; }
-          },
-        },
-        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
-          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
-        },
-        '@adobe/spacecat-shared-ims-client': {
-          ImsClient: {
-            createFrom: sandbox.stub().returns({
-              getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
-            }),
-          },
+      });
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
         },
       });
 
-      context.env.MYSTIQUE_API_BASE_URL = 'https://mystique.example.com';
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(configuration.enableHandlerForSite).not.to.have.been.called;
+      expect(configuration.save).not.to.have.been.called;
     });
 
-    it('should successfully trigger Mystique categorization with valid inputs', async () => {
-      const siteId = 'site-123';
-      const domain = 'https://example.com';
-      const mockCategories = {
-        'cat-1': { name: 'Technology', region: 'us' },
-        'cat-2': { name: 'Business', region: 'us' },
+    it('should handle errors from enable audits on first-time analysis gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
       };
 
       mockLlmoConfig.readConfig.resolves({
         config: {
           entities: {},
           categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
         },
-        exists: true,
       });
 
-      mockIsNonEmptyObject.returns(false);
-
-      mockFetch.resolves({
-        json: sandbox.stub().resolves({
-          categories: {
-            categories: mockCategories,
-          },
+      // First findLatest drives enable audits (fails → caught). Later calls during the same
+      // analysis must succeed (e.g. geo refresh, CDN queues) — use resolving mock after first rejection.
+      let findLatestAttempts = 0;
+      const errorConfiguration = {
+        findLatest: sandbox.stub().callsFake(() => {
+          findLatestAttempts += 1;
+          if (findLatestAttempts === 1) {
+            return Promise.reject(new Error('Configuration service unavailable'));
+          }
+          return Promise.resolve(configuration);
         }),
-      });
+      };
 
-      await mockHandler.runLlmoCustomerAnalysis(
-        domain,
-        context,
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: errorConfiguration,
+          Site: dataAccess.Site,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
         site,
-        { configVersion: 'v1' },
+        auditContext,
       );
 
-      expect(mockFetch).to.have.been.calledOnce;
+      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should create and trigger brand presence schedule on first-time onboarding', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify the DRS schedule API was called with LOW priority
       expect(mockFetch).to.have.been.calledWith(
-        'https://mystique.example.com/v1/categorization/site',
+        'https://drs.example.com/api/schedules',
         sinon.match({
           method: 'POST',
-          headers: {
+          headers: sinon.match({
             'Content-Type': 'application/json',
-            authorization: 'mock-token',
-          },
-          body: JSON.stringify({ url: domain }),
-          timeout: 60000,
+            'x-api-key': 'test-drs-key',
+          }),
         }),
       );
-      expect(mockLlmoConfig.writeConfig).to.have.been.calledWith(
-        siteId,
-        sinon.match.has('categories', mockCategories),
-        context.s3Client,
-        { s3Bucket: 'importer-bucket' },
+
+      // Verify LOW priority in the schedule payload
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.job_config.priority).to.equal('LOW');
+
+      // Verify the schedule trigger was called
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules/site-123/sched-001/trigger',
+        sinon.match({ method: 'POST' }),
       );
-      expect(log.info).to.have.been.calledWith(
-        `Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`,
-      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
     });
 
-    it('should skip categorization when config categories already exist', async () => {
-      const domain = 'https://example.com';
+    it('should handle brand presence schedule creation failure gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Override mockFetch to fail on schedule creation
+      mockFetch.onFirstCall().resolves({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
 
       mockLlmoConfig.readConfig.resolves({
         config: {
           entities: {},
-          categories: {
-            'cat-1': { name: 'Existing Category' },
-          },
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
         },
-        exists: true,
       });
 
-      mockIsNonEmptyObject.returns(true);
-
-      await mockHandler.runLlmoCustomerAnalysis(
-        domain,
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
         context,
         site,
-        { configVersion: 'v1' },
+        auditContext,
       );
 
-      expect(mockFetch).to.not.have.been.called;
-      expect(mockLlmoConfig.writeConfig).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'Config categories already exist; skipping Mystique categorization',
+      // Should log the error but still complete
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
       );
+      expect(result.auditResult.status).to.equal('completed');
+      // brand-presence-schedule should NOT be in triggeredSteps
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.be.undefined;
     });
 
-    it('should handle config with empty categories object', async () => {
-      const siteId = 'site-123';
-      const domain = 'https://example.com';
+    it('should handle brand presence schedule trigger failure gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Schedule creation succeeds
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-002' }),
+      });
+      // Schedule trigger fails
+      mockFetch.onSecondCall().resolves({
+        ok: false,
+        status: 502,
+        text: async () => 'Bad Gateway',
+      });
 
       mockLlmoConfig.readConfig.resolves({
         config: {
+          entities: {},
           categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
         },
-        exists: true,
       });
 
-      mockIsNonEmptyObject.returns(false);
-
-      mockFetch.resolves({
-        json: sandbox.stub().resolves({
-          categories: { categories: {} },
-        }),
-      });
-
-      await mockHandler.runLlmoCustomerAnalysis(
-        domain,
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
         context,
         site,
-        { configVersion: 'v1' },
+        auditContext,
       );
 
-      expect(mockFetch).to.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        `Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`,
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
       );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
     });
 
-    it('should handle config that does not exist', async () => {
-      const domain = 'https://example.com';
+    it('should skip brand presence schedule when DRS API URL is not configured', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Remove DRS env vars
+      delete context.env.DRS_API_URL;
+      delete context.env.DRS_API_KEY;
 
       mockLlmoConfig.readConfig.resolves({
-        config: {},
-        exists: false,
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
       });
 
-      mockIsNonEmptyObject.returns(false);
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
 
-      mockFetch.resolves({
-        json: sandbox.stub().resolves({
-          categories: { categories: {} },
-        }),
+      // Should not call fetch for schedule creation
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123: DRS API URL or key not configured'),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      // brand-presence-schedule should NOT be in triggeredSteps
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should handle missing schedule_id in DRS response', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Schedule creation returns no schedule_id
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
+      );
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should strip trailing slashes from DRS API URL', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Set URL with trailing slashes
+      context.env.DRS_API_URL = 'https://drs.example.com/api///';
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify trailing slashes are stripped from the DRS API URL
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules',
+        sinon.match({ method: 'POST' }),
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
+    });
+
+    it('should fall back to schedule.id when schedule_id is not present', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Return response with `id` instead of `schedule_id`
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ id: 'sched-fallback' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify the trigger call uses the fallback id
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules/site-123/sched-fallback/trigger',
+        sinon.match({ method: 'POST' }),
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-fallback');
+    });
+
+    it('should not create brand presence schedule on subsequent config updates', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
       });
 
       await mockHandler.runLlmoCustomerAnalysis(
-        domain,
+        'https://example.com',
         context,
         site,
-        { configVersion: 'v1' },
+        auditContext,
       );
 
-      expect(mockFetch).to.have.been.called;
+      // Should not call fetch for schedule creation on non-first-time onboarding
+      expect(mockFetch).to.not.have.been.called;
     });
-  });
-});
 
+    it('should include brand_id in BP schedule when brandalf is enabled and brand is found', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Q1 direct match: site_id = 'site-123' → brand-uuid-1 returned immediately
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(mockIsBrandalfEnabled).to.have.been.calledWith(
+        'org-123',
+        context.dataAccess.services.postgrestClient,
+        log,
+      );
+      expect(mockFetch).to.have.callCount(2);
+
+      // Verify schedule was created with brand_id
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-uuid-1');
+      expect(body.spacecat_org_id).to.equal('org-123');
+    });
+
+    it('should fall back to imsOrgId when getOrganizationId returns null', async () => {
+      const auditContext = { imsOrgId: 'fallback-org' };
+      site.getOrganizationId = sandbox.stub().returns(null);
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Q1 direct: no direct site_id match; Q2 brand_sites join returns brand-fb
+      const directQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      expect(mockResolveOrganizationIdForSite).to.have.been.calledWithMatch(
+        sinon.match({ fallbackOrganizationId: 'fallback-org' }),
+      );
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-fb');
+      expect(body.spacecat_org_id).to.equal('fallback-org');
+    });
+
+    it('should handle null brands and missing brand_sites when brandalf is enabled', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Both queries return empty: no direct match, no brand_sites match
+      const directQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should create BP schedule without brand_id when no brand matches site', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Server-side filtering: 'other-site' doesn't match siteId 'site-123' — both queries empty
+      const directQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
+    });
+
+    it('should prefer baseSiteId match over brand_sites match', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Q1 direct: filters by site_id='site-123' server-side → only brand-base returned (Q2 never called)
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-base' }], error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      // Should pick brand-base (baseSiteId match) over brand-sub (brand_sites only)
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-base');
+    });
+
+    it('should create BP schedule without brand_id when brand lookup fails', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Mock postgrestClient that rejects on limit() (matching the order/limit terminal pattern)
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().rejects(new Error('DB error')),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should still create schedule (without brand_id), not fail
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should skip brand resolution when brandalf is not enabled', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(false);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should create schedule without brand_id (v1 path)
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+      expect(body.spacecat_org_id).to.be.undefined;
+    });
+
+    it('should warn when postgrestClient is not available for brandalf-enabled org', async () => {
+      const auditContext = {};
+      mockIsBrandalfEnabled.resolves(true);
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // No postgrestClient available
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
+    });
+
+    it('should skip brandalf check and omit brand_id when onboardingMode is v1 (mixed-state org)', async () => {
+      // Mixed-state: org has brandalf=true but was onboarded via v1 path because it has
+      // pre-Brandalf sites. onboardingMode='v1' in auditContext must bypass isBrandalfEnabled
+      // so we don't send brand_id to DRS (no customer config brand exists for v1 onboarding).
+      const auditContext = { onboardingMode: 'v1' };
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      // Only DRS calls expected — feature-flags API must NOT be called
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-v1' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // feature-flags API must NOT have been called
+      const featureFlagsCall = mockFetch.getCalls().find(
+        (c) => typeof c.args[0] === 'string' && c.args[0].includes('/feature-flags'),
+      );
+      expect(featureFlagsCall).to.not.exist;
+
+      // Schedule should be created without brand_id
+      const scheduleCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(scheduleCall).to.exist;
+      const scheduleBody = JSON.parse(scheduleCall.args[1].body);
+      expect(scheduleBody.brand_id).to.be.undefined;
+      expect(scheduleBody.spacecat_org_id).to.be.undefined;
+    });
+
+    it('should warn and skip brand detection when DRS is not configured and entities change', async () => {
+      const auditContext = { configVersion: 'v2', previousConfigVersion: 'v1' };
+
+      drsCreateFromStub.returns({
+        isConfigured: sandbox.stub().returns(false),
+        triggerBrandDetection: triggerBrandDetectionStub,
+      });
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: { 'uuid-1': { type: 'product', name: 'Product A' } },
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(triggerBrandDetectionStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith('DRS not configured; skipping brand detection trigger');
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should not send brand presence SQS when no previousConfigVersion and only brands change', async () => {
+      const auditContext = { configVersion: 'v2' }; // no previousConfigVersion
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: ['brand1'] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // needsBrandPresenceRefresh requires previousConfigVersion, so no geo-brand-presence-trigger-refresh
+      const refreshCall = sqs.sendMessage.getCalls().find(
+        (c) => c.args[1]?.type === 'geo-brand-presence-trigger-refresh',
+      );
+      expect(refreshCall).to.not.exist;
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+  });
+
+});

@@ -12,60 +12,78 @@
 
 import { isAuditEnabledForSite } from '../common/index.js';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
+import { METRICS, THRESHOLDS } from './kpi-metrics.js';
+
+/**
+ * Given all device-level metric rows for a suggestion, returns:
+ * - failingMetrics: metric names (lcp/cls/inp) that exceed the threshold on any device
+ * - cwvMetricValues: worst (highest) observed value for each failing metric across devices
+ *
+ * Used to tell Mystique exactly which metrics are flagged so it only generates
+ * guidance for those metrics and can surface the measured values to the UI.
+ * @param {Array<Object>} allMetrics - Array of per-device metric objects
+ * @returns {{ failingMetrics: string[], cwvMetricValues: Object }}
+ */
+function getFailingMetricInfo(allMetrics) {
+  const worstValues = {};
+  for (const deviceMetrics of allMetrics) {
+    for (const metric of METRICS) {
+      const value = deviceMetrics[metric];
+      if (value !== null && value !== undefined && value > THRESHOLDS[metric]) {
+        if (worstValues[metric] === undefined || value > worstValues[metric]) {
+          worstValues[metric] = value;
+        }
+      }
+    }
+  }
+  return {
+    failingMetrics: Object.keys(worstValues),
+    cwvMetricValues: worstValues,
+  };
+}
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
 
 /**
- * Checks if a specific suggestion should receive auto-suggest from Mystique
+ * Checks if a specific suggestion should receive auto-suggest from Mystique.
  *
  * CWV suggestion structure:
  * {
- *   opportunityId: string,
  *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR' | 'REJECTED',
- *   ...
  *   data: {
  *     type: 'url' | 'group',
- *     url?: string,              // Present for type: 'url'
- *     pattern?: string,          // Present for type: 'group'
+ *     url?: string,                  // Present for type: 'url'
+ *     pattern?: string,              // Present for type: 'group'
  *     metrics: [{...}],
- *     issues?: [                 // Auto-suggest guidance stored here
- *       {
- *         type: 'lcp' | 'cls' | 'inp',
- *         value: string,         // Markdown text with guidance
- *         patchContent: string   // Git diff patch
- *       }
+ *     isCodeChangeAvailable?: boolean, // Set by autofix-worker when a patch lands
+ *     issues?: [                     // Auto-suggest guidance stored here
+ *       { type: 'lcp' | 'cls' | 'inp', value: string, patchContent?: string }
  *     ]
- *   },
- *   ...
+ *   }
  * }
  *
- * Filters out suggestions that:
- * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR, REJECTED)
- * - Already have guidance (data.issues with non-empty values)
+ * Dispatches when the suggestion is NEW and no code patch has been produced yet
+ * (`data.isCodeChangeAvailable !== true`). We deliberately ignore
+ * `issues[*].value` here — text guidance being present is not proof that a code
+ * patch ran successfully, and `mergeCwvData` preserves that field across every
+ * re-audit, which used to silently block retries forever.
+ *
+ * Group filtering and "page is all-green" filtering happen in `processAutoSuggest`.
  *
  * @param {Object} suggestion - Suggestion object
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
 export function shouldSendAutoSuggestForSuggestion(suggestion) {
-  const status = suggestion.getStatus();
-
-  // Only send for NEW suggestions
-  if (status !== 'NEW') {
+  if (suggestion.getStatus() !== 'NEW') {
     return false;
   }
-
-  const data = suggestion.getData();
-  const issues = data?.issues || [];
-
-  // If no issues at all, send for auto-suggest
-  if (issues.length === 0) {
-    return true;
+  const data = suggestion.getData() || {};
+  if (data.isCodeChangeAvailable === true) {
+    return false;
   }
-
-  // If any issue has empty value, send for auto-suggest
-  return issues.some((issue) => !issue.value || !issue.value.trim());
+  return true;
 }
 
 /**
@@ -113,7 +131,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     // Get code repository information only if auto-fix is enabled
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
-    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
+    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
@@ -134,9 +152,20 @@ export async function processAutoSuggest(context, opportunity, site) {
 
       // Extract URL and metrics from suggestion data
       const { url } = suggestionData;
-      const metrics = suggestionData.metrics?.[0] || {};
+      const allMetrics = suggestionData.metrics || [];
+      const firstMetrics = allMetrics[0] || {};
+      const { failingMetrics, cwvMetricValues } = getFailingMetricInfo(allMetrics);
 
-      log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
+      // Defense-in-depth: hasFailingMetrics upstream should already exclude these,
+      // but if a future code path bypasses that filter we don't want Mystique to
+      // generate guidance for an all-green page.
+      if (failingMetrics.length === 0) {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestionId: ${suggestionId} - no failing CWV metrics`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}, failingMetrics: ${failingMetrics.join(',')}`);
 
       const sqsMessage = {
         type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
@@ -149,7 +178,13 @@ export async function processAutoSuggest(context, opportunity, site) {
           url,
           opportunityId,
           suggestionId,
-          device_type: metrics.deviceType || 'mobile',
+          device_type: firstMetrics.deviceType || 'mobile',
+          // Metrics flagged as failing in RUM — Mystique must only generate guidance
+          // for these metrics, keeping the identify and suggest steps consistent.
+          failing_metrics: failingMetrics,
+          // Actual P75 values for each failing metric — passed through so guidance
+          // issues can surface the measured value alongside the recommendation.
+          cwv_metric_values: cwvMetricValues,
           // Add code repository information if available
           ...(hasCodeInfo && {
             codeBucket: codeInfo.codeBucket,
@@ -160,8 +195,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.debug(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion sent to Mystique, suggestionId: ${suggestionId}, url: ${url}`);
-      log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (suggestionId: ${suggestionId}):\n${JSON.stringify(sqsMessage, null, 2)}`);
+      log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (opportunityId: ${opportunityId}, suggestionId: ${suggestionId}, url: ${url}), message: \n${JSON.stringify(sqsMessage, null, 2)}`);
     }
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Completed sending CWV auto-suggest messages, opportunityId: ${opportunityId}`);

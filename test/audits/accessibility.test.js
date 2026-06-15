@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -518,7 +517,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
 
@@ -541,7 +540,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
 
@@ -564,7 +563,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
     });
@@ -589,7 +588,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
     });

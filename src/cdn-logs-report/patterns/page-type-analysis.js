@@ -13,6 +13,10 @@
 /* c8 ignore start */
 import { prompt } from './prompt.js';
 
+// 12 total = LLM-derived + 4 mandatory (homepage, robots, sitemap, error).
+const MAX_TOTAL_PAGE_TYPES = 12;
+const MAX_LLM_PAGE_TYPES = MAX_TOTAL_PAGE_TYPES - 4;
+
 async function derivePageTypesForPaths(domain, paths, context) {
   const { log } = context;
   const systemPrompt = `You are an expert web page classifier. Your task is to analyze URL paths and categorize them into page types based on web conventions and URL patterns.
@@ -29,6 +33,12 @@ Think like you're analyzing a spreadsheet of URLs - follow these steps systemati
 - What pages would this type of site typically have?
 - What URL conventions does this domain appear to follow?
 
+**IMPORTANT — Site-type aware labeling:**
+- Use "product listing page" and "product detail page" ONLY for e-commerce / retail sites that sell physical or digital goods.
+- For B2B / SaaS / corporate sites, use "product page" or "solution page" (NOT "product detail page") even if the URL contains "/products/" — these describe a single offering, not a SKU.
+- For news / media sites, use "article", "section", "video", etc.
+- For documentation, use "docs", "guide", "api reference".
+
 ### STEP 2: URL STRUCTURE DECOMPOSITION
 For each URL path, break it down:
 - **Path segments**: Identify /segment1/segment2/segment3
@@ -39,92 +49,69 @@ For each URL path, break it down:
 ### STEP 3: PAGE TYPE IDENTIFICATION LOGIC
 Ask yourself systematically (GROUP BY SECTION, not by function):
 1. "Is this the homepage?" → Check for /, /home, /index - **ALWAYS CHECK THIS FIRST!**
-2. "What section does this belong to?" → Look for keywords in the URL
-   - Contains "product", "shop", "store", "category", "collection" WITHOUT specific item → product listing page
-   - Contains "product", "shop", "store" WITH specific item slug/ID → product detail page
-   - Contains "blog", "article", "news", "post" → blog
-   - Contains "help", "support", "faq", "docs", "guide" → help
+2. "Is this an e-commerce site?" (decided in STEP 1) — if yes, use product listing / product detail labels. If no, do NOT use them.
+3. "What section does this belong to?" → Look for keywords in the URL
+   - Contains "blog", "article", "news", "post" → blog / article
+   - Contains "help", "support", "faq", "docs", "guide" → help / docs / guide
    - Contains "about", "company", "team" → about
    - Contains "contact", "reach" → contact
-3. "Is this a special page?" → Check for /cart, /checkout, /search
-4. "Is this legal/policy?" → Check for /legal, /privacy, /terms, /cookies
-5. "Cannot determine?" → Default to "other" (use this sparingly)
+   - For e-commerce: "product", "shop", "store", "category", "collection" → product listing / product detail (see below)
+   - For B2B/SaaS: "product", "solution" → product page / solution page
+4. "Is this a special page?" → Check for /cart, /checkout, /search
+5. "Is this legal/policy?" → Check for /legal, /privacy, /terms, /cookies
+6. "Cannot determine?" → Default to "other" (use this sparingly)
 
-### IMPORTANT: product listing page vs product detail page Distinction
+### IMPORTANT: product listing page vs product detail page Distinction (E-COMMERCE ONLY)
 - **product listing page**: Category/listing pages showing multiple products (e.g., /products, /shop/electronics, /category/shoes)
 - **product detail page**: Individual product pages with specific item identifier/slug (e.g., /products/iphone-15, /p/12345)
 - Key indicator: Does the URL end with a specific product identifier (slug, SKU, ID)? → product detail page
 - Key indicator: Is it a browsing/filtering page without specific item? → product listing page
+- **NEVER apply these labels on a non-ecommerce site** — for B2B / corporate, use "product page" or "solution page".
 
 ### STEP 4: PATTERN MATCHING WITH EXAMPLES
 Examples of thinking process:
 
-Example A: "/products/nike-air-max-270"
-- Thinking: "products" → e-commerce section, "nike-air-max-270" → specific product slug/identifier
-- ID/Slug: Has descriptive slug (specific item identifier) → this is a DETAIL page
-- Result: pageType = "product detail page"
+Example A (e-commerce): "/products/nike-air-max-270"
+- Site is e-commerce, specific product slug present → "product detail page"
 
-Example B: "/products"
-- Thinking: "products" → products section, listing page showing multiple products
-- Pattern: No specific item identifier, this is a LISTING page
-- Result: pageType = "product listing page"
+Example B (e-commerce): "/products"
+- Site is e-commerce, listing page → "product listing page"
 
-Example C: "/shop/electronics/laptops"
-- Thinking: URL contains "shop" keyword → product-related, "laptops" is a category not a specific item
-- Pattern: Category/filtering path without specific product identifier
-- Result: pageType = "product listing page"
+Example C (B2B/SaaS): "/products/analytics"
+- Site is B2B (Adobe Business), describes a single offering — NOT a SKU → "product page"
+- NOT "product detail page"
 
-Example C2: "/shop/electronics/laptops/macbook-pro-16"
-- Thinking: "macbook-pro-16" is a specific product slug/identifier
-- Pattern: Has specific item at the end → detail page
-- Result: pageType = "product detail page"
+Example D (B2B/SaaS): "/solutions/marketing-automation"
+- B2B solution overview → "solution page"
 
-Example C3: "/en-us/products/photoshop"  
-- Thinking: URL contains "product" keyword, "photoshop" is a specific product
-- Pattern: Specific product identifier present
-- Result: pageType = "product detail page"
-
-Example C4: "/category/shoes" or "/collections/summer-sale"
-- Thinking: Category or collection page showing multiple items
-- Pattern: No specific product identifier
-- Result: pageType = "product listing page"
-
-Example D: "/blog/how-to-improve-seo-2024"
-- Thinking: "blog" → content section, "how-to-improve-seo-2024" → article slug
-- Pattern: Follows /content-type/article-slug pattern
+Example E: "/blog/how-to-improve-seo-2024"
 - Result: pageType = "blog"
 
-Example E: "/help/getting-started"
-- Thinking: "help" → support section, "getting-started" → specific help topic
-- Pattern: Support/documentation structure
+Example F: "/help/getting-started"
 - Result: pageType = "help"
 
-Example F: "/"
-- Thinking: Root path, entry point to site
+Example G: "/"
 - Result: pageType = "homepage"
 
-Example G: "/user/dashboard/settings"
-- Thinking: User-specific path, doesn't match standard public page types
-- Pattern: Application/admin interface
+Example H: "/user/dashboard/settings"
 - Result: pageType = "other"
 
 ### STEP 5: VALIDATION & OUTPUT RULES
-Ask yourself:
 - "Is this the homepage (/, /home, /index)?" → Classify as "homepage" FIRST, don't apply keyword matching
 - "Does this path have multiple possible classifications?" → Choose most specific
-- "Is this path ambiguous?" → Look for keywords in URL, not just first segment
-- "Could this be misclassified?" → Check against common patterns  
 - "What if it doesn't fit anywhere?" → Try harder to find keywords before defaulting to "other"
 - **IMPORTANT:** Minimize "other" usage - look for keywords anywhere in the URL path
 
 ## PAGE TYPE CLASSIFICATION APPROACH
 You are FREE to discover and create page types based on what you see in the URLs. Common types include:
 - homepage - root/landing pages
-- product listing page - category/listing pages showing multiple products
-- product detail page - individual product pages with specific item identifier
-- blog - content/articles
+- product listing page - e-commerce category/listing pages (e-commerce ONLY)
+- product detail page - e-commerce item pages with SKU/slug (e-commerce ONLY)
+- product page - B2B/SaaS single-offering pages (non-ecom)
+- solution page - B2B solution overviews
+- blog / article - content/articles
 - about - company info
-- help - support/documentation
+- help / docs / guide - support/documentation
 - legal - legal/policy pages
 - search - search pages
 - contact - contact pages
@@ -133,9 +120,11 @@ BUT you can create NEW page types if URLs suggest different categories!
 
 Examples of flexible classification:
 - URLs with "/learn/", "/education/" → could be "education" or "learning"
-- URLs with "/gallery/", "/photos/" → could be "gallery" 
+- URLs with "/gallery/", "/photos/" → could be "gallery"
 - URLs with "/events/", "/calendar/" → could be "events"
 - URLs with "/resources/", "/downloads/" → could be "resources"
+- URLs with "/customer-success-stories/" → "customer story"
+- URLs with "/podcast/" → "podcast"
 
 Primary rule: Look for patterns and group similar URLs together, then name the group appropriately
 
@@ -153,14 +142,19 @@ Return ONLY valid JSON with this exact structure. Do NOT include markdown format
 - NO markdown formatting (no code blocks)
 - NO explanations or comments
 - NO line breaks inside strings
-- Properly escape special characters in strings
-- Use double quotes, not single quotes
+- Do NOT use backslash escapes inside the regex strings — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text (use a char class like [.] if you ever need a literal dot)
+- Use double quotes to delimit JSON strings, not single quotes
+- Do NOT put quotes INSIDE a regex. Alternation branches are bare words: write (discover|decouvrir), never ('discover'|'decouvrir') — quote characters never appear in URL paths and match nothing
 - Ensure all strings are properly closed
 - Return ONLY the JSON object
 
 ## CRITICAL REQUIREMENTS
 - Include ALL provided paths in your response
 - You can create new page types based on what you discover
+- **MAXIMUM 12 distinct page types** — merge near-duplicates (article + news → blog). Use lowercase labels (treat 'Sitemap' and 'sitemap' as the same).
+- Do NOT emit 'homepage', 'robots', 'sitemap', or 'error pages' — they are auto-injected; focus on content-driven page types.
+- **NO CATCH-ALL.** No single page-type may match more than 40% of URLs. If your regex needs 6+ alternation branches (especially enumerating locale prefixes like (de|fr|ja|ar|...)), you're labeling too broadly — split or drop. Locale prefixes are TRANSPARENT — use \`(^|/)token(/|$)\` which already handles any prefix, not \`(de/token|fr/token|...)\`.
+- **PRODUCT NAMES ARE NOT PAGE TYPES.** Page-types describe URL FUNCTION (blog, listing, detail, support, legal, release notes, troubleshooting, tutorial). Product names (analytics, marketo, photoshop, journey-optimizer) belong in categories, NEVER as page-types. The right label for a product page is 'product detail page' or 'documentation', not the product name itself.
 - Return valid JSON with NO additional text or explanations
 - Ensure proper JSON syntax and formatting`;
 
@@ -202,7 +196,9 @@ ${JSON.stringify(paths, null, 2)}`;
 
 function groupPathsByPageType(pathTypeArray) {
   return pathTypeArray.reduce((acc, { path, pageType }) => {
-    if (!acc[pageType]) acc[pageType] = [];
+    if (!acc[pageType]) {
+      acc[pageType] = [];
+    }
     acc[pageType].push(path);
     return acc;
   }, {});
@@ -266,9 +262,8 @@ CRITICAL: Do NOT use the page type name in the pattern unless it actually appear
 ## POSIX REGEX REQUIREMENTS (for Amazon Athena)
 - Start with (?i) for case-insensitive matching
 - NO lookahead (?=) or lookbehind (?<=)
-- NO non-capturing groups (?:)
 - Use alternation (|), ? for optional, * for zero-or-more
-- Escape special chars: \\., \\-, \\+, \\?, \\*, etc.
+- DO NOT use backslash escapes (no \\., \\-, etc.) — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text; use a char class like [.] for a literal dot.
 - Keep patterns SIMPLE: Focus on keyword matching without requiring specific slash positions
 
 ## OUTPUT FORMAT
@@ -282,8 +277,9 @@ Return ONLY valid JSON. No markdown, no code blocks, no explanations:
 - NO markdown formatting (no code blocks)
 - NO explanations or comments
 - NO line breaks inside strings
-- Properly escape special characters in strings
-- Use double quotes, not single quotes
+- Do NOT use backslash escapes inside the regex strings — a stray "\\" makes your JSON invalid and breaks parsing. Match keywords as plain literal text (use a char class like [.] if you ever need a literal dot)
+- Use double quotes to delimit JSON strings, not single quotes
+- Do NOT put quotes INSIDE a regex. Alternation branches are bare words: write (discover|decouvrir), never ('discover'|'decouvrir') — quote characters never appear in URL paths and match nothing
 - Ensure all strings are properly closed
 - Return ONLY the JSON object
 
@@ -406,19 +402,29 @@ export async function analyzePageTypes(domain, paths, context) {
       orderedRegexes[pageType] = filteredRegexes[pageType];
     });
 
-    if (!orderedRegexes.homepage) {
-      orderedRegexes.homepage = '(?i)^(/(home|index)?)?$';
-      log.info('Added default homepage pattern as it was not detected in the data');
-    }
+    // Force our own homepage regex; an LLM-emitted one is often too narrow.
+    // Covers "/", "/home", "/index" and up to 3 locale segments (e.g. /en-ca).
+    // [.] not \. — backslash-free for the JSON→Athena pipeline.
+    const homepageRegex = '(?i)^((/[a-z]{2}(-[a-z]{2})?){0,3})(/(home|index))?([.]html)?/?$';
+    delete orderedRegexes.homepage;
 
-    // Add default patterns at the end
+    // Hoist homepage to front so the cap never drops it.
+    const entries = [['homepage', homepageRegex], ...Object.entries(orderedRegexes)];
+    if (entries.length > MAX_LLM_PAGE_TYPES + 1) {
+      log.info(`Capping ${entries.length} → ${MAX_LLM_PAGE_TYPES + 1} page types (hard cap, before adding defaults)`);
+    }
+    const capped = Object.fromEntries(entries.slice(0, MAX_LLM_PAGE_TYPES + 1));
+
+    // Anchored + [.] (not \.) for the JSON→Athena pipeline. Unanchored
+    // substrings misclassified URLs like /docs/meta-robots-txt or
+    // /blog/how-to-build-a-sitemap.
     const defaultPatterns = {
-      Robots: '(?i).*/robots.txt$',
-      Sitemap: '(?i).*/sitemap.*.xml$',
-      'Error Pages': '(?i)(404|500|error|goodbye)',
+      robots: '(?i)/robots[.]txt$',
+      sitemap: '(?i)/sitemap[^/]*[.]xml$',
+      'error pages': '(?i)(404|500|error|goodbye)',
     };
 
-    return { ...orderedRegexes, ...defaultPatterns };
+    return { ...capped, ...defaultPatterns };
   } catch (error) {
     log.error(`Failed to complete page type analysis: ${error.message}`);
     throw error;

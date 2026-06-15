@@ -12,12 +12,12 @@
 
 import resolveCpcValue from './cpc-value-resolver.js';
 
-const METRICS = ['lcp', 'cls', 'inp'];
+export const METRICS = ['lcp', 'cls', 'inp'];
 
 /**
  * Thresholds for "green" metrics
  */
-const THRESHOLDS = {
+export const THRESHOLDS = {
   lcp: 2500,
   cls: 0.1,
   inp: 200,
@@ -134,5 +134,19 @@ const calculateKpiDeltasForAudit = (auditData, dataAccess, groupedURLs) => {
       { projectedTrafficLost: 0, projectedTrafficValue: 0 },
     );
 };
+
+/**
+ * Calculates the confidence score for a single CWV entry as the sum of
+ * projected traffic lost across all device types.
+ * Higher score = more expected impact from fixing CWV issues on this page.
+ * @param {Object} entry - CWV audit entry with a metrics array.
+ * @returns {number} Total projected traffic lost across all devices.
+ */
+export function calculateConfidenceScore(entry) {
+  return entry.metrics.reduce(
+    (total, deviceMetrics) => total + calculateProjectedTrafficLost(deviceMetrics),
+    0,
+  );
+}
 
 export default calculateKpiDeltasForAudit;

@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -20,7 +19,7 @@ import esmock from 'esmock';
 import healthCheckHandler, {
   requestScrape,
   analyzeScrapeResult,
-  checkAhrefsTopPagesImport,
+  checkSeoTopPagesImport,
   checkEffectiveUrlNoRedirect,
   getEffectiveBaseURL,
 } from '../../src/health-check/handler.js';
@@ -417,11 +416,11 @@ describe('Health Check Audit', () => {
     });
   });
 
-  describe('checkAhrefsTopPagesImport', () => {
-    let ahrefsContext;
+  describe('checkSeoTopPagesImport', () => {
+    let seoContext;
 
     beforeEach(() => {
-      ahrefsContext = {
+      seoContext = {
         site: {
           getId: () => 'site-123',
         },
@@ -435,30 +434,30 @@ describe('Health Check Audit', () => {
     });
 
     it('returns ok when top-pages import is within freshness window', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [{ getImportedAt: () => '2026-02-03T10:00:00.000Z' }],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('ok');
       expect(result).to.not.have.property('latestImportedAt');
       expect(result.freshnessDays).to.equal(8);
       expect(result.reason).to.be.null;
-      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
-      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+      expect(seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+      expect(seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         'site-123',
-        'ahrefs',
+        'seo',
         'global',
       );
     });
 
     it('returns error when top-pages import is stale', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [{ getImportedAt: () => '2026-01-20T10:00:00.000Z' }],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('error');
       expect(result).to.not.have.property('latestImportedAt');
@@ -466,35 +465,35 @@ describe('Health Check Audit', () => {
     });
 
     it('returns stale result when all valid records are older than freshness window', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [
           { getImportedAt: () => '2026-01-20T10:00:00.000Z' },
           { getImportedAt: () => '2026-01-15T10:00:00.000Z' },
         ],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('error');
       expect(result.reason).to.include('last 8 days');
     });
 
     it('returns error when no top-pages records exist', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+      const result = await checkSeoTopPagesImport(seoContext);
 
       expect(result.status).to.equal('error');
-      expect(result.reason).to.equal('No Ahrefs top-pages import records found');
+      expect(result.reason).to.equal('No SEO top-pages import records found');
     });
 
     it('returns error when SiteTopPage data access is unavailable', async () => {
-      const result = await checkAhrefsTopPagesImport({
-        site: ahrefsContext.site,
+      const result = await checkSeoTopPagesImport({
+        site: seoContext.site,
         dataAccess: {},
-        log: ahrefsContext.log,
+        log: seoContext.log,
       });
 
       expect(result.status).to.equal('error');
@@ -502,29 +501,29 @@ describe('Health Check Audit', () => {
     });
 
     it('returns error when top-pages record has no importedAt', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [{ getImportedAt: () => null }],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('error');
-      expect(result.reason).to.equal('No valid Ahrefs top-pages importedAt timestamp found');
+      expect(result.reason).to.equal('No valid SEO top-pages importedAt timestamp found');
     });
 
     it('returns error when top-pages record has invalid importedAt', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [{ getImportedAt: () => 'not-a-date' }],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('error');
-      expect(result.reason).to.equal('No valid Ahrefs top-pages importedAt timestamp found');
+      expect(result.reason).to.equal('No valid SEO top-pages importedAt timestamp found');
     });
 
     it('returns ok when a valid fresh timestamp exists in unsorted records', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [
           { getImportedAt: () => '2026-01-20T10:00:00.000Z' },
           { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
@@ -532,54 +531,54 @@ describe('Health Check Audit', () => {
         ],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('ok');
-      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+      expect(seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
     });
 
     it('returns ok when any valid record is within freshness window', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
         data: [
           { getImportedAt: () => '2026-02-03T10:00:00.000Z' },
           { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
         ],
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('ok');
       expect(result).to.not.have.property('latestImportedAt');
     });
 
     it('supports array page result shape from data access', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
         { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
       ]);
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+      const result = await checkSeoTopPagesImport(seoContext, new Date('2026-02-10T12:00:00.000Z'));
 
       expect(result.status).to.equal('ok');
     });
 
     it('handles object page results without data field', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
       });
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+      const result = await checkSeoTopPagesImport(seoContext);
 
       expect(result.status).to.equal('error');
-      expect(result.reason).to.equal('No Ahrefs top-pages import records found');
+      expect(result.reason).to.equal('No SEO top-pages import records found');
     });
 
     it('returns error when data access throws', async () => {
-      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('DB unavailable'));
+      seoContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('DB unavailable'));
 
-      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+      const result = await checkSeoTopPagesImport(seoContext);
 
       expect(result.status).to.equal('error');
-      expect(result.reason).to.include('Ahrefs check failed: DB unavailable');
-      expect(ahrefsContext.log.error).to.have.been.called;
+      expect(result.reason).to.include('SEO data check failed: DB unavailable');
+      expect(seoContext.log.error).to.have.been.called;
     });
   });
 
@@ -797,7 +796,7 @@ describe('Health Check Audit', () => {
       expect(result.auditResult.spacecatUserAgentAccess.statusCode).to.be.null;
       expect(result.auditResult.spacecatUserAgentAccess.reason).to.equal('No scrape results received from scraper');
       expect(result.auditResult.spacecatUserAgentAccess.scrapedAt).to.be.null;
-      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.seoTopPagesImport.status).to.equal('ok');
       expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
     });
 
@@ -819,7 +818,7 @@ describe('Health Check Audit', () => {
 
       expect(result.auditResult.spacecatUserAgentAccess.status).to.equal('error');
       expect(result.auditResult.spacecatUserAgentAccess.reason).to.include('Scrape service unavailable');
-      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.seoTopPagesImport.status).to.equal('ok');
       expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
     });
 
@@ -916,7 +915,7 @@ describe('Health Check Audit', () => {
       expect(result.auditResult.spacecatUserAgentAccess.statusCode).to.equal(200);
       expect(result.auditResult.spacecatUserAgentAccess.reason).to.be.null;
       expect(result.auditResult.spacecatUserAgentAccess.scrapedAt).to.equal(1733311800000);
-      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.seoTopPagesImport.status).to.equal('ok');
       expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
     });
 
@@ -1008,7 +1007,7 @@ describe('Health Check Audit', () => {
 
       // Should return the cached result without re-analyzing
       expect(result.auditResult.spacecatUserAgentAccess).to.deep.equal(cachedAuditResult.spacecatUserAgentAccess);
-      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.seoTopPagesImport.status).to.equal('ok');
       expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });

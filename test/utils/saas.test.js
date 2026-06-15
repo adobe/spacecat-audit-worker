@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 /* eslint-disable object-curly-newline, indent, no-multiple-empty-lines, padded-blocks */
 
 import { expect, use } from 'chai';

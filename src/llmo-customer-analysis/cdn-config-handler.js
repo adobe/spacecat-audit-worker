@@ -16,21 +16,56 @@ import {
 import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
+const SQS_MAX_DELAY_SECONDS = 900;
+const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 30;
+// Base wait so cdn-logs-report fires after cdn-logs-analysis has had time to
+// complete. Kept under SQS_MAX_DELAY_SECONDS so per-day staggering can still
+// add headroom without exceeding the SQS DelaySeconds hard limit.
+const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
+
+function getAdobeFastlyBackfillDays(referenceDate = new Date()) {
+  const lastMonday = startOfWeek(subWeeks(referenceDate, 1), { weekStartsOn: 1 });
+  const backfillDays = [];
+
+  for (let date = new Date(lastMonday); !isAfter(date, referenceDate); date = addDays(date, 1)) {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+
+    backfillDays.push({
+      year,
+      month,
+      day,
+      // cdn-logs-report daily runs treat auditContext.date as the reference date
+      // and then export the previous UTC day, so we send next-day midnight here.
+      reportDate: new Date(Date.UTC(year, month - 1, day + 1)).toISOString(),
+    });
+  }
+
+  return backfillDays;
+}
+
 /**
  * Fetches commerce-fastly service for given domain
  */
 export async function fetchCommerceFastlyService(domain, { log }) {
-  if (!domain || !process.env.LLMO_HLX_API_KEY) return null;
+  if (!domain || !process.env.LLMO_HLX_API_KEY) {
+    return null;
+  }
 
   try {
-    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=5000', {
+    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=10000', {
       headers: { 'User-Agent': 'spacecat-audit-worker', Authorization: `token ${process.env.LLMO_HLX_API_KEY}` },
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
 
     const { data: services } = await res.json();
-    if (!Array.isArray(services)) return null;
+    if (!Array.isArray(services)) {
+      return null;
+    }
     const { host } = new URL(domain);
     const trimmedHost = host.trim().replace(/^www\./, '');
 
@@ -67,6 +102,7 @@ async function handleAdobeFastly(
 ) {
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
+  const backfillDays = getAdobeFastlyBackfillDays();
 
   // Skip CDN analysis if current site already has cdn-logs-analysis with fullAuditRef
   const cdnLogsAnalysis = await LatestAudit.findBySiteIdAndAuditType(siteId, 'cdn-logs-analysis');
@@ -77,46 +113,62 @@ async function handleAdobeFastly(
   if (hasCdnAnalysisWithResults) {
     log.info(`Skipping CDN analysis for site ${siteId} - site already has cdn-logs-analysis with results`);
   } else {
-    // Queue CDN analysis from last Monday until today
-    const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
-    const today = new Date();
-
     const analysisPromises = [];
-    for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
+    for (const [index, backfillDay] of backfillDays.entries()) {
       analysisPromises.push(sqs.sendMessage(auditQueue, {
         type: 'cdn-logs-analysis',
         siteId,
         auditContext: {
-          year: date.getUTCFullYear(),
-          month: date.getUTCMonth() + 1,
-          day: date.getUTCDate(),
+          year: backfillDay.year,
+          month: backfillDay.month,
+          day: backfillDay.day,
           hour: 8,
           processFullDay: true,
         },
-      }));
+      }, null, Math.min(
+        index * CDN_LOGS_ANALYSIS_DELAY_SECONDS,
+        SQS_MAX_DELAY_SECONDS,
+      )));
     }
 
     await Promise.all(analysisPromises);
   }
 
-  // Always queue CDN logs report with delay
-  await sqs.sendMessage(auditQueue, {
+  // Queue the per-day cdn-logs-report DB imports, delayed (base wait + per-day
+  // stagger) so they fire after cdn-logs-analysis has had time to complete. The
+  // first day-run also generates the agentic classification rules if missing, so
+  // no separate weekly trigger is needed.
+  const reportPromises = backfillDays.map((backfillDay, index) => sqs.sendMessage(auditQueue, {
     type: 'cdn-logs-report',
     siteId,
-    auditContext: { weekOffset: -1 },
-  }, null, 900);
+    auditContext: {
+      date: backfillDay.reportDate,
+    },
+  }, null, Math.min(
+    CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS),
+    SQS_MAX_DELAY_SECONDS,
+  )));
+
+  await Promise.all(reportPromises);
 }
 
-async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAccess: { Site } }) {
+async function handleBucketConfiguration(
+  siteId,
+  bucketName,
+  pathId,
+  region,
+  { dataAccess: { Site } },
+) {
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  if (!bucketName && !pathId) {
+  if (!bucketName && !pathId && !region) {
     config.updateLlmoCdnBucketConfig({});
   } else {
     config.updateLlmoCdnBucketConfig({
       ...(bucketName && { bucketName }),
       ...(pathId && { orgId: pathId }),
+      ...(region && { region }),
     });
   }
 
@@ -130,20 +182,38 @@ async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAcces
 export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
-  const { cdnProvider, allowedPaths, bucketName } = data;
+  const {
+    cdnProvider,
+    allowedPaths,
+    bucketName,
+    region,
+  } = data;
   const { dataAccess: { Configuration }, log } = context;
 
-  if (!siteId) throw new Error('Site ID is required for CDN configuration');
+  if (!siteId) {
+    throw new Error('Site ID is required for CDN configuration');
+  }
 
   const site = await context.dataAccess.Site.findById(siteId);
-  if (!site) throw new Error(`Site with ID ${siteId} not found`);
+  if (!site) {
+    throw new Error(`Site with ID ${siteId} not found`);
+  }
+
+  const baseURL = site.getBaseURL();
+  const previousConfig = site.getConfig()?.getLlmoCdnBucketConfig() ?? {};
 
   if (!cdnProvider) {
+    log.warn('CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting', {
+      siteId,
+      baseURL,
+      before: previousConfig,
+    });
     // if no cdn provider is provided, remove the bucket configuration
-    await handleBucketConfiguration(siteId, null, null, context);
-    // disable cdn-logs-analysis and page-citability audits
+    await handleBucketConfiguration(siteId, null, null, null, context);
+    // disable CDN-derived audits when the CDN configuration is removed
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
+    configuration.disableHandlerForSite('cdn-logs-report', site);
     configuration.disableHandlerForSite('page-citability', site);
     await configuration.save();
     throw new Error('CDN provider is required for CDN configuration');
@@ -173,18 +243,33 @@ export async function handleCdnBucketConfigChanges(context, data) {
   }
 
   // Set bucket configuration
-  if (bucketName || pathId) {
-    await handleBucketConfiguration(siteId, bucketName, pathId, context);
+  if (bucketName || pathId || region) {
+    await handleBucketConfiguration(siteId, bucketName, pathId, region, context);
   }
 
-  // enable cdn-logs-analysis audit
+  log.info('CDN_CONFIG_CHANGED: CDN bucket configuration updated', {
+    siteId,
+    baseURL,
+    cdnProvider,
+    before: previousConfig,
+    after: {
+      ...(bucketName && { bucketName }),
+      ...(pathId && { orgId: pathId }),
+      ...(region && { region }),
+    },
+  });
+
+  // enable CDN-derived audits once the site has a valid CDN configuration
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
-  configuration.enableHandlerForSite('page-citability', site);
+  configuration.enableHandlerForSite('cdn-logs-report', site);
   await configuration.save();
 
-  // Run analysis and reporting for CS fastly customers
-  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
+  // Run analysis and reporting for Adobe-managed Fastly customers
+  if (
+    cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY
+    || (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY && pathId)
+  ) {
     await handleAdobeFastly(siteId, context);
   }
 }

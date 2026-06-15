@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import * as chai from 'chai';
 import sinon from 'sinon';
 import { processSuggestionsForMystique } from '../../../src/accessibility/guidance-utils/mystique-data-processing.js';

@@ -10,13 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import nock from 'nock';
 import esmock from 'esmock';
+import { getS3Config } from '../../../src/utils/cdn-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../../src/common/agentic-url-classification-rules.js';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
 import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
@@ -31,7 +31,6 @@ describe('CDN Logs Report Utils', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-    nock.cleanAll();
     mockContext = {
       s3Client: {
         send: sandbox.stub().resolves(),
@@ -45,7 +44,6 @@ describe('CDN Logs Report Utils', () => {
 
   afterEach(() => {
     sandbox.restore();
-    nock.cleanAll();
   });
 
   const createSiteConfig = (overrides = {}) => {
@@ -62,11 +60,12 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
 
-      expect(config).to.have.property('customerName', 'example');
-      expect(config).to.have.property('customerDomain', 'example_com');
+      expect(config).to.have.property('siteName', 'example');
+      expect(config).to.have.property('siteKey', 'example_com');
       expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
+      expect(config).to.have.property('region', 'us-east-1');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
     });
 
@@ -76,10 +75,10 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
 
-      expect(config).to.have.property('customerName', 'sub');
-      expect(config).to.have.property('customerDomain', 'sub_example_com');
+      expect(config).to.have.property('siteName', 'sub');
+      expect(config).to.have.property('siteKey', 'sub_example_com');
     });
 
     it('getAthenaTempLocation method works correctly', async () => {
@@ -88,10 +87,26 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
       const tempLocation = config.getAthenaTempLocation();
 
       expect(tempLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/temp/athena-results/');
+    });
+
+    it('uses site cdn config region when provided', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig({
+          getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket', region: 'eu-west-1' }),
+        }),
+      };
+
+      const config = getS3Config(mockSite, mockContext);
+
+      expect(config).to.have.property('region', 'eu-west-1');
+      expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(config.getAthenaTempLocation())
+        .to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
   });
   describe('generateReportingPeriods', () => {
@@ -123,10 +138,15 @@ describe('CDN Logs Report Utils', () => {
     it('validates valid country codes', () => {
       expect(reportUtils.validateCountryCode('US')).to.equal('US');
       expect(reportUtils.validateCountryCode('us')).to.equal('US');
+      expect(reportUtils.validateCountryCode('GB')).to.equal('GB');
+      expect(reportUtils.validateCountryCode('UK')).to.equal('UK');
     });
 
     it('returns GLOBAL for invalid codes', () => {
       expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('EU')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('EZ')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('XA')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
     });
@@ -134,6 +154,21 @@ describe('CDN Logs Report Utils', () => {
     it('handles GLOBAL country code correctly', () => {
       expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
+    });
+
+    it('returns GLOBAL for codes in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('PS', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('ps', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('AD', ['ad', 'ps'])).to.equal('GLOBAL');
+    });
+
+    it('returns valid code when not in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', ['PS'])).to.equal('US');
+      expect(reportUtils.validateCountryCode('DE', ['PS', 'AD'])).to.equal('DE');
+    });
+
+    it('handles empty per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', [])).to.equal('US');
     });
   });
 
@@ -151,231 +186,233 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('getConfigCategories', () => {
-    let mockLlmoConfig;
-    let mockedReportUtils;
-    const mockSite = { getSiteId: () => 'test-site-id' };
-    const mockContext = {
-      log: { info: sinon.stub(), warn: sinon.stub() },
-      s3Client: {},
-      env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
-    };
+  describe('fetchAgenticUrlClassificationRules', () => {
+    const mockSite = { getId: () => 'test-site-id' };
 
-    beforeEach(async () => {
-      mockLlmoConfig = { readConfig: sandbox.stub() };
-      mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '@adobe/spacecat-shared-utils': {
-          getStaticContent: () => Promise.resolve('SELECT * FROM table'),
-          llmoConfig: mockLlmoConfig,
-        },
-      });
-      mockContext.log.warn.resetHistory();
+    const createPostgrestClient = ({
+      categoryData = [],
+      pageTypeData = [],
+      categoryError = null,
+      pageTypeError = null,
+    } = {}) => ({
+      from: (table) => {
+        const result = table === 'agentic_url_category_rules'
+          ? { data: categoryData, error: categoryError }
+          : { data: pageTypeData, error: pageTypeError };
+        const query = {
+          select: sandbox.stub().returnsThis(),
+          eq: sandbox.stub().returnsThis(),
+          order: sandbox.stub().returnsThis(),
+          then: (resolve) => Promise.resolve(result).then(resolve),
+        };
+        return query;
+      },
     });
 
-    it('fetches and extracts category names successfully', async () => {
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          categories: {
-            'cat-id-1': { name: 'General', region: ['us'] },
-            'cat-id-2': { name: 'Products', region: ['us', 'gb'] },
-          },
-        },
-      });
+    it('returns null when no PostgREST client is available', async () => {
+      const log = { warn: sandbox.stub() };
 
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, { log });
 
-      expect(result).to.deep.equal(['General', 'Products']);
-    });
-
-    it('returns empty array when categories are missing, null, or empty', async () => {
-      mockLlmoConfig.readConfig.resolves({ config: { categories: null } });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-
-      mockLlmoConfig.readConfig.resolves({ config: {} });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-
-      mockLlmoConfig.readConfig.resolves({ config: { categories: {} } });
-      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
-    });
-
-    it('returns empty array and logs warning on error', async () => {
-      mockLlmoConfig.readConfig.rejects(new Error('S3 fetch failed'));
-
-      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
-
-      expect(result).to.deep.equal([]);
-      expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to fetch config categories:/),
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: no PostgREST client available, skipping DB rule fetch',
       );
     });
-  });
 
-  describe('fetchRemotePatterns', () => {
-    it('fetches remote patterns successfully', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      const mockResponseData = {
-        pagetype: {
-          data: [
-            { name: 'Homepage', regex: '.*/[a-z]{2}/$' },
-            { name: 'Product Detail Page', regex: '.*/products/.*' },
-          ],
-        },
-        products: {
-          data: [
-            { regex: '/products/([^/]+)/' },
-          ],
+    it('loads rules and falls back to row index when sort_order is missing', async () => {
+      const log = { info: sandbox.stub(), error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryData: [
+                { name: 'Products', regex: '/products', sort_order: 5 },
+                { name: 'Docs', regex: '/docs' },
+              ],
+              pageTypeData: [{ name: 'Article', regex: '/blog' }],
+            }),
+          },
         },
       };
 
-      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/bulk/agentic-traffic/patterns/patterns.json')
-        .reply(200, mockResponseData);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(patternNock.isDone()).to.be.true;
       expect(result).to.deep.equal({
-        pagePatterns: [
-          { name: 'Homepage', regex: '.*/[a-z]{2}/$' },
-          { name: 'Product Detail Page', regex: '.*/products/.*' },
-        ],
+        pagePatterns: [{
+          name: 'Article',
+          regex: '/blog',
+          sort_order: 0,
+          source: 'ai',
+          sample_urls: [],
+          derivation_method: null,
+        }],
         topicPatterns: [
-          { regex: '/products/([^/]+)/' },
+          {
+            name: 'Products',
+            regex: '/products',
+            sort_order: 5,
+            source: 'ai',
+            sample_urls: [],
+            derivation_method: null,
+          },
+          {
+            name: 'Docs',
+            regex: '/docs',
+            sort_order: 1,
+            source: 'ai',
+            sample_urls: [],
+            derivation_method: null,
+          },
         ],
       });
+      expect(log.info).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: loaded 1 page patterns, 2 topic patterns for site test-site-id',
+      );
     });
 
-    it('returns null when no data folder is configured', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => null,
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
+    it('handles null rule result data as empty arrays', async () => {
+      const log = { info: sandbox.stub(), error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryData: null,
+              pageTypeData: null,
+            }),
+          },
+        },
       };
 
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(result).to.be.null;
-    });
-
-    it('returns null when getConfig returns null', async () => {
-      const mockSite = {
-        getConfig: () => null,
-      };
-
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(result).to.be.null;
-    });
-
-    it('returns null when fetch fails', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/bulk/agentic-traffic/patterns/patterns.json')
-        .reply(404, 'Not Found');
-
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(result).to.be.null;
-      expect(patternNock.isDone()).to.be.true;
-    });
-
-    it('returns null when fetch throws an error', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/bulk/agentic-traffic/patterns/patterns.json')
-        .replyWithError('Network error');
-
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(result).to.be.null;
-      expect(patternNock.isDone()).to.be.true;
-    });
-
-    it('returns null when JSON parsing fails', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/bulk/agentic-traffic/patterns/patterns.json')
-        .reply(200, 'invalid json content');
-
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(result).to.be.null;
-      expect(patternNock.isDone()).to.be.true;
-    });
-
-    it('handles missing pagetype or products data gracefully', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      const mockResponseData = {
-        pagetype: null,
-        products: null,
-      };
-
-      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/bulk/agentic-traffic/patterns/patterns.json')
-        .reply(200, mockResponseData);
-
-      const result = await reportUtils.fetchRemotePatterns(mockSite);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({
         pagePatterns: [],
         topicPatterns: [],
       });
-      expect(patternNock.isDone()).to.be.true;
+      expect(log.info).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: loaded 0 page patterns, 0 topic patterns for site test-site-id',
+      );
+    });
+
+    it('returns an error state when page type rule loading fails', async () => {
+      const log = { error: sandbox.stub(), warn: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              pageTypeError: new Error('page type boom'),
+            }),
+          },
+        },
+      };
+
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({ error: true, source: 'postgres' });
+      expect(log.error).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id after 3 attempts: page type boom',
+      );
+    });
+
+    it('returns an error state when category rule loading fails', async () => {
+      const log = { error: sandbox.stub(), warn: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryError: new Error('category boom'),
+            }),
+          },
+        },
+      };
+
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({ error: true, source: 'postgres' });
+      expect(log.error).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id after 3 attempts: category boom',
+      );
     });
   });
 
-  describe('saveExcelReportForBatch', () => {
-    it('returns null when sharepointClient is not provided', async () => {
-      const mockWorkbook = {
-        xlsx: {
-          writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
-        },
-      };
-      const mockLog = {
-        info: sandbox.stub(),
-      };
+  describe('replaceAgenticUrlClassificationRules', () => {
+    const mockSite = { getId: () => 'test-site-id' };
 
-      const result = await reportUtils.saveExcelReportForBatch({
-        workbook: mockWorkbook,
-        outputLocation: 'test-location',
-        log: mockLog,
-        sharepointClient: null,
-        filename: 'test-file.xlsx',
+    it('throws when no PostgREST RPC client is available', async () => {
+      await expect(reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: {},
+      })).to.be.rejectedWith('PostgREST client is required to replace agentic URL classification rules');
+    });
+
+    it('calls the replacement RPC and unwraps array responses', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ category_rules: 1, page_type_rules: 2 }],
+        error: null,
       });
 
-      expect(result).to.be.null;
-      expect(mockWorkbook.xlsx.writeBuffer).to.have.been.calledOnce;
+      const result = await reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        categoryRules: [{ name: 'products', regex: '/products' }],
+        pageTypeRules: [{ name: 'article', regex: '/blog' }],
+      });
+
+      expect(result).to.deep.equal({ category_rules: 1, page_type_rules: 2 });
+      expect(rpc).to.have.been.calledWith(
+        'wrpc_replace_agentic_url_classification_rules',
+        {
+          p_site_id: 'test-site-id',
+          p_category_rules: [{ name: 'products', regex: '/products' }],
+          p_page_type_rules: [{ name: 'article', regex: '/blog' }],
+          p_updated_by: 'audit-worker:agentic-patterns',
+        },
+      );
+    });
+
+    it('returns object RPC responses as-is', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: { category_rules: 0, page_type_rules: 0 },
+        error: null,
+      });
+
+      const result = await reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        updatedBy: 'unit-test',
+      });
+
+      expect(result).to.deep.equal({ category_rules: 0, page_type_rules: 0 });
+      expect(rpc.firstCall.args[1].p_updated_by).to.equal('unit-test');
+    });
+
+    it('throws RPC errors', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: null,
+        error: new Error('rpc boom'),
+      });
+      const log = { error: sandbox.stub() };
+
+      await expect(reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { log, dataAccess: { services: { postgrestClient: { rpc } } } },
+      })).to.be.rejectedWith('rpc boom');
+      expect(log.error).to.have.been.calledWith(
+        'Failed to replace agentic URL classification rules for site test-site-id: rpc boom',
+      );
+    });
+  });
+
+  describe('getImporterS3Client', () => {
+    it('lazily creates and caches a single importer S3 client', () => {
+      const first = reportUtils.getImporterS3Client();
+      const second = reportUtils.getImporterS3Client();
+      expect(first).to.equal(second);
     });
   });
 });

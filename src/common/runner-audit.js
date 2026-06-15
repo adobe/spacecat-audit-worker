@@ -12,7 +12,19 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { isAuditEnabledForSite } from './audit-utils.js';
+import { isAuditDisabledForSite, parseMessageDataForRunnerAudit } from './audit-utils.js';
+
+/**
+ * Builds the audit context for RunnerAudit: `message.auditContext` plus optional `messageData`
+ * (parsed from `message.data` — same shape as API/Slack keyword args).
+ * @param {object} message - Raw SQS message body
+ * @returns {object}
+ */
+export function buildRunnerAuditContext(message) {
+  const { auditContext = {}, data } = message ?? {};
+  const messageData = parseMessageDataForRunnerAudit(data);
+  return messageData !== undefined ? { ...auditContext, messageData } : { ...auditContext };
+}
 
 export class RunnerAudit extends BaseAudit {
   constructor(
@@ -30,13 +42,14 @@ export class RunnerAudit extends BaseAudit {
 
   async run(message, context) {
     const { log } = context;
-    const { type, siteId, auditContext = {} } = message;
+    const { type, siteId } = message;
+    const auditContext = buildRunnerAuditContext(message);
 
     try {
       const site = await this.siteProvider(siteId, context);
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 

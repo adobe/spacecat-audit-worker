@@ -11,27 +11,27 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidLLMOCustomer } from './utils/utils.js';
+import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 const LOG_PREFIX = 'Prerender -';
 
 /**
- * Downloads JSON data from a presigned URL
+ * Downloads JSON data from a presigned URL using the shared analysis-fetch helper
+ * (SSRF guard, size cap, log scrub of query-string credentials).
+ *
  * @param {string} presignedUrl - The presigned S3 URL
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} - The parsed JSON data
- * @throws {Error} - If download fails or response is not OK
+ * @throws {Error} - If the URL is not allowlisted, fetch fails, response is too
+ *   large, or the body is missing the required `suggestions` array.
  */
 async function downloadFromPresignedUrl(presignedUrl, log) {
-  const response = await fetch(presignedUrl);
-
-  if (!response.ok) {
-    const errorMsg = `Failed to download from presigned URL: ${response.status} ${response.statusText}`;
-    log.error(`${LOG_PREFIX} ${errorMsg}`);
-    throw new Error(errorMsg);
-  }
-
-  const data = await response.json();
+  const data = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+    log,
+    prefix: LOG_PREFIX,
+  });
 
   if (!data || !data.suggestions) {
     const errorMsg = 'Downloaded data is missing required suggestions array';
@@ -49,13 +49,11 @@ export default async function handler(message, context) {
   } = dataAccess;
   const { siteId, data } = message;
 
-  log.info(
-    `${LOG_PREFIX} Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
-      message,
-      null,
-      2,
-    )}`,
-  );
+  log.info(`${LOG_PREFIX} Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
+    message,
+    null,
+    2,
+  )}`);
 
   // Validate message structure early - fail fast
   if (!data) {
@@ -87,9 +85,7 @@ export default async function handler(message, context) {
     const aiSummariesData = await downloadFromPresignedUrl(presignedUrl, log);
 
     const { suggestions } = aiSummariesData;
-    log.info(
-      `${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`,
-    );
+    log.info(`${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`);
 
     // Validate site exists
     const site = await Site.findById(siteId);
@@ -109,9 +105,7 @@ export default async function handler(message, context) {
     // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(
-        `${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
@@ -122,22 +116,21 @@ export default async function handler(message, context) {
     });
 
     if (updateableSuggestions.length === 0) {
-      log.info(
-        `${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.info(`${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
-    log.info(
-      `${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
-    );
+    log.info(`${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
 
-    // Index updateable suggestions by URL for quick lookup
-    const suggestionsByUrl = new Map();
+    // Index updateable suggestions by pathname for domain-shift-safe lookup.
+    // When the preferred base URL changes (e.g. www.example.com → example.com),
+    // Mystique responses may use the new domain while stored suggestions still
+    // carry the old domain — keying by pathname ensures they still match.
+    const suggestionsByPathname = new Map();
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();
       if (dataObj?.url) {
-        suggestionsByUrl.set(dataObj.url, s);
+        suggestionsByPathname.set(toPathname(dataObj.url), s);
       }
     });
 
@@ -147,27 +140,25 @@ export default async function handler(message, context) {
     // Track valuable suggestion metrics for quality logging
     let valuableCount = 0;
     let validAiSummaryCount = 0;
+    let suggestionsWithPrompts = 0;
+    let totalPromptCount = 0;
 
     suggestions.forEach((incoming) => {
       // Handle potential null/undefined elements in suggestions array
       const {
-        url, aiSummary, valuable,
+        url, aiSummary, valuable, prompts,
       } = incoming || {};
 
       if (!url) {
-        log.warn(
-          `${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
-            incoming,
-          )}`,
-        );
+        log.warn(`${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
+          incoming,
+        )}`);
         return;
       }
 
-      const existing = suggestionsByUrl.get(url);
+      const existing = suggestionsByPathname.get(toPathname(url));
       if (!existing) {
-        log.warn(
-          `${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`,
-        );
+        log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;
       }
 
@@ -184,14 +175,23 @@ export default async function handler(message, context) {
         }
       }
 
+      const hasNewPrompts = Array.isArray(prompts) && prompts.length > 0;
+      if (hasNewPrompts) {
+        suggestionsWithPrompts += 1;
+        totalPromptCount += prompts.length;
+      }
+
       const updatedData = {
         ...currentData,
-        // Treat "Not available" (case-insensitive) as empty string for better UX
-        aiSummary: hasValidAiSummary ? aiSummary : '',
-        // Default to true if not provided, but respect explicit boolean from Mystique
-        valuable: isValuable,
+        // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
+        aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
+        // Use new prompts if provided; otherwise preserve existing
+        prompts: hasNewPrompts ? prompts : (currentData.prompts ?? []),
+        // Keep valuable in sync with aiSummary — only update when new AI response is valid
+        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? true),
       };
 
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
       existing.setData(updatedData);
       suggestionsToSave.push(existing);
     });
@@ -199,41 +199,33 @@ export default async function handler(message, context) {
     // 9. Batch save all suggestions using DynamoDB batch write
     if (suggestionsToSave.length > 0) {
       try {
-        // eslint-disable-next-line no-underscore-dangle
-        await Suggestion._saveMany(suggestionsToSave);
+        await Suggestion.saveMany(suggestionsToSave);
 
         // Check if this is a paid LLMO customer for quality tracking
         const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
-        log.info(
-          `${LOG_PREFIX} prerender_ai_summary_metrics:
+        log.info(`${LOG_PREFIX} prerender_ai_summary_metrics:
           siteId=${siteId},
           baseUrl=${site.getBaseURL()},
           opportunityId=${opportunityId},
           isPaidLLMOCustomer=${isPaid},
           totalSuggestions=${suggestionsToSave.length},
           valuableSuggestions=${valuableCount},
-          validAiSummaryCount=${validAiSummaryCount},`,
-        );
+          validAiSummaryCount=${validAiSummaryCount},
+          suggestionsWithPrompts=${suggestionsWithPrompts},
+          totalPromptCount=${totalPromptCount},`);
       } catch (error) {
-        log.error(
-          `${LOG_PREFIX} Error batch saving suggestions: ${error.message}`,
-        );
+        log.error(`${LOG_PREFIX} Error batch saving suggestions: ${error.message}`);
         throw error;
       }
     } else {
-      log.warn(
-        `${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
 
     return ok();
   } catch (error) {
-    log.error(
-      `${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`,
-      error,
-    );
+    log.error(`${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
     return badRequest(`Failed to process guidance: ${error.message}`);
   }
 }

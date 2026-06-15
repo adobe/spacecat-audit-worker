@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -84,9 +82,10 @@ describe('Preflight Audit', () => {
 
     it('returns broken links for 404 responses', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      // SITES-43720: HEAD-404 triggers a GET confirm; both must return 404 to flag broken.
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
       const scrapedObjects = [{
         data: {
@@ -122,8 +121,9 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
+      expect(context.log.info).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/fail unreachable/);
     });
 
     it('handles HEAD failure with GET fallback success', async () => {
@@ -313,8 +313,8 @@ describe('Preflight Audit', () => {
     it('returns broken external links for 404 responses', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://external-site.com')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
       const scrapedObjects = [{
         data: {
@@ -350,8 +350,10 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external-site.com/fail');
+      expect(context.log.info).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/fail unreachable/);
     });
 
     it('handles external HEAD failure with GET fallback success', async () => {
@@ -404,11 +406,11 @@ describe('Preflight Audit', () => {
     it('processes both internal and external links correctly', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
-        .head('/internal-broken')
-        .reply(404);
+        .head('/internal-broken').reply(404)
+        .get('/internal-broken').reply(404);
       nock('https://external-site.com')
-        .head('/external-broken')
-        .reply(500);
+        .head('/external-broken').reply(500)
+        .get('/external-broken').reply(500);
 
       const scrapedObjects = [{
         data: {
@@ -438,17 +440,20 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('skips links inside header and footer', async () => {
+    it('checks links inside header and footer (full single-page coverage)', async () => {
+      // SITES-43720: chrome (header/footer) anchors are no longer skipped — preflight
+      // audits a single page on demand and is expected to give complete coverage.
       const urls = ['https://main--example--page.aem.page/page1'];
-      // One link in header, one in footer, one in body
       const html = `
         <header><a href="/header-link">Header Link</a></header>
         <footer><a href="/footer-link">Footer Link</a></footer>
         <main><a href="/body-link">Body Link</a></main>
       `;
       nock('https://main--example--page.aem.page')
-        .head('/body-link')
-        .reply(200);
+        .head('/header-link').reply(200)
+        .head('/footer-link').reply(404)
+        .get('/footer-link').reply(404)
+        .head('/body-link').reply(200);
 
       const scrapedObjects = [{
         data: {
@@ -458,15 +463,18 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      // Only the body link should be considered internal
-      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Check that only the body link is logged as internal
+      // The footer link's 404 surfaces as a broken internal link.
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo)
+        .to.equal('https://main--example--page.aem.page/footer-link');
+      // All three links — header, footer, and body — appear in the internal links map.
       expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] Found internal links:',
-        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => {
-          const selectors = linksMap.get('https://main--example--page.aem.page/body-link');
-          return selectors instanceof Set && selectors.has('body > main > a');
-        })),
+        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => (
+          linksMap.has('https://main--example--page.aem.page/header-link')
+          && linksMap.has('https://main--example--page.aem.page/footer-link')
+          && linksMap.has('https://main--example--page.aem.page/body-link')
+        ))),
       );
     });
   });
@@ -660,10 +668,14 @@ describe('Preflight Audit', () => {
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
       retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
-      // Mock the accessibility handler to prevent timeouts
+      // Accessibility + form-accessibility mocked (timeouts / SQS). Alt-text stays real — needs
+      // `alt-text-preflight` in getHandlers below so entitlement + fixtures stay aligned.
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
-          default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+          default: sinon.stub().resolves(),
+        },
+        '../../src/preflight/form-accessibility.js': {
+          default: sinon.stub().resolves(),
         },
         '@adobe/spacecat-shared-ims-client': {
           retrievePageAuthentication: retrievePageAuthenticationStub,
@@ -703,6 +715,8 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
@@ -712,7 +726,7 @@ describe('Preflight Audit', () => {
         TierClient.createForSite.restore();
       }
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -756,6 +770,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/wrong',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
@@ -774,11 +794,11 @@ describe('Preflight Audit', () => {
         .head('/header-url')
         .reply(200);
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
       nock('https://main--example--page.aem.page')
-        .head('/another-broken-url')
-        .reply(404);
+        .head('/another-broken-url').reply(404)
+        .get('/another-broken-url').reply(404);
 
       job.getMetadata = () => ({
         payload: {
@@ -876,11 +896,11 @@ describe('Preflight Audit', () => {
         .head('/header-url')
         .reply(200);
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
       nock('https://main--example--page.aem.page')
-        .head('/another-broken-url')
-        .reply(404);
+        .head('/another-broken-url').reply(404)
+        .get('/another-broken-url').reply(404);
 
       job.getMetadata = () => ({
         payload: {
@@ -1144,15 +1164,15 @@ describe('Preflight Audit', () => {
       const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
-      // Mock the broken internal link to return 404
+      // Mock the broken internal link to return 404 (HEAD + GET-confirm).
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
-      // Mock the external link to return 404
+      // Mock the external link to return 404 (HEAD + GET-confirm).
       nock('http://test.com')
-        .head('/')
-        .reply(404);
+        .head('/').reply(404)
+        .get('/').reply(404);
 
       s3Client.send.callsFake((command) => {
         if (command.input?.Prefix) {
@@ -1306,6 +1326,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/readability-test',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',
@@ -1420,7 +1446,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1439,9 +1465,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
+      // (total of 9 calls: 1 metadata update + 7 intermediate saves (incl. alt-text) + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(9);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -1583,6 +1609,63 @@ describe('Preflight Audit', () => {
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
       expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
+    });
+
+    it('lorem ipsum filter keeps only innermost elements when nested', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+        },
+      });
+
+      const nestedHtml = '<body>'
+        + '<div id="outer">Lorem ipsum dolor sit amet'
+        + '<p id="inner">Lorem ipsum nested text</p>'
+        + '</div>'
+        + '</body>';
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: {
+                rawBody: nestedHtml,
+              },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
+      await preflightAuditFunction(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      const { audits } = result[0];
+      const loremIpsumAudit = audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      const { elements } = loremIpsumAudit.opportunities[0];
+      expect(elements).to.be.an('array');
+      expect(elements).to.have.lengthOf(1);
+      expect(elements[0].selector).to.include('p#inner');
+      expect(elements[0].selector).to.not.match(/^(body > )?div#outer$/);
     });
 
     it('handles individual AUDIT_H1_COUNT check', async () => {
@@ -1992,7 +2075,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for accessibility
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
@@ -3130,7 +3213,7 @@ describe('Preflight Audit', () => {
 
         // Ensure entitlement checks pass for polling tests; avoid double-stubbing
         const mockTierClient = {
-          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+          checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
         };
         if (TierClient.createForSite && TierClient.createForSite.restore) {
           TierClient.createForSite.restore();
@@ -3394,7 +3477,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for coverage tests
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -4697,21 +4780,25 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
       }
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
-      // Import preflight with accessibility mocked to no-op
       const { preflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(),
+        },
+        '../../src/preflight/form-accessibility.js': {
           default: sinon.stub().resolves(),
         },
       });

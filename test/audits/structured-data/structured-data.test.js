@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
@@ -28,6 +28,7 @@ import { MockContextBuilder } from '../../shared.js';
 import gscExample1 from '../../fixtures/structured-data/gsc-example1.json' with { type: 'json' };
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 const message = {
@@ -60,7 +61,7 @@ describe('Structured Data Audit', () => {
 
   beforeEach(() => {
     mockConfiguration = {
-      isHandlerEnabledForSite: sinon.stub().returns(true),
+      isHandlerEnabledForSite: sinon.stub().callsFake((handler) => handler !== 'summit-plg'),
     };
     s3ClientStub = {
       send: sinon.mock(),
@@ -133,6 +134,12 @@ describe('Structured Data Audit', () => {
   describe('runAuditAndGenerateSuggestions', () => {
     it('throws an error if no top pages are available', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+        }),
+      };
 
       const result = await runAuditAndGenerateSuggestions(context);
       expect(result).to.deep.equal({
@@ -331,7 +338,7 @@ describe('Structured Data Audit', () => {
         setAuditId: () => {},
         getSuggestions: () => [],
         getType: () => 'structured-data',
-        getData: () => ({ dataSources: ['Ahrefs', 'Site'] }),
+        getData: () => ({ dataSources: ['SEO', 'Site'] }),
         setData: () => {},
         setUpdatedBy: () => {},
         save: () => {},
@@ -492,8 +499,139 @@ describe('Structured Data Audit', () => {
 
     it('throws error if no top pages are found when sending scraping request', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+        }),
+      };
 
-      expect(submitForScraping(context)).to.be.rejectedWith('No top pages for site ID 123 found.');
+      await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
+    });
+
+    it('includes custom audit target URLs merged with SEO top pages', async () => {
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom/page1' },
+            { url: 'https://example.com/custom/page2' },
+          ],
+        }),
+      };
+
+      const result = await submitForScraping(context);
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/custom/page1' },
+        { url: 'https://example.com/custom/page2' },
+        { url: 'https://example.com/product/1' },
+        { url: 'https://example.com/product/2' },
+        { url: 'https://example.com/product/3' },
+      ]);
+    });
+
+    it('deduplicates custom URLs that overlap with SEO top pages', async () => {
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/product/1' },
+            { url: 'https://example.com/custom/unique' },
+          ],
+        }),
+      };
+
+      const result = await submitForScraping(context);
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/product/1' },
+        { url: 'https://example.com/custom/unique' },
+        { url: 'https://example.com/product/2' },
+        { url: 'https://example.com/product/3' },
+      ]);
+    });
+
+    it('uses only custom URLs when no SEO top pages exist', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom/page1' },
+          ],
+        }),
+      };
+
+      const result = await submitForScraping(context);
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/custom/page1' },
+      ]);
+    });
+  });
+
+  describe('runAuditAndGenerateSuggestions - custom URLs', () => {
+    it('includes custom audit target URLs in top pages for audit', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+        createPageStub('https://example.com/product/1'),
+      ]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom/target' },
+          ],
+        }),
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus
+        .resolves([context.dataAccess.Opportunity]);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.getId.returns('opportunity-id');
+      context.dataAccess.Opportunity.getType.returns('structured-data');
+      context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([]);
+
+      s3ClientStub.send = sinon.stub().resolves(createS3ObjectStub(JSON.stringify({
+        scrapeResult: { rawBody: '<main></main>', structuredData: { jsonld: {}, errors: [] } },
+      })));
+      context.s3Client = s3ClientStub;
+
+      await runAuditAndGenerateSuggestions(context);
+
+      const scrapeRequests = s3ClientStub.send.getCalls().map((call) => call.args[0].input.Key);
+      expect(scrapeRequests).to.include('scrapes/123/custom/target/scrape.json');
+      expect(scrapeRequests).to.include('scrapes/123/product/1/scrape.json');
+    });
+
+    it('succeeds with only custom URLs when no SEO top pages exist', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom/only' },
+          ],
+        }),
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus
+        .resolves([context.dataAccess.Opportunity]);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.getId.returns('opportunity-id');
+      context.dataAccess.Opportunity.getType.returns('structured-data');
+      context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([]);
+
+      const result = await runAuditAndGenerateSuggestions(context);
+
+      expect(result.auditResult.success).to.equal(true);
+      expect(s3ClientStub.send.calledOnce).to.equal(true);
+      const scrapeRequests = s3ClientStub.send.getCalls().map((call) => call.args[0].input.Key);
+      expect(scrapeRequests).to.deep.equal(['scrapes/123/custom/only/scrape.json']);
     });
   });
 });

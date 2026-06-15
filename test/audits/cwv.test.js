@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -68,7 +66,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
               productCodes: ['aem-sites'],
             },
           }),
-          isHandlerEnabledForSite: () => true,
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
         }),
       },
     },
@@ -287,7 +285,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(homepageInResult.pageviews).to.equal(50);
   });
 
-    it('does not treat grouped URLs as homepage', async () => {
+  it('does not treat grouped URLs as homepage', async () => {
     const groupedData = {
       type: 'group', // Not 'url' - should not match homepage logic
       // url field is absent for grouped entries (they have pattern instead)
@@ -333,13 +331,26 @@ describe('collectCWVDataAndImportCode Tests', () => {
         warn: sandbox.stub(),
       };
 
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
+        }),
+      };
+
       context.dataAccess.Opportunity = {
         allBySiteIdAndStatus: sandbox.stub(),
         create: sandbox.stub(),
       };
 
       context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
         bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
       };
 
       context.sqs = {
@@ -352,7 +363,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       
       // Mock TierClient for entitlement checks
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -373,6 +384,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
         siteId: 'site-id',
         auditId: 'audit-id',
         opportunityId: 'oppty-id',
@@ -421,13 +433,16 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
-      // make sure that newly oppty has all 4 new suggestions
+      // make sure that newly oppty has 2 new suggestions (only failing-metric pages)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+      // CWV suggestions include jiraLink (null until user saves URL in UI; schema
+      // rejects empty string so we default to null).
+      suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', null));
     });
 
-    it('handles audit result with only group entries for maxOrganicForUrls coverage', async () => {
+    it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
@@ -440,7 +455,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
             name: 'Some pages',
             pageviews: 5000,
             organic: 3000,
-            metrics: [],
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 3000, // > 2500 threshold — ensures group passes hasFailingMetrics
+              cls: null,
+              inp: null,
+            }],
           },
         ],
         auditContext: { interval: 7 },
@@ -462,8 +482,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.have.lengthOf(1);
       expect(suggestionsArg[0].data.type).to.equal('group');
+      expect(suggestionsArg[0].data).to.have.property('jiraLink', null);
     });
-
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
@@ -487,7 +507,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
-        getData: () => (suggestion.data),
+        // Return old data with different pageviews so deepEqual detects change
+        getData: () => ({ ...suggestion.data, pageviews: (suggestion.data.pageviews || 0) - 1000 }),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
         setUpdatedBy: sinon.stub().returnsThis(),
@@ -502,7 +523,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
       expect(oppty.setData).to.have.been.calledOnceWith({ ...opptyData, ...expectedOppty.data });
-      expect(oppty.save).to.have.been.calledOnce;
+      expect(oppty.setLastAuditedAt).to.have.been.calledOnce;
+      expect(oppty.save).to.have.been.calledTwice;
 
       // make sure that 1 old suggestion is removed
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
@@ -511,12 +533,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
-      expect(existingSuggestions[1].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
-      // make sure that 3 new suggestions are created
+      // make sure that 1 new suggestion is created (/docs/ — the only new failing-metric page)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
@@ -535,7 +557,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
     });
 
     it('creates a new opportunity object without GSC if not connected', async () => {
@@ -553,14 +575,16 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
     });
 
     it('calls processAutoSuggest when suggestions have no guidance', async () => {
-      // Mock suggestions without guidance (empty issues array)
+      // Mock suggestions without guidance (empty issues array). Include a failing metric
+      // on each so the auto-suggest skip ("no failing CWV metrics") doesn't drop them.
+      const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
-        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
-        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -608,42 +632,482 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
-      // Mock mixed suggestions - some with guidance, some without
+    it('filters CWV suggestions to only failing-metric pages for all sites', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Of the 4 CWV entries (pageviews >= 7000):
+      //   - Group: mobile cls=0.27 > 0.1   → FAILS
+      //   - /developer/block-collection:    → PASSES (all below threshold)
+      //   - /docs/: mobile lcp=26276 > 2500 → FAILS
+      //   - /tools/rum/explorer.html:       → PASSES (all below threshold)
+      // Global filter should yield 2 suggestions
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/2 of 4 CWV entries have failing metrics/),
+      );
+
+      // Both failing entries (group + /docs/) each had an all-green desktop row alongside
+      // a failing mobile row. filterToFailingDeviceMetrics must have stripped the desktop
+      // row from each — only the failing mobile row should survive in the suggestion data.
+      suggestionsArg.forEach((s) => {
+        expect(s.data.metrics).to.have.lengthOf(1);
+        expect(s.data.metrics[0].deviceType).to.equal('mobile');
+      });
+    });
+
+    it('stores no suggestions when all pages have passing metrics', async () => {
+      const allPassingCwvData = [
+        {
+          type: 'url',
+          url: 'https://www.aem.live/docs/',
+          pageviews: 9000,
+          organic: 500,
+          metrics: [{
+            deviceType: 'desktop',
+            pageviews: 9000,
+            organic: 500,
+            lcp: 1200,
+            cls: 0.05,
+            inp: 150,
+          }],
+        },
+      ];
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const allPassingAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({ cwv: allPassingCwvData, auditContext: { interval: 7 } }),
+      };
+      const stepContext = { ...context, site, audit: allPassingAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(oppty.addSuggestions).to.not.have.been.called;
+    });
+
+    it('calls processAutoSuggest only for suggestions without a code change available', async () => {
+      // Dispatch decision is driven by data.isCodeChangeAvailable: suggestions
+      // where a code patch already landed are skipped; everything else is
+      // dispatched (regardless of whether text guidance already exists, which is
+      // not proof that a code patch ran successfully).
+      const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
         {
           getId: () => 'sugg-1',
-          getData: () => ({ 
-            type: 'url', 
+          getData: () => ({
+            type: 'url',
             url: 'test1',
+            isCodeChangeAvailable: true,
             issues: [
               { type: 'lcp', value: '# LCP Optimization...' }
-            ]
+            ],
+            metrics: failingMetrics,
           }),
           getStatus: () => 'NEW'
         },
         {
           getId: () => 'sugg-2',
-          getData: () => ({ 
-            type: 'url', 
+          getData: () => ({
+            type: 'url',
             url: 'test2',
-            issues: [] // No guidance (empty issues array)
+            // no isCodeChangeAvailable — patch hasn't landed yet
+            issues: [],
+            metrics: failingMetrics,
           }),
           getStatus: () => 'NEW'
         }
       ];
-      
+
       // Setup opportunity with mock suggestions before the function call
       oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
-      
+
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await syncOpportunityAndSuggestionsStep({ site, audit: mockAudit, finalUrl: auditUrl, log: context.log, ...context });
 
-      // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
+      // Only sugg-2 (no code change yet) should be dispatched.
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage.firstCall.args[1].data.suggestionId).to.equal('sugg-2');
+    });
+  });
+
+  describe('syncOpportunityAndSuggestionsStep - PLG alert behavior', () => {
+    let mockedSyncStep;
+    let sendLowSuggestionCountAlertStub;
+
+    beforeEach(async () => {
+      sendLowSuggestionCountAlertStub = sandbox.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/cwv/handler.js', {
+        '../../src/support/plg-suggestion-alert.js': {
+          sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+        },
+      });
+      mockedSyncStep = mockedHandler.syncOpportunityAndSuggestionsStep;
+
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        create: sandbox.stub(),
+      };
+      context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+      context.sqs = { sendMessage: sandbox.stub().resolves() };
+    });
+
+    it('calls sendLowSuggestionCountAlert with the NEW suggestion count', async () => {
+      const newSuggestions = [
+        { getId: () => 's1', getStatus: () => 'NEW', getData: () => ({}) },
+        { getId: () => 's2', getStatus: () => 'NEW', getData: () => ({}) },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(newSuggestions);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(auditTypeArg).to.equal('cwv');
+      expect(countArg).to.equal(2);
+    });
+
+    it('does not fire the alert when no new suggestions exist', async () => {
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([]);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(countArg).to.equal(0);
+    });
+  });
+});
+
+describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () => {
+  let shouldSendAutoSuggestForSuggestion;
+
+  before(async () => {
+    ({ shouldSendAutoSuggestForSuggestion } = await import('../../src/cwv/auto-suggest.js'));
+  });
+
+  const stub = (suggestionStatus, data = {}) => ({
+    getStatus: () => suggestionStatus,
+    getData: () => data,
+  });
+
+  it('returns false when suggestion status is not NEW', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('APPROVED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('OUTDATED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('FIXED'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('ERROR'))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('REJECTED'))).to.be.false;
+  });
+
+  it('returns true when suggestion is NEW and no code change has landed', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW'))).to.be.true;
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { issues: [] }))).to.be.true;
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { isCodeChangeAvailable: false }))).to.be.true;
+  });
+
+  it('returns false when isCodeChangeAvailable is true', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', { isCodeChangeAvailable: true }))).to.be.false;
+  });
+
+  it('dispatches NEW suggestions whose issues already have guidance text but no code change yet (Bug 2 regression)', () => {
+    // Previously, populated issues[*].value blocked re-dispatch and silently
+    // killed codefix retries. The done-signal is now isCodeChangeAvailable.
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', {
+      issues: [
+        { type: 'lcp', status: 'NEW', value: '# LCP guidance...' },
+        { type: 'cls', status: 'NEW', value: '# CLS guidance...' },
+      ],
+    }))).to.be.true;
+  });
+
+  it('dispatches NEW suggestions regardless of per-issue status when isCodeChangeAvailable is not true', () => {
+    ['APPROVED', 'REJECTED', 'SKIPPED', 'FIXED', 'IN_PROGRESS', 'ERROR', 'OUTDATED'].forEach((status) => {
+      const result = shouldSendAutoSuggestForSuggestion(stub('NEW', {
+        issues: [{ type: 'lcp', status, value: '# guidance...' }],
+      }));
+      expect(result, `expected true for issue.status=${status}`).to.be.true;
+    });
+  });
+});
+
+describe('Per-issue prune-on-resolve merge helpers', () => {
+  // Imported lazily to keep the existing top-level imports unchanged.
+  let isMetricFailing;
+  let applyPerIssueOutdated;
+  let mergeCwvData;
+
+  before(async () => {
+    ({ isMetricFailing, applyPerIssueOutdated, mergeCwvData } = await import('../../src/cwv/opportunity-sync.js'));
+  });
+
+  // LCP threshold is 2500ms, CLS 0.1, INP 200ms (see kpi-metrics.js).
+  const entryFailingLcp = {
+    metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.05, inp: 100 }],
+  };
+  const entryAllPassing = {
+    metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.05, inp: 100 }],
+  };
+  const entryFailingClsAndInp = {
+    metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3, inp: 350 }],
+  };
+
+  describe('isMetricFailing', () => {
+    it('returns true when metric exceeds threshold on any device', () => {
+      expect(isMetricFailing(entryFailingLcp, 'lcp')).to.be.true;
+    });
+
+    it('returns false when metric is below threshold on every device', () => {
+      expect(isMetricFailing(entryAllPassing, 'lcp')).to.be.false;
+    });
+
+    it('returns false when metric values are null/undefined (no data = passing)', () => {
+      const entry = { metrics: [{ deviceType: 'mobile', lcp: null, cls: undefined }] };
+      expect(isMetricFailing(entry, 'lcp')).to.be.false;
+      expect(isMetricFailing(entry, 'cls')).to.be.false;
+    });
+
+    it('returns false on malformed input (no metrics array)', () => {
+      expect(isMetricFailing(null, 'lcp')).to.be.false;
+      expect(isMetricFailing({}, 'lcp')).to.be.false;
+      expect(isMetricFailing({ metrics: 'not-an-array' }, 'lcp')).to.be.false;
+    });
+  });
+
+  describe('applyPerIssueOutdated', () => {
+    it('drops an issue when its metric type no longer fails', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
+      ];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.deep.equal([]);
+    });
+
+    it('keeps issue NEW when its metric type still fails', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
+      ];
+      const result = applyPerIssueOutdated(existing, entryFailingLcp);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].status).to.equal('NEW');
+    });
+
+    it('drops only the resolved metric; others stay NEW', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW' },
+        { id: 'b', type: 'cls', status: 'NEW' },
+        { id: 'c', type: 'inp', status: 'NEW' },
+      ];
+      // Only CLS and INP fail now — LCP resolved
+      const result = applyPerIssueOutdated(existing, entryFailingClsAndInp);
+      expect(result).to.have.lengthOf(2);
+      expect(result.map((i) => i.id)).to.deep.equal(['b', 'c']);
+      expect(result.every((i) => i.status === 'NEW')).to.be.true;
+    });
+
+    it('preserves APPROVED status when metric resolves (skip list)', () => {
+      const existing = [{ id: 'a', type: 'lcp', status: 'APPROVED' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].status).to.equal('APPROVED');
+    });
+
+    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR in skip list', () => {
+      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR'];
+      statuses.forEach((status) => {
+        const existing = [{ id: 'a', type: 'lcp', status }];
+        const result = applyPerIssueOutdated(existing, entryAllPassing);
+        expect(result, `expected ${status} preserved`).to.have.lengthOf(1);
+        expect(result[0].status, `expected ${status} preserved`).to.equal(status);
+      });
+    });
+
+    it('drops stale OUTDATED issues so they no longer leak to the UI', () => {
+      // OUTDATED is no longer in the preserve set — these are pruned on re-merge.
+      const existing = [{ id: 'a', type: 'lcp', status: 'OUTDATED' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.deep.equal([]);
+    });
+
+    it('leaves legacy issues without a type field untouched', () => {
+      const existing = [{ value: 'markdown only, no type', status: 'NEW' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.deep.equal({ value: 'markdown only, no type', status: 'NEW' });
+    });
+
+    it('drops a NEW issue even when status field is missing (no customer intent recorded)', () => {
+      const existing = [{ id: 'a', type: 'lcp' }]; // no status field
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.deep.equal([]);
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(applyPerIssueOutdated([], entryAllPassing)).to.deep.equal([]);
+    });
+
+    it('returns the input unchanged when not an array', () => {
+      expect(applyPerIssueOutdated(undefined, entryAllPassing)).to.deep.equal([]);
+      expect(applyPerIssueOutdated(null, entryAllPassing)).to.deep.equal([]);
+    });
+
+    it('does not mutate the input array or its issues', () => {
+      const existing = [{ id: 'a', type: 'lcp', status: 'NEW' }];
+      const before = JSON.stringify(existing);
+      applyPerIssueOutdated(existing, entryAllPassing);
+      expect(JSON.stringify(existing)).to.equal(before);
+    });
+  });
+
+  describe('mergeCwvData', () => {
+    it('shallow-merges new data over existing (default behaviour preserved when no issues)', () => {
+      const existing = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }], pageviews: 100 };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 3000 }], pageviews: 200 };
+      const result = mergeCwvData(existing, newItem);
+      expect(result).to.deep.equal({
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 3000 }],
+        pageviews: 200,
+      });
+      // No `issues` key introduced when existing didn't have one
+      expect(result).to.not.have.property('issues');
+    });
+
+    it('does not add an `issues` key when existing has an empty issues array', () => {
+      const existing = { url: 'x', metrics: [{ lcp: 5000 }], issues: [] };
+      const newItem = { url: 'x', metrics: [{ lcp: 3000 }] };
+      const result = mergeCwvData(existing, newItem);
+      // issues comes from the spread of existing (empty array), and we don't re-write it
+      expect(result.issues).to.deep.equal([]);
+    });
+
+    it('self-heals legacy jiraLink="" to null (stops the schema validation warning)', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: '', // legacy bad value
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
+    it('preserves a valid jiraLink URI on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: 'https://jira.example.com/browse/CWV-123',
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal('https://jira.example.com/browse/CWV-123');
+    });
+
+    it('preserves an already-null jiraLink on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: null,
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
+    it('drops resolved-metric issues on re-merge so the UI does not surface them', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.3 }],
+        issues: [
+          { id: 'a', type: 'lcp', status: 'NEW' },
+          { id: 'b', type: 'cls', status: 'NEW' },
+        ],
+      };
+      const newItem = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3 }], // lcp resolved, cls still failing
+      };
+      const result = mergeCwvData(existing, newItem);
+      // LCP issue is dropped entirely; only CLS remains
+      expect(result.issues).to.have.lengthOf(1);
+      expect(result.issues[0].id).to.equal('b');
+      expect(result.issues[0].status).to.equal('NEW');
+      // metrics overwritten by new data
+      expect(result.metrics[0].lcp).to.equal(1800);
     });
   });
 });

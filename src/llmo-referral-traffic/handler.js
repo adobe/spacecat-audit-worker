@@ -51,7 +51,9 @@ async function createWorkbook(results) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Sheet1');
 
-  if (results.length === 0) return workbook;
+  if (results.length === 0) {
+    return workbook;
+  }
 
   // set headers from first object
   const headers = Object.keys(results[0]);

@@ -16,6 +16,11 @@ import { sleep } from '../support/utils.js';
 const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
 const AUDIT_NAME = 'REPORT_UPLOADER';
 
+// ZIP/XLSX magic bytes: PK\x03\x04
+const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+const XLSX_RETRY_MAX = 3;
+const XLSX_RETRY_DELAY_MS = 60_000;
+
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
@@ -83,11 +88,54 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
+/**
+ * Downloads a document from SharePoint and validates it is a valid XLSX file.
+ * Retries up to XLSX_RETRY_MAX times with a fixed delay when SharePoint returns
+ * a non-XLSX response (e.g. an HTML error page from a transient outage).
+ *
+ * Note: only magic-byte failures trigger a retry. Network errors or SDK throws
+ * from the underlying readFromSharePoint call propagate immediately without retrying.
+ * @param {string} sheetName - The sheet filename (without .xlsx extension)
+ * @param {string} sourceFolder - The SharePoint source folder path
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ * @returns {Promise<Buffer>} - The XLSX file content as a buffer
+ */
+export async function readFromSharePointWithRetry(sheetName, sourceFolder, sharepointClient, log) {
+  for (let attempt = 1; attempt <= XLSX_RETRY_MAX; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const buffer = await readFromSharePoint(sheetName, sourceFolder, sharepointClient, log);
+    if (buffer.subarray(0, 4).equals(XLSX_MAGIC)) {
+      return buffer;
+    }
+    log.warn(
+      `%s: SharePoint returned non-XLSX content on attempt ${attempt}/${XLSX_RETRY_MAX} `
+      + `(size=${buffer.length}, magic=${buffer.subarray(0, 4).toString('hex')}, `
+      + `sheet=${sheetName}, folder=${sourceFolder})`,
+      AUDIT_NAME,
+    );
+    if (attempt < XLSX_RETRY_MAX) {
+      // Fixed delay tuned for the SharePoint cache-flip recovery window observed in LLMO-4739;
+      // exponential backoff offers no benefit when the outage resolves on a known ~60s cadence.
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(XLSX_RETRY_DELAY_MS);
+    }
+  }
+  log.error(
+    `%s: SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`,
+    AUDIT_NAME,
+    { sheetName, sourceFolder },
+  );
+  throw new Error(`SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`);
+}
+
 async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
-      if (response.ok) return response;
+      if (response.ok) {
+        return response;
+      }
 
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
@@ -100,8 +148,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
         : null;
       const xErrorInfo = xError ? `, x-error: ${xError}` : '';
 
-      // Only retry on 503 and x-error contains "429"
-      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      // Retry direct throttling, Helix throttling wrapped as 503.
+      const isRetryable = error.status === 429
+        || (error.status === 503 && xError && xError.includes('429'));
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
       if (!shouldRetry) {
@@ -237,53 +286,6 @@ export async function uploadAndPublishFile(
       error: error.message,
       stack: error.stack,
     });
-    throw error;
-  }
-}
-
-async function runBulkJob(route, operation, paths, log) {
-  const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
-  const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ paths }) });
-  if (!res.ok) throw new Error(`${operation} request failed: ${res.status} for url: ${url}`);
-  const data = await res.json();
-  const jobUrl = data.links?.self;
-  if (!jobUrl) throw new Error(`No job URL from ${operation}`);
-  log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
-
-  // Poll until complete for 10 minutes
-  for (let i = 0; i < 120; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(5000);
-    // eslint-disable-next-line no-await-in-loop
-    const statusRes = await fetch(jobUrl, { method: 'GET', headers });
-    if (!statusRes.ok) throw new Error(`${operation} status check failed: ${statusRes.status} for job URL: ${jobUrl}`);
-    // eslint-disable-next-line no-await-in-loop
-    const status = await statusRes.json();
-    const { state, progress } = status;
-    log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
-    if (state === 'stopped') return;
-  }
-  throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
-}
-
-/**
- * Bulk preview and publish files to admin.hlx.page
- * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
- * @param {object} log - Logger
- */
-export async function bulkPublishToAdminHlx(reports, log) {
-  if (!reports?.length) return;
-
-  const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
-  log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
-
-  try {
-    await runBulkJob('preview', 'preview', paths, log);
-    await runBulkJob('live', 'publish', paths, log);
-    log.info(`%s: Bulk publish completed for ${paths.length} files`, AUDIT_NAME);
-  } catch (error) {
-    log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
     throw error;
   }
 }

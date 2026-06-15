@@ -53,20 +53,14 @@ export const suggestionData = [
       {
         name: 'canonical',
         type: 'seo',
-        // TODO: Re-enable when preflight canonical is updated for new multi-step architecture
-        opportunities: [],
-        /*
         opportunities: [
           {
             check: 'canonical-self-referenced',
-            issue: 'The canonical URL should point to itself to indicate that it is the '
-              + 'preferred version of the content.',
+            issue: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
             seoImpact: 'Moderate',
-            seoRecommendation: 'The canonical URL should point to itself to indicate that it is '
-              + 'the preferred version of the content.',
+            seoRecommendation: 'Update the canonical URL to point to itself',
           },
         ],
-        */
       },
       {
         name: 'metatags',
@@ -123,6 +117,11 @@ export const suggestionData = [
       {
         name: 'readability',
         type: 'seo',
+        opportunities: [],
+      },
+      {
+        name: 'alt-text',
+        type: 'accessibility',
         opportunities: [],
       },
     ],

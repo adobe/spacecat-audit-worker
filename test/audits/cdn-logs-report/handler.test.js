@@ -10,214 +10,115 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import nock from 'nock';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-// Mock data constants
-const MOCK_AGENTIC_DATA = [
-  {
-    agent_type: 'Bot',
-    user_agent_display: 'Googlebot/2.1',
-    status: 200,
-    number_of_hits: 100,
-    avg_ttfb_ms: 250.5,
-    country_code: 'US',
-    url: '/test',
-    product: 'adobe-analytics',
-    category: 'Product Page',
-  },
-  {
-    agent_type: 'LLM',
-    user_agent_display: 'ChatGPT-User/1.0',
-    status: 200,
-    number_of_hits: 50,
-    avg_ttfb_ms: 180.2,
-    country_code: 'GLOBAL',
-    url: '/page',
-    product: 'experience-manager',
-    category: 'Documentation',
-  },
-  {
-    agent_type: 'LLM',
-    user_agent_display: 'ChatGPT-User/1.0',
-    status: 200,
-    number_of_hits: 50,
-    avg_ttfb_ms: 180.2,
-    country_code: 'AA',
-    url: '/page',
-    product: 'experience-manager',
-    category: 'Documentation',
-  },
-  {
-    agent_type: 'LLM',
-    user_agent_display: 'ChatGPT-User/1.0',
-    status: 200,
-    number_of_hits: 50,
-    avg_ttfb_ms: 180.2,
-    country_code: 1,
-    url: '-',
-    product: 'experience-manager',
-    category: 'Documentation',
-  },
-  {
-    agent_type: null,
-    user_agent_display: null,
-    status: null,
-    number_of_hits: null,
-    avg_ttfb_ms: null,
-    country_code: null,
-    url: null,
-    product: null,
-    category: null,
-  },
-  {
-    agent_type: null,
-    user_agent_display: null,
-    status: null,
-    number_of_hits: null,
-    avg_ttfb_ms: null,
-    country_code: 999, // Invalid country code to trigger catch in validateCountryCode
-    url: null,
-    product: null,
-    category: null,
-  },
-  {
-    agent_type: 'Bot',
-    user_agent_display: 'TestBot',
-    status: 200,
-    number_of_hits: 10,
-    avg_ttfb_ms: 150,
-    country_code: null, // null country code
-    url: '/test',
-    product: 'adobe-analytics',
-    category: 'Test',
-  },
-  {
-    agent_type: 'Bot',
-    user_agent_display: 'TestBot',
-    status: 200,
-    number_of_hits: 10,
-    avg_ttfb_ms: 150,
-    country_code: 'INVALID',
-    url: '/test',
-    product: {},
-    category: 'Test',
-  },
-];
-
-const MOCK_REFERRAL_DATA = [
-  {
-    path: '/products/analytics',
-    referrer: 'https://google.com/search',
-    utm_source: 'google',
-    utm_medium: 'organic',
-    tracking_param: null,
-    device: 'desktop',
-    date: '2025-01-15',
-    region: 'US',
-    pageviews: 1250,
-  },
-  {
-    path: 'documentation',
-    referrer: 'https://ads.google.com',
-    utm_source: 'google',
-    utm_medium: 'cpc',
-    tracking_param: 'google_ads_456',
-    device: 'tablet',
-    date: '2025-01-15',
-    region: 'GB',
-    pageviews: 420,
-  },
-];
+const EXISTING_RULES = {
+  pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
+  topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
+};
 
 describe('CDN Logs Report Handler', function test() {
   let sandbox;
   let context;
   let site;
   let handler;
-  let saveExcelReportStub;
-  let createLLMOSharepointClientStub;
-  let bulkPublishToAdminHlxStub;
+  let athenaClient;
+  // Shared mock holder. The esmock'd handler routes module imports through
+  // these properties at call time, so each test can reassign without reloading
+  // the (expensive) handler module graph.
+  const mocks = {};
 
   this.timeout(10000);
 
-  const createMockSharepointClient = (stubber) => ({
-    getDocument: stubber.stub().returns({
-      getDocumentContent: stubber.stub().resolves(Buffer.from('test content')),
-      uploadRawDocument: stubber.stub().resolves(),
-    }),
-    uploadFile: stubber.stub().resolves({ success: true }),
-  });
-
-  const createAuditContext = (stubber, overrides = {}) => ({
-    sharepointOptions: {
-      helixContentSDK: {
-        createFrom: stubber.stub().resolves(createMockSharepointClient(stubber)),
-      },
-    },
+  const createSiteConfig = (overrides = {}) => ({
+    getLlmoDataFolder: () => 'test-folder',
+    getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+    getLlmoCdnlogsFilter: () => [{ value: ['www.example.com'], key: 'host' }],
+    getLlmoCountryCodeIgnoreList: () => undefined,
     ...overrides,
   });
 
-  const createSiteConfig = (overrides = {}) => {
-    const defaultConfig = {
-      getLlmoDataFolder: () => 'test-folder',
-      getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
-      getLlmoCdnlogsFilter: () => [{
-        value: ['www.example.com'],
-        key: 'host',
-      }],
-    };
-    return { ...defaultConfig, ...overrides };
+  const agenticConfig = {
+    name: 'agentic',
+    aggregatedLocation: 's3://bucket/aggregated/test-site/agentic/',
+    tableName: 'aggregated_logs_example_com_consolidated',
+  };
+  const referralConfig = {
+    name: 'referral',
+    aggregatedLocation: 's3://bucket/aggregated/test-site/referral/',
+    tableName: 'aggregated_referral_logs_example_com_consolidated',
   };
 
-  const setupAthenaClientWithData = (
-    stubber,
-    agenticData = MOCK_AGENTIC_DATA,
-    referralData = MOCK_REFERRAL_DATA,
-  ) => ({
-    execute: stubber.stub().resolves(),
-    query: stubber.stub().callsFake((query, database, description) => {
-      if (description.includes('agentic')) {
-        return Promise.resolve(agenticData);
-      } else if (description.includes('referral')) {
-        return Promise.resolve(referralData);
-      }
-      return Promise.resolve([]);
-    }),
-  });
+  const runAudit = (auditContext = {}) => handler.runner('https://example.com', context, site, auditContext);
 
   before(async () => {
-    saveExcelReportStub = sinon.stub().resolves();
-    createLLMOSharepointClientStub = sinon.stub();
-    bulkPublishToAdminHlxStub = sinon.stub().resolves();
-    
-    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
-      '../../../src/utils/report-uploader.js': {
-        createLLMOSharepointClient: createLLMOSharepointClientStub,
-        saveExcelReport: saveExcelReportStub,
-        bulkPublishToAdminHlx: bulkPublishToAdminHlxStub,
+    handler = await esmock('../../../src/cdn-logs-report/handler.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: (...a) => mocks.loadSql(...a),
+        generateReportingPeriods: (...a) => mocks.generateReportingPeriods(...a),
+      },
+      '../../../src/common/agentic-url-classification-rules.js': {
+        fetchAgenticUrlClassificationRules: (...a) => mocks.fetchAgenticUrlClassificationRules(...a),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        pathHasData: (...a) => mocks.pathHasData(...a),
+        getS3Config: (...a) => mocks.getS3Config(...a),
+        getCdnAwsRuntime: (...a) => mocks.getCdnAwsRuntime(...a),
+      },
+      '../../../src/cdn-logs-report/constants/report-configs.js': {
+        getConfigs: (...a) => mocks.getConfigs(...a),
+      },
+      '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+        generatePatternsWorkbook: (...a) => mocks.generatePatternsWorkbook(...a),
+      },
+      '../../../src/cdn-logs-report/utils/agentic-db-export.js': {
+        runAgenticDbExports: (...a) => mocks.runAgenticDbExports(...a),
+      },
+      '../../../src/cdn-logs-report/referral-daily-export.js': {
+        runDailyReferralExport: (...a) => mocks.runDailyReferralExport(...a),
       },
     });
   });
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-    nock.cleanAll();
-    
-    // Reset stubs before each test
-    saveExcelReportStub.reset();
-    createLLMOSharepointClientStub.reset();
-    createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
-    bulkPublishToAdminHlxStub.reset();
-    bulkPublishToAdminHlxStub.resolves();
+
+    athenaClient = { execute: sandbox.stub().resolves() };
+
+    // Defaults: agentic + referral data present, DB already has rules (so no
+    // pattern regeneration), and both daily DB exports succeed with a batchId.
+    mocks.loadSql = sandbox.stub().resolves('SELECT 1');
+    mocks.generateReportingPeriods = sandbox.stub().returns({ weeks: [], periodIdentifier: 'w01-2026' });
+    mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves(EXISTING_RULES);
+    mocks.generatePatternsWorkbook = sandbox.stub().resolves(true);
+    mocks.pathHasData = sandbox.stub().resolves(true);
+    mocks.getS3Config = sandbox.stub().returns({
+      bucket: 'test-bucket',
+      siteKey: 'example_com',
+      siteName: 'example',
+      databaseName: 'cdn_logs_example_com',
+      getAthenaTempLocation: () => 's3://temp',
+    });
+    mocks.getCdnAwsRuntime = sandbox.stub().returns({
+      s3Client: {},
+      createAthenaClient: sandbox.stub().returns(athenaClient),
+    });
+    mocks.getConfigs = sandbox.stub().returns([agenticConfig, referralConfig]);
+    mocks.runAgenticDbExports = sandbox.stub().resolves({
+      dailyAgenticExport: { batchId: 'agentic-batch' },
+      dailyAgenticExports: [],
+    });
+    mocks.runDailyReferralExport = sandbox.stub().resolves({
+      enabled: true,
+      success: true,
+      batchId: 'referral-batch',
+    });
 
     site = {
       getSiteId: () => 'test-site',
@@ -230,41 +131,15 @@ describe('CDN Logs Report Handler', function test() {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        env: {
-          SHAREPOINT_CLIENT_ID: 'test-client-id',
-          SHAREPOINT_CLIENT_SECRET: 'test-client-secret',
-          SHAREPOINT_AUTHORITY: 'https://login.microsoftonline.com/test-tenant-id',
-          SHAREPOINT_DOMAIN_ID: 'test-domain-id',
-        },
+        env: { AWS_ENV: 'test', AWS_REGION: 'us-east-1' },
         log: {
           info: sandbox.spy(),
           debug: sandbox.spy(),
           warn: sandbox.spy(),
           error: sandbox.spy(),
         },
-        s3Client: {
-          send: sandbox.stub().resolves({
-            Contents: [{ Key: 'raw/fastly/2025/01/15/10/file1.log' }],
-          }),
-        },
-        athenaClient: setupAthenaClientWithData(sandbox),
-        dataAccess: {
-          Organization: {
-            findById: sandbox.stub().resolves({
-              getImsOrgId: () => 'test-ims-org-id',
-            }),
-          },
-        },
       })
       .build();
-
-    // Mock the patterns.json endpoint to avoid pattern generation
-    nock('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, {
-        pagetype: { data: [] },
-        products: { data: [] },
-      });
   });
 
   after(async () => {
@@ -274,247 +149,263 @@ describe('CDN Logs Report Handler', function test() {
   });
 
   afterEach(() => {
-    nock.abortPendingRequests();
-    nock.cleanAll();
     sandbox.restore();
   });
 
-  describe('Cdn logs report audit handler', () => {
-    it('successfully processes CDN logs report', async () => {
-      const clock = sinon.useFakeTimers({
-        now: new Date('2025-01-07'),
-        toFake: ['Date']
-      });
-      const auditContext = createAuditContext(sandbox);
-      const result = await handler.runner('https://example.com', context, site, auditContext);
+  describe('happy path', () => {
+    it('runs patterns + both daily exports and assembles the audit result', async () => {
+      const result = await runAudit({});
 
-      // Verify audit result structure
-      expect(result).to.have.property('auditResult').that.is.an('array');
-      expect(result.auditResult).to.have.length.greaterThan(0);
-      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+      // Weekly patterns step ran: DB ensured, existing rules fetched, no regeneration.
+      expect(mocks.loadSql).to.have.been.calledOnce;
+      expect(athenaClient.execute).to.have.been.calledOnce;
+      expect(mocks.fetchAgenticUrlClassificationRules).to.have.been.calledOnce;
+      expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
 
-      // Verify each report config result
-      result.auditResult.forEach((reportResult) => {
-        expect(reportResult).to.have.property('name').that.is.a('string');
-        expect(reportResult).to.have.property('table').that.is.a('string');
-        expect(reportResult).to.have.property('database').that.includes('cdn_logs_');
-        expect(reportResult).to.have.property('customer').that.is.a('string');
-      });
+      // Both daily exports ran.
+      expect(mocks.runAgenticDbExports).to.have.been.calledOnce;
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
 
-      clock.restore();
-      // Verify logging calls
       expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
-
-      // Verify Athena interactions
-      expect(context.athenaClient.execute).to.have.been.callCount(1);
-      expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(result.fullAuditRef).to.equal('test-folder');
+      expect(result.dailyAgenticExports).to.deep.equal([]);
+      expect(result.auditResult).to.deep.equal([
+        { name: 'agentic-db-export', batchId: 'agentic-batch' },
+        { name: 'referral-db-export', batchId: 'referral-batch' },
+      ]);
     });
 
-    it('handles different weekOffset values', async () => {
-      const weekOffset = -2;
-      const auditContext = createAuditContext(sandbox, { weekOffset });
-      const result = await handler.runner('https://example.com', context, site, auditContext);
+    it('omits db-export entries from the audit result when no batchId is returned', async () => {
+      mocks.runAgenticDbExports = sandbox.stub().resolves({ dailyAgenticExport: { enabled: true } });
+      mocks.runDailyReferralExport = sandbox.stub().resolves({ enabled: true, success: true });
 
-      expect(result).to.have.property('auditResult').that.is.an('array');
-      expect(result.auditResult).to.have.length.greaterThan(0);
-      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+      const result = await runAudit({});
 
-      expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(result.auditResult).to.deep.equal([]);
+    });
 
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`week offset: ${weekOffset}`),
+    it('resolves fullAuditRef to "null" when no data folder is configured', async () => {
+      site.getConfig = () => createSiteConfig({ getLlmoDataFolder: () => null });
+
+      const result = await runAudit({});
+
+      expect(result.fullAuditRef).to.equal('null');
+    });
+  });
+
+  describe('patterns generation (weekly step)', () => {
+    it('regenerates DB rules when none exist yet (non-Monday → current week)', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-07'), toFake: ['Date'] }); // Tuesday
+
+      try {
+        await runAudit({});
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      // Non-Monday with no explicit weekOffset → current week (offset 0).
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, 0);
+    });
+
+    it('regenerates DB rules on Mondays using the previous full week offset', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-06'), toFake: ['Date'] }); // Monday
+
+      try {
+        await runAudit({});
+      } finally {
+        clock.restore();
+      }
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      // Monday with no explicit weekOffset → previous full week (offset -1).
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -1);
+    });
+
+    it('regenerates DB rules when only one rule table is populated', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub()
+        .resolves({ pagePatterns: EXISTING_RULES.pagePatterns, topicPatterns: [] });
+
+      await runAudit({ weekOffset: 0 });
+
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+    });
+
+    it('skips regeneration when the DB rule fetch fails', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ error: true, source: 'postgres' });
+
+      await runAudit({ weekOffset: 0 });
+
+      expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'Skipping fresh patterns generation for test-site; DB rule fetch failed',
       );
     });
 
-    it('runs -1 and 0 on Monday when no weekOffset provided', async () => {
-      const clock = sinon.useFakeTimers({
-        now: new Date('2025-01-06'),
-        toFake: ['Date']
-      });
+    it('skips the weekly step entirely when the agentic config is missing', async () => {
+      mocks.getConfigs = sandbox.stub().returns([referralConfig]);
 
-      context.athenaClient.query.resetHistory();
-      const auditContext = createAuditContext(sandbox);
-      await handler.runner('https://example.com', context, site, auditContext);
-      
-      clock.restore();
-      expect(context.athenaClient.query).to.have.been.callCount(4);
+      await runAudit({});
+
+      expect(mocks.pathHasData).to.not.have.been.called;
+      expect(athenaClient.execute).to.not.have.been.called;
+      expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith('No agentic report config found - skipping patterns generation');
     });
 
-    it('runs only week 0 on non-Monday when no weekOffset provided', async () => {
-      const clock = sinon.useFakeTimers({
-        now: new Date('2025-01-07'),
-        toFake: ['Date']
-      });
+    it('contains patterns failures so the daily exports still run', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      athenaClient.execute = sandbox.stub().rejects(new Error('athena down'));
 
-      context.athenaClient.query.resetHistory();
-      const auditContext = createAuditContext(sandbox);
-      await handler.runner('https://example.com', context, site, auditContext);
+      const result = await runAudit({});
 
-      clock.restore();
-      expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(context.log.error).to.have.been.calledWith(
+        'Agentic patterns generation failed for test-site: athena down',
+        sinon.match.instanceOf(Error),
+      );
+      // patterns failure is swallowed → daily exports still run
+      expect(mocks.runAgenticDbExports).to.have.been.calledOnce;
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.auditResult).to.deep.equal([
+        { name: 'agentic-db-export', batchId: 'agentic-batch' },
+        { name: 'referral-db-export', batchId: 'referral-batch' },
+      ]);
     });
 
-    it('uses provided weekOffset regardless of day', async () => {
-      const clock = sinon.useFakeTimers({
-        now: new Date('2025-01-06'),
-        toFake: ['Date']
-      });
+    it('skips the weekly step when the agentic aggregate has no data', async () => {
+      mocks.pathHasData = sandbox.stub().resolves(false);
 
-      context.athenaClient.query.resetHistory();
-      const auditContext = createAuditContext(sandbox, { weekOffset: -3 });
-      await handler.runner('https://example.com', context, site, auditContext);
+      await runAudit({});
 
-      clock.restore();
-      expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(athenaClient.execute).to.not.have.been.called;
+      expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith('No agentic report data found - skipping patterns generation');
     });
 
-    it('handles bulk publish errors gracefully', async () => {
-      bulkPublishToAdminHlxStub.rejects(new Error('Bulk publish failed'));
-      const auditContext = createAuditContext(sandbox);
-      const result = await handler.runner('https://example.com', context, site, auditContext);
+    it('runs the rules step on date-based (backfill) runs too, but does not regenerate when rules exist', async () => {
+      await runAudit({ date: '2026-04-01T10:00:00Z' });
 
-      expect(result).to.have.property('auditResult').that.is.an('array');
-      expect(result.auditResult).to.have.length.greaterThan(0);
-      
-      expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
+      // Patterns step runs on every invocation now (generate-if-missing)...
+      expect(mocks.pathHasData).to.have.been.calledOnce;
+      expect(mocks.fetchAgenticUrlClassificationRules).to.have.been.calledOnce;
+      // ...but existing rules are never overwritten.
+      expect(mocks.generatePatternsWorkbook).to.not.have.been.called;
     });
 
-    describe('LLMO pattern fetch scenarios', () => {
-      it('handles successful pattern fetch', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(200, {
-            pagetype: { data: [{ pattern: 'product-page' }] },
-            products: { data: [{ product: 'adobe-analytics' }] },
-          });
+    it('generates rules on a backfill run when none exist yet', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
 
-        const auditContext = createAuditContext(sandbox);
-        const result = await handler.runner('https://example.com', context, site, auditContext);
+      await runAudit({ date: '2026-04-01T10:00:00Z' });
 
-        // Verify successful execution
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-
-        // Verify pattern fetch was called
-        expect(patternNock.isDone()).to.be.true;
-
-        // Verify queries were executed with pattern data
-        expect(context.athenaClient.query).to.have.been.called;
-      });
-
-      it('handles missing pagetype data', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(200, {
-            products: { data: [{ product: 'adobe-analytics' }] },
-          });
-
-        const auditContext = createAuditContext(sandbox);
-        const result = await handler.runner('https://example.com', context, site, auditContext);
-
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(patternNock.isDone()).to.be.true;
-      });
-
-      it('handles fetch errors gracefully', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(500, 'Server Error');
-
-        const auditContext = createAuditContext(sandbox);
-        const result = await handler.runner('https://example.com', context, site, auditContext);
-
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(patternNock.isDone()).to.be.true;
-
-        expect(context.athenaClient.query).to.have.been.called;
-      });
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
     });
 
-    describe('data processing edge cases', () => {
-      it('logs skipping message when no S3 data found', async () => {
-        context.s3Client = {
-          send: sandbox.stub().resolves({ Contents: [] }),
-        };
+    it('derives the pattern sampling week from auditContext.date (date - 1), not from today', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      // Today (Jun 10) is far from the uploaded data (early May). The sampling week
+      // must come from the backfill date's traffic day, not the empty current week.
+      const clock = sinon.useFakeTimers({ now: new Date('2026-06-10'), toFake: ['Date'] });
 
-        context.athenaClient = setupAthenaClientWithData(sandbox, null, null);
-        const auditContext = createAuditContext(sandbox);
+      try {
+        await runAudit({ date: '2026-05-07T10:00:00Z' });
+      } finally {
+        clock.restore();
+      }
 
-        await handler.runner('https://example.com', context, site, auditContext);
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      const [refDate, offset] = mocks.generateReportingPeriods.firstCall.args;
+      // date - 1 = 2026-05-06 (UTC midnight); current week of that date (offset 0).
+      expect(refDate.toISOString()).to.equal('2026-05-06T00:00:00.000Z');
+      expect(offset).to.equal(0);
+    });
 
-        expect(context.log.info).to.have.been.calledWith('No data found for agentic report - skipping');
-        expect(context.log.info).to.have.been.calledWith('No data found for referral report - skipping');
-      });
+    it('falls back to the current-week offset when auditContext.date is invalid', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-07'), toFake: ['Date'] }); // Tuesday
 
-      it('logs warning when Athena query returns empty data', async () => {
-        context.athenaClient = setupAthenaClientWithData(sandbox, [], null);
-        const auditContext = createAuditContext(sandbox);
+      try {
+        await runAudit({ date: 'not-a-real-date' });
+      } finally {
+        clock.restore();
+      }
 
-        const result = await handler.runner('https://example.com', context, site, auditContext);
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, 0);
+    });
 
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/No data returned from Athena query for .* report \(.*\)\./)
-        );
-      });
+    it('falls back to the previous-week offset on Mondays when auditContext.date is invalid', async () => {
+      mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const clock = sinon.useFakeTimers({ now: new Date('2025-01-06'), toFake: ['Date'] }); // Monday
 
-      it('handles Athena query errors gracefully', async () => {
-        const queryError = new Error('Athena query failed: Table not found');
-        context.athenaClient = {
-          execute: sandbox.stub().resolves(),
-          query: sandbox.stub().rejects(queryError),
-        };
-        const auditContext = createAuditContext(sandbox);
+      try {
+        await runAudit({ date: 'not-a-real-date' });
+      } finally {
+        clock.restore();
+      }
 
-        await handler.runner('https://example.com', context, site, auditContext);
+      expect(mocks.generatePatternsWorkbook).to.have.been.calledOnce;
+      expect(mocks.generateReportingPeriods).to.have.been.calledWithMatch(sinon.match.any, -1);
+    });
+  });
 
-        expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/.* report generation failed: Athena query failed/)
-        );
-        expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to generate .* report for site .*: Athena query failed/)
-        );
+  describe('daily referral export', () => {
+    it('passes referenceDate through when auditContext.date is provided', async () => {
+      await runAudit({ date: '2026-04-01T10:00:00Z' });
+
+      expect(mocks.runDailyReferralExport.firstCall.args[0].referenceDate.toISOString())
+        .to.equal('2026-04-01T10:00:00.000Z');
+    });
+
+    it('runs the referral export on weekOffset runs (no longer gated)', async () => {
+      const result = await runAudit({ weekOffset: -2 });
+
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        batchId: 'referral-batch',
       });
     });
 
-    describe('site filter configurations', () => {
-      it('handles exclude filters and no dataFolder scenarios', async () => {
-        site.getConfig = () => createSiteConfig({
-          getLlmoDataFolder: () => null,
-          getLlmoCdnlogsFilter: () => [{
-            value: ['bot', 'crawler'],
-            key: 'user_agent',
-            type: 'exclude',
-          }, {
-            value: ['www.example.com'],
-            key: 'host',
-          }],
-        });
+    it('runs the referral export on categories-update runs (no longer gated)', async () => {
+      const result = await runAudit({ date: '2026-04-01T00:00:00Z', categoriesUpdated: true });
 
-        const auditContext = createAuditContext(sandbox);
-        const result = await handler.runner('https://example.com', context, site, auditContext);
-
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(result).to.have.property('fullAuditRef').that.equals('null');
-
-        expect(context.athenaClient.query).to.have.been.called;
+      expect(mocks.runDailyReferralExport).to.have.been.calledOnce;
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        batchId: 'referral-batch',
       });
+    });
 
-      it('handles empty filters array', async () => {
-        site.getConfig = () => createSiteConfig({
-          getLlmoCdnlogsFilter: () => [],
-        });
+    it('skips the referral export when the referral config is missing', async () => {
+      mocks.getConfigs = sandbox.stub().returns([agenticConfig]);
 
-        const auditContext = createAuditContext(sandbox);
-        const result = await handler.runner('https://example.com', context, site, auditContext);
+      const result = await runAudit({});
 
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+      expect(mocks.runDailyReferralExport).to.not.have.been.called;
+      expect(result.dailyReferralExport).to.equal(undefined);
+      expect(context.log.debug).to.have.been.calledWith(
+        'Skipping daily referral export for test-site: referral report config not found',
+      );
+    });
 
-        expect(context.athenaClient.query).to.have.been.called;
+    it('captures referral export failures without failing the handler', async () => {
+      mocks.runDailyReferralExport = sandbox.stub().rejects(new Error('referral boom'));
+
+      const result = await runAudit({});
+
+      expect(context.log.error).to.have.been.calledWith(
+        'Failed daily referral export for site test-site: referral boom',
+        sinon.match.instanceOf(Error),
+      );
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: false,
+        siteId: 'test-site',
+        error: 'referral boom',
       });
     });
   });

@@ -22,13 +22,14 @@ WHERE year  = '{{year}}'
   {{hourFilter}}
 
    -- match known LLM-related user-agents
-  AND REGEXP_LIKE("cs(user-agent)", '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
+  AND REGEXP_LIKE("cs(user-agent)", '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count text/html responses with robots.txt and sitemaps
+  -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt, llms.txt and sitemaps
   AND (
-    "sc-content-type" LIKE 'text/html%'
-    OR "sc-content-type" LIKE 'application/pdf%'
-    OR "cs-uri-stem" LIKE '%robots.txt' 
+    REGEXP_LIKE(lower("sc-content-type"), '^(text/html|application/pdf|text/markdown)')
+    OR REGEXP_LIKE(lower("cs-uri-stem"), '\.md(\?.*)?$')
+    OR "cs-uri-stem" LIKE '%robots.txt'
+    OR REGEXP_LIKE(lower("cs-uri-stem"), 'llms(-full)?\.txt$')
     OR "cs-uri-stem" LIKE '%sitemap%'
   )
 

@@ -33,6 +33,9 @@ async function analyzeHtmlForPrerender(directHtml, scrapedHtml, threshold = 1.2)
     contentGainRatio: stats.contentIncreaseRatio,
     wordCountBefore: stats.wordCountBefore,
     wordCountAfter: stats.wordCountAfter,
+    // Citability metrics from the same calculateStats call (avoids a second invocation)
+    citabilityScore: stats.citationReadability,
+    wordDifference: stats.wordDiff,
   };
 }
 

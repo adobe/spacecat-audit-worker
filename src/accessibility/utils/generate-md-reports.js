@@ -53,7 +53,9 @@ function sortIssuesByLevelAndCount(a, b) {
  * @returns {string} Text with HTML tags escaped
  */
 function escapeHtmlTags(text) {
-  if (!text) return '';
+  if (!text) {
+    return '';
+  }
   const backtickContent = [];
   let escapedText = text.replace(/`([^`]+)`/g, (match, content) => {
     backtickContent.push(content);
@@ -131,10 +133,14 @@ function calculateWCAGData(currentFile) {
   const violationsByLevel = { A: 0, AA: 0 };
 
   Object.values(criticalItems).forEach((item) => {
-    if (item.level) violationsByLevel[item.level] += 1;
+    if (item.level) {
+      violationsByLevel[item.level] += 1;
+    }
   });
   Object.values(seriousItems).forEach((item) => {
-    if (item.level) violationsByLevel[item.level] += 1;
+    if (item.level) {
+      violationsByLevel[item.level] += 1;
+    }
   });
 
   const levelATotal = 30;
@@ -214,14 +220,20 @@ function calculateDiffData(currentFile, lastWeekFile) {
   };
 
   Object.entries(currentFile).forEach(([url, data]) => {
-    if (url === 'overall') return;
+    if (url === 'overall') {
+      return;
+    }
     const prevData = lastWeekFile[url];
 
     ['critical', 'serious'].forEach((level) => {
       Object.entries(data.violations[level].items || {}).forEach(([issue]) => {
-        if (isImageAltIssue(issue)) return;
+        if (isImageAltIssue(issue)) {
+          return;
+        }
         if (!prevData || !prevData.violations[level].items[issue]) {
-          if (!diffData.newIssues[level][url]) diffData.newIssues[level][url] = [];
+          if (!diffData.newIssues[level][url]) {
+            diffData.newIssues[level][url] = [];
+          }
           diffData.newIssues[level][url].push(issue);
         }
       });
@@ -229,14 +241,20 @@ function calculateDiffData(currentFile, lastWeekFile) {
   });
 
   Object.entries(lastWeekFile).forEach(([url, data]) => {
-    if (url === 'overall') return;
+    if (url === 'overall') {
+      return;
+    }
     const currentPageData = currentFile[url];
 
     ['critical', 'serious'].forEach((level) => {
       Object.entries(data.violations[level].items || {}).forEach(([issue]) => {
-        if (isImageAltIssue(issue)) return;
+        if (isImageAltIssue(issue)) {
+          return;
+        }
         if (!currentPageData || !currentPageData.violations[level].items[issue]) {
-          if (!diffData.fixedIssues[level][url]) diffData.fixedIssues[level][url] = [];
+          if (!diffData.fixedIssues[level][url]) {
+            diffData.fixedIssues[level][url] = [];
+          }
           diffData.fixedIssues[level][url].push(issue);
         }
       });
@@ -341,7 +359,9 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
   const filteredIssues = filterImageAltIssues(allIssues);
   const sortedIssues = filteredIssues.sort(sortIssuesByLevelAndCount);
 
-  if (sortedIssues.length === 0) return '';
+  if (sortedIssues.length === 0) {
+    return '';
+  }
 
   let section = '\n### Accessibility Issues Overview\n\n';
   section += '| Issue | WCAG Success Criterion | Count| Level |Impact| Description | WCAG Docs Link |\n';
@@ -360,7 +380,9 @@ function generateAccessibilityIssuesOverviewSection(issuesOverview) {
 function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, currentData) {
   const issuesLookup = {};
   [...issuesOverview.levelA, ...issuesOverview.levelAA].forEach((issue) => {
-    if (isImageAltIssue(issue.rule)) return;
+    if (isImageAltIssue(issue.rule)) {
+      return;
+    }
 
     issuesLookup[issue.rule] = {
       description: escapeHtmlTags(issue.description),
@@ -386,7 +408,9 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
           const count = parseInt(match[1], 10);
           const issueName = match[2];
 
-          if (isImageAltIssue(issueName)) return;
+          if (isImageAltIssue(issueName)) {
+            return;
+          }
 
           if (!commonIssues[issueName]) {
             commonIssues[issueName] = {
@@ -407,9 +431,13 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
 
   const sortedIssues = Object.values(commonIssues)
     .sort((a, b) => {
-      if (a.level !== b.level) return a.level === 'A' ? -1 : 1;
+      if (a.level !== b.level) {
+        return a.level === 'A' ? -1 : 1;
+      }
       const pagesDiff = b.pages.length - a.pages.length;
-      if (pagesDiff !== 0) return pagesDiff;
+      if (pagesDiff !== 0) {
+        return pagesDiff;
+      }
       const aTotal = a.pages.reduce((sum, p) => sum + p.count, 0);
       const bTotal = b.pages.reduce((sum, p) => sum + p.count, 0);
       return bTotal - aTotal;
@@ -454,7 +482,9 @@ function generateEnhancingAccessibilitySection(trafficViolations, issuesOverview
 function generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl) {
   const groupedIssues = new Map();
   quickWinsData.topIssues.forEach((issue) => {
-    if (isImageAltIssue(issue.id)) return;
+    if (isImageAltIssue(issue.id)) {
+      return;
+    }
 
     const descriptionKey = issue.description;
     if (!groupedIssues.has(descriptionKey)) {
@@ -481,7 +511,9 @@ function generateQuickWinsOverviewSection(quickWinsData, enhancedReportUrl) {
     }))
     .sort((a, b) => {
       const percentageDiff = parseFloat(b.percentage) - parseFloat(a.percentage);
-      if (percentageDiff !== 0) return percentageDiff;
+      if (percentageDiff !== 0) {
+        return percentageDiff;
+      }
       return a.level === 'A' ? -1 : 1;
     })
     .slice(0, 3);
@@ -520,11 +552,15 @@ function generateQuickWinsPagesSection(quickWinsData) {
 
   if (quickWinsData.allViolations) {
     Object.entries(quickWinsData.allViolations).forEach(([url, data]) => {
-      if (url === 'overall') return;
+      if (url === 'overall') {
+        return;
+      }
 
       ['critical', 'serious'].forEach((level) => {
         Object.entries(data.violations[level].items || {}).forEach(([issueName, issueData]) => {
-          if (isImageAltIssue(issueName)) return;
+          if (isImageAltIssue(issueName)) {
+            return;
+          }
 
           if (!issuePageMap[issueName]) {
             issuePageMap[issueName] = [];
@@ -546,7 +582,9 @@ function generateQuickWinsPagesSection(quickWinsData) {
 
   const groupedIssues = new Map();
   quickWinsData.topIssues.forEach((issue) => {
-    if (isImageAltIssue(issue.id)) return;
+    if (isImageAltIssue(issue.id)) {
+      return;
+    }
 
     const descriptionKey = issue.description;
     if (!groupedIssues.has(descriptionKey)) {
@@ -654,7 +692,9 @@ function generateWeekOverWeekSection(currentData, previousData, fixedVsNewReport
     .map(([issue]) => `\`${issue}\``)
     .join(', ') || '-';
 
-  if (criticalFixed === '-' && criticalImproved === '-' && criticalNew === '-' && seriousFixed === '-' && seriousImproved === '-' && seriousNew === '-') return '';
+  if (criticalFixed === '-' && criticalImproved === '-' && criticalNew === '-' && seriousFixed === '-' && seriousImproved === '-' && seriousNew === '-') {
+    return '';
+  }
 
   sections.push(
     `| **[Critical](${fixedVsNewReportUrl})** | ${criticalFixed} | ${criticalImproved} | ${criticalNew} |\n`,
@@ -794,7 +834,9 @@ function generateEnhancedReportMarkdown(mdData) {
  */
 function generateFixedNewReportMarkdown(mdData) {
   const { current, lastWeek } = mdData;
-  if (!lastWeek?.overall?.violations) return '';
+  if (!lastWeek?.overall?.violations) {
+    return '';
+  }
 
   const diffData = calculateDiffData(current, lastWeek);
   const sections = [];

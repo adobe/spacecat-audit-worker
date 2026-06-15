@@ -11,24 +11,28 @@
  */
 
 import { DATA_SOURCES } from '../common/constants.js';
+import { AUDIT_TYPE } from './constants.js';
 
 export function createOpportunityData(props = {}) {
+  const { guidance = {} } = props;
+
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Improve image semantic visibility for LLMs',
-    description: 'Marketing images on this site contain text that is not represented in HTML. Adding semantic HTML makes this content visible to search engines and AI models.',
+    title: 'Expose in-image text to AI search and LLMs',
+    description: 'Make text inside images readable to AI search engines, without changing how the page looks to visitors. Images often contain valuable copy (headlines, offers, or calls-to-action) that only humans can see; adding semantic HTML makes it indexable too.',
     guidance: {
-      steps: [
-        'Review the detected marketing images and their extracted text.',
-        'Verify the generated semantic HTML accurately represents the image content.',
-        'Approve or edit the suggestions before deployment.',
-      ],
+      insight: guidance.insight,
+      rationale: guidance.rationale,
+      recommendation: guidance.recommendation,
     },
-    tags: ['LLMO', 'SEO', 'Images'],
+    tags: ['isElmo', 'content', 'edgeOptimize'],
     data: {
-      ...props,
       dataSources: [DATA_SOURCES.SITE],
+      // Stable per-audit discriminator — required because OPPORTUNITY_TYPE is a shared bucket
+      // (generic-autofix-edge). Without this, stale-scan and upsert would match any
+      // generic-autofix-edge opportunity on the site, not just SVV ones.
+      additionalMetrics: [{ key: 'subtype', value: AUDIT_TYPE }],
     },
   };
 }

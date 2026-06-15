@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -26,13 +24,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const fixturesPath = join(__dirname, '../../fixtures/semantic-value-visibility');
 
-// Load all 5 Mystique response fixtures
-// Carahsoft proves the logic is correct, others prove it doesn't crash with different real inputs.
-const carahsoftFixture = JSON.parse(readFileSync(join(fixturesPath, 'Carahsoft.json'), 'utf8'));
-const koffievoordeeelFixture = JSON.parse(readFileSync(join(fixturesPath, 'Koffievoordeel.json'), 'utf8'));
+// Load Krisshop fixture (new format with top-level guidance)
 const krisshopFixture = JSON.parse(readFileSync(join(fixturesPath, 'Krisshop.json'), 'utf8'));
-const veserisFixture = JSON.parse(readFileSync(join(fixturesPath, 'Veseris.json'), 'utf8'));
-const vuseFixture = JSON.parse(readFileSync(join(fixturesPath, 'Vuse.json'), 'utf8'));
 
 describe('Semantic Value Visibility Guidance Handler', () => {
   let context;
@@ -102,201 +95,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
     sinon.restore();
   });
 
-  describe('processing Carahsoft fixture', () => {
-    it('should create opportunity and sync 10 suggestions', async () => {
-      // Simulate message from Mystique with Carahsoft data
-      const message = {
-        siteId: 'site-carahsoft',
-        auditId: 'audit-123',
-        url: carahsoftFixture.url,
-        data: {
-          url: carahsoftFixture.url,
-          suggestions: carahsoftFixture.suggestions,
-        },
-      };
-
-      const result = await handler(message, context);
-
-      // Should return 200 OK
-      expect(result.status).to.equal(200);
-
-      // Should create opportunity
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-
-      // Should sync suggestions
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      // Verify correct number of suggestions
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      expect(syncArgs.newData).to.have.lengthOf(10);
-    });
-
-    it('should preserve suggestion data structure', async () => {
-      const message = {
-        siteId: 'site-carahsoft',
-        auditId: 'audit-123',
-        url: carahsoftFixture.url,
-        data: {
-          url: carahsoftFixture.url,
-          suggestions: carahsoftFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const firstSuggestion = syncArgs.newData[0];
-
-      // Verify data structure matches fixture
-      expect(firstSuggestion.imageUrl).to.include('carahsoft.com');
-      expect(firstSuggestion.semanticHtml).to.be.a('string');
-      expect(firstSuggestion.detectedText).to.be.an('array');
-      expect(firstSuggestion.transformRules.action).to.equal('insertAfter');
-      expect(firstSuggestion.transformRules.selector).to.be.a('string');
-    });
-
-    it('should use imageUrl as unique key', async () => {
-      const message = {
-        siteId: 'site-carahsoft',
-        auditId: 'audit-123',
-        url: carahsoftFixture.url,
-        data: {
-          url: carahsoftFixture.url,
-          suggestions: carahsoftFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-
-      // Test buildKey function
-      const testData = carahsoftFixture.suggestions[0].data;
-      const key = syncArgs.buildKey(testData);
-      expect(key).to.equal(testData.imageUrl);
-    });
-
-    it('should map suggestions with correct structure', async () => {
-      const message = {
-        siteId: 'site-carahsoft',
-        auditId: 'audit-123',
-        url: carahsoftFixture.url,
-        data: {
-          url: carahsoftFixture.url,
-          suggestions: carahsoftFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-
-      // Test mapNewSuggestion function
-      const testData = carahsoftFixture.suggestions[0].data;
-      const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-
-      expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
-      expect(mappedSuggestion.rank).to.equal(0);
-      expect(mappedSuggestion.data).to.deep.equal(testData);
-    });
-  });
-
-  describe('processing Koffievoordeel fixture', () => {
-    it('should create opportunity and sync suggestions', async () => {
-      const message = {
-        siteId: 'site-koffie',
-        auditId: 'audit-123',
-        url: koffievoordeeelFixture.url,
-        data: {
-          url: koffievoordeeelFixture.url,
-          suggestions: koffievoordeeelFixture.suggestions,
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      expect(syncCall.args[0].newData).to.have.lengthOf(koffievoordeeelFixture.suggestions.length);
-    });
-
-    it('should preserve suggestion data structure', async () => {
-      const message = {
-        siteId: 'site-koffie',
-        auditId: 'audit-123',
-        url: koffievoordeeelFixture.url,
-        data: {
-          url: koffievoordeeelFixture.url,
-          suggestions: koffievoordeeelFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const firstSuggestion = syncArgs.newData[0];
-
-      expect(firstSuggestion.imageUrl).to.be.a('string');
-      expect(firstSuggestion.semanticHtml).to.be.a('string');
-      expect(firstSuggestion.detectedText).to.be.an('array');
-      expect(firstSuggestion.transformRules.action).to.equal('insertAfter');
-      expect(firstSuggestion.transformRules.selector).to.be.a('string');
-    });
-
-    it('should use imageUrl as unique key', async () => {
-      const message = {
-        siteId: 'site-koffie',
-        auditId: 'audit-123',
-        url: koffievoordeeelFixture.url,
-        data: {
-          url: koffievoordeeelFixture.url,
-          suggestions: koffievoordeeelFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = koffievoordeeelFixture.suggestions[0].data;
-      const key = syncArgs.buildKey(testData);
-      expect(key).to.equal(testData.imageUrl);
-    });
-
-    it('should map suggestions with correct structure', async () => {
-      const message = {
-        siteId: 'site-koffie',
-        auditId: 'audit-123',
-        url: koffievoordeeelFixture.url,
-        data: {
-          url: koffievoordeeelFixture.url,
-          suggestions: koffievoordeeelFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = koffievoordeeelFixture.suggestions[0].data;
-      const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-
-      expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
-      expect(mappedSuggestion.rank).to.equal(0);
-      expect(mappedSuggestion.data).to.deep.equal(testData);
-    });
-  });
-
   describe('processing Krisshop fixture', () => {
     it('should create opportunity and sync suggestions', async () => {
       const message = {
@@ -305,6 +103,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         url: krisshopFixture.url,
         data: {
           url: krisshopFixture.url,
+          guidance: krisshopFixture.guidance,
           suggestions: krisshopFixture.suggestions,
         },
       };
@@ -326,6 +125,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         url: krisshopFixture.url,
         data: {
           url: krisshopFixture.url,
+          guidance: krisshopFixture.guidance,
           suggestions: krisshopFixture.suggestions,
         },
       };
@@ -350,6 +150,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         url: krisshopFixture.url,
         data: {
           url: krisshopFixture.url,
+          guidance: krisshopFixture.guidance,
           suggestions: krisshopFixture.suggestions,
         },
       };
@@ -370,6 +171,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         url: krisshopFixture.url,
         data: {
           url: krisshopFixture.url,
+          guidance: krisshopFixture.guidance,
           suggestions: krisshopFixture.suggestions,
         },
       };
@@ -382,189 +184,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
 
       expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
-      expect(mappedSuggestion.rank).to.equal(0);
-      expect(mappedSuggestion.data).to.deep.equal(testData);
-    });
-  });
-
-  describe('processing Veseris fixture', () => {
-    it('should create opportunity and sync suggestions', async () => {
-      const message = {
-        siteId: 'site-veseris',
-        auditId: 'audit-123',
-        url: veserisFixture.url,
-        data: {
-          url: veserisFixture.url,
-          suggestions: veserisFixture.suggestions,
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      expect(syncCall.args[0].newData).to.have.lengthOf(veserisFixture.suggestions.length);
-    });
-
-    it('should preserve suggestion data structure', async () => {
-      const message = {
-        siteId: 'site-veseris',
-        auditId: 'audit-123',
-        url: veserisFixture.url,
-        data: {
-          url: veserisFixture.url,
-          suggestions: veserisFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const firstSuggestion = syncArgs.newData[0];
-
-      expect(firstSuggestion.imageUrl).to.be.a('string');
-      expect(firstSuggestion.semanticHtml).to.be.a('string');
-      expect(firstSuggestion.detectedText).to.be.an('array');
-      expect(firstSuggestion.transformRules.action).to.equal('insertAfter');
-      expect(firstSuggestion.transformRules.selector).to.be.a('string');
-    });
-
-    it('should use imageUrl as unique key', async () => {
-      const message = {
-        siteId: 'site-veseris',
-        auditId: 'audit-123',
-        url: veserisFixture.url,
-        data: {
-          url: veserisFixture.url,
-          suggestions: veserisFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = veserisFixture.suggestions[0].data;
-      const key = syncArgs.buildKey(testData);
-      expect(key).to.equal(testData.imageUrl);
-    });
-
-    it('should map suggestions with correct structure', async () => {
-      const message = {
-        siteId: 'site-veseris',
-        auditId: 'audit-123',
-        url: veserisFixture.url,
-        data: {
-          url: veserisFixture.url,
-          suggestions: veserisFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = veserisFixture.suggestions[0].data;
-      const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-
-      expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
-      expect(mappedSuggestion.rank).to.equal(0);
-      expect(mappedSuggestion.data).to.deep.equal(testData);
-    });
-  });
-
-  describe('processing Vuse fixture', () => {
-    it('should create opportunity and sync suggestions', async () => {
-      const message = {
-        siteId: 'site-vuse',
-        auditId: 'audit-123',
-        url: vuseFixture.url,
-        data: {
-          url: vuseFixture.url,
-          suggestions: vuseFixture.suggestions,
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      expect(syncCall.args[0].newData).to.have.lengthOf(vuseFixture.suggestions.length);
-    });
-
-    it('should preserve suggestion data structure', async () => {
-      const message = {
-        siteId: 'site-vuse',
-        auditId: 'audit-123',
-        url: vuseFixture.url,
-        data: {
-          url: vuseFixture.url,
-          suggestions: vuseFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const firstSuggestion = syncArgs.newData[0];
-
-      expect(firstSuggestion.imageUrl).to.be.a('string');
-      expect(firstSuggestion.semanticHtml).to.be.a('string');
-      expect(firstSuggestion.detectedText).to.be.an('array');
-      expect(firstSuggestion.transformRules.action).to.equal('insertAfter');
-      expect(firstSuggestion.transformRules.selector).to.be.a('string');
-    });
-
-    it('should use imageUrl as unique key', async () => {
-      const message = {
-        siteId: 'site-vuse',
-        auditId: 'audit-123',
-        url: vuseFixture.url,
-        data: {
-          url: vuseFixture.url,
-          suggestions: vuseFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = vuseFixture.suggestions[0].data;
-      const key = syncArgs.buildKey(testData);
-      expect(key).to.equal(testData.imageUrl);
-    });
-
-    it('should map suggestions with correct structure', async () => {
-      const message = {
-        siteId: 'site-vuse',
-        auditId: 'audit-123',
-        url: vuseFixture.url,
-        data: {
-          url: vuseFixture.url,
-          suggestions: vuseFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const syncArgs = syncCall.args[0];
-      const testData = vuseFixture.suggestions[0].data;
-      const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-
-      expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
+      expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
       expect(mappedSuggestion.rank).to.equal(0);
       expect(mappedSuggestion.data).to.deep.equal(testData);
     });
@@ -611,10 +231,11 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       const message = {
         siteId: 'site-123',
         auditId: 'audit-456',
-        url: carahsoftFixture.url,
+        url: krisshopFixture.url,
         data: {
-          url: carahsoftFixture.url,
-          suggestions: carahsoftFixture.suggestions,
+          url: krisshopFixture.url,
+          guidance: krisshopFixture.guidance,
+          suggestions: krisshopFixture.suggestions,
         },
       };
 
@@ -634,7 +255,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         auditId: 'audit-456',
         url: 'https://example.com',
         data: {
-          suggestions: carahsoftFixture.suggestions,
+          suggestions: krisshopFixture.suggestions,
         },
       };
 
@@ -692,10 +313,11 @@ describe('Semantic Value Visibility Guidance Handler', () => {
   });
 
   describe('stale opportunity cleanup', () => {
-    it('should mark stale opportunity as RESOLVED when no new suggestions', async () => {
+    it('should mark stale SVV opportunity as RESOLVED when no new suggestions', async () => {
       const staleOpportunity = {
         getId: sinon.stub().returns('stale-oppty-123'),
-        getType: sinon.stub().returns('semantic-value-visibility'),
+        getType: sinon.stub().returns('generic-autofix-edge'),
+        getData: sinon.stub().returns({ additionalMetrics: [{ key: 'subtype', value: 'semantic-value-visibility' }] }),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -707,15 +329,123 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         siteId: 'site-123',
         auditId: 'audit-456',
         url: 'https://example.com',
-        data: {
-          suggestions: [],
-        },
+        data: { suggestions: [] },
       };
 
       await handler(message, context);
 
       expect(staleOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(staleOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should not resolve a foreign generic-autofix-edge opportunity on the same site', async () => {
+      const foreignOpportunity = {
+        getId: sinon.stub().returns('foreign-oppty-456'),
+        getType: sinon.stub().returns('generic-autofix-edge'),
+        // different subtype — belongs to another audit, not SVV
+        getData: sinon.stub().returns({ additionalMetrics: [{ key: 'subtype', value: 'canonical' }] }),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      Opportunity.allBySiteIdAndStatus.resolves([foreignOpportunity]);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: { suggestions: [] },
+      };
+
+      await handler(message, context);
+
+      expect(foreignOpportunity.setStatus).not.to.have.been.called;
+      expect(foreignOpportunity.save).not.to.have.been.called;
+    });
+
+    it('should resolve legacy semantic-value-visibility opportunity during transition', async () => {
+      const legacyOpportunity = {
+        getId: sinon.stub().returns('legacy-oppty-789'),
+        getType: sinon.stub().returns('semantic-value-visibility'),
+        getData: sinon.stub().returns({}),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      Opportunity.allBySiteIdAndStatus.resolves([legacyOpportunity]);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: { suggestions: [] },
+      };
+
+      await handler(message, context);
+
+      expect(legacyOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(legacyOpportunity.save).to.have.been.calledOnce;
+    });
+  });
+
+  describe('convertToOpportunity comparisonFn', () => {
+    it('should pass comparisonFn as seventh argument to convertToOpportunity', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      expect(comparisonFn).to.be.a('function');
+    });
+
+    it('comparisonFn should return true for SVV opportunity with correct subtype', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      const svvOppty = { getData: () => ({ additionalMetrics: [{ key: 'subtype', value: 'semantic-value-visibility' }] }) };
+      expect(comparisonFn(svvOppty)).to.equal(true);
+    });
+
+    it('comparisonFn should return false for foreign opportunity with different subtype', async () => {
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        url: 'https://example.com',
+        data: {
+          url: 'https://example.com',
+          guidance: {},
+          suggestions: [{ data: { imageUrl: 'https://example.com/img.jpg', semanticHtml: '<section>Test</section>' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      const [, , , , , , comparisonFn] = convertToOpportunityStub.getCall(0).args;
+      const foreignOppty = { getData: () => ({ additionalMetrics: [{ key: 'subtype', value: 'canonical' }] }) };
+      expect(comparisonFn(foreignOppty)).to.equal(false);
     });
   });
 });

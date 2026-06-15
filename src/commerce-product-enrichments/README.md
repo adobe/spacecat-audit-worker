@@ -23,7 +23,7 @@ Prepares the audit context and returns metadata for the import worker.
 
 Retrieves top pages and prepares them for content scraping.
 
-- Fetches top pages from Ahrefs data (via `SiteTopPage.allBySiteIdAndSourceAndGeo`)
+- Fetches top pages from SEO data (via `SiteTopPage.allBySiteIdAndSourceAndGeo`)
 - Combines with manually included URLs from site configuration
 - Filters out PDF files
 - Removes duplicates
@@ -37,7 +37,7 @@ Processes scraped content and generates audit results.
 
 ## Data Sources
 
-- **Ahrefs**: Top pages data
+- **SEO Provider**: Top pages data
 - **Site Configuration**: Included URLs
 - **Content Scraper**: Page content
 

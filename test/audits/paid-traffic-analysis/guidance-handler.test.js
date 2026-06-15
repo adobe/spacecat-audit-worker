@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -84,9 +82,12 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Suggestion = {
       create: sandbox.stub().resolves(),
+      saveMany: sandbox.stub().resolves(),
       STATUSES: SuggestionDataAccess.STATUSES,
       TYPES: SuggestionDataAccess.TYPES,
     };
+
+    Opportunity.saveMany = sandbox.stub().resolves();
 
     context = {
       log: {
@@ -364,6 +365,50 @@ describe('Paid-traffic-analysis guidance handler', () => {
     // Only month-based old2 should be ignored
     expect(old1.setStatus).to.not.have.been.called;
     expect(old2.setStatus).to.have.been.calledWith('IGNORED');
+  });
+
+  it('does not ignore weekly opportunities (with both week and month) when creating monthly', async () => {
+    // Weekly opportunities have both week AND month in their data (from mapToPaidOpportunity)
+    const weeklyWithMonth = {
+      getType: () => 'paid-traffic',
+      getStatus: () => 'NEW',
+      getId: () => 'old-weekly',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: () => ({ week: 8, month: 2, year: 2026 }),
+      getTitle: () => 'Paid Traffic Weekly Report – Week 8 / 2026',
+    };
+    const monthlyOld = {
+      getType: () => 'paid-traffic',
+      getStatus: () => 'NEW',
+      getId: () => 'old-monthly',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: () => ({ month: 12, year: 2025 }),
+      getTitle: () => 'Paid Traffic Monthly Report – Month 12 / 2025',
+    };
+    Opportunity.allBySiteId.resolves([weeklyWithMonth, monthlyOld]);
+
+    // New monthly opportunity
+    dummyAudit.getAuditResult = () => ({
+      siteId, month: 1, year: 2026, temporalCondition: 'year=2026 AND month=1',
+    });
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    // Weekly opportunity must NOT be ignored even though it has month in data
+    expect(weeklyWithMonth.setStatus).to.not.have.been.called;
+    // Old monthly should be ignored
+    expect(monthlyOld.setStatus).to.have.been.calledWith('IGNORED');
   });
 
   it('does not ignore any opportunities when period has neither week nor month', async () => {

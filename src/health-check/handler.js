@@ -24,7 +24,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const LOG_PREFIX = '[HealthCheck]';
-const AHREFS_TOP_PAGES_FRESHNESS_DAYS = 8;
+const SEO_TOP_PAGES_FRESHNESS_DAYS = 8;
 const MS_IN_A_DAY = 24 * 60 * 60 * 1000;
 
 /**
@@ -70,10 +70,10 @@ function buildSpacecatUserAgentAccessResult(status, statusCode, reason, scrapedA
   };
 }
 
-function buildAhrefsTopPagesImportResult(status, reason = null) {
+function buildSeoTopPagesImportResult(status, reason = null) {
   return {
     status,
-    freshnessDays: AHREFS_TOP_PAGES_FRESHNESS_DAYS,
+    freshnessDays: SEO_TOP_PAGES_FRESHNESS_DAYS,
     reason,
   };
 }
@@ -87,10 +87,10 @@ function buildEffectiveUrlNoRedirectResult(status, statusCode, checkedUrl, reaso
   };
 }
 
-function buildAuditResult(spacecatUserAgentAccess, ahrefsTopPagesImport, effectiveUrlNoRedirect) {
+function buildAuditResult(spacecatUserAgentAccess, seoTopPagesImport, effectiveUrlNoRedirect) {
   return {
     spacecatUserAgentAccess,
-    ahrefsTopPagesImport,
+    seoTopPagesImport,
     effectiveUrlNoRedirect,
   };
 }
@@ -103,27 +103,27 @@ export function getEffectiveBaseURL(site) {
   return site.getBaseURL();
 }
 
-export async function checkAhrefsTopPagesImport(context, now = new Date()) {
+export async function checkSeoTopPagesImport(context, now = new Date()) {
   const { site, dataAccess, log } = context;
   const siteId = site.getId();
-  const thresholdTimestamp = now.getTime() - (AHREFS_TOP_PAGES_FRESHNESS_DAYS * MS_IN_A_DAY);
+  const thresholdTimestamp = now.getTime() - (SEO_TOP_PAGES_FRESHNESS_DAYS * MS_IN_A_DAY);
 
   try {
     const siteTopPagesModel = dataAccess?.SiteTopPage;
     if (!siteTopPagesModel?.allBySiteIdAndSourceAndGeo) {
-      return buildAhrefsTopPagesImportResult(
+      return buildSeoTopPagesImportResult(
         'error',
         'SiteTopPage data access is unavailable',
       );
     }
 
-    const result = await siteTopPagesModel.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const result = await siteTopPagesModel.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     const topPages = Array.isArray(result) ? result : result?.data ?? [];
 
     if (topPages.length === 0) {
-      return buildAhrefsTopPagesImportResult(
+      return buildSeoTopPagesImportResult(
         'error',
-        'No Ahrefs top-pages import records found',
+        'No SEO top-pages import records found',
       );
     }
 
@@ -147,24 +147,24 @@ export async function checkAhrefsTopPagesImport(context, now = new Date()) {
 
       // The check only requires evidence of a recent successful import.
       if (importedAtMs >= thresholdTimestamp) {
-        return buildAhrefsTopPagesImportResult('ok', null);
+        return buildSeoTopPagesImportResult('ok', null);
       }
     }
 
     if (!hasValidImportedAt) {
-      return buildAhrefsTopPagesImportResult(
+      return buildSeoTopPagesImportResult(
         'error',
-        'No valid Ahrefs top-pages importedAt timestamp found',
+        'No valid SEO top-pages importedAt timestamp found',
       );
     }
 
-    return buildAhrefsTopPagesImportResult(
+    return buildSeoTopPagesImportResult(
       'error',
-      `No Ahrefs top-pages import found in the last ${AHREFS_TOP_PAGES_FRESHNESS_DAYS} days`,
+      `No SEO top-pages import found in the last ${SEO_TOP_PAGES_FRESHNESS_DAYS} days`,
     );
   } catch (error) {
-    log.error(`${LOG_PREFIX} Ahrefs top-pages health check failed for site ${siteId}: ${error.message}`, error);
-    return buildAhrefsTopPagesImportResult('error', `Ahrefs check failed: ${error.message}`);
+    log.error(`${LOG_PREFIX} SEO top-pages health check failed for site ${siteId}: ${error.message}`, error);
+    return buildSeoTopPagesImportResult('error', `SEO data check failed: ${error.message}`);
   }
 }
 
@@ -214,7 +214,7 @@ export async function checkEffectiveUrlNoRedirect(context) {
 /**
  * Step 2: Analyze health checks.
  * Spacecat user-agent access is scrape-based and can reuse cached analysis when
- * the scrape timestamp is unchanged. Ahrefs and effective URL checks are always fresh.
+ * the scrape timestamp is unchanged. SEO and effective URL checks are always fresh.
  */
 export async function analyzeScrapeResult(context) {
   const {
@@ -232,7 +232,7 @@ export async function analyzeScrapeResult(context) {
   const fullAuditRef = audit.getFullAuditRef();
   const siteId = site.getId();
   const { scrapeJobId } = auditContext;
-  const ahrefsTopPagesImportPromise = checkAhrefsTopPagesImport(context);
+  const seoTopPagesImportPromise = checkSeoTopPagesImport(context);
   const effectiveUrlNoRedirectPromise = checkEffectiveUrlNoRedirect(context);
   let spacecatUserAgentAccess = buildSpacecatUserAgentAccessResult('error', null, 'Unknown scrape failure', null);
 
@@ -313,15 +313,15 @@ export async function analyzeScrapeResult(context) {
     spacecatUserAgentAccess = buildSpacecatUserAgentAccessResult('error', null, `Spacecat user-agent check failed: ${error.message}`, null);
   }
 
-  const [ahrefsTopPagesImport, effectiveUrlNoRedirect] = await Promise.all([
-    ahrefsTopPagesImportPromise,
+  const [seoTopPagesImport, effectiveUrlNoRedirect] = await Promise.all([
+    seoTopPagesImportPromise,
     effectiveUrlNoRedirectPromise,
   ]);
 
   return {
     auditResult: buildAuditResult(
       spacecatUserAgentAccess,
-      ahrefsTopPagesImport,
+      seoTopPagesImport,
       effectiveUrlNoRedirect,
     ),
     fullAuditRef,

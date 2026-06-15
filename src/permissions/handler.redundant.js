@@ -114,14 +114,6 @@ export async function redundantAuditRunner(baseURL, context, site) {
  */
 export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, context, site) => {
   const { log, dataAccess } = context;
-  const { Configuration } = dataAccess;
-
-  // Check whether the audit is enabled for the site
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('security-permissions-redundant', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
-    return { status: 'complete' };
-  }
 
   const { success } = auditData.auditResult;
   if (!success) {
@@ -150,9 +142,11 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
   const flattenedPermissions = permissionsReport.adminChecks
     .filter((ac) => isNonEmptyArray(ac.details))
     // eslint-disable-next-line max-len
-    .flatMap(({ principal, details }) => details.map((d) => ({
-      principal, path: d.path, permissions: d.privileges, ...d,
-    })));
+    .flatMap(({ principal, details }) => details
+      .filter((d) => d.path && d.path.startsWith('/content')) // Only consider auto-fixable content
+      .map((d) => ({
+        principal, path: d.path, permissions: d.privileges, ...d,
+      })));
 
   if (flattenedPermissions.length === 0) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no redundant permissions issues found, skipping opportunity / suggestions generation`);

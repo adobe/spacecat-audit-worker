@@ -416,7 +416,12 @@ const testData = {
             maxTimeDelta: 3060,
             total: 6690,
             earned: 2000,
-            sources: [],
+            sources: [
+              { type: 'paid:search:google', views: 2000 },
+              { type: 'paid:display:google', views: 690 },
+              { type: 'earned:organic:google', views: 2000 },
+              { type: 'owned:direct', views: 2000 },
+            ],
             owned: 2000,
           },
         },
@@ -1010,6 +1015,7 @@ const testData = {
         'RUM',
         'Page',
       ],
+      fieldEngagement: [],
     },
     guidance: {},
   },
@@ -1036,6 +1042,7 @@ const testData = {
       scrapedStatus: false,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      fieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1141,6 +1148,7 @@ const testData = {
       scrapedStatus: false,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      fieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1255,6 +1263,7 @@ const testData = {
       scrapedStatus: true,
       projectedConversionValue: null,
       dataSources: ['RUM', 'Page'],
+      fieldEngagement: [],
       metrics: [
         {
           type: 'conversionRate',
@@ -1451,6 +1460,7 @@ const testData = {
         'RUM',
         'Page',
       ],
+      fieldEngagement: [],
     },
     guidance: {},
   },

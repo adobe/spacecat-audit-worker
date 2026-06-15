@@ -10,12 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { checkSiteRequiresValidation } from '../../src/utils/site-validation.js';
+import { checkSiteRequiresValidation, IS_LLMO_OPPTY } from '../../src/utils/site-validation.js';
+
+use(sinonChai);
 
 describe('utils/site-validation', () => {
   let sandbox;
@@ -24,8 +25,11 @@ describe('utils/site-validation', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    delete process.env.ASO_PLG_EXCLUDED_ORGS;
+    delete process.env.LA_VALIDATION_SITE_IDS;
     context = {
       log: {
+        info: sandbox.spy(),
         warn: sandbox.spy(),
       },
     };
@@ -34,6 +38,31 @@ describe('utils/site-validation', () => {
   afterEach(() => {
     sandbox.restore();
     process.env = { ...originalEnv };
+  });
+
+  it('exports IS_LLMO_OPPTY with prerender', () => {
+    expect(IS_LLMO_OPPTY).to.be.an('array').that.includes('prerender');
+  });
+
+  it('returns false for prerender audit without calling TierClient', async () => {
+    const site = { getId: sandbox.stub().returns('site-prerender') };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context, 'prerender');
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('returns false for prerender even when site is in LA_VALIDATION_SITE_IDS', async () => {
+    process.env.LA_VALIDATION_SITE_IDS = 'site-la';
+    const site = { getId: sandbox.stub().returns('site-la') };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context, 'prerender');
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
   });
 
   it('returns false when site is null/undefined', async () => {
@@ -58,6 +87,39 @@ describe('utils/site-validation', () => {
 
     expect(result).to.equal(true);
     expect(stub).to.not.have.been.called;
+  });
+
+  it('returns false when org is listed in ASO_PLG_EXCLUDED_ORGS even if site is PAID tier', async () => {
+    process.env.ASO_PLG_EXCLUDED_ORGS = 'org-internal-1, org-internal-2 , org-internal-3';
+    const site = {
+      getId: sandbox.stub().returns('site-internal'),
+      getOrganizationId: sandbox.stub().returns('org-internal-2'),
+    };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context);
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('falls through to entitlement check when org is NOT in ASO_PLG_EXCLUDED_ORGS', async () => {
+    process.env.ASO_PLG_EXCLUDED_ORGS = 'org-internal-1,org-internal-2';
+    const site = {
+      getId: sandbox.stub().returns('site-paid'),
+      getOrganizationId: sandbox.stub().returns('org-external'),
+    };
+    const entitlementMock = {
+      getTier: sandbox.stub().returns('PAID'),
+      getProductCode: sandbox.stub().returns('ASO'),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: entitlementMock }),
+    });
+
+    const result = await checkSiteRequiresValidation(site, context);
+
+    expect(result).to.equal(true);
   });
 
   it('returns site.requiresValidation when explicitly set to false', async () => {

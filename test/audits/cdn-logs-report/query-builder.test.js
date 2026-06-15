@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import {
@@ -32,6 +31,7 @@ const createMockSiteConfig = (overrides = {}) => ({
 });
 
 const createMockSite = (overrides = {}) => ({
+  getId: () => 'test-site-id',
   getBaseURL: () => 'https://adobe.com',
   getConfig: () => createMockSiteConfig(),
   ...overrides,
@@ -53,14 +53,26 @@ const createMockOptions = (overrides = {}) => ({
 });
 
 const createMockPatterns = () => ({
-  pagetype: {
-    data: [{ name: 'Product Page', regex: '.*product.*' }],
-  },
-  products: {
-    data: [
-      { regex: '/products/', name: 'Products' },
-      { regex: '/category/([^/]+)' },
-    ],
+  pagePatterns: [{ name: 'Product Page', regex: '.*product.*', sort_order: 0 }],
+  topicPatterns: [
+    { regex: '/products/', name: 'Products', sort_order: 0 },
+    { regex: '/category/([^/]+)', sort_order: 1 },
+  ],
+});
+
+const createMockPostgrestClient = ({
+  categoryRules = [],
+  pageTypeRules = [],
+} = {}) => ({
+  from: (table) => {
+    const data = table === 'agentic_url_category_rules' ? categoryRules : pageTypeRules;
+    const query = {
+      select: () => query,
+      eq: () => query,
+      order: () => query,
+      then: (resolve) => Promise.resolve({ data, error: null }).then(resolve),
+    };
+    return query;
   },
 });
 
@@ -71,120 +83,132 @@ describe('CDN Logs Query Builder', () => {
     mockOptions = createMockOptions();
   });
 
-  it('creates agentic report query with ChatGPT and Perplexity filtering', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+  // Pattern/classification helpers are shared by the agentic daily query and the
+  // (retired) weekly report query; exercise them via the live daily query.
+  const dailyArgs = (overrides = {}) => ({
+    trafficDate: new Date('2025-01-07T00:00:00Z'),
+    databaseName: 'test_db',
+    tableName: 'test_table',
+    site: createMockSite(),
+    ...overrides,
+  });
+
+  it('creates a daily agentic query with ChatGPT and Perplexity filtering', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs());
 
     expect(query).to.be.a('string');
-    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot');
     expect(query).to.include('Perplexity');
     expect(query).to.include('test_db.test_table');
     expect(query).to.include('agent_type');
     expect(query).to.include('user_agent_display');
-    expect(query).to.include('number_of_hits');
     expect(query).to.include('avg_ttfb_ms');
   });
 
-  it('handles site filters correctly', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
-        }),
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
-
-    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
-  });
-
-  it('handles llmo cdn logs site filters correctly', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
-        }),
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
-
-    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
-  });
-
-  it('includes date filtering for the specified week', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+  it('creates a daily agentic export query for a single UTC day', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs());
 
     expect(query).to.include("year = '2025'");
     expect(query).to.include("month = '01'");
+    expect(query).to.include("day = '07'");
+    expect(query).to.include('test_db.test_table');
+    expect(query).to.include('user_agent_display');
+    expect(query).to.include('avg_ttfb_ms');
+    expect(query).to.include("WHERE agent_type != 'Other'");
+    expect(query).to.not.include('cdn_provider');
   });
 
-  it('handles site with no page patterns', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getBaseURL: () => 'https://unknown.com',
-      }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+  it('handles a site with no patterns (default Other classification)', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      site: createMockSite({ getBaseURL: () => 'https://unknown.com' }),
+    }));
 
     expect(query).to.be.a('string');
     expect(query).to.include('Other');
   });
 
-  it('handles topic patterns with mixed named and extract patterns', async () => {
-    const customOptions = createMockOptions({
+  it('builds topic + page-type classification from DB rules', async () => {
+    const patterns = createMockPatterns();
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
       site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoDataFolder: () => 'test-folder',
-        }),
+        getConfig: () => createMockSiteConfig({ getLlmoDataFolder: () => 'test-folder' }),
       }),
-    });
-
-    const nock = await import('nock');
-    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, createMockPatterns());
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules: patterns.topicPatterns,
+              pageTypeRules: patterns.pagePatterns,
+            }),
+          },
+        },
+      },
+    }));
 
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
-    expect(patternNock.isDone()).to.be.true;
   });
 
-  it('handles topic patterns with named patterns', async () => {
-    const customOptions = createMockOptions({
-      site: createMockSite({
-        getConfig: () => createMockSiteConfig({
-          getLlmoDataFolder: () => 'test-folder',
-        }),
-      }),
-    });
+  it('uses pre-fetched patterns for daily agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      remotePatterns: createMockPatterns(),
+    }));
 
-    const nock = await import('nock');
-    const namedPatternsOnly = {
-      pagetype: { data: [{ name: 'Product Page', regex: '.*product.*' }] },
-      products: {
-        data: [
-          { regex: '/products/', name: 'Products' },
-        ],
+    expect(query).to.include("THEN 'Product Page'");
+    expect(query).to.include("THEN 'Products'");
+  });
+
+  it('escapes single quotes in pattern regex and name to prevent SQL injection', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      remotePatterns: {
+        pagePatterns: [{ name: "O'Brien Page", regex: "/o'brien/.*", sort_order: 0 }],
+        topicPatterns: [{ name: "Can't Stop", regex: "/can't/", sort_order: 0 }],
       },
-    };
+    }));
 
-    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, namedPatternsOnly);
+    expect(query).to.include("THEN 'O''Brien Page'");
+    expect(query).to.include("/o''brien/.*");
+    expect(query).to.include("THEN 'Can''t Stop'");
+    expect(query).to.include("/can''t/");
+  });
 
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+  it('falls back to default classification when remotePatterns has an error', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      remotePatterns: { error: true, source: 'postgres' },
+    }));
 
-    expect(query).to.be.a('string');
-    expect(query).to.include('CASE');
-    expect(patternNock.isDone()).to.be.true;
+    expect(query).to.include("'Other'");
+    expect(query).to.not.include("REGEXP_LIKE(url, 'undefined')");
+  });
+
+  it('handles topic patterns with extract-only patterns', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery(dailyArgs({
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules: [{ regex: '/category/([^/]+)', sort_order: 0 }],
+              pageTypeRules: [],
+            }),
+          },
+        },
+      },
+    }));
+
+    expect(query).to.include("COALESCE(\n    NULLIF(REGEXP_EXTRACT(url, '/category/([^/]+)', 1), ''),");
+  });
+
+  // Date-filter + where-clause + site-filter helpers are shared with the live
+  // top-urls query; exercise them there.
+  it('includes date filtering for the specified week', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(mockOptions);
+
+    expect(query).to.include("year = '2025'");
+    expect(query).to.include("month = '01'");
   });
 
   it('handles cross-month date filtering', async () => {
-    const customOptions = createMockOptions({
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
       periods: {
         weeks: [{
           startDate: new Date('2024-12-30'),
@@ -192,9 +216,7 @@ describe('CDN Logs Query Builder', () => {
           weekLabel: 'Week 1 2025',
         }],
       },
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.include("year = '2024'");
     expect(query).to.include("month = '12'");
@@ -203,23 +225,42 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('OR');
   });
 
-  it('handles empty conditions in where clause', async () => {
-    const customOptions = createMockOptions({
+  it('handles empty site-filter conditions in the where clause', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
       site: createMockSite({
         getConfig: () => createMockSiteConfig({
           getLlmoCdnlogsFilter: () => [],
         }),
       }),
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+    }));
 
     expect(query).to.include('WHERE');
-    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
+    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
 
+  it('handles site filters correctly', async () => {
+    const query = await weeklyBreakdownQueries.createTopUrlsQuery(createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
+        }),
+      }),
+    }));
+
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
+  });
+
   describe('createTopUrlsQueryWithLimit', () => {
+    it('creates top URLs query without a limit', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQuery(mockOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('test_db.test_table');
+      expect(query).to.include("year = '2025'");
+      expect(query).to.include("month = '01'");
+    });
+
     it('creates query with limit parameter', async () => {
       const customOptions = createMockOptions({
         limit: 100,
@@ -230,6 +271,66 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.be.a('string');
       expect(query).to.include('LIMIT 100');
       expect(query).to.include('test_db.test_table');
+    });
+
+    it('creates query without status filter when statuses is not provided', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100 }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+      expect(query).to.not.include('status');
+    });
+
+    it('creates query without status filter when statuses is empty array', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [] }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+    });
+
+    it('creates live variant query with AND status IN (200) when statuses=[200]', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [200] }),
+      );
+
+      expect(query).to.include('AND status IN (200)');
+      expect(query).to.include('LIMIT 100');
+    });
+
+    it('createTopUrlsQueryWithLimit with statuses respects limit parameter', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 50, statuses: [200] }),
+      );
+
+      expect(query).to.include('LIMIT 50');
+    });
+
+    it('throws on invalid HTTP status code in statuses filter', async () => {
+      let err;
+      try {
+        await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+          createMockOptions({ limit: 10, statuses: ['injection; DROP TABLE'] }),
+        );
+      } catch (e) { err = e; }
+      expect(err).to.be.instanceOf(Error);
+      expect(err.message).to.match(/Invalid HTTP status code/);
+    });
+
+    it('throws on out-of-range status code in statuses filter', async () => {
+      for (const bad of [99, 600]) {
+        // eslint-disable-next-line no-await-in-loop
+        let err;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+            createMockOptions({ limit: 10, statuses: [bad] }),
+          );
+        } catch (e) { err = e; }
+        expect(err).to.be.instanceOf(Error);
+        expect(err.message).to.match(/Invalid HTTP status code/);
+      }
     });
 
     it('creates query without excluded URL suffixes filter when not provided', async () => {

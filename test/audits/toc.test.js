@@ -10,24 +10,48 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use as chaiUse } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions } from '../../src/toc/handler.js';
+import { generateSuggestions, slimTocAuditResult, hasTocInDom } from '../../src/toc/handler.js';
+import {
+  getHeadingLevel,
+  TOC_EXCLUDED_CONTAINER_SELECTORS,
+  TOC_EXCLUDED_HEADING_PHRASES,
+  normalizeHeadingTextForMatch,
+  isExcludedConsentHeadingText,
+  isHeadingInExcludedContainer,
+  getSurroundingText,
+  getFollowingStructure,
+  getParentSectionContext,
+  getHeadingContext,
+  extractTocData,
+  tocArrayToHast,
+  determineTocPlacement,
+  getScrapeJsonPath,
+} from '../../src/headings/utils.js';
+import { getHeadingSelector } from '../../src/headings/shared-utils.js';
 
 chaiUse(sinonChai);
+chaiUse(chaiAsPromised);
+
+/** Stub that returns a simple selector for a heading (for extractTocData tests) */
+function stubGetHeadingSelector(h) {
+  const tag = h.name.toLowerCase();
+  const id = h.attribs?.id;
+  return id ? `${tag}#${id}` : tag;
+}
 
 describe('TOC (Table of Contents) Audit', () => {
   let log;
   let context;
   let site;
-  let allKeys;
   let s3Client;
 
   beforeEach(() => {
@@ -42,9 +66,10 @@ describe('TOC (Table of Contents) Audit', () => {
         AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
       },
     };
+    // Default stubs required by processTocResults (inlines suggestion creation and audit slimming)
+    context.audit = { getId: () => 'default-audit-id' };
+    context.dataAccess = { Audit: { updateByKeys: sinon.stub().resolves() } };
     site = { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }) };
-    allKeys = [];
-    allKeys.push('scrapes/site-1/page/scrape.json');
     s3Client = {
       send: sinon.stub().resolves({
         Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
@@ -86,28 +111,17 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
+      const convertToOpportunityStub = sinon.stub().resolves({ getId: () => 'test-opp-id' });
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -132,16 +146,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG Test 2: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG Test 2: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG Test 2: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG Test 2: AI calls made:', mockClient.fetchChatCompletion.callCount);
-        console.log('DEBUG Test 2: All AI call args:', mockClient.fetchChatCompletion.getCalls().map((c, i) => `Call ${i + 1}: ${c.args[0]?.substring(0, 100)}`));
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // TOC should be flagged as missing
       expect(result.auditResult).to.exist;
@@ -152,11 +159,275 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const tocIssue = result.auditResult.toc.toc.urls[0];
       expect(tocIssue.url).to.equal(url);
-      expect(tocIssue.transformRules).to.exist;
-      expect(tocIssue.transformRules.action).to.equal('insertAfter');
-      expect(tocIssue.transformRules.selector).to.include('h1');
+      // transformRules are stripped from the audit DB record (slimmed) after suggestions are built
+      expect(tocIssue).to.not.have.property('transformRules');
       expect(tocIssue.tocConfidence).to.equal(8);
       expect(tocIssue.tocReasoning).to.equal('No TOC structure found');
+
+      // auditData passed to convertToOpportunity must include id so the opportunity is linked
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const [, calledWithAuditData] = convertToOpportunityStub.getCall(0).args;
+      expect(calledWithAuditData).to.have.property('id', 'default-audit-id');
+    });
+  });
+
+  describe('Empty TOC Prevention', () => {
+    it('skips suggestion when AI says TOC is missing but all headings are inside nav containers', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC found"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      // All headings are inside nav/header/footer — extractTocData will return []
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<header><h1>Site Brand</h1></header><nav><h2>Home</h2><h2>About</h2></nav><footer><h2>Contact</h2></footer>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Site Brand'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // No suggestion should be created — result should show no toc issues
+      expect(result.auditResult).to.exist;
+      const tocResult = result.auditResult.toc;
+      // Either empty toc (success) or the toc check key has no urls
+      const hasNoSuggestions = !tocResult || Object.keys(tocResult).length === 0
+        || !tocResult.toc || tocResult.toc.urls?.length === 0;
+      expect(hasNoSuggestions).to.equal(true);
+    });
+
+    it('skips suggestion when AI says TOC is missing but headings only in header', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":7,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<header><h1>Site Title</h1><h2>Tagline</h2></header><p>Some content with no headings</p>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Site Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      // toc should be empty — no valid headings to build a TOC from
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('still creates suggestion when some headings exist outside navigation', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<nav><h2>Site Navigation</h2></nav><h1 id="title">Article Title</h1><h2 id="sec1">Section 1</h2>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Article Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // A suggestion SHOULD be created since there are valid content headings
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.exist;
+      expect(result.auditResult.toc.toc).to.exist;
+      const tocIssue = result.auditResult.toc.toc.urls[0];
+      // transformRules stripped from slimmed result (content is passed to suggestions instead)
+      expect(tocIssue).to.not.have.property('transformRules');
+      expect(tocIssue.url).to.equal(url);
+    });
+
+    it('skips suggestion when page has only one heading (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1 id="title">Only Heading</h1><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: ['Only Heading'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('skips suggestion when page has only null/empty headings (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1></h1><h2>   </h2><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
     });
   });
 
@@ -181,28 +452,20 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
+      let capturedSyncArgs;
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().callsFake((args) => {
+            capturedSyncArgs = args;
+            return Promise.resolve();
+          }),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -227,22 +490,20 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG: AI calls made:', mockClient.fetchChatCompletion.callCount);
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc, 'TOC should exist in audit result').to.exist;
       expect(result.auditResult.toc.toc, 'TOC.toc should exist').to.exist;
       const tocIssue = result.auditResult.toc.toc.urls[0];
-      expect(tocIssue.transformRules.action).to.equal('insertBefore');
-      expect(tocIssue.transformRules.selector).to.equal('body > main > :first-child');
+      // transformRules stripped from slimmed audit DB record
+      expect(tocIssue).to.not.have.property('transformRules');
+      // Placement verified via suggestion data (transformRules flow into suggestions)
+      expect(capturedSyncArgs).to.exist;
+      expect(capturedSyncArgs.newData[0].transformRules.action).to.equal('insertBefore');
+      expect(capturedSyncArgs.newData[0].transformRules.selector).to.equal('body > main > :first-child');
     });
 
     it('suggests TOC placement in body when no H1 or main exists', async () => {
@@ -265,28 +526,20 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
+      let capturedSyncArgs;
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().callsFake((args) => {
+            capturedSyncArgs = args;
+            return Promise.resolve();
+          }),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -311,27 +564,25 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG: AI calls made:', mockClient.fetchChatCompletion.callCount);
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc, 'TOC should exist in audit result').to.exist;
       expect(result.auditResult.toc.toc, 'TOC.toc should exist').to.exist;
       const tocIssue = result.auditResult.toc.toc.urls[0];
-      expect(tocIssue.transformRules.action).to.equal('insertBefore');
-      expect(tocIssue.transformRules.selector).to.equal('body > :first-child');
+      // transformRules stripped from slimmed audit DB record
+      expect(tocIssue).to.not.have.property('transformRules');
+      // Placement verified via suggestion data
+      expect(capturedSyncArgs).to.exist;
+      expect(capturedSyncArgs.newData[0].transformRules.action).to.equal('insertBefore');
+      expect(capturedSyncArgs.newData[0].transformRules.selector).to.equal('body > :first-child');
     });
   });
 
   describe('TOC Transform Rules', () => {
-    it('includes heading data in TOC transform rules', async () => {
+    it('includes heading data in TOC transform rules (passed to suggestions, stripped from slimmed result)', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
 
@@ -348,28 +599,20 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
+      let capturedSyncArgs;
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().callsFake((args) => {
+            capturedSyncArgs = args;
+            return Promise.resolve();
+          }),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -394,15 +637,21 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc).to.exist;
       expect(result.auditResult.toc.toc).to.exist;
       const tocIssue = result.auditResult.toc.toc.urls[0];
-      expect(tocIssue.transformRules.value).to.be.an('array');
-      expect(tocIssue.transformRules.value.length).to.be.at.least(2); // At least H1 and H2s
-      expect(tocIssue.transformRules.valueFormat).to.equal('html');
+      // transformRules stripped from slimmed audit DB record
+      expect(tocIssue).to.not.have.property('transformRules');
+      // transformRules content flows into suggestions (verified via captured syncSuggestions args)
+      expect(capturedSyncArgs).to.exist;
+      expect(capturedSyncArgs.newData[0].transformRules.value).to.be.an('array');
+      expect(capturedSyncArgs.newData[0].transformRules.value.length).to.be.at.least(2);
+      expect(capturedSyncArgs.newData[0].transformRules.valueFormat).to.equal('html');
     });
   });
 
@@ -701,6 +950,105 @@ describe('TOC (Table of Contents) Audit', () => {
     });
   });
 
+  describe('TOC custom persister (slimmed audit vs full post-processor data)', () => {
+    it('slimTocAuditResult strips transformRules from urls for persistence', () => {
+      const auditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url: 'https://example.com/page',
+                explanation: 'TOC missing',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [] },
+              },
+            ],
+          },
+        },
+      };
+      const slimmed = slimTocAuditResult(auditResult);
+      expect(slimmed.toc.toc.urls).to.have.lengthOf(1);
+      expect(slimmed.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(slimmed.toc.toc.urls[0].url).to.equal('https://example.com/page');
+      expect(auditResult.toc.toc.urls[0]).to.have.property('transformRules');
+    });
+
+    it('tocPersister persists slimmed data and logs; post-processors receive full data', async () => {
+      const url = 'https://example.com/page';
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'toc-opportunity-id',
+        getSiteId: () => 'site-1',
+      });
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      const fullAuditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url,
+                explanation: 'TOC missing',
+                suggestion: 'Add TOC',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+              },
+            ],
+          },
+        },
+      };
+      const auditData = {
+        siteId: 'site-1',
+        isLive: true,
+        auditedAt: new Date().toISOString(),
+        auditType: 'toc',
+        auditResult: fullAuditResult,
+        fullAuditRef: url,
+      };
+      const testContext = {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      };
+
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, testContext);
+
+      expect(auditCreateStub).to.have.been.calledOnce;
+      const persistedAuditData = auditCreateStub.firstCall.args[0];
+      expect(persistedAuditData.auditResult.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(logSpy.debug.called).to.be.true;
+      const persisterLog = logSpy.debug.getCalls().find((c) => c.args[0] && c.args[0].includes('[TOC Persister]'));
+      expect(persisterLog).to.exist;
+      expect(persisterLog.args[0]).to.include('slimmed');
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+      });
+      const auditUrl = 'https://example.com';
+      const suggestionsAuditData = {
+        suggestions: {
+          headings: [],
+          toc: [
+            {
+              type: 'CODE_CHANGE',
+              checkType: 'toc',
+              url,
+              explanation: 'TOC missing',
+              recommendedAction: 'Add TOC',
+              transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+            },
+          ],
+        },
+      };
+      await mockedHandler.opportunityAndSuggestions(auditUrl, suggestionsAuditData, context);
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const syncArgs = syncSuggestionsStub.firstCall.args[0];
+      expect(syncArgs.newData[0]).to.have.property('transformRules');
+      expect(syncArgs.newData[0].transformRules).to.include({ action: 'insertAfter' });
+    });
+  });
+
   describe('TOC Error Handling', () => {
     it('uses confidence score from AI response when valid (line 291 truthy branch)', async () => {
       const baseURL = 'https://example.com';
@@ -718,28 +1066,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -764,7 +1100,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should use the AI-provided confidence score of 7
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(7);
@@ -786,28 +1124,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -832,7 +1158,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should use default confidence of 5
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(5);
@@ -856,28 +1184,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -902,7 +1218,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should log warning and default to 5
       expect(logSpy.warn).to.have.been.calledWith(
@@ -930,28 +1248,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -976,7 +1282,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should handle invalid response gracefully
       expect(logSpy.error).to.have.been.calledWith(
@@ -1003,28 +1311,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1049,7 +1345,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should default to 5 and log warning
       expect(logSpy.warn).to.have.been.calledWith(
@@ -1080,28 +1378,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1126,7 +1412,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should handle error gracefully
       expect(logSpy.error).to.have.been.called;
@@ -1149,28 +1437,16 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1195,7 +1471,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // JSDOM auto-creates a <body> element even when HTML doesn't have one
       // So the warning may not be logged, but the audit should complete successfully
@@ -1231,6 +1509,24 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.have.property('title', '[Beta] Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
+    });
+
+    it('description mentions heading-based suggestion generation', async () => {
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
+      const opportunityData = createOpportunityDataForTOC();
+
+      expect(opportunityData.description).to.include('H1, H2');
+      expect(opportunityData.description).to.include('heading structure');
+      expect(opportunityData.description).to.include('accurate TOC suggestions');
+    });
+
+    it('description contains both accessibility context and heading guidance', async () => {
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
+      const opportunityData = createOpportunityDataForTOC();
+
+      expect(opportunityData.description).to.include('accessibility');
+      expect(opportunityData.description).to.include('generative engines');
+      expect(opportunityData.description).to.include('Suggestions are generated based on page heading');
     });
 
     it('includes proper guidance steps for TOC', async () => {
@@ -1324,7 +1620,8 @@ describe('TOC (Table of Contents) Audit', () => {
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
       expect(merged.explanation).to.equal('New explanation');
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(false);
     });
 
@@ -1383,8 +1680,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should preserve the edited value
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'Edited by User', level: 1 }]);
+      // Should preserve the edited value, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'Edited by User', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.explanation).to.equal('New explanation');
       expect(merged.isEdited).to.equal(true);
     });
@@ -1441,8 +1739,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should use new value since existing.transformRules.value is undefined
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should use new value since existing.transformRules.value is undefined, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(true);
     });
 
@@ -1494,8 +1793,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should use new value since existing.transformRules is null
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should use new value since existing.transformRules is null, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(true);
     });
 
@@ -1549,8 +1849,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should overwrite with new value since isEdited is false
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should overwrite with new value since isEdited is false, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(false);
     });
 
@@ -1604,8 +1905,122 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should overwrite with new value since isEdited is undefined (falsy)
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should overwrite with new value since isEdited is undefined (falsy), converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
+    });
+
+    it('preserves HAST value and sets valueFormat to hast when value is already HAST', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const hastValue = tocArrayToHast([{ text: 'Existing HAST', level: 1 }]);
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        transformRules: {
+          value: hastValue,
+          valueFormat: 'html',
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should preserve the existing HAST value (isEdited=true) and fix valueFormat
+      expect(merged.transformRules.value).to.deep.equal(hastValue);
+      expect(merged.transformRules.valueFormat).to.equal('hast');
+    });
+
+    it('returns existing suggestion unchanged when edgeDeployed is true', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        edgeDeployed: true,
+        transformRules: {
+          value: [{ text: 'Deployed Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — re-audit must not overwrite deployed suggestions
+      expect(merged.edgeDeployed).to.equal(true);
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Deployed Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
     });
   });
 
@@ -1642,138 +2057,49 @@ describe('TOC (Table of Contents) Audit', () => {
       );
     });
 
-    it('covers lines 214-219: null/undefined URL in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      const result = await validatePageToc(
-        null,
-        logSpy,
-        site,
-        allKeys,
-        s3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      expect(result.url).to.be.null;
-      expect(result.tocDetails).to.be.null;
-      expect(logSpy.error).to.have.been.calledWith(
-        sinon.match(/URL is undefined or null/)
-      );
-    });
-
-    it('covers lines 224-225: null scrapeJsonObject returns null in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      // Mock S3 to return no data
-      const emptyS3Client = {
-        send: sinon.stub().resolves({
-          Contents: [],
-          NextContinuationToken: undefined,
-        }),
-      };
-
-      const result = await validatePageToc(
-        url,
-        logSpy,
-        site,
-        [],
-        emptyS3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      expect(result).to.be.null;
-    });
-
-    it('covers lines 228-233: error catch block in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      // Mock S3 to return malformed data that will cause validatePageTocFromScrapeJson to throw
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: url,
-                scrapedAt: Date.now(),
-                scrapeResult: null, // This will cause an error when accessing rawBody
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-        throw new Error('Unexpected command');
-      });
-
-      const result = await validatePageToc(
-        url,
-        logSpy,
-        site,
-        allKeys,
-        s3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      // The catch block should return an error object
-      expect(result.url).to.equal(url);
-      expect(result.tocDetails).to.be.null;
-      expect(logSpy.error).to.have.been.calledWith(
-        sinon.match(/Error validating TOC for/)
-      );
-    });
-
-    it('covers lines 253-262: no top pages found in tocAuditRunner', async () => {
-      const baseURL = 'https://example.com';
+    it('returns early when no scrapeResultPaths available', async () => {
+      const { processTocResults } = await import('../../src/toc/handler.js');
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
-        },
-      };
+      context.site = site;
+      context.scrapeResultPaths = new Map();
 
-      const { tocAuditRunner } = await import('../../src/toc/handler.js');
-      const result = await tocAuditRunner(baseURL, context, site);
+      const result = await processTocResults(context);
 
-      // The result structure is different when no top pages are found
-      expect(result.auditResult).to.exist;
       expect(result.auditResult.success).to.be.false;
-      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No top pages found, ending audit.');
+      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No scrape results available, ending audit.');
     });
 
-    it('covers lines 333-338: error catch block in tocAuditRunner', async () => {
-      const baseURL = 'https://example.com';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+    it('returns early when scrapeResultPaths is undefined', async () => {
+      const { processTocResults } = await import('../../src/toc/handler.js');
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
+      context.site = site;
+      context.scrapeResultPaths = undefined;
 
-      // Mock to throw an error
-      const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Network error'));
+      const result = await processTocResults(context);
 
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      expect(result.auditResult.error).to.exist;
-      expect(result.auditResult.error).to.be.a('string');
       expect(result.auditResult.success).to.be.false;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No scrape results available, ending audit.');
+    });
+
+    it('covers error catch block in processTocResults', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+
+      // Use a scrapeResultPaths that is iterable but throws during Array.from
+      const throwingMap = {
+        size: 1,
+        entries: () => { throw new Error('Map iteration error'); },
+      };
+
+      const { processTocResults } = await import('../../src/toc/handler.js');
+
+      context.scrapeResultPaths = throwingMap;
+      await expect(processTocResults(context)).to.be.rejectedWith('Map iteration error');
       expect(logSpy.error).to.have.been.calledWith(sinon.match(/TOC audit failed/));
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.called;
     });
 
     it('covers lines 360-362: early return when TOC audit has no issues', async () => {
@@ -1845,6 +2171,72 @@ describe('TOC (Table of Contents) Audit', () => {
         sinon.match(/has no issues or failed, skipping suggestions generation/)
       );
     });
+
+    it('covers lines 458-459: slimTocAuditResult early return when auditResult.toc is falsy', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: undefined };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.equal(undefined);
+    });
+
+    it('covers lines 451-452: slimTocAuditResult returns as-is when auditResult is null or non-object', () => {
+      expect(slimTocAuditResult(null)).to.equal(null);
+      expect(slimTocAuditResult(undefined)).to.equal(undefined);
+      const str = 'not an object';
+      expect(slimTocAuditResult(str)).to.equal(str);
+    });
+
+    it('covers lines 453-455: slimTocAuditResult early return when auditResult.toc is empty object', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: {} };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.deep.equal({});
+    });
+
+    it('covers line 463: slimTocAuditResult pass-through when checkResult has no urls array', () => {
+      const auditResult = {
+        toc: {
+          toc: { success: false },
+          otherKey: { urls: null },
+        },
+      };
+      const result = slimTocAuditResult(auditResult);
+      expect(result.toc.toc).to.deep.equal({ success: false });
+      expect(result.toc.otherKey).to.deep.equal({ urls: null });
+    });
+
+    it('covers line 488: tocPersister skips debug log when log or log.debug is not available', async () => {
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: { urls: [{ url: 'https://example.com' }] } } },
+        fullAuditRef: 'https://example.com',
+      };
+      const contextNoLog = { dataAccess: { Audit: { create: auditCreateStub } } };
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, contextNoLog);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const contextLogNoDebug = { log: {}, dataAccess: { Audit: { create: auditCreateStub } } };
+      await tocPersister(auditData, contextLogNoDebug);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const logSpy = { debug: sinon.spy() };
+      const auditDataNoUrls = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: {} } },
+        fullAuditRef: 'https://example.com',
+      };
+      await tocPersister(auditDataNoUrls, {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      });
+      expect(auditCreateStub).to.have.been.calledOnce;
+      expect(logSpy.debug.called).to.be.true;
+      expect(logSpy.debug.firstCall.args[0]).to.match(/from 0 URLs/);
+    });
   });
 
   describe('Branch Coverage Tests', () => {
@@ -1860,35 +2252,22 @@ describe('TOC (Table of Contents) Audit', () => {
         }),
       };
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
         '@adobe/spacecat-shared-gpt-client': {
           AzureOpenAIClient: {
             createFrom: sinon.stub().returns(mockClient),
           },
         },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-            { getUrl: () => url },
-          ]),
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
         },
-      };
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
 
       // Mock S3 to return data WITHOUT title (null/undefined)
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1912,7 +2291,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result).to.have.property('auditResult');
     });
@@ -1945,6 +2326,1367 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.info).to.have.been.calledWith(
         sinon.match(/no issues, skipping opportunity creation/)
       );
+    });
+  });
+
+  describe('hasTocInDom (DOM heuristic TOC detection)', () => {
+    describe('Signal 1: anchor link lists', () => {
+      it('returns true when ul has 2+ internal anchor links', () => {
+        const $ = cheerioLoad(
+          '<ul><li><a href="#s1">Section 1</a></li><li><a href="#s2">Section 2</a></li></ul>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true when ol has 2+ internal anchor links', () => {
+        const $ = cheerioLoad(
+          '<ol><li><a href="#s1">Section 1</a></li><li><a href="#s2">Section 2</a></li></ol>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for Repsol-style anchor__list with 2+ href="#" links', () => {
+        const $ = cheerioLoad(
+          '<ul class="anchor__list">'
+          + '<li><a href="#como-funciona">¿Cómo funciona?</a></li>'
+          + '<li><a href="#descuento-particulares">Descuento particulares</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns false when list has only 1 internal anchor link', () => {
+        const $ = cheerioLoad('<ul><li><a href="#s1">Section 1</a></li></ul>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false when list links do not start with #', () => {
+        const $ = cheerioLoad(
+          '<ul>'
+          + '<li><a href="https://example.com/s1">Section 1</a></li>'
+          + '<li><a href="https://example.com/s2">Section 2</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false when list links use bare href="#" (JS tab placeholders, not section anchors)', () => {
+        const $ = cheerioLoad(
+          '<ul class="search-menu__mobile-navtabs-container">'
+          + '<li><a href="#" data-nav="popular">Popular search</a></li>'
+          + '<li><a href="#" data-nav="latest">Must have</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false when nav menu has links without # anchors', () => {
+        const $ = cheerioLoad(
+          '<nav><ul>'
+          + '<li><a href="/home">Home</a></li>'
+          + '<li><a href="/about">About</a></li>'
+          + '<li><a href="/contact">Contact</a></li>'
+          + '</ul></nav>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+    });
+
+    describe('Signal 2: TOC-related class/id names', () => {
+      it('returns true for element with class containing "toc"', () => {
+        const $ = cheerioLoad('<nav class="toc"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with id containing "toc"', () => {
+        const $ = cheerioLoad('<div id="toc-container"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "table-of-contents"', () => {
+        const $ = cheerioLoad('<div class="table-of-contents"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "tableofcontents"', () => {
+        const $ = cheerioLoad('<div class="tableofcontents"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "anchor-list"', () => {
+        const $ = cheerioLoad('<ul class="anchor-list"><li>Item</li></ul>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "anchor__list"', () => {
+        const $ = cheerioLoad('<ul class="anchor__list"><li>Item</li></ul>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with id containing "table-of-contents"', () => {
+        const $ = cheerioLoad('<nav id="table-of-contents"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "cmp-toc__content"', () => {
+        const $ = cheerioLoad('<div class="cmp-toc__content"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "abc-toc-xyz" (toc between hyphens)', () => {
+        const $ = cheerioLoad('<nav class="abc-toc-xyz"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "site-toc" (toc at end after hyphen)', () => {
+        const $ = cheerioLoad('<div class="site-toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "toc-wrapper" (toc at start before hyphen)', () => {
+        const $ = cheerioLoad('<div class="toc-wrapper"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "my_toc" (underscore boundary)', () => {
+        const $ = cheerioLoad('<div class="my_toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with multiple classes where one is "toc"', () => {
+        const $ = cheerioLoad('<nav class="nav-bar toc active"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+    });
+
+    describe('false positives — must not detect as TOC', () => {
+      it('returns false for Algolia autocomplete widget (class "aa-Autocomplete" contains "toc" as substring)', () => {
+        const $ = cheerioLoad(
+          '<div class="aa-Autocomplete" role="combobox">'
+          + '<input id="autocomplete-0-input" type="search">'
+          + '</div>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for element with id "autocomplete-0-label"', () => {
+        const $ = cheerioLoad('<label id="autocomplete-0-label">Search</label>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "doctor" (contains "toc" but not at a word boundary)', () => {
+        const $ = cheerioLoad('<div class="doctor"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "protocol" (contains "toc" as substring)', () => {
+        const $ = cheerioLoad('<div class="protocol"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+    });
+
+    describe('no TOC signals', () => {
+      it('returns false when page has no TOC signals', () => {
+        const $ = cheerioLoad(
+          '<body><h1>Title</h1><h2>Section 1</h2><p>Content</p></body>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for empty page', () => {
+        const $ = cheerioLoad('');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+    });
+  });
+
+  describe('TOC Detection — Phase 1 (DOM heuristic) integration', () => {
+    it('skips AI call and returns no issues when DOM heuristic finds anchor list TOC', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = { fetchChatCompletion: sinon.stub() };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><main>'
+                    + '<h1>Page Title</h1>'
+                    + '<ul class="anchor__list">'
+                    + '<li><a href="#section-1">Section 1</a></li>'
+                    + '<li><a href="#section-2">Section 2</a></li>'
+                    + '</ul>'
+                    + '<h2 id="section-1">Section 1</h2><p>Content</p>'
+                    + '<h2 id="section-2">Section 2</h2><p>Content</p>'
+                    + '</main></body>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Page Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // AI should NOT have been called — DOM heuristic handled it
+      expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
+      // No TOC issue should be reported
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('skips AI call and returns no issues when DOM heuristic finds TOC class', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = { fetchChatCompletion: sinon.stub() };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><nav class="toc"><ul><li><a href="#s1">S1</a></li></ul></nav>'
+                    + '<h1>Title</h1><h2 id="s1">Section</h2></body>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+  });
+
+  describe('TOC Detection — Phase 2 (AI with main/body content) integration', () => {
+    it('uses <main> element content (not body boilerplate) when calling AI', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      // Build a raw body where the first 3000 chars is pure boilerplate
+      // and the real content (with headings) is only inside <main>
+      const boilerplate = '<!-- boilerplate -->'.repeat(200); // ~4000 chars before main
+      const rawBody = `<body>${boilerplate}<main><h1>Real Title</h1><h2>Section 1</h2></main></body>`;
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":7,"reasoning":"No TOC in main"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody,
+                  tags: { title: 'Page', description: 'Desc', h1: ['Real Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // AI was called (Phase 1 found nothing)
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      // The prompt sent to AI should contain main content, not just the boilerplate
+      const promptArg = mockClient.fetchChatCompletion.getCall(0).args[0];
+      expect(promptArg).to.include('Real Title');
+      // Audit correctly identifies missing TOC
+      expect(result.auditResult.toc).to.exist;
+      expect(result.auditResult.toc.toc).to.exist;
+    });
+
+    it('falls back to empty string when <main> element exists but is empty', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":5,"reasoning":"No content"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  // <main> exists but is completely empty — mainEl.html() returns ''
+                  rawBody: '<body><main></main></body>',
+                  tags: { title: 'Empty Page', description: 'Desc', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // AI was called — Phase 1 found nothing, Phase 2 used empty main (fallback to '')
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      // No TOC headings to build from — result should show no issues
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('falls back to body content when no <main> element exists', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":6,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><div><h1 id="t">Title</h1><h2 id="s1">Section 1</h2></div></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // AI was called with body content (no main present)
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      const promptArg = mockClient.fetchChatCompletion.getCall(0).args[0];
+      expect(promptArg).to.include('Title');
+      // Audit identifies missing TOC from body content
+      expect(result.auditResult.toc.toc).to.exist;
+    });
+  });
+
+  describe('headings/utils (TOC extraction and exclusion)', () => {
+    describe('getHeadingLevel', () => {
+      it('returns 1 for h1', () => {
+        expect(getHeadingLevel('h1')).to.equal(1);
+        expect(getHeadingLevel('H1')).to.equal(1);
+      });
+      it('returns 2 for h2', () => {
+        expect(getHeadingLevel('h2')).to.equal(2);
+      });
+      it('returns 6 for h6', () => {
+        expect(getHeadingLevel('h6')).to.equal(6);
+      });
+    });
+
+    describe('TOC exclusion constants', () => {
+      it('TOC_EXCLUDED_CONTAINER_SELECTORS includes OneTrust and Cookiebot', () => {
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#onetrust-consent-sdk');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#CybotCookiebotDialog');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('.cookie-consent');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="consent"]');
+      });
+      it('TOC_EXCLUDED_HEADING_PHRASES includes consent phrases', () => {
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('privacy preference center');
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('cookie settings');
+      });
+      it('TOC_EXCLUDED_CONTAINER_SELECTORS includes navigation-related selectors', () => {
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('nav');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[role="navigation"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('body > header');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('footer');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="nav-"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="navigation"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="sidebar"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="sidebar"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="menu"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="nav"]');
+      });
+    });
+
+    describe('normalizeHeadingTextForMatch', () => {
+      it('trims and lowercases and collapses spaces', () => {
+        expect(normalizeHeadingTextForMatch('  Privacy   Preference   Center  ')).to.equal('privacy preference center');
+      });
+      it('returns empty string for non-string', () => {
+        expect(normalizeHeadingTextForMatch(null)).to.equal('');
+        expect(normalizeHeadingTextForMatch(undefined)).to.equal('');
+        expect(normalizeHeadingTextForMatch(123)).to.equal('');
+      });
+      it('returns empty string for empty string', () => {
+        expect(normalizeHeadingTextForMatch('')).to.equal('');
+        expect(normalizeHeadingTextForMatch('   ')).to.equal('');
+      });
+    });
+
+    describe('isExcludedConsentHeadingText', () => {
+      it('returns true for exact phrase match (case-insensitive)', () => {
+        expect(isExcludedConsentHeadingText('Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('privacy preference center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Cookie Settings')).to.equal(true);
+      });
+      it('returns true when heading contains phrase', () => {
+        expect(isExcludedConsentHeadingText('Welcome to Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Manage your cookie settings here')).to.equal(true);
+      });
+      it('returns true when phrase contains heading (short match)', () => {
+        expect(isExcludedConsentHeadingText('privacy')).to.equal(true);
+      });
+      it('returns false for non-consent content', () => {
+        expect(isExcludedConsentHeadingText('Product details')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Section 1')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Compatible lighting components')).to.equal(false);
+      });
+      it('returns false for empty or whitespace', () => {
+        expect(isExcludedConsentHeadingText('')).to.equal(false);
+        expect(isExcludedConsentHeadingText('   ')).to.equal(false);
+      });
+    });
+
+    describe('isHeadingInExcludedContainer', () => {
+      it('returns false when heading or $ is missing', () => {
+        const $ = cheerioLoad('<h1>Title</h1>');
+        expect(isHeadingInExcludedContainer(null, $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h1')[0], null)).to.equal(false);
+      });
+      it('returns true when heading is inside OneTrust container', () => {
+        const $ = cheerioLoad('<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns true when heading is inside cookie-banner', () => {
+        const $ = cheerioLoad('<div id="cookie-banner"><h2>Cookie Settings</h2></div>');
+        const h2 = $('h2')[0];
+        expect(isHeadingInExcludedContainer(h2, $)).to.equal(true);
+      });
+      it('returns true when heading is inside element with class cookie-consent', () => {
+        const $ = cheerioLoad('<div class="cookie-consent"><h1>Accept Cookies</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns false when heading is not inside any excluded container', () => {
+        const $ = cheerioLoad('<main><h1>Product details</h1><h2>Section 1</h2></main>');
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(false);
+      });
+      it('returns true when heading is inside a nav element', () => {
+        const $ = cheerioLoad('<nav><h2>Main Menu</h2></nav>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with role="navigation"', () => {
+        const $ = cheerioLoad('<div role="navigation"><h2>Navigation Links</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside the top-level site header (body > header)', () => {
+        const $ = cheerioLoad('<body><header><h1>Site Name</h1></header></body>');
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(true);
+      });
+      it('does NOT exclude heading inside article > header (section-level header)', () => {
+        const $ = cheerioLoad(
+          '<body><main><article><header><h1>Article Title</h1></header></article></main></body>',
+        );
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
+      });
+      it('returns true when heading is inside a footer element', () => {
+        const $ = cheerioLoad('<footer><h2>Footer Links</h2></footer>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside a sidebar element', () => {
+        const $ = cheerioLoad('<div class="sidebar"><h2>Related Articles</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with nav- class prefix', () => {
+        const $ = cheerioLoad('<div class="nav-panel"><h2>Nav Section</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with navigation class', () => {
+        const $ = cheerioLoad('<div class="site-navigation"><h2>Browse</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is deeply nested inside a nav element', () => {
+        const $ = cheerioLoad('<nav><ul><li><div><h2>Nested Nav Heading</h2></div></li></ul></nav>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+    });
+
+    describe('extractTocData', () => {
+      it('returns all h1 and h2 when no main and no consent', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><h2 id="s1">Section 1</h2><h2 id="s2">Section 2</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result[0]).to.deep.include({ text: 'Title', level: 1 });
+        expect(result[1]).to.deep.include({ text: 'Section 1', level: 2 });
+        expect(result[2]).to.deep.include({ text: 'Section 2', level: 2 });
+      });
+      it('when main exists, only includes headings inside body > main', () => {
+        const $ = cheerioLoad(
+          '<body><h1 id="outside">Outside Main</h1><main><h1 id="inside">Inside Main</h1><h2 id="sec">Section</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Inside Main', 'Section']);
+      });
+      it('excludes headings inside consent container', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>'
+          + '<main><h1 id="product">Product details</h1><h2 id="sec">Section</h2></main>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section']);
+      });
+      it('excludes headings by consent phrase even when not in consent container', () => {
+        const $ = cheerioLoad(
+          '<body><main><h1 id="a">Product details</h1><h2 id="b">Privacy Preference Center</h2><h2 id="c">Section 2</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section 2']);
+      });
+      it('returns empty array when no headings', () => {
+        const $ = cheerioLoad('<body><p>No headings</p></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('returns empty array when all headings are excluded', () => {
+        const $ = cheerioLoad('<body><div id="cookie-banner"><h1>Cookie Settings</h1><h2>Manage preferences</h2></div></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('excludes headings inside nav elements', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<nav><h2>Site Navigation</h2></nav>'
+          + '<h1 id="title">Page Title</h1>'
+          + '<h2 id="sec1">Section 1</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Page Title', 'Section 1']);
+      });
+      it('excludes headings inside top-level site header (body > header) and footer', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Site Logo</h1></header>'
+          + '<main><h1 id="title">Article Title</h1><h2 id="sec1">Section 1</h2></main>'
+          + '<footer><h2>Footer Links</h2></footer>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Article Title', 'Section 1']);
+      });
+      it('includes heading inside article > header (section-level header is not excluded)', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Site Logo</h1></header>'
+          + '<main>'
+          + '<article><header><h1 id="title">Article Title</h1></header>'
+          + '<h2 id="sec1">Section 1</h2></article>'
+          + '</main>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Article Title', 'Section 1']);
+      });
+      it('excludes headings inside sidebar', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div class="sidebar"><h2>Related Articles</h2></div>'
+          + '<h1 id="title">Main Content Title</h1>'
+          + '<h2 id="sec1">Section 1</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Main Content Title', 'Section 1']);
+      });
+      it('excludes headings inside role="navigation" element', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div role="navigation"><h2>Browse Topics</h2></div>'
+          + '<h1 id="title">Article Title</h1>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(1);
+        expect(result[0].text).to.equal('Article Title');
+      });
+      it('returns empty array when all headings are inside navigation containers', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Brand Name</h1></header>'
+          + '<nav><h2>Home</h2><h2>About</h2></nav>'
+          + '<footer><h2>Contact</h2></footer>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('excludes headings with empty text', () => {
+        const $ = cheerioLoad('<body><h1 id="a">   </h1><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
+      });
+      it('excludes headings with no text content', () => {
+        const $ = cheerioLoad('<body><h2 id="a"></h2><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
+      });
+      it('includes selector from getHeadingSelectorFn', () => {
+        const $ = cheerioLoad('<body><h1 id="main">Title</h1></body>');
+        const result = extractTocData($, getHeadingSelector);
+        expect(result[0].selector).to.equal('h1#main');
+      });
+      it('excludes headings inside .form-step containers', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">Get Your Quote</h1>'
+          + '<div class="form-step"><h2>Step 1: Personal Details</h2></div>'
+          + '<div class="form-step"><h2>Step 2: Coverage Options</h2></div>'
+          + '<h2 id="sec">Why Choose Us</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Get Your Quote', 'Why Choose Us']);
+      });
+      it('deduplicates headings with identical normalised text', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">Coverage Options</h1>'
+          + '<h2 id="b">Section One</h2>'
+          + '<h2 id="c">Coverage Options</h2>'
+          + '<h2 id="d">Section Two</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result.map((r) => r.text)).to.deep.equal(['Coverage Options', 'Section One', 'Section Two']);
+      });
+    });
+
+    describe('tocArrayToHast', () => {
+      it('builds HAST with nav > ul > li > a for each item', () => {
+        const tocData = [
+          { text: 'Title', level: 1, selector: 'h1#main' },
+          { text: 'Section', level: 2, selector: 'h2#sec' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        expect(hast.type).to.equal('root');
+        expect(hast.children[0].tagName).to.equal('nav');
+        expect(hast.children[0].properties.className).to.include('toc');
+        const ul = hast.children[0].children[0];
+        expect(ul.tagName).to.equal('ul');
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[1].properties.className).to.include('toc-sub');
+        expect(ul.children[0].children[0].properties['data-selector']).to.equal('h1#main');
+        expect(ul.children[0].children[0].children[0].value).to.equal('Title');
+      });
+
+      it('filters out items with empty or whitespace-only text', () => {
+        const tocData = [
+          { text: 'Valid Heading', level: 1, selector: 'h1#valid' },
+          { text: '', level: 1, selector: 'h1#empty' },
+          { text: '   ', level: 2, selector: 'h2#whitespace' },
+          { text: 'Another Valid', level: 2, selector: 'h2#also-valid' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        const ul = hast.children[0].children[0];
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[0].children[0].children[0].value).to.equal('Valid Heading');
+        expect(ul.children[1].children[0].children[0].value).to.equal('Another Valid');
+      });
+    });
+
+    describe('determineTocPlacement', () => {
+      it('returns insertAfter first h1 when h1 present', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertAfter');
+        expect(result.selector).to.include('h1');
+        expect(result.placement).to.equal('after-h1');
+      });
+      it('returns insertBefore main first-child when no h1 but main present', () => {
+        const $ = cheerioLoad('<body><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > main > :first-child');
+        expect(result.placement).to.equal('main-start');
+      });
+      it('returns insertBefore body first-child when no h1 and no main', () => {
+        const $ = cheerioLoad('<body><div>Content</div></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > :first-child');
+        expect(result.placement).to.equal('body-start');
+      });
+    });
+
+    describe('getScrapeJsonPath', () => {
+      it('builds path with siteId and pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/page', 'site-1'))
+          .to.equal('scrapes/site-1/products/page/scrape.json');
+      });
+      it('strips trailing slash from pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/', 'site-1'))
+          .to.equal('scrapes/site-1/products/scrape.json');
+      });
+    });
+
+    describe('getSurroundingText', () => {
+      it('returns empty strings when heading has no siblings', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.equal('');
+        expect(result.after).to.equal('');
+      });
+
+      it('returns before and after text from siblings', () => {
+        const $ = cheerioLoad('<div><p>Before paragraph</p><h2>Heading</h2><p>After paragraph</p></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.include('Before paragraph');
+        expect(result.after).to.include('After paragraph');
+      });
+
+      it('truncates after text to charLimit using slice', () => {
+        const longAfter = 'B'.repeat(200);
+        const $ = cheerioLoad(`<div><h2>Heading</h2><p>${longAfter}</p></div>`);
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 150);
+        expect(result.after.length).to.be.at.most(150);
+      });
+
+      it('truncates before text to charLimit using slice', () => {
+        const longBefore = 'A'.repeat(200);
+        const $ = cheerioLoad(`<div><p>${longBefore}</p><h2>Heading</h2></div>`);
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 150);
+        expect(result.before.length).to.be.at.most(150);
+      });
+
+      it('breaks after-text loop when accumulated text reaches charLimit mid-loop', () => {
+        // First sibling is under the limit; second pushes it over — triggers inner break
+        const text1 = 'A'.repeat(12);
+        const text2 = 'B'.repeat(12);
+        const text3 = 'C'.repeat(12);
+        const $ = cheerioLoad(
+          `<div><h2>Heading</h2><p>${text1}</p><p>${text2}</p><p>${text3}</p></div>`,
+        );
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 20);
+        expect(result.after.length).to.be.at.most(20);
+      });
+
+      it('breaks before-text loop when accumulated text reaches charLimit mid-loop', () => {
+        const text1 = 'A'.repeat(12);
+        const text2 = 'B'.repeat(12);
+        const text3 = 'C'.repeat(12);
+        const $ = cheerioLoad(
+          `<div><p>${text3}</p><p>${text2}</p><p>${text1}</p><h2>Heading</h2></div>`,
+        );
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 20);
+        expect(result.before.length).to.be.at.most(20);
+      });
+
+      it('skips siblings with no text content', () => {
+        const $ = cheerioLoad('<div><p></p><p>Real before</p><h2>Heading</h2><p></p><p>Real after</p></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.include('Real before');
+        expect(result.after).to.include('Real after');
+      });
+    });
+
+    describe('getFollowingStructure', () => {
+      it('returns isEmpty: true when heading has no following sibling', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isEmpty).to.equal(true);
+        expect(result.firstElement).to.equal(null);
+        expect(result.firstText).to.equal('');
+      });
+
+      it('returns element info for a following paragraph', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><p>Following text content here</p></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isEmpty).to.equal(false);
+        expect(result.firstElement).to.equal('p');
+        expect(result.hasImages).to.equal(false);
+        expect(result.hasLinks).to.equal(false);
+        expect(result.isList).to.equal(false);
+        expect(result.firstText).to.include('Following text content');
+      });
+
+      it('detects images inside the following element', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><div><img src="test.jpg"/></div></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.hasImages).to.equal(true);
+      });
+
+      it('detects links inside the following element', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><p><a href="/link">Click here</a></p></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.hasLinks).to.equal(true);
+      });
+
+      it('detects an unordered list as isList', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><ul><li>Item 1</li><li>Item 2</li></ul></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isList).to.equal(true);
+        expect(result.firstElement).to.equal('ul');
+      });
+
+      it('detects an ordered list as isList', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><ol><li>Step 1</li><li>Step 2</li></ol></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isList).to.equal(true);
+        expect(result.firstElement).to.equal('ol');
+      });
+    });
+
+    describe('getParentSectionContext', () => {
+      it('finds nearest semantic parent (article) with class and id', () => {
+        const $ = cheerioLoad('<article class="main-article" id="art-1"><h2>Heading</h2></article>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('article');
+        expect(result.parentId).to.equal('art-1');
+        expect(result.parentClasses).to.include('main-article');
+        expect(result.precedingHeading).to.equal(null);
+      });
+
+      it('finds nearest semantic parent (section) with no class or id', () => {
+        const $ = cheerioLoad('<section><h2>Heading</h2></section>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('section');
+        expect(result.parentClasses).to.deep.equal([]);
+        expect(result.parentId).to.equal(null);
+      });
+
+      it('finds a preceding higher-level heading', () => {
+        const $ = cheerioLoad('<main><h1>Page Title</h1><section><h2>Subsection</h2></section></main>');
+        const h1 = $('h1')[0];
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h1, h2], 1);
+        expect(result.precedingHeading).to.not.equal(null);
+        expect(result.precedingHeading.level).to.equal('h1');
+        expect(result.precedingHeading.text).to.equal('Page Title');
+      });
+
+      it('returns null precedingHeading when no preceding heading has a lower level', () => {
+        const $ = cheerioLoad('<main><h2>Section A</h2><h2>Section B</h2></main>');
+        const h2s = $('h2').toArray();
+        const result = getParentSectionContext(h2s[1], $, h2s, 1);
+        expect(result.precedingHeading).to.equal(null);
+      });
+
+      it('falls back to heading.parent when no semantic ancestor found', () => {
+        const $ = cheerioLoad('<div class="wrapper" id="wrap"><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('div');
+        expect(result.parentId).to.equal('wrap');
+        expect(result.parentClasses).to.include('wrapper');
+      });
+
+      it('falls back to heading.parent with no class (empty parentClasses)', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('div');
+        expect(result.parentClasses).to.deep.equal([]);
+        expect(result.parentId).to.equal(null);
+      });
+
+      it('skips preceding headings with empty text and uses the first with text', () => {
+        const $ = cheerioLoad('<main><h1></h1><h1>Real Title</h1><h2>Section</h2></main>');
+        const h1s = $('h1').toArray();
+        const h2 = $('h2')[0];
+        const allHeadings = [...h1s, h2];
+        const result = getParentSectionContext(h2, $, allHeadings, 2);
+        expect(result.precedingHeading).to.not.equal(null);
+        expect(result.precedingHeading.text).to.equal('Real Title');
+      });
+    });
+
+    describe('getHeadingContext', () => {
+      it('returns surroundingText, followingStructure, and parentSection', () => {
+        const $ = cheerioLoad('<article><p>Before</p><h2>Heading</h2><p>After</p></article>');
+        const h2 = $('h2')[0];
+        const result = getHeadingContext(h2, $, [h2], 0);
+        expect(result).to.have.property('surroundingText');
+        expect(result).to.have.property('followingStructure');
+        expect(result).to.have.property('parentSection');
+        expect(result.surroundingText.before).to.include('Before');
+        expect(result.surroundingText.after).to.include('After');
+        expect(result.followingStructure.firstElement).to.equal('p');
+        expect(result.parentSection.parentTag).to.equal('article');
+      });
+    });
+  });
+
+  describe('URL Prioritization (getTocInputUrls — used by importTopPages)', () => {
+    it('uses merged URL list from getMergedAuditInputUrls covering all three sources', async () => {
+      const agenticUrl = 'https://example.com/agentic-page';
+      const includedUrl = 'https://example.com/customer-desired';
+      const organicUrl = 'https://example.com/organic-page';
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [includedUrl, agenticUrl, organicUrl],
+        topPagesUrls: [organicUrl],
+        agenticUrls: [agenticUrl],
+        includedURLs: [includedUrl],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([agenticUrl]),
+        },
+      });
+
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+      };
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(getMergedAuditInputUrlsStub).to.have.been.calledOnce;
+      expect(result.auditResult.topPages).to.have.lengthOf(3);
+      expect(result.auditResult.topPages[0]).to.equal(includedUrl);
+    });
+
+    it('logs URL input source counts from getTocInputUrls', async () => {
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
+      context.log = logSpy;
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: ['https://example.com/p1'],
+        topPagesUrls: ['https://example.com/p1'],
+        agenticUrls: ['https://example.com/agentic'],
+        includedURLs: ['https://example.com/desired'],
+        filteredCount: 2,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+      };
+      await mockedHandler.importTopPages(context);
+
+      expect(logSpy.info).to.have.been.calledWith(
+        '[TOC] URL inputs: topPages=1, agentic=1, includedURLs=1, filteredOutUrls=2, finalUrls=1',
+      );
+    });
+
+    it('prioritizes customer desired URLs and passes auditType to getMergedAuditInputUrls', async () => {
+      const includedUrl = 'https://example.com/customer-desired';
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [includedUrl],
+        topPagesUrls: [],
+        agenticUrls: [],
+        includedURLs: [includedUrl],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+      };
+      const result = await mockedHandler.importTopPages(context);
+
+      // getMergedAuditInputUrls was called with the correct auditType
+      const callArgs = getMergedAuditInputUrlsStub.firstCall.args[0];
+      expect(callArgs).to.have.property('auditType', 'toc');
+      // The customer desired URL was included in the stored topPages
+      expect(result.auditResult.topPages[0]).to.equal(includedUrl);
+    });
+  });
+
+  describe('importTopPages', () => {
+    it('returns top pages when URLs are found', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [url],
+        topPagesUrls: [url],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.include(url);
+      expect(result.siteId).to.equal(site.getId());
+    });
+
+    it('returns empty topPages when no URLs are found', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [],
+        topPagesUrls: [],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.deep.equal([]);
+    });
+
+    it('returns failure when getTocInputUrls throws', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: sinon.stub().rejects(new Error('DB error')),
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('DB error');
+    });
+
+    it('invokes getTopPages callback using real getMergedAuditInputUrls (covers lines 56-61)', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+
+      const mockPage = {
+        getUrl: () => url,
+        getTraffic: () => 100,
+      };
+      const siteWithConfig = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: sinon.stub().resolves({
+          getIncludedURLs: sinon.stub().resolves([]),
+          getAuditTargetURLs: sinon.stub().returns([]),
+        }),
+      };
+      context.site = siteWithConfig;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([mockPage]),
+        },
+      };
+
+      // Only mock getTopAgenticUrlsFromAthena — let the real getMergedAuditInputUrls run
+      // so the getTopPages callback (lines 56-61) is exercised
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+        'site-1',
+        'seo',
+        'global',
+      );
+    });
+
+    it('invokes getTopPages callback with null result (covers topPages || [] branch in line 61)', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+
+      const siteWithConfig = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: sinon.stub().resolves({
+          getIncludedURLs: sinon.stub().resolves([]),
+          getAuditTargetURLs: sinon.stub().returns([]),
+        }),
+      };
+      context.site = siteWithConfig;
+      context.dataAccess = {
+        SiteTopPage: {
+          // returns null to exercise the `topPages || []` fallback branch
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves(null),
+        },
+      };
+
+      // Only mock getTopAgenticUrlsFromAthena — let real getMergedAuditInputUrls run
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.deep.equal([]);
+    });
+  });
+
+  describe('submitForScraping', () => {
+    it('returns scraping payload when topPages exist in stored audit result', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true, topPages: [url] }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([{ url }]);
+      expect(result.processingType).to.be.undefined;
+      expect(result.options).to.be.undefined;
+      expect(result.maxScrapeAge).to.equal(24);
+      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping');
+    });
+
+    it('persists terminal result and returns when previous audit step failed', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: false, topPages: [] }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] Audit failed in previous step, skipping scraping');
+    });
+
+    it('persists terminal result and returns when topPages is empty', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: true, topPages: [] }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
+    });
+
+    it('persists terminal result and returns when topPages is undefined', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: true }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
   });
 });

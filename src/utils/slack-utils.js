@@ -11,6 +11,7 @@
  */
 
 import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
+import { hasText } from '@adobe/spacecat-shared-utils';
 
 /**
  * Sends a message to a Slack channel.
@@ -70,6 +71,23 @@ export async function postMessageSafe(context, channelId, text, options = {}) {
   } catch (error) {
     context.log?.error(`Failed to send Slack message to channel ${channelId}:`, error);
     return { success: false, error };
+  }
+}
+
+/**
+ * Act as a wrapper around postMessageSafe() to optionally send a message.
+ * @param {object} context - The context object
+ * @param {string} channelId - The Slack channel ID
+ * @param {string} text - The message text
+ * @param {object} options - Additional options (same as postMessage)
+ * @returns {Promise<{success: boolean, result?: object, error?: Error}>} Operation result
+ */
+export async function postMessageOptional(context, channelId, text, options = {}) {
+  const { threadTs } = options;
+  if (hasText(channelId) && hasText(threadTs)) {
+    return postMessageSafe(context, channelId, text, options);
+  } else {
+    return { success: false, result: null };
   }
 }
 

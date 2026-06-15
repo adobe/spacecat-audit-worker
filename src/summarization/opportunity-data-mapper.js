@@ -25,7 +25,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     guidance,
     tags: ['isElmo', 'content'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.PAGE],
     },
   };
 }

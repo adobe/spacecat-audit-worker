@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -89,6 +87,7 @@ describe('guidance-structured-data-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
+      getType: () => 'structured-data',
     });
     const mockSetData = sandbox.stub();
     const mockSave = sandbox.stub().resolves();
@@ -234,6 +233,7 @@ describe('guidance-structured-data-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => messageWithoutRemediations.siteId,
       getId: () => messageWithoutRemediations.data.opportunityId,
+      getType: () => 'structured-data',
     });
     const mockSetData = sandbox.stub();
     const mockSave = sandbox.stub().resolves();
@@ -273,6 +273,7 @@ describe('guidance-structured-data-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => messageWithoutRemediations.siteId,
       getId: () => messageWithoutRemediations.data.opportunityId,
+      getType: () => 'structured-data',
     });
     const mockSetData = sandbox.stub();
     const mockSave = sandbox.stub().resolves();

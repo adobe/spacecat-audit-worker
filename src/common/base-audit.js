@@ -11,12 +11,12 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { composeAuditURL, hasText, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { composeAuditURL, wwwUrlResolver as sharedWwwUrlResolver } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { retrieveSiteBySiteId } from '../utils/data-access.js';
-import { toggleWWWHostname } from '../support/utils.js';
 
 // eslint-disable-next-line no-empty-function
 export async function defaultMessageSender() {}
@@ -61,44 +61,28 @@ export async function defaultUrlResolver(site) {
 
 export async function wwwUrlResolver(site, context) {
   const { log } = context;
-
-  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-  if (isValidUrl(overrideBaseURL)) {
-    return overrideBaseURL.replace(/^https?:\/\//, '');
-  }
-
-  const baseURL = site.getBaseURL();
-  const uri = new URI(baseURL);
-  const hostname = uri.hostname();
-  const subdomain = uri.subdomain();
-
-  if (hasText(subdomain) && subdomain !== 'www') {
-    log.debug(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
-    return hostname;
-  }
-
   const rumApiClient = RUMAPIClient.createFrom(context);
+  const resolvedHostname = await sharedWwwUrlResolver(site, rumApiClient, log);
 
-  try {
-    const wwwToggledHostname = toggleWWWHostname(hostname);
-    await rumApiClient.retrieveDomainkey(wwwToggledHostname);
-    log.debug(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
-    return wwwToggledHostname;
-  } catch (e) {
-    log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+  const baseHostname = new URI(site.getBaseURL()).hostname();
+  const desiredOverride = `https://${resolvedHostname}`;
+
+  if (resolvedHostname !== baseHostname && typeof site.save === 'function') {
+    const siteConfig = site.getConfig();
+    const existingFetchConfig = siteConfig.getFetchConfig() || {};
+    if (existingFetchConfig.overrideBaseURL !== desiredOverride) {
+      siteConfig.updateFetchConfig({ ...existingFetchConfig, overrideBaseURL: desiredOverride });
+      site.setConfig(Config.toDynamoItem(siteConfig));
+      try {
+        await site.save();
+        log.debug(`[wwwUrlResolver] persisted overrideBaseURL=${desiredOverride} for ${site.getBaseURL()}`);
+      } catch (e) {
+        log.error(`[wwwUrlResolver] failed to persist overrideBaseURL: ${e.message}`);
+      }
+    }
   }
 
-  try {
-    await rumApiClient.retrieveDomainkey(hostname);
-    log.debug(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`);
-    return hostname;
-  } catch (e) {
-    log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
-  }
-
-  const fallback = hostname.startsWith('www.') ? hostname : `www.${hostname}`;
-  log.debug(`Fallback to ${fallback} for URL resolution for ${baseURL}`);
-  return fallback;
+  return resolvedHostname;
 }
 
 export async function noopUrlResolver(site) {
@@ -169,7 +153,7 @@ export class BaseAudit {
 
   async runPostProcessors(audit, result, params, context) {
     const {
-      type, site, finalUrl, auditData,
+      type, site, finalUrl, auditData, auditContext = {},
     } = params;
     const { auditResult, fullAuditRef } = result;
     const { log } = context;
@@ -190,7 +174,13 @@ export class BaseAudit {
       const updatedAuditData = await previousProcessor;
 
       try {
-        const processedResult = await postProcessor(finalUrl, updatedAuditData, context, site);
+        const processedResult = await postProcessor(
+          finalUrl,
+          updatedAuditData,
+          context,
+          site,
+          auditContext,
+        );
         return processedResult || updatedAuditData;
       } catch (e) {
         log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${site.getId()}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);

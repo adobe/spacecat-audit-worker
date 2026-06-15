@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -23,9 +21,10 @@ import {
   sitemapProductCoverageAuditRunner,
   generateSuggestions,
   generateOpportunity,
+  ERROR_CODES,
 } from '../../src/sitemap-product-coverage/handler.js';
 import { createOpportunityData } from '../../src/sitemap-product-coverage/opportunity-data-mapper.js';
-import { ERROR_CODES } from '../../src/sitemap/common.js';
+import { ERROR_CODES as SITEMAP_ERROR_CODES } from '../../src/sitemap/common.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -205,7 +204,6 @@ describe('Sitemap Product Coverage Audit', () => {
         },
       },
       '../../src/sitemap/common.js': {
-        ERROR_CODES,
         getSitemapUrls: async (url) => {
           if (global.mockEmptySitemap) {
             return {
@@ -491,7 +489,7 @@ describe('Sitemap Product Coverage Audit', () => {
       global.mockEmptySitemap = false;
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
+      expect(result.auditResult.reasons[0].error).to.equal(SITEMAP_ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
     it('should handle large catalog with category traversal', async () => {
@@ -556,7 +554,7 @@ describe('Sitemap Product Coverage Audit', () => {
       global.mockEmptySitemap = false;
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
+      expect(result.auditResult.reasons[0].error).to.equal(SITEMAP_ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
   });
 
@@ -890,7 +888,7 @@ describe('Sitemap Product Coverage Audit', () => {
       global.mockMissingDetails = false;
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
+      expect(result.auditResult.reasons[0].error).to.equal(SITEMAP_ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
       // Should handle missing extractedPaths and filteredSitemapUrls gracefully
     });
 

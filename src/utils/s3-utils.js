@@ -99,7 +99,8 @@ export async function getObjectFromKey(s3Client, bucketName, key, log) {
     // Always return body for non-JSON content types
     return body;
   } catch (err) {
-    log.error(
+    const logFn = err.name === 'NoSuchKey' ? 'debug' : 'error';
+    log[logFn](
       `Error while fetching S3 object from bucket ${bucketName} using key ${key}`,
       err,
     );

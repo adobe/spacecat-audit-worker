@@ -119,12 +119,11 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   return `${sanitizeMarkdown(markdownWithScreenshots)}`;
 }
 
-export function isLowSeverityGuidanceBody(body) {
-  if (body.issueSeverity) {
+export function isHighSeverityGuidanceBody(body) {
+  if (body?.issueSeverity) {
     const sev = body.issueSeverity.toLowerCase();
-    return sev.includes('none') || sev.includes('low');
+    return sev.includes('high');
   }
-
   return false;
 }
 
@@ -178,8 +177,8 @@ export function mapToPaidOpportunity(siteId, url, auditData, pageGuidance, audit
       appliedCPC: stats.appliedCPC,
       cpcSource: stats.cpcSource,
       defaultCPC: stats.defaultCPC,
-      ahrefsOrganicCPC: stats.ahrefsOrganicCPC,
-      ahrefsPaidCPC: stats.ahrefsPaidCPC,
+      seoOrganicCPC: stats.seoOrganicCPC,
+      seoPaidCPC: stats.seoPaidCPC,
     },
     status: 'NEW',
     tags: [

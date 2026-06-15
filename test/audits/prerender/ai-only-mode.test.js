@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -46,6 +44,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page1',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('NEW'),
       },
@@ -54,6 +53,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page2',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('PENDING_VALIDATION'),
       },
@@ -80,6 +80,7 @@ describe('Prerender AI-Only Mode', () => {
 
     context = {
       log: {
+        debug: sandbox.stub(),
         info: sandbox.stub(),
         warn: sandbox.stub(),
         error: sandbox.stub(),
@@ -88,6 +89,7 @@ describe('Prerender AI-Only Mode', () => {
         getId: sandbox.stub().returns('site-123'),
         getBaseURL: sandbox.stub().returns('https://example.com'),
         getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getRegion: sandbox.stub().returns(''),
       },
       dataAccess: mockDataAccess,
       env: {
@@ -182,7 +184,7 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.error).to.match(/scrapeJobId not found/);
       expect(result.fullAuditRef).to.match(/ai-only\/failed-/);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/status.json not found/),
+        sinon.match(/No scrapeJobId found in status\.json/),
       );
     });
 
@@ -198,8 +200,8 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.status).to.equal('failed');
       expect(result.error).to.match(/scrapeJobId not found/);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error fetching status.json: S3 connection timeout/),
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Could not read status\.json.*S3 connection timeout/),
       );
     });
 
@@ -366,7 +368,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.warn).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/No existing suggestions found/),
       );
     });
@@ -412,6 +414,29 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-OUTDATED
     });
 
+    it('should skip SKIPPED suggestions', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-SKIPPED
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should return 0 if all suggestions are SKIPPED', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+      mockSuggestions[1].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No eligible suggestions to send to Mystique/),
+      );
+    });
+
     it('should return 0 if all suggestions are filtered out', async () => {
       mockSuggestions[0].getStatus.returns('OUTDATED');
       mockSuggestions[1].getData.returns({ url: null });
@@ -435,6 +460,14 @@ describe('Prerender AI-Only Mode', () => {
       expect(message.deliveryType).to.equal('unknown');
     });
 
+    it('should include the site base URL as top-level url in the SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.url).to.equal('https://example.com');
+    });
+
     it('should handle missing getId method on suggestion', async () => {
       mockSuggestions[0].getId = undefined;
 
@@ -442,6 +475,195 @@ describe('Prerender AI-Only Mode', () => {
 
       // Should still process suggestion
       expect(result.status).to.equal('complete');
+    });
+
+    it('should use per-suggestion scrapeJobId when building Mystique S3 keys', async () => {
+      // Suggestions with their own scrapeJobId must use that id for key construction,
+      // not the audit-level scrapeJobId passed in via ai-only data.
+      const perSuggestionJobId = 'per-suggestion-job-id';
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: perSuggestionJobId,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(suggestion).to.exist;
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
+    });
+
+    it('should derive scrapeJobId from originalHtmlKey when scrapeJobId is missing', async () => {
+      const derivedJobId = 'derived-job-id';
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        // scrapeJobId absent but originalHtmlKey present — job id is the 3rd path segment
+        originalHtmlKey: `prerender/scrapes/${derivedJobId}/page1/server-side.html`,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/derived from originalHtmlKey/),
+      );
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(suggestion).to.exist;
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${derivedJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${derivedJobId}`);
+    });
+
+    it('should skip suggestion when both scrapeJobId and originalHtmlKey are missing', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        // neither scrapeJobId nor originalHtmlKey
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 (which has scrapeJobId) is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should skip suggestion when originalHtmlKey has fewer than 3 path segments', async () => {
+      // parts[2] will be undefined → effectiveScrapeJobId = null → suggestion skipped
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        originalHtmlKey: 'prerender/scrapes', // only 2 segments, no job id at index 2
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+  });
+
+  describe('Suggestion scoping — ai-only vs normal audit run', () => {
+    it('ai-only mode sends ALL opportunity suggestions to Mystique, not just a batch', async () => {
+      // Simulate an opportunity with 3 suggestions from different past audit runs.
+      // In ai-only mode every eligible suggestion should be queued regardless of which
+      // audit run produced it.
+      const staleSuggestion = {
+        getId: sandbox.stub().returns('suggestion-stale'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/old-page',
+          isDomainWide: false,
+          scrapeJobId: 'old-job-id',
+        }),
+        getStatus: sandbox.stub().returns('NEW'),
+      };
+      mockOpportunity.getSuggestions.resolves([...mockSuggestions, staleSuggestion]);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      // All 3 suggestions (2 from current run + 1 stale) must be sent
+      expect(result.auditResult.suggestionCount).to.equal(3);
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const sentUrls = message.data.suggestions.map((s) => s.url);
+      expect(sentUrls).to.include('https://example.com/page1');
+      expect(sentUrls).to.include('https://example.com/page2');
+      expect(sentUrls).to.include('https://example.com/old-page');
+    });
+
+    it('normal audit run builds auditRunCandidates with suggestionId from saved suggestions', async () => {
+      // auditRunCandidates is built from preRenderSuggestions (the URL list produced by the
+      // current audit run). getSuggestions() is called once by findPreservableDomainWideSuggestion
+      // and once after syncSuggestions to resolve suggestionId for each candidate URL.
+      const savedSuggestion = {
+        getId: sinon.stub().returns('page1-suggestion-id'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page1' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const getSuggestionsStub = sinon.stub().resolves([savedSuggestion]);
+      const mockOpportunityNormal = {
+        getId: () => 'opp-normal',
+        getSuggestions: getSuggestionsStub,
+      };
+
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockHandler = await (await import('esmock')).default('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunityNormal),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(true),
+          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-current',
+        scrapeJobId: 'current-job-id',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            },
+          ],
+        },
+      };
+
+      const sqsContext = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+        dataAccess: {
+          Suggestion: {
+            STATUSES: {
+              NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+            },
+          },
+        },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+      };
+
+      const { opportunity, auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+        'https://example.com',
+        auditData,
+        sqsContext,
+      );
+
+      expect(opportunity).to.equal(mockOpportunityNormal);
+      // getSuggestions is called once by findPreservableDomainWideSuggestion.
+      expect(getSuggestionsStub).to.have.been.calledOnce;
+      // One candidate per URL in the current batch — plain objects with S3 keys and suggestionId
+      expect(auditRunCandidates).to.have.lengthOf(1);
+      expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
+      expect(auditRunCandidates[0].originalHtmlMarkdownKey).to.include('current-job-id');
+      expect(auditRunCandidates[0].markdownDiffKey).to.include('current-job-id');
+      expect(auditRunCandidates[0]).to.not.have.property('getId');
+      expect(auditRunCandidates[0]).to.not.have.property('getStatus');
     });
   });
 
@@ -513,6 +735,185 @@ describe('Prerender AI-Only Mode', () => {
       // Should proceed to normal import flow (not ai-only mode)
       expect(result).to.exist;
       expect(result.mode).to.be.undefined;
+    });
+  });
+
+  describe('CSV URL scoping in ai-only mode', () => {
+    it('should scope suggestions to auditContext.urls when provided', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page1'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should filter out suggestions not in auditContext.urls', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page2'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should send all suggestions when auditContext.urls is not set', async () => {
+      // Default context has no auditContext.urls
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(2);
+    });
+
+    it('should return 0 when no suggestions match auditContext.urls', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/no-match'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+    });
+  });
+
+  describe('generatePrompts flag in SQS payload', () => {
+    it('should include generatePrompts:false in SQS message by default', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(false);
+    });
+
+    it('should include generatePrompts:true in SQS message when flag is set', async () => {
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+
+    it('should treat generatePrompts as truthy when provided as string "true"', async () => {
+      // The Slack keyword parser passes values as strings (generatePrompts:true → "true")
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: 'true',
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      // !!parsedData.generatePrompts → !!'true' → true
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+  });
+
+  describe('hasPrompts flag per suggestion in SQS payload', () => {
+    it('should set hasPrompts:false for suggestions without existing prompts', async () => {
+      // Default mock suggestions have no prompts field
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      message.data.suggestions.forEach((s) => {
+        expect(s.hasPrompts).to.equal(false);
+      });
+    });
+
+    it('should set hasPrompts:true for suggestions that already have prompts', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [{
+          id: 'prompt-uuid-1', origin: 'ai', source: 'audit',
+          prompt: 'What is prerendering?', type: 'Branded',
+          topic: 'Performance', category: 'SEO', intent: 'Informational', regions: ['US'],
+        }],
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const s2 = message.data.suggestions.find((s) => s.url === 'https://example.com/page2');
+      expect(s1.hasPrompts).to.equal(true);
+      expect(s2.hasPrompts).to.equal(false);
+    });
+
+    it('should set hasPrompts:false for suggestions with empty prompts array', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [], // Empty — no prompts yet
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(s1.hasPrompts).to.equal(false);
+    });
+  });
+
+  describe('siteRegion in SQS payload', () => {
+    it('should include empty siteRegion when site has no region configured', async () => {
+      // Default mock site returns '' from getRegion
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('');
+    });
+
+    it('should include siteRegion from site config when available', async () => {
+      context.site.getRegion = sandbox.stub().returns('US');
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('US');
+    });
+
+    it('should default to empty string when site.getRegion returns null', async () => {
+      context.site.getRegion = sandbox.stub().returns(null);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.siteRegion).to.equal('');
+    });
+  });
+
+  describe('batchIndex and totalBatches in SQS payload', () => {
+    it('should include batchIndex:0 and totalBatches:1 in SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.batchIndex).to.equal(0);
+      expect(message.data.totalBatches).to.equal(1);
     });
   });
 

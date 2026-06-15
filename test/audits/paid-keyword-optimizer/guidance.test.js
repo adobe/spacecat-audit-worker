@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -18,7 +16,6 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler from '../../../src/paid-keyword-optimizer/guidance-handler.js';
 
 use(sinonChai);
@@ -26,59 +23,78 @@ use(chaiAsPromised);
 
 const TEST_URL = 'https://example-page/page1';
 
-// Helper to create a message in the GuidanceWithBody format
-function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
+function makeCluster({
+  clusterId = 'cluster-1',
+  analysisStatus = 'ok',
+  recommendation = null,
+  clusterMisalignedSpend = 100,
+  clusterTraffic = 500,
+  clusterCpc = 2.0,
+  representativeKeyword = 'test keyword',
+  serpTitle = 'Test SERP Title',
+  keywords = [],
+  gapAnalysis = {},
+  overallAlignmentScore = 'fair',
+  keywordAnalysis = [],
+} = {}) {
+  return {
+    clusterId,
+    representativeKeyword,
+    serpTitle,
+    keywords,
+    clusterTraffic,
+    clusterCpc,
+    clusterMisalignedSpend,
+    analysisStatus,
+    gapAnalysis,
+    overallAlignmentScore,
+    keywordAnalysis,
+    ...(recommendation && { recommendation }),
+  };
+}
+
+function createClusterMessage({
+  clusterResults = [makeCluster()],
+  portfolioMetrics = { totalSpend: 1000 },
+  langfuseTraceId = 'trace-123',
+  langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
+  observability,
+} = {}) {
+  const resolvedObservability = observability !== undefined
+    ? observability
+    : { langfuseTraceId, langfuseTraceUrl };
+
   return {
     auditId: 'auditId',
     siteId: 'site',
     data: {
       url: TEST_URL,
       guidance: [{
-        insight: 'test insight',
-        rationale: 'test rationale',
-        recommendation: 'test recommendation',
-        type: 'guidance',
-        ...guidanceOverrides,
         body: {
-          issueSeverity: 'medium',
-          url: TEST_URL,
-          suggestions: [
-            { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-            { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-          ],
-          cpc: 0.075,
-          sumTraffic: 23423.5,
-          ...bodyOverrides,
+          clusterResults,
+          portfolioMetrics,
+          ...(resolvedObservability != null && { observability: resolvedObservability }),
         },
       }],
-      suggestions: [],
     },
   };
 }
 
 // Helper to create a fresh stubbed opportunity instance
 function makeOppty({
-  id, type, status = 'NEW', updatedBy = 'system', url = null,
+  id, type = 'ad-intent-mismatch', status = 'NEW', url = null,
 }) {
   return {
     getId: () => id,
-    getSuggestions: async () => [],
-    setAuditId: sinon.stub(),
-    setData: sinon.stub(),
-    setGuidance: sinon.stub(),
-    setTitle: sinon.stub(),
-    setDescription: sinon.stub(),
     setStatus: sinon.stub(),
     save: sinon.stub().resolvesThis(),
     getType: () => type,
     getData: () => ({ url }),
     getStatus: () => status,
-    getUpdatedBy: () => updatedBy,
-    getUpdatedAt: () => new Date().toISOString(),
   };
 }
 
-describe('Paid Keyword Optimizer Guidance Handler', () => {
+describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
   let sandbox;
   let logStub;
   let context;
@@ -97,28 +113,17 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     };
     Suggestion = {
       create: sandbox.stub().resolves(),
-      STATUSES: SuggestionDataAccess.STATUSES,
-      TYPES: SuggestionDataAccess.TYPES,
     };
     opportunityInstance = {
       getId: () => 'opptyId',
-      getSuggestions: async () => [],
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setGuidance: sinon.stub(),
-      setTitle: sinon.stub(),
-      setStatus: sinon.stub(),
-      setDescription: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
       getType: () => 'ad-intent-mismatch',
       getData: () => ({ url: TEST_URL }),
       getStatus: () => 'NEW',
-      getUpdatedBy: () => 'system',
-      getUpdatedAt: () => new Date().toISOString(),
     };
     Opportunity = {
-      allBySiteId: sandbox.stub(),
+      allBySiteIdAndStatus: sandbox.stub().resolves([]),
       create: sandbox.stub(),
+      saveMany: sandbox.stub().resolves(),
     };
     Audit = { findById: sandbox.stub() };
 
@@ -134,11 +139,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       getAuditResult: () => ({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
-        predominantlyPaidPages: [
-          { url: TEST_URL, bounceRate: 0.5, pageViews: 5000, trafficLoss: 2500 },
-        ],
-        predominantlyPaidCount: 1,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       }),
     });
   });
@@ -148,307 +148,455 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     nock.cleanAll();
   });
 
-  it('should return notFound if no audit is found', async () => {
-    Audit.findById.resolves(null);
-    Opportunity.allBySiteId.resolves([]);
-    const message = createMessage();
+  describe('failure envelope', () => {
+    it('should return ok and log when receiving a failure envelope', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          status: 'failed',
+          url: TEST_URL,
+          error: {
+            type: 'GuidanceGenerationError',
+            message: 'Analysis failed.',
+            langfuseTraceId: 'test-trace-123',
+          },
+        },
+      };
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(result.status).to.equal(notFound().status);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(Suggestion.create).not.to.have.been.called;
+      expect(Audit.findById).not.to.have.been.called;
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match({
+          trace_id: 'test-trace-123',
+          audit_id: 'auditId',
+          site_id: 'site',
+          url: TEST_URL,
+          error_type: 'GuidanceGenerationError',
+        }),
+        '[ad-intent-mismatch] URL-level failure from Mystique',
+      );
+    });
   });
 
-  it('should create a new opportunity and suggestion', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+  describe('audit lookup', () => {
+    it('should return notFound if no audit is found', async () => {
+      Audit.findById.resolves(null);
+      const message = createClusterMessage();
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should mark existing opportunities for the same URL as IGNORED', async () => {
-    const existingOpptyForSameUrl = makeOppty({
-      id: 'opptyId-1',
-      type: 'ad-intent-mismatch',
-      status: 'NEW',
-      updatedBy: 'system',
-      url: TEST_URL, // Same URL
+      expect(result.status).to.equal(notFound().status);
     });
 
-    Opportunity.allBySiteId.resolves([existingOpptyForSameUrl]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+    it('should return ok and skip when audit has no result data', async () => {
+      Audit.findById.resolves({
+        getAuditId: () => 'auditId',
+        getAuditType: () => 'paid-keyword-optimizer',
+        getAuditResult: () => null,
+      });
+      const message = createClusterMessage();
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-
-    // The existing opportunity for the same URL should be marked as IGNORED
-    expect(existingOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOpptyForSameUrl.save).to.have.been.called;
-
-    expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
   });
 
-  it('should NOT mark existing opportunities for different URLs as IGNORED', async () => {
-    const existingOpptyForDifferentUrl = makeOppty({
-      id: 'opptyId-1',
-      type: 'ad-intent-mismatch',
-      status: 'NEW',
-      updatedBy: 'system',
-      url: 'https://example-page/different-page', // Different URL
+  describe('missing data guard', () => {
+    it('should return ok when message has no data', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+      };
+
+      const result = await handler(message, context);
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(logStub.warn).to.have.been.calledWithMatch(/no data/);
     });
 
-    Opportunity.allBySiteId.resolves([existingOpptyForDifferentUrl]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+    it('should return ok when data is null', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: null,
+      };
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-
-    // The existing opportunity for a different URL should NOT be marked as IGNORED
-    expect(existingOpptyForDifferentUrl.setStatus).to.not.have.been.called;
-
-    expect(result.status).to.equal(ok().status);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+    });
   });
 
-  it('should only mark same-URL system opportunities as IGNORED, not user-modified ones', async () => {
-    const systemOpptyForSameUrl = makeOppty({
-      id: 'opptyId-system',
-      type: 'ad-intent-mismatch',
-      status: 'NEW',
-      updatedBy: 'system',
-      url: TEST_URL,
-    });
-    const userOpptyForSameUrl = makeOppty({
-      id: 'opptyId-user',
-      type: 'ad-intent-mismatch',
-      status: 'NEW',
-      updatedBy: 'user',
-      url: TEST_URL,
-    });
+  describe('clusterResults gate', () => {
+    it('should skip when guidance body is null', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: null }],
+        },
+      };
 
-    Opportunity.allBySiteId.resolves([systemOpptyForSameUrl, userOpptyForSameUrl]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+      const result = await handler(message, context);
 
-    const result = await handler(message, context);
-
-    // Only the system opportunity should be marked as IGNORED
-    expect(systemOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOpptyForSameUrl.save).to.have.been.called;
-
-    // The user-modified opportunity should not be touched
-    expect(userOpptyForSameUrl.setStatus).to.not.have.been.called;
-    expect(userOpptyForSameUrl.save).to.not.have.been.called;
-
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should not mark opportunities of different types as IGNORED', async () => {
-    const wrongTypeOppty = makeOppty({
-      id: 'opptyId-3',
-      type: 'other-type',
-      status: 'NEW',
-      updatedBy: 'system',
-      url: TEST_URL,
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
     });
 
-    Opportunity.allBySiteId.resolves([wrongTypeOppty]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+    it('should skip when clusterResults is absent from body', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: { portfolioMetrics: {} } }],
+        },
+      };
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(wrongTypeOppty.setStatus).to.not.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should skip opportunity creation and log for low severity', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    const message = createMessage({ bodyOverrides: { issueSeverity: 'low' } });
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping ad-intent-mismatch: low issue severity/);
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should skip opportunity creation for none severity', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    const message = createMessage({ bodyOverrides: { issueSeverity: 'none' } });
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should create opportunity if severity is medium', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage({ bodyOverrides: { issueSeverity: 'Medium' } });
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should create opportunity if severity is high', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage({ bodyOverrides: { issueSeverity: 'high' } });
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    context.site = { requiresValidation: true };
-    const message = createMessage();
-
-    await handler(message, context);
-
-    expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
-  });
-
-  it('should set suggestion status to NEW when site does not require validation', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    context.site = { requiresValidation: false };
-    const message = createMessage();
-
-    await handler(message, context);
-
-    expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
-  });
-
-  it('should not mark the newly created opportunity as IGNORED', async () => {
-    const existingOppty = makeOppty({
-      id: 'existing-oppty-id',
-      type: 'ad-intent-mismatch',
-      status: 'NEW',
-      updatedBy: 'system',
-      url: TEST_URL,
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
     });
 
-    Opportunity.allBySiteId.resolves([existingOppty]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
+    it('should skip when clusterResults is an empty array', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: { clusterResults: [], portfolioMetrics: {} } }],
+        },
+      };
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    // Only the existing opportunity should be marked as IGNORED, not the newly created one
-    expect(existingOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOppty.save).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should skip when guidance array is empty', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should skip when guidance is undefined', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
   });
 
-  it('should skip opportunity creation when guidance is empty', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: {
+  describe('opportunity and suggestion creation', () => {
+    it('should create 1 opportunity and 1 suggestion per cluster', async () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.calledTwice;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should create suggestions with composite ranks', async () => {
+      const clusters = [
+        makeCluster({ clusterId: 'aligned', clusterTraffic: 200 }),
+        makeCluster({
+          clusterId: 'mismatched',
+          recommendation: { type: 'modify_heading', changes: [] },
+          clusterMisalignedSpend: 500,
+        }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      // mismatched cluster should be rank 1 (tier 0), aligned should be rank 2 (tier 1)
+      const call0 = Suggestion.create.getCall(0).args[0];
+      const call1 = Suggestion.create.getCall(1).args[0];
+      expect(call0.rank).to.equal(1);
+      expect(call1.rank).to.equal(2);
+    });
+
+    it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      context.site = { requiresValidation: true };
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
+    });
+
+    it('should set suggestion status to NEW when site does not require validation', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      context.site = { requiresValidation: false };
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
+    });
+  });
+
+  describe('observability logging', () => {
+    it('should log observability data when present', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const observability = { duration_ms: 1200, model: 'gpt-4' };
+      const message = createClusterMessage({ observability });
+
+      await handler(message, context);
+
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match({
+          duration_ms: 1200,
+          model: 'gpt-4',
+          site_id: 'site',
+          url: TEST_URL,
+          audit_id: 'auditId',
+        }),
+        '[ad-intent-mismatch] Mystique observability data',
+      );
+    });
+
+    it('should not log observability data when absent', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ observability: null });
+
+      await handler(message, context);
+
+      const observabilityCalls = logStub.info.getCalls().filter(
+        (c) => typeof c.args[1] === 'string' && c.args[1].includes('observability'),
+      );
+      expect(observabilityCalls).to.have.lengthOf(0);
+    });
+  });
+
+  describe('replace-on-re-audit', () => {
+    it('should mark existing NEW opportunity for same URL as IGNORED', async () => {
+      const existingNew = makeOppty({ id: 'old-new', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([existingNew])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(existingNew.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([existingNew]);
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should mark existing IN_PROGRESS opportunity for same URL as IGNORED', async () => {
+      const existingInProgress = makeOppty({ id: 'old-ip', status: 'IN_PROGRESS', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([])
+        .withArgs('site', 'IN_PROGRESS').resolves([existingInProgress]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(existingInProgress.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([existingInProgress]);
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark RESOLVED opportunities as IGNORED (different status query)', async () => {
+      // RESOLVED opportunities are not returned by allBySiteIdAndStatus for NEW/IN_PROGRESS
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark opportunities for different URLs as IGNORED', async () => {
+      const differentUrl = makeOppty({ id: 'diff-url', url: 'https://example.com/other' });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([differentUrl])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(differentUrl.setStatus).not.to.have.been.called;
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark any opportunities as IGNORED when url is undefined', async () => {
+      const existingNoUrl = makeOppty({ id: 'no-url', url: undefined });
+      const existingWithUrl = makeOppty({ id: 'with-url', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([existingNoUrl, existingWithUrl])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+
+      // Message with missing url
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          guidance: [{
+            body: {
+              clusterResults: [makeCluster()],
+              portfolioMetrics: { totalSpend: 1000 },
+              observability: { langfuseTraceId: 'trace-123', langfuseTraceUrl: 'https://example.com' },
+            },
+          }],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(existingNoUrl.setStatus).not.to.have.been.called;
+      expect(existingWithUrl.setStatus).not.to.have.been.called;
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark opportunities of different types as IGNORED', async () => {
+      const wrongType = makeOppty({ id: 'wrong-type', type: 'other-type', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([wrongType])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(wrongType.setStatus).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should handle old-format opportunity in DB without crashing', async () => {
+      // Old format: data has gapAnalysis at top level, no portfolioMetrics
+      const oldFormatOppty = makeOppty({ id: 'old-format', url: TEST_URL });
+      // Override getData to return old-format shape
+      oldFormatOppty.getData = () => ({
         url: TEST_URL,
-        guidance: [],
-        suggestions: [],
-      },
-    };
+        gapAnalysis: { severity: 'high' },
+        cpc: 4.50,
+        sumTraffic: 150,
+      });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([oldFormatOppty])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
 
-    const result = await handler(message, context);
+      const result = await handler(message, context);
 
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(Suggestion.create).not.to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should skip opportunity creation when guidance is missing', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: {
-        url: TEST_URL,
-        suggestions: [],
-      },
-    };
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(Suggestion.create).not.to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should store suggestions as variations in the suggestion data', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const suggestions = [
-      { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-      { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-    ];
-    const message = createMessage({ bodyOverrides: { suggestions } });
-
-    await handler(message, context);
-
-    const suggestionCreateCall = Suggestion.create.getCall(0);
-    expect(suggestionCreateCall.args[0].data.variations).to.deep.equal(suggestions);
-  });
-
-  it('should pass the full message to the opportunity mapper', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage();
-
-    await handler(message, context);
-
-    const opportunityCreateCall = Opportunity.create.getCall(0);
-    const createdOpportunity = opportunityCreateCall.args[0];
-
-    // Check that the opportunity has the correct data from the message
-    expect(createdOpportunity.data).to.have.property('url', TEST_URL);
-    expect(createdOpportunity.data).to.have.property('cpc', 0.075);
-    expect(createdOpportunity.data).to.have.property('sumTraffic', 23423.5);
-  });
-
-  it('should include insight, rationale, and recommendation in opportunity guidance', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage({
-      guidanceOverrides: {
-        insight: 'custom insight',
-        rationale: 'custom rationale',
-        recommendation: 'custom recommendation',
-      },
+      // Old opportunity marked IGNORED, new opportunity created, no errors
+      expect(oldFormatOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([oldFormatOppty]);
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(result.status).to.equal(ok().status);
     });
 
-    await handler(message, context);
+    it('should mark multiple existing opportunities as IGNORED in one saveMany call', async () => {
+      const old1 = makeOppty({ id: 'old1', url: TEST_URL });
+      const old2 = makeOppty({ id: 'old2', status: 'IN_PROGRESS', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([old1])
+        .withArgs('site', 'IN_PROGRESS').resolves([old2]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
 
-    const opportunityCreateCall = Opportunity.create.getCall(0);
-    const createdOpportunity = opportunityCreateCall.args[0];
+      await handler(message, context);
 
-    expect(createdOpportunity.guidance.recommendations[0]).to.deep.include({
-      insight: 'custom insight',
-      rationale: 'custom rationale',
-      recommendation: 'custom recommendation',
-      type: 'guidance',
+      expect(old1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(old2.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledOnce;
+      expect(Opportunity.saveMany).to.have.been.calledWith([old1, old2]);
+    });
+  });
+
+  describe('langfuseTraceId and hasConflictingHeadlineRecommendations', () => {
+    it('should pass langfuseTraceId to opportunity data', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({
+        langfuseTraceId: 'trace-abc',
+        langfuseTraceUrl: 'https://langfuse.example.com/trace/abc',
+      });
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.langfuseTraceId).to.equal('trace-abc');
+      expect(createCall.data.langfuseTraceUrl).to.equal('https://langfuse.example.com/trace/abc');
+    });
+
+    it('should compute hasConflictingHeadlineRecommendations=true when multiple modify_heading clusters', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2', recommendation: { type: 'modify_heading', changes: [] } }),
+      ];
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.hasConflictingHeadlineRecommendations).to.be.true;
+    });
+
+    it('should compute hasConflictingHeadlineRecommendations=false when one or zero modify_heading clusters', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.hasConflictingHeadlineRecommendations).to.be.false;
     });
   });
 });

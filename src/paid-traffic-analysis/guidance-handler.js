@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';
@@ -73,12 +74,16 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period,
     .filter((oppty) => oppty.getId() !== newOpptyId)
     .filter((oppty) => {
       const data = oppty.getData() || {};
-      if (period.week != null) return data.week != null;
-      if (period.month != null) return data.month != null;
+      if (period.week != null) {
+        return data.week != null;
+      }
+      if (period.month != null) {
+        return data.week == null && data.month != null;
+      }
       return false;
     });
 
-  await Promise.all(candidates.map(async (oppty) => {
+  candidates.forEach((oppty) => {
     const data = oppty.getData();
     const title = oppty.getTitle();
     const weekVal = data?.week;
@@ -87,8 +92,10 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period,
     log.debug(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
     oppty.setStatus('IGNORED');
     oppty.setUpdatedBy('system');
-    await oppty.save();
-  }));
+  });
+  if (candidates.length > 0) {
+    await Opportunity.saveMany(candidates);
+  }
   log.debug(`Ignored ${candidates.length} existing paid-traffic opportunities for siteId=${siteId}`);
 }
 
@@ -125,14 +132,18 @@ export default async function handler(message, context) {
   if (suggestions.length) {
     // If this is a paid traffic report, always set status to NEW, else use requiresValidation logic
     const requiresValidation = Boolean(context.site?.requiresValidation);
-    const status = opportunity.getType() !== 'paid-traffic' && requiresValidation
+    const opportunityType = opportunity.getType();
+    const status = opportunityType !== 'paid-traffic' && requiresValidation
       ? SuggestionModel.STATUSES.PENDING_VALIDATION
       : SuggestionModel.STATUSES.NEW;
 
-    await Promise.all(suggestions.map((s) => Suggestion.create({
-      ...s,
-      status,
-    })));
+    await Promise.all(suggestions.map((s) => {
+      warnOnInvalidSuggestionData(s.data, opportunityType, log);
+      return Suggestion.create({
+        ...s,
+        status,
+      });
+    }));
   }
 
   // Only after successful opportunity and suggestions creation, ignore previous ones
