@@ -582,6 +582,85 @@ describe('CDN Analysis Handler', () => {
       });
     });
 
+    // S3 fake for byocdn-other: detection prefix returns the given day paths (recently
+    // modified), discovery prefix exposes byocdn-other as a provider.
+    const byocdnOtherS3Fake = (orgId, recentDate, dayPaths) => (command) => {
+      if (command.constructor.name === 'HeadBucketCommand') {
+        return Promise.resolve({});
+      }
+      if (command.constructor.name === 'ListObjectsV2Command') {
+        const { Prefix = '' } = command.input || {};
+        if (Prefix.includes('aggregated')) {
+          return Promise.resolve({ Contents: [] });
+        }
+        if (Prefix.includes('/raw/byocdn-other/')) {
+          return Promise.resolve({
+            Contents: dayPaths.map((dp) => ({
+              Key: `${orgId}/raw/byocdn-other/${dp}/file.log`,
+              LastModified: recentDate,
+            })),
+          });
+        }
+        return Promise.resolve({
+          Contents: [{ Key: `${orgId}/raw/byocdn-other/2025/06/15/file1.log` }],
+          CommonPrefixes: [{ Prefix: `${orgId}/raw/byocdn-other/` }],
+        });
+      }
+      return Promise.resolve({});
+    };
+
+    const reportDatesFor = () => context.sqs.sendMessage.getCalls()
+      .filter((call) => call.args[1].type === 'cdn-logs-report')
+      .map((call) => call.args[1].auditContext.date);
+
+    it('also triggers a report for a completed week\'s closing Sunday when no Sunday file was delivered', async () => {
+      // Past week Mon 06/02 .. Sun 06/08 2025; only Mon–Fri uploaded, audit runs 06/15.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03', '2025/06/04', '2025/06/05', '2025/06/06',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 15, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // 5 per-day reports (day+1) + the week-closing Sunday 06/08 (sent as 06/09).
+      expect(reportDates).to.have.length(6);
+      expect(reportDates).to.include('2025-06-09T00:00:00.000Z');
+    });
+
+    it('does not duplicate the Sunday report when the Sunday file was delivered', async () => {
+      // Full week Mon 06/02 .. Sun 06/08 uploaded; Sunday already produces its own report.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03', '2025/06/04', '2025/06/05', '2025/06/06', '2025/06/07', '2025/06/08',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 15, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // 7 detected days → 7 reports; the Sunday-derived 06/09 appears exactly once.
+      expect(reportDates).to.have.length(7);
+      expect(reportDates.filter((d) => d === '2025-06-09T00:00:00.000Z')).to.have.length(1);
+    });
+
+    it('does not add a Sunday report for the in-progress (incomplete) week', async () => {
+      // Mon/Tue of the current week (06/02, 06/03); audit runs mid-week 06/04, week not closed.
+      context.s3Client.send.callsFake(byocdnOtherS3Fake('test-ims-org-id', new Date(), [
+        '2025/06/02', '2025/06/03',
+      ]));
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, {
+        year: 2025, month: 6, day: 4, hour: 23,
+      });
+
+      const reportDates = reportDatesFor();
+      // Only the two per-day reports; no week-closing Sunday (06/09) added.
+      expect(reportDates).to.have.length(2);
+      expect(reportDates).to.not.include('2025-06-09T00:00:00.000Z');
+    });
+
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,
@@ -690,6 +769,208 @@ describe('CDN Analysis Handler', () => {
 
       expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
       expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    describe('retryable Athena failures', () => {
+      const subAuditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+        processFullDay: true,
+        isSubAudit: true,
+      };
+
+      beforeEach(() => {
+        context.s3Client.send.callsFake(createS3MockForCdnType('other'));
+      });
+
+      it('re-enqueues a delayed retry on "exhausted resources" and returns a soft result', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+
+        const result = await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        );
+
+        expect(result.auditResult).to.include({ retryScheduled: true, retryCount: 1 });
+        expect(result.auditResult.error).to.include('exhausted resources at this scale factor');
+
+        // Preserves the original auditContext and only adds retryCount.
+        expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+          'test-audit-queue',
+          sinon.match({
+            type: 'cdn-logs-analysis',
+            siteId: 'test-site-id',
+            auditContext: {
+              ...subAuditContext,
+              retryCount: 1,
+            },
+          }),
+          null,
+          850,
+        );
+      });
+
+      it('increments retryCount across attempts', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('TOO_MANY_REQUESTS: throttling'),
+        );
+
+        await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          { ...subAuditContext, retryCount: 1 },
+        );
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+          'test-audit-queue',
+          sinon.match({ auditContext: sinon.match({ retryCount: 2 }) }),
+          null,
+          850,
+        );
+      });
+
+      it('retries on the structured retryable flag even when the message does not match', async () => {
+        const err = new Error('some unmatched athena message');
+        err.retryable = true;
+        context.athenaClient.execute = sandbox.stub().rejects(err);
+
+        const result = await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        );
+
+        expect(result.auditResult).to.include({ retryScheduled: true, retryCount: 1 });
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      });
+
+      it('does not retry when the structured flag is false, even if the message matches', async () => {
+        const err = new Error('Query exhausted resources at this scale factor');
+        err.retryable = false;
+        context.athenaClient.execute = sandbox.stub().rejects(err);
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
+      it('clamps a negative retryCount to 0 (no extra retries from malformed input)', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+
+        await cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          { ...subAuditContext, retryCount: -5 },
+        );
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+          'test-audit-queue',
+          sinon.match({ auditContext: sinon.match({ retryCount: 1 }) }),
+          null,
+          850,
+        );
+      });
+
+      it('preserves the original Athena error if the requeue itself fails', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+        context.sqs.sendMessage = sandbox.stub().rejects(new Error('SQS unavailable'));
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/could not re-enqueue retry for siteId=test-site-id: SQS unavailable/),
+        );
+      });
+
+      it('does not retry when the kill switch CDN_ANALYSIS_RETRY_ENABLED=false', async () => {
+        context.env.CDN_ANALYSIS_RETRY_ENABLED = 'false';
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
+      it('gives up and rethrows once retries are exhausted', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('Query exhausted resources at this scale factor'),
+        );
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          { ...subAuditContext, retryCount: 2 },
+        )).to.be.rejectedWith(/exhausted resources/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/giving up for siteId=test-site-id after 2 retries/),
+        );
+      });
+
+      it('does not retry non-retryable errors', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('SYNTAX_ERROR: line 1:8 mismatched input'),
+        );
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          subAuditContext,
+        )).to.be.rejectedWith(/SYNTAX_ERROR/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/giving up for siteId=test-site-id after 0 retries/),
+        );
+      });
+
+      it('logs the singular "retry" form when giving up after exactly one retry', async () => {
+        context.athenaClient.execute = sandbox.stub().rejects(
+          new Error('SYNTAX_ERROR: bad query'),
+        );
+
+        await expect(cdnLogsAnalysisRunner(
+          'https://example.com',
+          context,
+          site,
+          { ...subAuditContext, retryCount: 1 },
+        )).to.be.rejectedWith(/SYNTAX_ERROR/);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/giving up for siteId=test-site-id after 1 retry$/),
+        );
+      });
     });
 
     it('validates and processes auditContext correctly', async () => {

@@ -118,19 +118,6 @@ export function toggleWWW(baseUrl) {
 }
 
 /**
- * Toggles the www subdomain in a given hostname.
- * @param {string} hostname - The URL to toggle the www subdomain in.
- * @returns {string} - The URL with the www subdomain toggled.
- */
-export function toggleWWWHostname(hostname) {
-  /* c8 ignore next 3 */
-  if (hasNonWWWSubdomain(`https://${hostname}`)) {
-    return hostname;
-  }
-  return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
-}
-
-/**
  * Extracts the main domain name from a hostname.
  * Removes the www. prefix if present, then takes the first part before the first dot.
  * Examples:

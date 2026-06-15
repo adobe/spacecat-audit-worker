@@ -345,6 +345,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       };
 
       context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
         bulkUpdateStatus: sandbox.stub(),
         saveMany: sinon.stub().resolves(),
       };
@@ -503,7 +504,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
-        getData: () => (suggestion.data),
+        // Return old data with different pageviews so deepEqual detects change
+        getData: () => ({ ...suggestion.data, pageviews: (suggestion.data.pageviews || 0) - 1000 }),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
         setUpdatedBy: sinon.stub().returnsThis(),
@@ -736,6 +738,117 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.sqs.sendMessage.firstCall.args[1].data.suggestionId).to.equal('sugg-2');
     });
   });
+
+  describe('syncOpportunityAndSuggestionsStep - PLG alert behavior', () => {
+    let mockedSyncStep;
+    let sendLowSuggestionCountAlertStub;
+
+    beforeEach(async () => {
+      sendLowSuggestionCountAlertStub = sandbox.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/cwv/handler.js', {
+        '../../src/support/plg-suggestion-alert.js': {
+          sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+        },
+      });
+      mockedSyncStep = mockedHandler.syncOpportunityAndSuggestionsStep;
+
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        create: sandbox.stub(),
+      };
+      context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+      context.sqs = { sendMessage: sandbox.stub().resolves() };
+    });
+
+    it('calls sendLowSuggestionCountAlert with the NEW suggestion count', async () => {
+      const newSuggestions = [
+        { getId: () => 's1', getStatus: () => 'NEW', getData: () => ({}) },
+        { getId: () => 's2', getStatus: () => 'NEW', getData: () => ({}) },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(newSuggestions);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(auditTypeArg).to.equal('cwv');
+      expect(countArg).to.equal(2);
+    });
+
+    it('does not fire the alert when no new suggestions exist', async () => {
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([]);
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+
+      const mockAuditRecord = {
+        getId: () => 'audit-id',
+        getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+        getFullAuditRef: () => auditUrl,
+      };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        log: context.log,
+      });
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(countArg).to.equal(0);
+    });
+  });
 });
 
 describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () => {
@@ -789,7 +902,7 @@ describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () =>
   });
 });
 
-describe('Per-issue OUTDATED merge helpers', () => {
+describe('Per-issue prune-on-resolve merge helpers', () => {
   // Imported lazily to keep the existing top-level imports unchanged.
   let isMetricFailing;
   let applyPerIssueOutdated;
@@ -833,15 +946,12 @@ describe('Per-issue OUTDATED merge helpers', () => {
   });
 
   describe('applyPerIssueOutdated', () => {
-    it('marks issue OUTDATED when its metric type no longer fails', () => {
+    it('drops an issue when its metric type no longer fails', () => {
       const existing = [
         { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
       ];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
-      expect(result[0].status).to.equal('OUTDATED');
-      // Other fields preserved
-      expect(result[0].id).to.equal('a');
-      expect(result[0].value).to.equal('lcp guidance');
+      expect(result).to.deep.equal([]);
     });
 
     it('keeps issue NEW when its metric type still fails', () => {
@@ -849,10 +959,11 @@ describe('Per-issue OUTDATED merge helpers', () => {
         { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
       ];
       const result = applyPerIssueOutdated(existing, entryFailingLcp);
+      expect(result).to.have.lengthOf(1);
       expect(result[0].status).to.equal('NEW');
     });
 
-    it('marks only the resolved metric OUTDATED; others stay NEW', () => {
+    it('drops only the resolved metric; others stay NEW', () => {
       const existing = [
         { id: 'a', type: 'lcp', status: 'NEW' },
         { id: 'b', type: 'cls', status: 'NEW' },
@@ -860,36 +971,46 @@ describe('Per-issue OUTDATED merge helpers', () => {
       ];
       // Only CLS and INP fail now — LCP resolved
       const result = applyPerIssueOutdated(existing, entryFailingClsAndInp);
-      expect(result[0].status).to.equal('OUTDATED'); // lcp resolved
-      expect(result[1].status).to.equal('NEW'); // cls still failing
-      expect(result[2].status).to.equal('NEW'); // inp still failing
+      expect(result).to.have.lengthOf(2);
+      expect(result.map((i) => i.id)).to.deep.equal(['b', 'c']);
+      expect(result.every((i) => i.status === 'NEW')).to.be.true;
     });
 
     it('preserves APPROVED status when metric resolves (skip list)', () => {
       const existing = [{ id: 'a', type: 'lcp', status: 'APPROVED' }];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
       expect(result[0].status).to.equal('APPROVED');
     });
 
-    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR, OUTDATED in skip list', () => {
-      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR', 'OUTDATED'];
+    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR in skip list', () => {
+      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR'];
       statuses.forEach((status) => {
         const existing = [{ id: 'a', type: 'lcp', status }];
         const result = applyPerIssueOutdated(existing, entryAllPassing);
+        expect(result, `expected ${status} preserved`).to.have.lengthOf(1);
         expect(result[0].status, `expected ${status} preserved`).to.equal(status);
       });
+    });
+
+    it('drops stale OUTDATED issues so they no longer leak to the UI', () => {
+      // OUTDATED is no longer in the preserve set — these are pruned on re-merge.
+      const existing = [{ id: 'a', type: 'lcp', status: 'OUTDATED' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.deep.equal([]);
     });
 
     it('leaves legacy issues without a type field untouched', () => {
       const existing = [{ value: 'markdown only, no type', status: 'NEW' }];
       const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result).to.have.lengthOf(1);
       expect(result[0]).to.deep.equal({ value: 'markdown only, no type', status: 'NEW' });
     });
 
-    it('marks NEW issue OUTDATED even when status field is missing (defaults to OUTDATED on resolve)', () => {
+    it('drops a NEW issue even when status field is missing (no customer intent recorded)', () => {
       const existing = [{ id: 'a', type: 'lcp' }]; // no status field
       const result = applyPerIssueOutdated(existing, entryAllPassing);
-      expect(result[0].status).to.equal('OUTDATED');
+      expect(result).to.deep.equal([]);
     });
 
     it('returns empty array for empty input', () => {
@@ -964,7 +1085,7 @@ describe('Per-issue OUTDATED merge helpers', () => {
       expect(result.jiraLink).to.equal(null);
     });
 
-    it('marks resolved-metric issues OUTDATED on re-merge', () => {
+    it('drops resolved-metric issues on re-merge so the UI does not surface them', () => {
       const existing = {
         url: 'x',
         metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.3 }],
@@ -978,8 +1099,10 @@ describe('Per-issue OUTDATED merge helpers', () => {
         metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3 }], // lcp resolved, cls still failing
       };
       const result = mergeCwvData(existing, newItem);
-      expect(result.issues[0].status).to.equal('OUTDATED'); // lcp
-      expect(result.issues[1].status).to.equal('NEW'); // cls
+      // LCP issue is dropped entirely; only CLS remains
+      expect(result.issues).to.have.lengthOf(1);
+      expect(result.issues[0].id).to.equal('b');
+      expect(result.issues[0].status).to.equal('NEW');
       // metrics overwritten by new data
       expect(result.metrics[0].lcp).to.equal(1800);
     });

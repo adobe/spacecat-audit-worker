@@ -738,6 +738,52 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
+  describe('CSV URL scoping in ai-only mode', () => {
+    it('should scope suggestions to auditContext.urls when provided', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page1'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should filter out suggestions not in auditContext.urls', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/page2'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should send all suggestions when auditContext.urls is not set', async () => {
+      // Default context has no auditContext.urls
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(2);
+    });
+
+    it('should return 0 when no suggestions match auditContext.urls', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/no-match'],
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+    });
+  });
+
   describe('generatePrompts flag in SQS payload', () => {
     it('should include generatePrompts:false in SQS message by default', async () => {
       const result = await importTopPages(context);
