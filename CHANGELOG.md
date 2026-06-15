@@ -1,3 +1,15 @@
+# [1.475.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.2...v1.475.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **preflight:** wait for meta tags so slow-rendering SPAs aren't captured as empty shells ([#2670](https://github.com/adobe/spacecat-audit-worker/issues/2670)) ([a7b6f3c](https://github.com/adobe/spacecat-audit-worker/commit/a7b6f3c418406a5fe203159de8ca190222646fba))
+
+
+### Features
+
+* **offsite-brand-presence:** stop DRS-scraping wikipedia ([#2669](https://github.com/adobe/spacecat-audit-worker/issues/2669)) ([8b5d654](https://github.com/adobe/spacecat-audit-worker/commit/8b5d6542c8fcb3b08837001dc203bf7909d87ac2)), closes [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667) [#2668](https://github.com/adobe/spacecat-audit-worker/issues/2668) [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)
+
 ## [1.474.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.1...v1.474.2) (2026-06-15)
 
 
