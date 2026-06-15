@@ -122,6 +122,7 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import offsiteBrandPresenceDrsStatus from './offsite-brand-presence/drs-status-handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
@@ -228,6 +229,7 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  'offsite-brand-presence-drs-status': offsiteBrandPresenceDrsStatus,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   'rum-config-refresh': rumConfigRefresh,
