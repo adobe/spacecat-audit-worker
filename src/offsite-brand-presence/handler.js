@@ -26,6 +26,10 @@ import {
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
+  TOP_CITED_EXCLUDED_DOMAINS,
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_POLL_MAX_WAIT_SECONDS,
+  DRS_STATUS_AUDIT_TYPE,
 } from './constants.js';
 
 /**
@@ -173,6 +177,13 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
         return null;
       }
+      return { url: normalizeUrl(parsed, domain), domain };
+    }
+  }
+
+  // Tag (but don't scrape) these so selectTopUrls keeps them out of top-cited.
+  for (const domain of TOP_CITED_EXCLUDED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -677,6 +688,50 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
 }
 
 /**
+ * Schedules a delayed DRS status poll for the jobs that were submitted successfully.
+ * Only runs for manual Slack runs (channelId + threadTs present) with at least one
+ * job_id to track; scheduled runs and submission-only failures are skipped. The poll
+ * message carries the job list, Slack context, and an absolute deadline so each poll
+ * invocation is self-describing.
+ *
+ * @param {Array} drsResults - DRS job results from triggerDrsScraping
+ * @param {string} baseURL - The site's base URL
+ * @param {string} siteId - The site ID
+ * @param {object} context - The execution context (sqs, dataAccess, log)
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs) {
+  const { sqs, dataAccess, log } = context;
+
+  if (!channelId || !threadTs) {
+    return;
+  }
+
+  const jobs = drsResults
+    .filter((r) => r.status === 'success' && r.response?.job_id)
+    .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
+
+  if (jobs.length === 0) {
+    return;
+  }
+
+  const configuration = await dataAccess.Configuration.findLatest();
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: DRS_STATUS_AUDIT_TYPE,
+    siteId,
+    auditContext: {
+      baseURL,
+      slackContext: { channelId, threadTs },
+      jobs,
+      deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
+    },
+  }, null, DRS_POLL_INTERVAL_SECONDS);
+
+  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs)`);
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -753,7 +808,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   // Sort once, partition into per-domain + top-cited buckets
-  const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
+  const excludedFromTopCited = [...Object.keys(OFFSITE_DOMAINS), ...TOP_CITED_EXCLUDED_DOMAINS];
   const {
     topByDomain, topCited,
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
@@ -772,6 +827,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     await notifyDrsSkipped(skipped, baseURL, context, channelId, threadTs);
   } else {
     await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
+    // Best-effort follow-up: a failure here (e.g. transient Configuration/SQS error)
+    // must not fail the run, which already submitted the DRS jobs (POST /jobs is not
+    // idempotent) and posted the initial notification. Re-running would duplicate both.
+    try {
+      await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+    } catch (err) {
+      log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
+    }
   }
 
   // TODO: temporarily disabled
