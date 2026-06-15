@@ -1,3 +1,10 @@
+# [1.476.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.475.0...v1.476.0) (2026-06-15)
+
+
+### Features
+
+* **llm-error-pages:** enable observation:llm-broken-urls publish by default ([#2671](https://github.com/adobe/spacecat-audit-worker/issues/2671)) ([d4c2bd0](https://github.com/adobe/spacecat-audit-worker/commit/d4c2bd076ea626c5c9bdfa69692f0a1c85706f05))
+
 # [1.475.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.2...v1.475.0) (2026-06-15)
 
 
