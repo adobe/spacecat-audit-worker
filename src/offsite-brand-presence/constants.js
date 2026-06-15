@@ -60,3 +60,14 @@ export const RETRIABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 export const RETRY_DELAY_MS = 500;
 export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;
+
+// DRS job completion polling (offsite-brand-presence-drs-status handler).
+export const DRS_POLL_INTERVAL_SECONDS = 120; // 2 minutes between polls
+export const DRS_POLL_MAX_WAIT_SECONDS = 1200; // 20 minute total budget
+export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
+export const DRS_TERMINAL_STATUSES = new Set([
+  'COMPLETED',
+  'COMPLETED_WITH_ERRORS',
+  'FAILED',
+  'CANCELLED',
+]);
