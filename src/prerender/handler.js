@@ -61,8 +61,6 @@ const getDomainWideSuggestionUrl = (baseUrl) => {
   return `${baseUrl}/* (${label})`;
 };
 
-const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-
 /**
  * Reads and parses the site's status.json from S3.
  * Returns {} when S3 is not configured, the file does not exist, or any read error occurs.
