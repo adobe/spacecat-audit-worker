@@ -1,3 +1,23 @@
+# [1.473.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.472.0...v1.473.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v2.43.0 ([#2660](https://github.com/adobe/spacecat-audit-worker/issues/2660)) ([a56ab46](https://github.com/adobe/spacecat-audit-worker/commit/a56ab467c2561e2a0cb3840bdb294c321c35c811))
+
+
+### Features
+
+* **llm-error-pages:** enrich observation:llm-broken-urls with CDN-log trend facets ([#2661](https://github.com/adobe/spacecat-audit-worker/issues/2661)) ([0fb053a](https://github.com/adobe/spacecat-audit-worker/commit/0fb053a47dcc66f720191dce0a35968451407f56))
+
+# [1.472.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.6...v1.472.0) (2026-06-15)
+
+
+### Features
+
+* llm error pages suggestion history ([#2655](https://github.com/adobe/spacecat-audit-worker/issues/2655)) ([c7c8716](https://github.com/adobe/spacecat-audit-worker/commit/c7c87160be44fdeec494ef5af24094c2c5419367))
+* **llm-error-pages:** dual-publish observation:llm-broken-urls behin… ([#2634](https://github.com/adobe/spacecat-audit-worker/issues/2634)) ([a649ef9](https://github.com/adobe/spacecat-audit-worker/commit/a649ef96d45e9c4c29c0aa63e710e8e1e01c6fb7))
+
 ## [1.471.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.5...v1.471.6) (2026-06-15)
 
 
