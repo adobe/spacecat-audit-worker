@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -43,10 +43,60 @@ const STATUS_BUCKETS = [
   { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
 ];
 
-const RETENTION_WEEKS = 4;
-const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+// Separate lifecycle windows for freshness, DB purge, and history size.
+const DB_RETENTION_WEEKS = 6;
+export const HISTORY_RETENTION_WEEKS = 6;
+const RETENTION_MS = DB_RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+const NEW_WINDOW_WEEKS = 4;
+const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
+
+// Limit per-week agent lists so history payloads stay bounded.
+const MAX_AGENT_ENTRIES = 10;
+
+// Statuses protected from automatic retention changes.
+const PROTECTED_SWEEP_STATUSES = new Set([
+  SuggestionModel.STATUSES.FIXED,
+  SuggestionModel.STATUSES.APPROVED,
+  SuggestionModel.STATUSES.REJECTED,
+  SuggestionModel.STATUSES.SKIPPED,
+  SuggestionModel.STATUSES.ERROR,
+  SuggestionModel.STATUSES.IN_PROGRESS,
+  SuggestionModel.STATUSES.PENDING_VALIDATION,
+]);
 
 const TOP_404_LIMIT = 50;
+
+/**
+ * Builds one per-week history record for an llm-error-pages suggestion.
+ */
+function buildWeekHistoryEntry(item, periodIdentifier) {
+  return {
+    periodIdentifier,
+    hitCount: item.hitCount,
+    httpStatus: item.httpStatus,
+    agentTypes: item.agentTypes.slice(0, MAX_AGENT_ENTRIES),
+    userAgents: item.userAgents.slice(0, MAX_AGENT_ENTRIES),
+    avgTtfb: item.avgTtfb,
+  };
+}
+
+/**
+ * Upserts, orders, and prunes per-week suggestion history.
+ */
+export function upsertWeekHistory(existingHistory, weekEntry) {
+  const byPeriod = new Map();
+  (Array.isArray(existingHistory) ? existingHistory : []).forEach((entry) => {
+    if (entry?.periodIdentifier) {
+      byPeriod.set(entry.periodIdentifier, entry);
+    }
+  });
+  byPeriod.set(weekEntry.periodIdentifier, weekEntry);
+
+  return Array.from(byPeriod.values())
+    .sort((a, b) => parsePeriodIdentifier(a.periodIdentifier).getTime()
+      - parsePeriodIdentifier(b.periodIdentifier).getTime())
+    .slice(-HISTORY_RETENTION_WEEKS);
+}
 
 /**
  * Step 1: Import top pages and submit for scraping
@@ -274,7 +324,8 @@ export async function runAuditAndSendToMystique(context) {
 
         const opportunityMap = {};
         const { Suggestion, Opportunity } = dataAccess;
-        const retentionCutoff = new Date(Date.now() - RETENTION_MS);
+        const deleteCutoff = new Date(Date.now() - RETENTION_MS);
+        const outdatedCutoff = new Date(Date.now() - NEW_WINDOW_MS);
         let existingOpportunities = [];
         try {
           existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
@@ -341,6 +392,11 @@ export async function runAuditAndSendToMystique(context) {
                   product: newDataItem.product,
                   category: newDataItem.category,
                   periodIdentifier,
+                  // Keep top-level fields as latest snapshot and history as trend.
+                  history: upsertWeekHistory(
+                    existingData.history,
+                    buildWeekHistoryEntry(newDataItem, periodIdentifier),
+                  ),
                   ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
                   ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
                   ...(existingData.confidenceScore !== undefined && {
@@ -362,6 +418,7 @@ export async function runAuditAndSendToMystique(context) {
                     product: error.product,
                     category: error.category,
                     periodIdentifier,
+                    history: [buildWeekHistoryEntry(error, periodIdentifier)],
                   },
                 }),
               });
@@ -373,25 +430,44 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
-            const toOutdate = existingSuggestions.filter((s) => {
-              const data = s.getData() || {};
-              if (scrapedUrls.has(data.url)) {
-                return false;
-              }
-              const lastSeen = data.periodIdentifier;
-              if (!lastSeen) {
-                return false;
-              }
-              const status = s.getStatus();
-              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
-                return false;
-              }
-              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
-            });
+            // Skip backfill sweeps; otherwise age only system-managed stale suggestions.
+            const isBackfill = context.auditContext?.weekOffset !== undefined;
+            const toDelete = [];
+            const toOutdate = [];
+            if (!isBackfill) {
+              existingSuggestions.forEach((s) => {
+                const data = s.getData() || {};
+                if (scrapedUrls.has(data.url)) {
+                  return;
+                }
+                const lastSeen = data.periodIdentifier;
+                if (!lastSeen) {
+                  return;
+                }
+                if (PROTECTED_SWEEP_STATUSES.has(s.getStatus())) {
+                  return;
+                }
+                const seenAt = parsePeriodIdentifier(lastSeen);
+                if (seenAt.getTime() === 0) {
+                  log.warn(`[LLM-ERROR-PAGES] Skipping suggestion ${s.getId()} with unparseable periodIdentifier: "${lastSeen}" for ${auditType}`);
+                  return;
+                }
+                const isNew = s.getStatus() === SuggestionModel.STATUSES.NEW;
+                if (seenAt < deleteCutoff) {
+                  toDelete.push(s);
+                } else if (seenAt < outdatedCutoff && isNew) {
+                  toOutdate.push(s);
+                }
+              });
+            }
 
+            if (toDelete.length > 0) {
+              await Suggestion.removeByIds(toDelete.map((s) => s.getId()));
+              log.info(`[LLM-ERROR-PAGES] Deleted ${toDelete.length} suggestions older than ${DB_RETENTION_WEEKS} weeks for ${auditType}`);
+            }
             if (toOutdate.length > 0) {
               await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
-              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType}`);
+              log.info(`[LLM-ERROR-PAGES] Marked ${toOutdate.length} suggestions OUTDATED (last seen ${NEW_WINDOW_WEEKS}-${DB_RETENTION_WEEKS} weeks ago) for ${auditType}`);
             }
           } catch (bucketError) {
             log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {
