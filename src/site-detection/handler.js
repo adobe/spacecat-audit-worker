@@ -102,6 +102,8 @@ function isValidCandidate(domain, config, log) {
  * DNS-resolve to internal addresses (e.g. corp hosts, AWS metadata at
  * 169.254.169.254, Docker bridge networks).
  */
+// NOTE: src/support/url-safety.js is the canonical copy of these
+// helpers. Migrate to that import when this file is next refactored.
 function isPrivateIP(address) {
   if (typeof address !== 'string') {
     return true;
