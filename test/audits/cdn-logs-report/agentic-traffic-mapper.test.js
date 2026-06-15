@@ -33,6 +33,7 @@ const makeSuggestion = (data, { status = 'NEW' } = {}) => ({
 // Pass statusJson to stub the prerender status.json S3 read.
 const makeContext = (suggestions, {
   type = Audit.AUDIT_TYPES.PRERENDER,
+  status = 'NEW',
   statusJson = null,
   log = { warn: sinon.spy() },
 } = {}) => {
@@ -40,8 +41,8 @@ const makeContext = (suggestions, {
     log,
     dataAccess: {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([
-          { getType: () => type, getId: () => 'oppty-1' },
+        allBySiteId: sinon.stub().resolves([
+          { getType: () => type, getStatus: () => status, getId: () => 'oppty-1' },
         ]),
       },
       Suggestion: {
@@ -332,8 +333,8 @@ describe('agentic traffic mapper', () => {
       log: { warn: sinon.spy() },
       dataAccess: {
         Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([
-            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getId: () => 'oppty-1' },
+          allBySiteId: sinon.stub().resolves([
+            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getStatus: () => 'NEW', getId: () => 'o1' },
           ]),
         },
       },
@@ -343,9 +344,19 @@ describe('agentic traffic mapper', () => {
     );
     expect(noSuggestionDaResult.trafficRows[0].dimensions).to.deep.equal({});
 
-    // allBySiteIdAndStatus resolves null ⇒ tolerated.
+    // A prerender opportunity in a non-active status is ignored.
+    const inactiveOppContext = makeContext(
+      [makeSuggestion({ url: 'https://www.example.com/x', wordCountBefore: 5, wordCountAfter: 10 })],
+      { status: 'RESOLVED' },
+    );
+    const inactiveOppResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), inactiveOppContext, '2026-03-31',
+    );
+    expect(inactiveOppResult.trafficRows[0].dimensions).to.deep.equal({});
+
+    // allBySiteId resolves null ⇒ tolerated.
     const nullOppsContext = makeContext([]);
-    nullOppsContext.dataAccess.Opportunity.allBySiteIdAndStatus = sinon.stub().resolves(null);
+    nullOppsContext.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves(null);
     const nullOppsResult = await mapToAgenticTrafficBundle(
       [chatbotRow('/x')], baseSite(), nullOppsContext, '2026-03-31',
     );
@@ -380,7 +391,7 @@ describe('agentic traffic mapper', () => {
     const warn = sinon.spy();
     const context = makeContext([]);
     context.log = { warn };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus = sinon.stub()
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub()
       .rejects(new Error('opportunity unavailable'));
 
     const result = await mapToAgenticTrafficBundle(

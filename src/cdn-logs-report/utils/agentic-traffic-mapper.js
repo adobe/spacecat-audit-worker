@@ -106,15 +106,19 @@ async function readPrerenderStatusJson(site, context) {
   }
 }
 
+// Matches the dashboard: a prerender opportunity in any active status (NEW or IN_PROGRESS).
+const ACTIVE_OPPORTUNITY_STATUSES = new Set(['NEW', 'IN_PROGRESS']);
+
 async function getCitabilityMap(site, context) {
   const { Opportunity, Suggestion } = context?.dataAccess ?? {};
-  if (!Opportunity?.allBySiteIdAndStatus || !Suggestion?.allByOpportunityId) {
+  if (!Opportunity?.allBySiteId || !Suggestion?.allByOpportunityId) {
     return new Map();
   }
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const opportunities = await Opportunity.allBySiteId(site.getId());
     const opportunity = (opportunities || []).find(
-      (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER,
+      (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER
+        && ACTIVE_OPPORTUNITY_STATUSES.has(o.getStatus?.()),
     );
     const [rawSuggestions, statusJson] = await Promise.all([
       opportunity ? Suggestion.allByOpportunityId(opportunity.getId()) : [],
