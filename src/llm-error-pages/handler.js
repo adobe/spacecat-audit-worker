@@ -532,16 +532,17 @@ export async function runAuditAndSendToMystique(context) {
 
               opportunityMap[code] = opportunity;
 
-              // Temporary: hide newly-created Opps from the UI until it is updated to
-              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
-              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
-              // the UI ships support for these types, drop this block and bulk-flip any
-              // accumulated IGNORED rows back to NEW.
-              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
-                opportunity.setStatus(Oppty.STATUSES.IGNORED);
+              // LLMO-5328: the ELMO UI now supports the bucket-specific
+              // opportunity types (`llm-error-pages-404`, `-403`, `-5xx`), so new
+              // Opps are no longer hidden. Un-hide any rows the prior workaround
+              // left IGNORED — system-managed only, so we never override a
+              // customer's explicit IGNORE.
+              if (opportunity.getStatus() === Oppty.STATUSES.IGNORED
+                && opportunity.getUpdatedBy() === 'system') {
+                opportunity.setStatus(Oppty.STATUSES.NEW);
                 opportunity.setUpdatedBy('system');
                 await opportunity.save();
-                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
+                log.info(`[LLM-ERROR-PAGES] Restored opportunity ${opportunity.getId()} to NEW (auditType=${auditType}) after LLMO-5328 UI support`);
               }
 
               existingSuggestions = await opportunity.getSuggestions();

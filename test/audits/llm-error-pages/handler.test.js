@@ -2543,17 +2543,17 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     sandbox.restore();
   });
 
-  it('flips newly-created Opp status from NEW to IGNORED (pending UI support)', async () => {
+  it('leaves a newly-created NEW Opp as NEW (no longer hidden post-LLMO-5328)', async () => {
     const sandbox = sinon.createSandbox();
     const setStatus = sandbox.stub();
-    const setUpdatedBy = sandbox.stub();
     const save = sandbox.stub().resolves();
     const newlyCreatedOpp = {
       getId: () => 'opp-new',
       getType: () => 'llm-error-pages-404',
       getStatus: () => 'NEW',
+      getUpdatedBy: () => 'system',
       setStatus,
-      setUpdatedBy,
+      setUpdatedBy: sandbox.stub(),
       save,
       getSuggestions: sandbox.stub().resolves([]),
     };
@@ -2564,6 +2564,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
           getId: () => `opp-${type}`,
           getType: () => type,
           getStatus: () => 'NEW',
+          getUpdatedBy: () => 'system',
           setStatus: sandbox.stub(),
           setUpdatedBy: sandbox.stub(),
           save: sandbox.stub().resolves(),
@@ -2575,26 +2576,65 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(setStatus).to.have.been.calledOnceWith('IGNORED');
+    expect(setStatus).to.not.have.been.called;
+    expect(save).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('restores a system-IGNORED Opp back to NEW (LLMO-5328 un-hide)', async () => {
+    const sandbox = sinon.createSandbox();
+    const setStatus = sandbox.stub();
+    const setUpdatedBy = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    // An Opp the prior #2602 workaround flipped to IGNORED (updatedBy='system').
+    const systemIgnoredOpp = {
+      getId: () => 'opp-hidden',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'IGNORED',
+      getUpdatedBy: () => 'system',
+      setStatus,
+      setUpdatedBy,
+      save,
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(systemIgnoredOpp);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getStatus: () => 'NEW',
+          getUpdatedBy: () => 'system',
+          setStatus: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(setStatus).to.have.been.calledOnceWith('NEW');
     expect(setUpdatedBy).to.have.been.calledOnceWith('system');
     expect(save).to.have.been.calledOnce;
     expect(ctx.log.info).to.have.been.calledWithMatch(
-      /Marked new opportunity opp-new as IGNORED/,
+      /Restored opportunity opp-hidden to NEW/,
     );
     sandbox.restore();
   });
 
-  it('does not flip status on Opps that are already non-NEW (e.g. APPROVED, IGNORED)', async () => {
+  it('does not un-hide an Opp a customer explicitly IGNORED (updatedBy != system)', async () => {
     const sandbox = sinon.createSandbox();
     const setStatus = sandbox.stub();
     const save = sandbox.stub().resolves();
-    // Simulate an Opp that was previously created and the user manually set to APPROVED.
-    // convertToOpportunity filters by NEW so in practice it would create a fresh NEW Opp,
-    // but this proves the guard is in place if a non-NEW Opp ever flows through.
-    const alreadyManaged = {
-      getId: () => 'opp-managed',
+    // Customer-ignored Opp: status IGNORED but updatedBy is a user, not 'system'.
+    const customerIgnoredOpp = {
+      getId: () => 'opp-cust-ignored',
       getType: () => 'llm-error-pages-404',
-      getStatus: () => 'APPROVED',
+      getStatus: () => 'IGNORED',
+      getUpdatedBy: () => 'jdoe@adobe.com',
       setStatus,
       setUpdatedBy: sandbox.stub(),
       save,
@@ -2602,11 +2642,12 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     };
     const { handler } = await buildHandler(sandbox, {
       convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
-        if (type === 'llm-error-pages-404') return Promise.resolve(alreadyManaged);
+        if (type === 'llm-error-pages-404') return Promise.resolve(customerIgnoredOpp);
         return Promise.resolve({
           getId: () => `opp-${type}`,
           getType: () => type,
           getStatus: () => 'NEW',
+          getUpdatedBy: () => 'system',
           setStatus: sandbox.stub(),
           setUpdatedBy: sandbox.stub(),
           save: sandbox.stub().resolves(),
