@@ -1,3 +1,10 @@
+## [1.474.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.1...v1.474.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** raise DRS poll budget to 30 minutes ([#2668](https://github.com/adobe/spacecat-audit-worker/issues/2668)) ([baad0b8](https://github.com/adobe/spacecat-audit-worker/commit/baad0b87ca4507f0c1d5ffbcac07ec993b8a21c8))
+
 ## [1.474.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.0...v1.474.1) (2026-06-15)
 
 
