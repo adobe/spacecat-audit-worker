@@ -63,7 +63,7 @@ export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[
 
 // DRS job completion polling (offsite-brand-presence-drs-status handler).
 export const DRS_POLL_INTERVAL_SECONDS = 120; // 2 minutes between polls
-export const DRS_POLL_MAX_WAIT_SECONDS = 1200; // 20 minute total budget
+export const DRS_POLL_MAX_WAIT_SECONDS = 1800; // 30 minute total budget
 export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
 export const DRS_TERMINAL_STATUSES = new Set([
   'COMPLETED',
