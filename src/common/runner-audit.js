@@ -12,7 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { isAuditEnabledForSite, parseMessageDataForRunnerAudit } from './audit-utils.js';
+import { isAuditDisabledForSite, parseMessageDataForRunnerAudit } from './audit-utils.js';
 import {
   formatAuditCompletionMessage,
   say,
@@ -59,8 +59,8 @@ export class RunnerAudit extends BaseAudit {
         siteUrl = site.getBaseURL();
       } catch { /* keep siteId fallback */ }
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 

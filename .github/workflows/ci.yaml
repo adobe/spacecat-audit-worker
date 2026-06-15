@@ -17,4 +17,5 @@ jobs:
     with:
       service-name: audit-worker
       vpc-enabled: true
+      bundle-build: true
     secrets: inherit

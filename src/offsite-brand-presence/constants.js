@@ -24,7 +24,7 @@ export const PROVIDERS = Object.freeze([
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?\.json$/;
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
@@ -56,5 +56,7 @@ export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const USER_AGENT = 'Offsite Audits - Spacecat/1.0';
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topics', 'Category'].join(',');
+export const RETRIABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+export const RETRY_DELAY_MS = 500;
 export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;

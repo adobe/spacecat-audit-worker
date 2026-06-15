@@ -27,7 +27,7 @@ import {
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { validateDetectedIssues } from './ssr-meta-validator.js';
@@ -307,6 +307,9 @@ export async function runAuditAndGenerateSuggestions(context) {
   // Check if there are any detected tags BEFORE proceeding
   if (!validatedDetectedTags || Object.keys(validatedDetectedTags).length === 0) {
     log.info(`[metatags] No valid metatag issues detected for ${site.getId()}, skipping opportunity creation`);
+
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+
     return {
       status: 'complete',
     };
@@ -407,14 +410,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   });
 
   // Get synced suggestions from database (with IDs)
-  const { Suggestion, Configuration } = context.dataAccess;
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site');
-    return {
-      status: 'complete',
-    };
-  }
+  const { Suggestion } = context.dataAccess;
 
   const suggestionStatusesToProcess = [SuggestionModel.STATUSES.NEW];
   if (site?.requiresValidation && SuggestionModel.STATUSES.PENDING_VALIDATION) {

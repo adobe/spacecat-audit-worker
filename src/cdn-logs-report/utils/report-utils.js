@@ -10,8 +10,24 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
-import { uploadToSharePoint } from '../../utils/report-uploader.js';
+import { S3Client } from '@aws-sdk/client-s3';
+import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+
+// Region of the importer bucket (S3_IMPORTER_BUCKET_NAME) the daily exports write to.
+export const IMPORTER_BUCKET_REGION = 'us-east-1';
+
+let importerS3Client;
+/**
+ * Lazily-created, shared S3 client pinned to the importer bucket region. Reused
+ * across the agentic + referral daily exports and across warm Lambda invocations,
+ * instead of constructing a new client per export.
+ */
+export function getImporterS3Client() {
+  if (!importerS3Client) {
+    importerS3Client = new S3Client({ region: IMPORTER_BUCKET_REGION });
+  }
+  return importerS3Client;
+}
 
 const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
   'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
@@ -135,56 +151,4 @@ export async function replaceAgenticUrlClassificationRules({
   }
 
   return Array.isArray(data) ? data[0] : data;
-}
-
-// Default intent categories that are always present and carry no site-specific signal.
-// If config contains only these, treat it as unconfigured so the LLM generates its own.
-const DEFAULT_INTENT_CATEGORIES = new Set([
-  'usage & troubleshooting',
-  'comparison & decision',
-  'discovery & research',
-]);
-
-/**
- * Fetches config categories from the latest LLMO config
- */
-export async function getConfigCategories(site, context) {
-  const { log, s3Client, env } = context;
-  const siteId = site.getSiteId();
-  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
-
-  try {
-    const { config } = await llmoConfig.readConfig(
-      siteId,
-      s3Client,
-      { s3Bucket },
-    );
-
-    if (!config?.categories) {
-      return [];
-    }
-
-    const categories = Object.values(config.categories).map((category) => category.name);
-    return categories.filter((cat) => !DEFAULT_INTENT_CATEGORIES.has(cat.toLowerCase()));
-  } catch (error) {
-    log.warn(`Failed to fetch config categories: ${error.message}`);
-    return [];
-  }
-}
-
-export async function saveExcelReportForBatch({
-  workbook,
-  outputLocation,
-  log,
-  sharepointClient,
-  filename,
-}) {
-  const buffer = await workbook.xlsx.writeBuffer();
-
-  if (sharepointClient) {
-    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-    return { filename, outputLocation };
-  }
-
-  return null;
 }

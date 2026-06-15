@@ -25,7 +25,6 @@ import {
 } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -251,6 +250,8 @@ async function convertToOpportunityData(opportunityType, metricObject, context) 
 
   if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION) {
     opportunityData = convertToLowConversionOpptyData(metricObject);
+    // per-field engagement is only forwarded to Mystique for low-conversion opportunities
+    opportunityData.fieldEngagement = metricObject.fieldEngagement;
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION) {
     opportunityData = convertToLowNavOpptyData(metricObject);
   } else if (opportunityType === FORM_OPPORTUNITY_TYPES.LOW_VIEWS) {
@@ -471,6 +472,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
   if (opportunity) {
     log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
+    const { fieldEngagement } = opptyData.data || {};
     const mystiqueMessage = {
       type: `guidance:${opptyData.type}`,
       ...options,
@@ -492,6 +494,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity, opt
         form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
+        field_engagement: fieldEngagement || [],
         form_navigation: {
           url: opptyData.data?.formNavigation?.url || '',
           source: opptyData.data?.formNavigation?.source || '',
@@ -928,12 +931,6 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
   const siteId = opportunity.getSiteId();
   const baseUrl = site.getBaseURL();
   try {
-    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
-    if (!isAutoFixEnabled) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
-      return;
-    }
-
     // Get all suggestions from the opportunity
     const suggestions = await opportunity.getSuggestions();
     if (!suggestions || suggestions.length === 0) {

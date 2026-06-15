@@ -786,6 +786,11 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
           overallAlignmentScore: 'fair',
           keywordAnalysis: [{ keyword: 'buy shoes', score: 0.5 }],
         }),
+        adAnalysis: {
+          isBranded: true,
+          intentType: 'navigational',
+          adPromise: 'Promotes the Twilio brand',
+        },
         rank: 2,
       };
 
@@ -802,6 +807,12 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.cluster.gapAnalysis).to.deep.equal({ severity: 'medium' });
       expect(result.data.cluster.overallAlignmentScore).to.equal('fair');
       expect(result.data.cluster.keywordAnalysis).to.deep.equal([{ keyword: 'buy shoes', score: 0.5 }]);
+      // adAnalysis passed through verbatim (spec B.3-(1))
+      expect(result.data.cluster.adAnalysis).to.deep.equal({
+        isBranded: true,
+        intentType: 'navigational',
+        adPromise: 'Promotes the Twilio brand',
+      });
     });
 
     it('lifts recommendation.type to recommendationType and removes type from nested object', () => {
@@ -852,6 +863,28 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.cluster.gapAnalysis).to.deep.equal({});
       expect(result.data.cluster.overallAlignmentScore).to.be.null;
       expect(result.data.cluster.keywordAnalysis).to.deep.equal([]);
+      // adAnalysis is undefined on rolling-deploy clusters (older mystique
+      // omits the key). Mapper MUST coerce to null. Spec B.3-(2).
+      expect(result.data.cluster).to.have.property('adAnalysis');
+      expect(result.data.cluster.adAnalysis).to.be.null;
+    });
+
+    it('preserves explicit null adAnalysis without coercion (spec B.3-(3))', () => {
+      // Mystique emits explicit null when the cluster lacks ad-copy signal
+      // (see spec Decision #3 — producer-internal threshold). The mapper MUST
+      // NOT coerce that null to `{}` because the UI relies on the null to
+      // hide the "What the ad promises" block.
+      const context = { site: { requiresValidation: false } };
+      const cluster = {
+        ...makeCluster(),
+        adAnalysis: null,
+        rank: 1,
+      };
+
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
+
+      expect(result.data.cluster).to.have.property('adAnalysis');
+      expect(result.data.cluster.adAnalysis).to.be.null;
     });
 
     it('uses rank from cluster', () => {

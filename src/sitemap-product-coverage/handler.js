@@ -20,11 +20,17 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { ProductsQuery, CategoriesQuery, ProductCountQuery } from './queries.js';
 import {
-  ERROR_CODES,
+  ERROR_CODES as SITEMAP_ERROR_CODES,
   getSitemapUrls,
 } from '../sitemap/common.js';
 
 const auditType = 'sitemap-product-coverage';
+
+export const ERROR_CODES = Object.freeze({
+  MISSING_PRODUCT_URL_TEMPLATE: 'MISSING PRODUCT URL TEMPLATE IN THE SITE CONFIGURATION',
+  COLLECTING_PRODUCTS_BACKEND_FAILED: 'COLLECTING PRODUCTS FROM BACKEND FAILED',
+  UNSUPPORTED_DELIVERY_TYPE: 'UNSUPPORTED DELIVERY TYPE',
+});
 
 /**
  * Maximum number of products per category.
@@ -233,7 +239,7 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
     success: false,
     reasons: [{
       value: filteredSitemapUrls[0],
-      error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+      error: SITEMAP_ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
     }],
     url: inputUrl,
     details: { issues: notCoveredProduct },

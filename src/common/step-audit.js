@@ -16,7 +16,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
 import {
-  isAuditEnabledForSite,
+  isAuditDisabledForSite,
   loadExistingAudit,
   preserveOnDemand,
   preserveSlackContext,
@@ -30,9 +30,16 @@ import {
   say,
   sendAuditFailureNotification,
 } from '../utils/slack-utils.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
+
+const PLG_AUDIT_TYPES = new Set([
+  AuditModel.AUDIT_TYPES.CWV,
+  AuditModel.AUDIT_TYPES.BROKEN_BACKLINKS,
+  AuditModel.AUDIT_TYPES.ALT_TEXT,
+]);
 
 export class StepAudit extends BaseAudit {
   constructor(
@@ -129,8 +136,8 @@ export class StepAudit extends BaseAudit {
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
       }
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 
@@ -254,12 +261,20 @@ export class StepAudit extends BaseAudit {
       // Enhance error message with more context
       const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
+
+      // Slack notification to the originating thread (deduped via slackContext.notifiedAt).
       await sendAuditFailureNotification(context, {
         type,
         siteUrl,
         auditContext,
         error: e,
       });
+
+      // PLG low-suggestion-count alert for opted-in audit types.
+      if (site && PLG_AUDIT_TYPES.has(type)) {
+        await sendLowSuggestionCountAlert(site, type, 0, context, errorMessage);
+      }
+
       throw new Error(errorMessage, { cause: e });
     }
   }

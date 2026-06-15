@@ -10,12 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
+// FUTURE CONSIDERATIONS FOR ENHANCEMENTS:
+//
+//  ** Audit Worker **
+//    * detect circular redirects
+//    * ensure "money pages" are entries in the sitemap.xml
+//    * detect duplicate entries
+//
+//  ** BackOffice UI **
+//    * bulk Delete ... especially for "rejected" status
+//    * display {50, 100} entries per page
+//    * add "statistics" page: show {how many sitemaps.xml files found, page URLs probed, ??}
+//
+//  ** Front End UI **
+//    * switch display to see all errors by type {"404" + "Redirect"} vs "per sitemap" file
+//    * enhance "redirect" codes by adding {303, 307, 308}
+//    * add new displays in the UI: {"circular redirect" detection, missing "money pages", ...}
+
 import {
   isArray,
 } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   applyPageUrlProbeSampling,
+  COMMON_VERSION,
   ERROR_CODES,
   filterValidUrls,
   getSitemapUrls,
@@ -36,6 +54,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
+const HANDLER_VERSION = 1; // manually update as needed
 
 // HTTP status codes explicitly handled by this audit for suggestion generation
 const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
@@ -240,7 +259,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   const startTime = process.hrtime();
 
-  log.info(`Starting sitemap audit for ${baseURL}`);
+  log.info(`Starting sitemap audit v${HANDLER_VERSION}-${COMMON_VERSION} for ${baseURL}`);
 
   const auditResult = await findSitemap(baseURL, log);
 

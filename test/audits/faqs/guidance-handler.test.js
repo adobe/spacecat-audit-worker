@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import ExcelJS from 'exceljs';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -1726,5 +1727,315 @@ describe('FAQs guidance handler', () => {
 
     expect(result.shouldOptimize).to.equal(false);
     expect(result.selector).to.equal('body');
+  });
+
+  describe('Related URLs week fallback (LLMO-5035)', () => {
+    const HEADER_ROW_VALUES = [
+      undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+      'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+      'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+      'DBM', 'ExecDate', 'Related URLs',
+    ];
+
+    const makeWorkbook = (relatedUrlValue) => ({
+      worksheets: [{
+        rowCount: 2,
+        getRow: () => ({ values: HEADER_ROW_VALUES }),
+        getRows: () => [{
+          getCell: (col) => {
+            if (col === 2) return { value: 'photoshop' };
+            if (col === 3) return { value: 'How to use Photoshop?' };
+            if (col === 7) return { value: 'https://www.adobe.com/original' };
+            if (col === 22) return { value: relatedUrlValue || null };
+            return { value: '' };
+          },
+        }],
+      }],
+    });
+
+    const FAQ_MESSAGE = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    beforeEach(() => {
+      fetchStub.resolves({
+        suggestions: [{
+          url: 'https://www.adobe.com/original',
+          topic: 'photoshop',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'How to use Photoshop?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        }],
+      });
+    });
+
+    it('should use current week Related URLs when available without trying older weeks', async () => {
+      mockWorkbook = makeWorkbook('https://www.adobe.com/current-week-related');
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      // stopped after first call — current week had data
+      expect(readFromSharePointStub.callCount).to.equal(1);
+      // first call requested the most-recent week filename
+      expect(readFromSharePointStub.getCall(0).args[0]).to.match(/w\d+-\d{4}\.xlsx$/);
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/current-week-related');
+    });
+
+    it('should fall back to previous week when current week file exists but has no Related URLs data', async () => {
+      // Use an explicit local counter so call ordering is unambiguous.
+      // Sinon increments callCount before executing the fake, so inside the fake
+      // callCount===1 means "this is the first invocation".
+      let callIndex = 0;
+      readFromSharePointStub.callsFake(async () => {
+        callIndex += 1;
+        mockWorkbook = callIndex === 1
+          ? makeWorkbook(null) // current week: file exists but Related URLs column not yet populated
+          : makeWorkbook('https://www.adobe.com/previous-week-related');
+        return Buffer.from('mock');
+      });
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      // exactly two weeks tried: current (empty) then previous (has data)
+      expect(readFromSharePointStub.callCount).to.equal(2);
+      // second call should have requested an older week than the first
+      const firstFilename = readFromSharePointStub.getCall(0).args[0];
+      const secondFilename = readFromSharePointStub.getCall(1).args[0];
+      expect(firstFilename).to.not.equal(secondFilename);
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/previous-week-related');
+    });
+
+    it('should fall back through multiple empty weeks to find Related URLs data', async () => {
+      let callIndex = 0;
+      readFromSharePointStub.callsFake(async () => {
+        callIndex += 1;
+        // weeks W and W-1 have no Related URLs; W-2 does
+        mockWorkbook = callIndex < 3
+          ? makeWorkbook(null)
+          : makeWorkbook('https://www.adobe.com/week-3-related');
+        return Buffer.from('mock');
+      });
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      expect(readFromSharePointStub.callCount).to.equal(3);
+      // each call should have requested a distinct filename
+      const filenames = [0, 1, 2].map((i) => readFromSharePointStub.getCall(i).args[0]);
+      expect(new Set(filenames).size).to.equal(3);
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/week-3-related');
+    });
+
+    it('should try all 4 lookback weeks and fall back to original URL column when none have Related URLs data', async () => {
+      mockWorkbook = makeWorkbook(null); // every week returns an empty Related URLs column
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      // all 4 weeks must have been tried before giving up
+      expect(readFromSharePointStub.callCount).to.equal(4);
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      // decorateFaqSuggestionUrl falls through to originalUrl when relatedUrls is empty
+      expect(newData[0].url).to.equal('https://www.adobe.com/original');
+    });
+
+    it('should treat itemNotFound SharePoint error as file-not-found and try the next week', async () => {
+      let callIndex = 0;
+      readFromSharePointStub.callsFake(async () => {
+        callIndex += 1;
+        if (callIndex === 1) {
+          throw new Error('itemNotFound: the requested item could not be found');
+        }
+        mockWorkbook = makeWorkbook('https://www.adobe.com/fallback-related');
+        return Buffer.from('mock');
+      });
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      expect(readFromSharePointStub.callCount).to.equal(2);
+      // itemNotFound is a silent skip — must not log an error
+      expect(log.error).not.to.have.been.calledWith(sinon.match(/Failed to load related URLs/));
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/fallback-related');
+    });
+
+    it('should not affect customers without Related URLs configured (no outputLocation)', async () => {
+      context.getOutputLocation = undefined;
+      dummySite.getConfig = sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+        // no getLlmoDataFolder → outputLocation resolves to null → workbook lookup skipped entirely
+      });
+
+      const result = await handler(FAQ_MESSAGE, context);
+
+      expect(result.status).to.equal(200);
+      expect(readFromSharePointStub).not.to.have.been.called;
+      const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/original');
+    });
+  });
+
+  describe('Related URLs week fallback — real ExcelJS integration', () => {
+    /**
+     * Helper: build a real xlsx Buffer using ExcelJS.
+     * Columns match the production brand-presence spreadsheet layout.
+     * @param {string|null} relatedUrlValue - value for the "Related URLs" cell, or null for empty
+     */
+    async function makeRealXlsxBuffer(relatedUrlValue) {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      // header row — positions must match buildColumnMap / getColumn usage in production code
+      ws.addRow([
+        'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+        'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+        'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+        'DBM', 'ExecDate', 'Related URLs',
+      ]);
+      // data row
+      ws.addRow([
+        'cat',          // Category (col 1)
+        'photoshop',    // Topics   (col 2)
+        'How to use Photoshop?', // Prompt (col 3)
+        'AI',           // Origin
+        'US',           // Region
+        100,            // Volume
+        'https://www.adobe.com/original', // URL (col 7)
+        '',             // Answer
+        '',             // Sources
+        '',             // Citations
+        '',             // Mentions
+        '',             // Sentiment
+        '',             // Biz
+        '',             // Org
+        '',             // CAI
+        '',             // IsA
+        '',             // S2A
+        '',             // Pos
+        '',             // Vis
+        '',             // DBM
+        '',             // ExecDate
+        relatedUrlValue || '', // Related URLs (col 22)
+      ]);
+      return wb.xlsx.writeBuffer();
+    }
+
+    let realHandler;
+    let realSyncStub;
+    let realFetchStub;
+    let realConvertStub;
+    let realS3KeysStub;
+    let realS3ObjStub;
+    let realSharepointStub;
+    let realReadStub;
+    let realLog;
+    let realContext;
+    let realSite;
+
+    beforeEach(async function () {
+      this.timeout(15000);
+      realSyncStub = sinon.stub().resolves();
+      realFetchStub = sinon.stub().resolves({
+        suggestions: [{
+          url: 'https://www.adobe.com/original',
+          topic: 'photoshop',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'How to use Photoshop?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        }],
+      });
+      realConvertStub = sinon.stub().resolves({ getId: () => 'oppty-real' });
+      realS3KeysStub = sinon.stub().resolves([]);
+      realS3ObjStub = sinon.stub().resolves(null);
+      realSharepointStub = sinon.stub().resolves({ client: 'mock' });
+      realReadStub = sinon.stub();
+
+      realHandler = (await esmock('../../../src/faqs/guidance-handler.js', {
+        '../../../src/utils/data-access.js': { syncSuggestions: realSyncStub },
+        '../../../src/common/opportunity.js': { convertToOpportunity: realConvertStub },
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: realS3KeysStub,
+          getObjectFromKey: realS3ObjStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: realSharepointStub,
+          readFromSharePoint: realReadStub,
+        },
+        '../../../src/utils/analysis-fetch.js': {
+          fetchAnalysisFromPresignedUrl: realFetchStub,
+        },
+        // ← no exceljs mock: real ExcelJS is used
+      })).default;
+
+      realLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+      realSite = {
+        getId: () => 'site-real',
+        getBaseURL: () => 'https://adobe.com',
+        getConfig: sinon.stub().returns({
+          getIncludedURLs: sinon.stub().resolves([]),
+          getLlmoDataFolder: sinon.stub().returns('/llmo'),
+        }),
+      };
+      realContext = {
+        log: realLog,
+        getOutputLocation: sinon.stub().returns('/data/brand-presence'),
+        dataAccess: { Site: { findById: sinon.stub().resolves(realSite) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+    });
+
+    afterEach(() => sinon.restore());
+
+    it('uses current week Related URLs from real xlsx when available', async () => {
+      const buffer = await makeRealXlsxBuffer('https://www.adobe.com/real-related');
+      realReadStub.resolves(buffer);
+
+      const result = await realHandler({
+        auditId: 'a1', siteId: 'site-real',
+        data: { presignedUrl: 'https://s3/faqs.json' },
+      }, realContext);
+
+      expect(result.status).to.equal(200);
+      expect(realReadStub.callCount).to.equal(1);
+      const newData = realSyncStub.getCall(0).args[0].newData;
+      expect(newData[0].url).to.equal('https://www.adobe.com/real-related');
+    });
+
+    it('falls back to previous week with real ExcelJS when current week xlsx has no Related URLs', async () => {
+      let callIndex = 0;
+      realReadStub.callsFake(async () => {
+        callIndex += 1;
+        return callIndex === 1
+          ? makeRealXlsxBuffer(null)          // current week: no Related URLs
+          : makeRealXlsxBuffer('https://www.adobe.com/real-fallback'); // previous week: has data
+      });
+
+      const result = await realHandler({
+        auditId: 'a1', siteId: 'site-real',
+        data: { presignedUrl: 'https://s3/faqs.json' },
+      }, realContext);
+
+      expect(result.status).to.equal(200);
+      expect(realReadStub.callCount).to.equal(2);
+      const newData = realSyncStub.getCall(0).args[0].newData;
+      // real ExcelJS must reset worksheets between loads — previous week data wins
+      expect(newData[0].url).to.equal('https://www.adobe.com/real-fallback');
+    });
   });
 });

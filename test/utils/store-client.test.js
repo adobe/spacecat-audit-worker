@@ -23,14 +23,91 @@ import StoreClient, {
 use(sinonChai);
 use(chaiAsPromised);
 
+// Builds an AuditUrl-model-like object exposing the getters StoreClient reads.
+const makeAuditUrl = (overrides = {}) => {
+  const data = {
+    siteId: 'test-site-id',
+    url: 'https://example.com',
+    byCustomer: false,
+    audits: ['wikipedia-analysis'],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'system',
+    updatedBy: 'system',
+    ...overrides,
+  };
+  return {
+    getSiteId: () => data.siteId,
+    getUrl: () => data.url,
+    getByCustomer: () => data.byCustomer,
+    getAudits: () => data.audits,
+    getCreatedAt: () => data.createdAt,
+    getUpdatedAt: () => data.updatedAt,
+    getCreatedBy: () => data.createdBy,
+    getUpdatedBy: () => data.updatedBy,
+  };
+};
+
+const makeTopic = (overrides = {}) => {
+  const data = {
+    siteId: 'test-site-id',
+    topicId: 'topic-1',
+    name: 'Topic 1',
+    description: 'desc',
+    enabled: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'system',
+    updatedBy: 'system',
+    ...overrides,
+  };
+  return {
+    getSiteId: () => data.siteId,
+    getTopicId: () => data.topicId,
+    getName: () => data.name,
+    getDescription: () => data.description,
+    getEnabled: () => data.enabled,
+    getCreatedAt: () => data.createdAt,
+    getUpdatedAt: () => data.updatedAt,
+    getCreatedBy: () => data.createdBy,
+    getUpdatedBy: () => data.updatedBy,
+  };
+};
+
+const makeGuideline = (overrides = {}) => {
+  const data = {
+    siteId: 'test-site-id',
+    guidelineId: 'guideline-1',
+    name: 'Guideline 1',
+    instruction: 'do the thing',
+    audits: ['wikipedia-analysis'],
+    enabled: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'system',
+    updatedBy: 'system',
+    ...overrides,
+  };
+  return {
+    getSiteId: () => data.siteId,
+    getGuidelineId: () => data.guidelineId,
+    getName: () => data.name,
+    getInstruction: () => data.instruction,
+    getAudits: () => data.audits,
+    getEnabled: () => data.enabled,
+    getCreatedAt: () => data.createdAt,
+    getUpdatedAt: () => data.updatedAt,
+    getCreatedBy: () => data.createdBy,
+    getUpdatedBy: () => data.updatedBy,
+  };
+};
+
 describe('StoreClient', () => {
   let sandbox;
-  let mockFetch;
   let mockLog;
+  let dataAccess;
   let storeClient;
 
-  const apiBaseUrl = 'https://spacecat-api.example.com';
-  const apiKey = 'test-api-key';
   const siteId = 'test-site-id';
 
   beforeEach(() => {
@@ -43,9 +120,16 @@ describe('StoreClient', () => {
       error: sandbox.stub(),
     };
 
-    mockFetch = sandbox.stub();
+    dataAccess = {
+      AuditUrl: { allBySiteIdAndAuditType: sandbox.stub() },
+      SentimentTopic: { allBySiteIdEnabled: sandbox.stub() },
+      SentimentGuideline: {
+        allBySiteIdAndAuditType: sandbox.stub(),
+        allBySiteIdEnabled: sandbox.stub(),
+      },
+    };
 
-    storeClient = new StoreClient({ apiBaseUrl, apiKey }, mockFetch, mockLog);
+    storeClient = new StoreClient({ dataAccess }, mockLog);
   });
 
   afterEach(() => {
@@ -92,203 +176,237 @@ describe('StoreClient', () => {
 
   describe('createFrom', () => {
     it('should create StoreClient from context', () => {
-      const context = {
-        env: {
-          SPACECAT_API_BASE_URL: 'https://api.example.com',
-          SPACECAT_API_KEY: 'secret-key',
-        },
-        log: mockLog,
-      };
+      const context = { dataAccess, log: mockLog };
 
       const client = StoreClient.createFrom(context);
 
       expect(client).to.be.instanceOf(StoreClient);
-      expect(client.apiBaseUrl).to.equal('https://api.example.com');
-      expect(client.apiKey).to.equal('secret-key');
+      expect(client.dataAccess).to.equal(dataAccess);
     });
 
-    it('should create StoreClient without API key', () => {
-      const context = {
-        env: {
-          SPACECAT_API_BASE_URL: 'https://api.example.com',
-        },
-        log: mockLog,
-      };
-
-      const client = StoreClient.createFrom(context);
-
-      expect(client).to.be.instanceOf(StoreClient);
-      expect(client.apiKey).to.be.undefined;
-    });
-
-    it('should create StoreClient when context.env is missing', () => {
+    it('should create StoreClient when context.dataAccess is missing', () => {
       const context = { log: mockLog };
 
       const client = StoreClient.createFrom(context);
 
       expect(client).to.be.instanceOf(StoreClient);
-      expect(client.apiBaseUrl).to.be.undefined;
-      expect(client.apiKey).to.be.undefined;
+      expect(client.dataAccess).to.be.undefined;
+    });
+
+    it('should create StoreClient when context is missing', () => {
+      const client = StoreClient.createFrom(undefined);
+
+      expect(client).to.be.instanceOf(StoreClient);
+      expect(client.dataAccess).to.be.undefined;
     });
   });
 
   describe('getUrls', () => {
-    it('should fetch URLs from store API with pagination', async () => {
-      const mockUrls = [
-        { url: 'https://en.wikipedia.org/wiki/Test', siteId },
-        { url: 'https://en.wikipedia.org/wiki/Test2', siteId },
-      ];
-
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: mockUrls, pagination: { cursor: null } }),
-      });
+    it('should fetch URLs from the URL store and map the full DTO shape', async () => {
+      const rows = [makeAuditUrl({ url: 'https://en.wikipedia.org/wiki/Test' })];
+      dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({ data: rows, cursor: null });
 
       const result = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
 
-      expect(result).to.deep.equal(mockUrls);
-      expect(mockFetch).to.have.been.calledOnce;
-      expect(mockFetch.firstCall.args[0]).to.include(`/sites/${siteId}/url-store/by-audit/wikipedia-analysis`);
+      // Locks the exact DTO contract: dropped/added fields will fail this test.
+      expect(result).to.deep.equal([{
+        siteId: 'test-site-id',
+        url: 'https://en.wikipedia.org/wiki/Test',
+        byCustomer: false,
+        audits: ['wikipedia-analysis'],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledOnce;
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[0]).to.equal(siteId);
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[1]).to.equal('wikipedia-analysis');
     });
 
-    it('should forward optional queryParams to every page request', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: [{ url: 'https://example.com/1' }], pagination: {} }),
+    it('should default to createdAt/desc and forward optional sort params', async () => {
+      dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({
+        data: [makeAuditUrl()], cursor: null,
       });
 
-      await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'createdAt', sortOrder: 'desc' });
+      await storeClient.getUrls(siteId, URL_TYPES.REDDIT);
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[2]).to.include({
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      });
 
-      const calledUrl = mockFetch.firstCall.args[0];
-      expect(calledUrl).to.include('sortBy=createdAt');
-      expect(calledUrl).to.include('sortOrder=desc');
+      dataAccess.AuditUrl.allBySiteIdAndAuditType.resetHistory();
+      await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'url', sortOrder: 'asc' });
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[2]).to.include({
+        sortBy: 'url',
+        sortOrder: 'asc',
+      });
     });
 
     it('should fetch all pages when paginated', async () => {
-      const page1 = [{ url: 'https://example.com/1' }];
-      const page2 = [{ url: 'https://example.com/2' }];
+      const page1 = [makeAuditUrl({ url: 'https://example.com/1' })];
+      const page2 = [makeAuditUrl({ url: 'https://example.com/2' })];
 
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: page1, pagination: { cursor: 'next-cursor' } }),
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: page2, pagination: { cursor: null } }),
-      });
+      dataAccess.AuditUrl.allBySiteIdAndAuditType
+        .onFirstCall().resolves({ data: page1, cursor: 'next-cursor' })
+        .onSecondCall().resolves({ data: page2, cursor: null });
 
       const result = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
 
-      expect(result).to.deep.equal([...page1, ...page2]);
-      expect(mockFetch).to.have.been.calledTwice;
+      expect(result.map((u) => u.url)).to.deep.equal([
+        'https://example.com/1',
+        'https://example.com/2',
+      ]);
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.secondCall.args[2])
+        .to.include({ cursor: 'next-cursor' });
     });
 
-    it('should include x-api-key header when API key is set', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: [{ url: 'test' }], pagination: {} }),
-      });
+    it('should throw when the AuditUrl collection is not configured', async () => {
+      const clientNoData = new StoreClient({ dataAccess: {} }, mockLog);
 
-      await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
-
-      expect(mockFetch.firstCall.args[1].headers).to.deep.include({
-        'x-api-key': 'test-api-key',
-      });
+      await expect(clientNoData.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl');
     });
 
-    it('should throw error when SPACECAT_API_KEY is not configured', async () => {
-      const clientNoKey = new StoreClient({ apiBaseUrl }, mockFetch, mockLog);
+    it('should throw when constructed without config (no dataAccess)', async () => {
+      const clientNoConfig = new StoreClient();
 
-      await expect(clientNoKey.getUrls(siteId, URL_TYPES.WIKIPEDIA))
-        .to.be.rejectedWith('StoreClient is not configured: missing SPACECAT_API_KEY');
+      await expect(clientNoConfig.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections AuditUrl');
+    });
+
+    it('should propagate errors thrown mid-pagination', async () => {
+      const boom = new Error('dynamo exploded');
+      dataAccess.AuditUrl.allBySiteIdAndAuditType
+        .onFirstCall().resolves({ data: [makeAuditUrl()], cursor: 'next-cursor' })
+        .onSecondCall().rejects(boom);
+
+      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('dynamo exploded');
+      expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
     });
 
     it('should throw StoreEmptyError when no URLs returned', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: [], pagination: {} }),
-      });
+      dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({ data: [], cursor: null });
 
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
-    it('should throw StoreEmptyError when items is undefined', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ pagination: {} }),
-      });
+    it('should throw StoreEmptyError when data is undefined', async () => {
+      dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({ cursor: null });
 
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
-    });
-
-    it('should throw error when SPACECAT_API_BASE_URL and SPACECAT_API_KEY are not configured', async () => {
-      const unconfiguredClient = new StoreClient({}, mockFetch, mockLog);
-
-      await expect(unconfiguredClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
-        .to.be.rejectedWith('StoreClient is not configured: missing SPACECAT_API_BASE_URL, SPACECAT_API_KEY');
-    });
-
-    it('should throw error on API failure', async () => {
-      mockFetch.resolves({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
-
-      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
-        .to.be.rejectedWith('Store API request failed: 500 Internal Server Error');
     });
   });
 
   describe('getGuidelines', () => {
-    it('should fetch sentiment config from store API', async () => {
-      const mockConfig = {
-        topics: [{ topicId: '1', name: 'Topic 1' }],
-        guidelines: [{ guidelineId: '1', name: 'Guideline 1', audits: ['wikipedia-analysis'] }],
-      };
-
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(mockConfig),
+    it('should fetch sentiment config (topics + guidelines) for an audit type', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({ data: [makeTopic()] });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({
+        data: [makeGuideline()],
       });
 
       const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
 
-      expect(result).to.deep.equal(mockConfig);
-      expect(mockFetch).to.have.been.calledOnce;
-      expect(mockFetch.firstCall.args[0]).to.include(`/sites/${siteId}/sentiment/config`);
-      expect(mockFetch.firstCall.args[0]).to.include('audit=wikipedia-analysis');
+      // Locks the exact DTO contract for both topics and guidelines.
+      expect(result.topics).to.deep.equal([{
+        siteId: 'test-site-id',
+        topicId: 'topic-1',
+        name: 'Topic 1',
+        description: 'desc',
+        enabled: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
+      expect(result.guidelines).to.deep.equal([{
+        siteId: 'test-site-id',
+        guidelineId: 'guideline-1',
+        name: 'Guideline 1',
+        instruction: 'do the thing',
+        audits: ['wikipedia-analysis'],
+        enabled: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'system',
+        updatedBy: 'system',
+      }]);
+      expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType)
+        .to.have.been.calledWith(siteId, 'wikipedia-analysis');
+      expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.not.have.been.called;
+    });
+
+    it('should throw when sentiment collections are not configured', async () => {
+      const clientNoData = new StoreClient({ dataAccess: { AuditUrl: {} } }, mockLog);
+
+      await expect(clientNoData.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+        .to.be.rejectedWith('StoreClient is not configured: missing dataAccess collections SentimentTopic, SentimentGuideline');
+    });
+
+    it('should paginate topics and guidelines across pages', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled
+        .onFirstCall().resolves({ data: [makeTopic({ topicId: 't1' })], cursor: 'c1' })
+        .onSecondCall().resolves({ data: [makeTopic({ topicId: 't2' })], cursor: null });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType
+        .onFirstCall().resolves({ data: [makeGuideline({ guidelineId: 'g1' })], cursor: 'c1' })
+        .onSecondCall().resolves({ data: [makeGuideline({ guidelineId: 'g2' })], cursor: null });
+
+      const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
+
+      expect(result.topics.map((t) => t.topicId)).to.deep.equal(['t1', 't2']);
+      expect(result.guidelines.map((g) => g.guidelineId)).to.deep.equal(['g1', 'g2']);
+      expect(dataAccess.SentimentTopic.allBySiteIdEnabled).to.have.been.calledTwice;
+      expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType).to.have.been.calledTwice;
+    });
+
+    it('should default audits to [] when a guideline has no audits', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({ data: [] });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({
+        data: [makeGuideline({ audits: null })],
+      });
+
+      const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
+
+      expect(result.guidelines[0].audits).to.deep.equal([]);
+    });
+
+    it('should use allBySiteIdEnabled when audit type is undefined', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({ data: [] });
+      dataAccess.SentimentGuideline.allBySiteIdEnabled.resolves({ data: [makeGuideline()] });
+
+      const result = await storeClient.getGuidelines(siteId, undefined);
+
+      expect(result.guidelines).to.have.length(1);
+      expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.have.been.calledOnce;
+      expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType).to.not.have.been.called;
     });
 
     it('should throw StoreEmptyError when no guidelines returned', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ topics: [], guidelines: [] }),
-      });
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({ data: [makeTopic()] });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({ data: [] });
 
       await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
-    it('should throw StoreEmptyError when response is empty', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({}),
-      });
+    it('should tolerate missing data fields and still throw when empty', async () => {
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({});
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({});
 
       await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
     it('should log topics and guidelines count', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          topics: [{ topicId: '1' }, { topicId: '2' }],
-          guidelines: [{ guidelineId: '1' }],
-        }),
+      dataAccess.SentimentTopic.allBySiteIdEnabled.resolves({
+        data: [makeTopic({ topicId: '1' }), makeTopic({ topicId: '2' })],
+      });
+      dataAccess.SentimentGuideline.allBySiteIdAndAuditType.resolves({
+        data: [makeGuideline({ guidelineId: '1' })],
       });
 
       await storeClient.getGuidelines(siteId, 'test');
@@ -296,32 +414,6 @@ describe('StoreClient', () => {
       expect(mockLog.info).to.have.been.calledWith(
         sinon.match(/2 topics and 1 guidelines/),
       );
-    });
-
-    it('should build URL without query string when audit param is undefined', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          topics: [],
-          guidelines: [{ guidelineId: '1', name: 'Guideline 1' }],
-        }),
-      });
-
-      await storeClient.getGuidelines(siteId, undefined);
-
-      const url = mockFetch.firstCall.args[0];
-      expect(url).to.include(`/sites/${siteId}/sentiment/config`);
-      expect(url).to.not.include('?');
-    });
-
-    it('should handle null response body in getGuidelines', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(null),
-      });
-
-      await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
-        .to.be.rejectedWith(StoreEmptyError);
     });
   });
 });

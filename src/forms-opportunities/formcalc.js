@@ -33,7 +33,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   formVitalsCollection.forEach((item) => {
     const {
       url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-      trafficacquisition = {}, formsource = '', iframeSrc,
+      trafficacquisition = {}, formsource = '', iframeSrc, fieldEngagement = [],
     } = item;
 
     const totals = {
@@ -61,6 +61,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.pageview = calculateSums(pageview, totals.pageview);
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
+    totals.fieldEngagement = fieldEngagement;
     totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
     if (iframeSrc) {
       totals.iframeSrc = iframeSrc;

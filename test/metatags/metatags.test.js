@@ -1584,6 +1584,7 @@ describe('Meta Tags', () => {
                 }),
               },
             ]),
+            bulkUpdateStatus: sinon.stub().resolves(),
             saveMany: sinon.stub().resolves(),
             STATUSES: {
               NEW: 'NEW',
@@ -1615,6 +1616,7 @@ describe('Meta Tags', () => {
           getType: () => 'meta-tags',
           setData: sinon.stub(),
           getData: sinon.stub(),
+          setStatus: sinon.stub(),
           setUpdatedBy: sinon.stub().returnsThis(),
         };
 
@@ -1982,45 +1984,128 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
       });
 
-      it('should return { status: complete } if no valid metatag issues are detected', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
-        const mockValidateDetectedIssues = sinon.stub()
-          .resolves({});
+      it('should return { status: complete } if no valid metatag issues are detected and no existing opportunity', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
-          '../../src/metatags/ssr-meta-validator.js': {
-            validateDetectedIssues: mockValidateDetectedIssues,
-          },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
         });
 
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([]);
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.info).to.have.been.calledWith(sinon.match(/No valid metatag issues detected/));
+        expect(dataAccessStub.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
       });
 
-      it('should return { status: complete } if validatedDetectedTags is null', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
-        const mockValidateDetectedIssues = sinon.stub()
-          .resolves(null);
+      it('should return { status: complete } if validatedDetectedTags is null and no existing opportunity', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves(null);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
-          '../../src/metatags/ssr-meta-validator.js': {
-            validateDetectedIssues: mockValidateDetectedIssues,
-          },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
         });
+
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([]);
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should resolve existing NEW opportunity and mark NEW/PENDING_VALIDATION suggestions OUTDATED when no metatag issues detected', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        const mockSuggestions = [
+          { getId: () => 's-new', getStatus: () => 'NEW' },
+          { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' },
+        ];
+        metatagsOppty.getSuggestions = sinon.stub().resolves(mockSuggestions);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
+        expect(metatagsOppty.setStatus).to.have.been.calledOnce;
+        expect(metatagsOppty.getSuggestions).to.have.been.calledOnce;
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus)
+          .to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+        expect(metatagsOppty.setUpdatedBy).to.have.been.calledOnceWith('system');
+        expect(metatagsOppty.save).to.have.been.calledOnce;
+      });
+
+      it('should not call bulkUpdateStatus when all suggestions are in preserved states (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        // null covers the (suggestions || []) fallback branch
+        metatagsOppty.getSuggestions = sinon.stub().resolves(null);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+        expect(metatagsOppty.save).to.have.been.calledOnce;
+      });
+
+      it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+        const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+        const fixedSuggestion = { getId: () => 's-fixed', getStatus: () => 'FIXED' };
+        const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
+        const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
+        metatagsOppty.getSuggestions = sinon.stub().resolves([
+          newSuggestion, pendingSuggestion, fixedSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]);
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([metatagsOppty]);
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          [newSuggestion, pendingSuggestion],
+          'OUTDATED',
+        );
+      });
+
+      it('should log error and still return complete when opportunity lookup fails on no-issues path (metatags)', async () => {
+        const mockValidateDetectedIssues = sinon.stub().resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/ssr-meta-validator.js': { validateDetectedIssues: mockValidateDetectedIssues },
+        });
+
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.error).to.have.been.calledWith(
+          sinon.match(/Failed to resolve meta-tags opportunity.*DB error/),
+        );
       });
 
       it('should handle error when Site.findById fails during useHostnameOnly check', async () => {
@@ -2119,7 +2204,7 @@ describe('Meta Tags', () => {
         expect(context.sqs.sendMessage).to.have.been.called;
       });
 
-      it('should return early when meta-tags-auto-suggest is disabled for site', async () => {
+      it('should run full flow without config-based early return (enablement checked upstream)', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(5000);
         const mockValidateDetectedIssues = sinon.stub()
@@ -2129,10 +2214,11 @@ describe('Meta Tags', () => {
         const mockSyncSuggestions = sinon.stub()
           .resolves();
 
-        // Make handler disabled for site
         dataAccessStub.Configuration.findLatest.resolves({
-          isHandlerEnabledForSite: sinon.stub().returns(false),
+          isHandlerEnabledForSite: sinon.stub().returns(true),
         });
+        dataAccessStub.Suggestion = dataAccessStub.Suggestion || {};
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([]);
 
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
@@ -2148,8 +2234,7 @@ describe('Meta Tags', () => {
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.info).to.have.been.calledWith('Metatags auto-suggest is disabled for site');
-        expect(context.sqs.sendMessage).to.not.have.been.called;
+        expect(context.sqs.sendMessage).to.have.been.called;
       });
 
       it('should test mergeDataFunction in runAuditAndGenerateSuggestions preserves editedSuggestion', async () => {
@@ -2454,17 +2539,16 @@ describe('Meta Tags', () => {
       });
 
       it('should handle disabled handler for site', async () => {
-        Configuration.findLatest.resolves({
-          isHandlerEnabledForSite: sinon.stub().returns(false),
-        });
-        await metatagsAutoSuggest(allTags, context, siteStub);
-        expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+        genvarClientStub.generateSuggestions.resolves({});
+        await metatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(genvarClientStub.generateSuggestions).to.have.been.called;
       });
 
       it('should handle missing Genvar endpoint', async () => {
         context.env.GENVAR_HOST = '';
         try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
+          await metatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
         } catch (error) {
           expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId');
         }
@@ -2474,7 +2558,7 @@ describe('Meta Tags', () => {
         context.env.GENVAR_IMS_ORG_ID = '';
 
         try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
+          await metatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
         } catch (error) {
           expect(error.message).to.equal('Metatags Auto-suggest failed: Missing Genvar endpoint or genvar ims orgId1');
         }
@@ -2500,12 +2584,15 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
         expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
         expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
-        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
+        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(
+          'Elevate your home with Lovesac\'s customizable add-ons...',
+        );
         expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
       }).timeout(15000);
 
@@ -2513,10 +2600,11 @@ describe('Meta Tags', () => {
         genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
         let err;
         try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
+          await metatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
         } catch (error) {
           err = error;
         }
+        expect(err).to.exist;
         expect(err.message).to.equal('Genvar API failed');
       });
 
@@ -2524,10 +2612,11 @@ describe('Meta Tags', () => {
         genvarClientStub.generateSuggestions.resolves(5);
         let err;
         try {
-          await metatagsAutoSuggest(allTags, context, siteStub);
+          await metatagsAutoSuggest(allTags, context, siteStub, { forceAutoSuggest: true });
         } catch (error) {
           err = error;
         }
+        expect(err).to.exist;
         expect(err.message).to.equal('Invalid response received from Genvar API: 5');
       });
 
@@ -2546,17 +2635,12 @@ describe('Meta Tags', () => {
       });
 
       it('should handle forceAutoSuggest option set to false', async () => {
-        const forceAutoSuggest = false;
-        const isHandlerEnabledForSite = sinon.stub().returns(true);
-        Configuration.findLatest.resolves({
-          isHandlerEnabledForSite,
+        const result = await metatagsAutoSuggest(allTags, context, siteStub, {
+          forceAutoSuggest: false,
         });
-
-        await metatagsAutoSuggest(allTags, context, siteStub, {
-          forceAutoSuggest,
-        });
-        expect(isHandlerEnabledForSite).to.have.been.called;
-        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.info.calledWith('Metatags auto-suggest is disabled for site')).to.be.true;
+        expect(genvarClientStub.generateSuggestions).not.to.have.been.called;
+        expect(result).to.deep.equal(allTags.detectedTags);
       });
 
       it('should remove tags without aiSuggestion from updatedDetectedTags', async () => {
@@ -2600,7 +2684,8 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that tags without aiSuggestion are removed
         expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title 1');
@@ -2611,7 +2696,9 @@ describe('Meta Tags', () => {
         expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1 2');
 
         // Verify logging for removed tags
-        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith(
+          'Removing description tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
         expect(log.info).to.have.been.calledWith('Removing h1 tag from /page1 as it doesn\'t have aiSuggestion.');
       });
 
@@ -2644,15 +2731,20 @@ describe('Meta Tags', () => {
           // /page1 is not in the response, so no aiSuggestion for any of its tags
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that /page1 has all its tags removed (empty object)
         expect(response['/page1']).to.deep.equal({});
         expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title 2');
 
         // Verify logging for removed tags
-        expect(log.info).to.have.been.calledWith('Removing title tag from /page1 as it doesn\'t have aiSuggestion.');
-        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith(
+          'Removing title tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
+        expect(log.info).to.have.been.calledWith(
+          'Removing description tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
       });
 
       it('should preserve tags with aiSuggestion and remove only those without', async () => {
@@ -2685,7 +2777,8 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that tags with aiSuggestion are preserved
         expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title');
@@ -2697,7 +2790,9 @@ describe('Meta Tags', () => {
         expect(response['/page1'].description).to.be.undefined;
 
         // Verify logging for removed tag
-        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith(
+          'Removing description tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
       });
 
       it('should handle empty response from Genvar API', async () => {
@@ -2717,15 +2812,20 @@ describe('Meta Tags', () => {
         // Setup empty Genvar response
         genvarClientStub.generateSuggestions.resolves({});
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that all tags are removed since no aiSuggestion is provided
         expect(response['/page1'].title).to.be.undefined;
         expect(response['/page1'].description).to.be.undefined;
 
         // Verify logging for removed tags
-        expect(log.info).to.have.been.calledWith('Removing title tag from /page1 as it doesn\'t have aiSuggestion.');
-        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith(
+          'Removing title tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
+        expect(log.info).to.have.been.calledWith(
+          'Removing description tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
       });
 
       it('should remove all duplicate tag instances when one instance lacks AI suggestion', async () => {
@@ -2760,7 +2860,8 @@ describe('Meta Tags', () => {
           // /page2 and /page3 don't have AI suggestions
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that ALL duplicate instances are removed (even the one with AI suggestion)
         expect(response['/page1'].title).to.be.undefined;
@@ -2768,9 +2869,15 @@ describe('Meta Tags', () => {
         expect(response['/page3'].title).to.be.undefined;
 
         // Verify logging for removed duplicate tags
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page3 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page1 (duplicate group without complete AI suggestions).',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page2 (duplicate group without complete AI suggestions).',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page3 (duplicate group without complete AI suggestions).',
+        );
       });
 
       it('should keep all duplicate tag instances when all have AI suggestions', async () => {
@@ -2806,7 +2913,8 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that ALL duplicate instances are kept since all have AI suggestions
         expect(response['/page1'].description.aiSuggestion).to.equal('AI Suggested Description 1');
@@ -2851,7 +2959,8 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that duplicate titles are removed from both pages
         // (because one instance lacks AI suggestion)
@@ -2865,9 +2974,15 @@ describe('Meta Tags', () => {
         expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1');
 
         // Verify logging
-        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+        expect(log.info).to.have.been.calledWith(
+          'Removing description tag from /page1 as it doesn\'t have aiSuggestion.',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page1 (duplicate group without complete AI suggestions).',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page2 (duplicate group without complete AI suggestions).',
+        );
       });
 
       it('should handle multiple different duplicate groups correctly', async () => {
@@ -2915,7 +3030,8 @@ describe('Meta Tags', () => {
           },
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that duplicate titles with all AI suggestions are kept
         expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title A1');
@@ -2927,8 +3043,12 @@ describe('Meta Tags', () => {
         expect(response['/page3'].h1).to.be.undefined;
 
         // Verify logging for removed duplicate h1 group
-        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page1 (duplicate group without complete AI suggestions).');
-        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page3 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith(
+          'Removing h1 tag from /page1 (duplicate group without complete AI suggestions).',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing h1 tag from /page3 (duplicate group without complete AI suggestions).',
+        );
       });
 
       it('should handle duplicate tags with empty tagContent gracefully', async () => {
@@ -2951,7 +3071,8 @@ describe('Meta Tags', () => {
         // Setup Genvar response with no AI suggestions
         genvarClientStub.generateSuggestions.resolves({});
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that tags without tagContent are removed individually (not as duplicate group)
         expect(response['/page1'].title).to.be.undefined;
@@ -2989,15 +3110,20 @@ describe('Meta Tags', () => {
           // /page2 doesn't have AI suggestion
         });
 
-        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
         // Verify that both instances are removed since they share the same tagContent
         expect(response['/page1'].title).to.be.undefined;
         expect(response['/page2'].title).to.be.undefined;
 
         // Verify logging for duplicate group removal
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
-        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page1 (duplicate group without complete AI suggestions).',
+        );
+        expect(log.debug).to.have.been.calledWith(
+          'Removing title tag from /page2 (duplicate group without complete AI suggestions).',
+        );
       });
     });
   });

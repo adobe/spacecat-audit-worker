@@ -367,6 +367,65 @@ export function joinBaseAndPath(baseURL, path) {
 }
 
 /**
+ * Returns true when a Content-Type value indicates an HTML document.
+ * Matches text/html and application/xhtml+xml (with optional charset suffix).
+ *
+ * @param {string} contentType - The Content-Type header value.
+ * @returns {boolean}
+ */
+export function isHtmlContentType(contentType) {
+  /* c8 ignore next - Defensive fallback for null/undefined contentType */
+  return /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+}
+
+/**
+ * Returns true when the stripped body text of a 200 response matches known soft-404 patterns.
+ * Strips <script>, <style> and all other HTML tags before matching so inline JS/CSS text
+ * cannot produce false positives. Checks the first 12 000 characters of the cleaned text.
+ * Patterns cover English and several other languages (DE, FR, ES, IT, PT, NL, JA).
+ *
+ * @param {string} bodyText - Raw HTML body (or plain text) of the response.
+ * @returns {boolean}
+ */
+export function isSoft404Body(bodyText) {
+  /* c8 ignore next - Defensive fallback for null/undefined bodyText */
+  const text = String(bodyText || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  const normalizedText = text.slice(0, 12000);
+
+  return [
+    /404 not found/,
+    /page not found/,
+    /not found/,
+    /the page you (requested|are looking for).{0,40}(could not be found|does not exist|is unavailable)/,
+    /sorry[, ]+we (couldn'?t|can'?t) find/,
+    /sorry[, ]+the page.{0,40}(could not be found|does not exist|is unavailable)/,
+    /we can'?t seem to find the page/,
+    /this page no longer exists/,
+    /the requested url was not found/,
+    /error 404/,
+    /seite nicht gefunden/,
+    /page introuvable/,
+    /page non trouv[ée]e/,
+    /p[áa]gina no encontrada/,
+    /pagina non trovata/,
+    /p[áa]gina n[ãa]o encontrada/,
+    /pagina niet gevonden/,
+    /ページが見つかりません/,
+  ].some((pattern) => pattern.test(normalizedText));
+}
+
+/**
  * Strips query string from a URL, keeping only the origin and path.
  * @param {string} url - The URL to strip.
  * @returns {string} - URL without query string.
