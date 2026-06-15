@@ -542,7 +542,11 @@ describe('Slack Utils', () => {
       expect(msg.text).to.include('Bot Protection Detected');
     });
 
-    it('suppresses duplicate alerts: second call with same slackContext is a no-op', async () => {
+    it('suppresses duplicate alerts when both inner and outer catches fire on the same invocation', async () => {
+      // Simulates the StepAudit-catches-and-rethrows → index.js-catches sequence.
+      // Both reporters share the same `context` object (Lambda invocation handle);
+      // dedup state lives on context so it works even if auditContext is cloned
+      // (or its slackContext copied) between catches.
       const slackContext = { channelId: 'C123', threadTs: '1234.5678' };
       const error = new Error('boom');
 
@@ -552,17 +556,24 @@ describe('Slack Utils', () => {
         auditContext: { slackContext },
         error,
       });
-      // Inner reporter (RunnerAudit/StepAudit) fires once, then outer dispatcher
-      // catches the re-thrown error and calls again — second call must no-op.
+      // Outer catch may receive a fresh/cloned auditContext (e.g. if a future
+      // refactor deep-clones it for safety). Reusing a structurally-equal but
+      // referentially distinct slackContext here proves dedup doesn't rely on
+      // reference identity of the propagated payload.
+      const clonedSlackContext = { ...slackContext };
       await sendAuditFailureNotification(notifContext, {
         type: 'cwv',
         siteUrl: 'https://example.com',
-        auditContext: { slackContext },
+        auditContext: { slackContext: clonedSlackContext },
         error,
       });
 
       expect(mockSlackClient.postMessage.calledOnce).to.be.true;
-      expect(slackContext.notifiedAt).to.be.a('string');
+      // Marker lives on context (Lambda invocation), NOT on the serializable
+      // slackContext that gets propagated to downstream queues.
+      expect(notifContext.slackFailureNotifiedAt).to.be.a('string');
+      expect(slackContext).to.not.have.property('notifiedAt');
+      expect(clonedSlackContext).to.not.have.property('notifiedAt');
     });
   });
 
@@ -583,6 +594,17 @@ describe('Slack Utils', () => {
     it('preserves acronyms (CWV stays together)', () => {
       expect(humanizeStepName('collectCWVDataAndImportCode'))
         .to.equal('Collect CWV Data And Import Code');
+    });
+
+    it('converts kebab-case to Title Case (every word capitalized)', () => {
+      expect(humanizeStepName('send-to-mystique')).to.equal('Send To Mystique');
+      expect(humanizeStepName('run-audit-and-generate-suggestions'))
+        .to.equal('Run Audit And Generate Suggestions');
+    });
+
+    it('converts snake_case to Title Case (every word capitalized)', () => {
+      expect(humanizeStepName('sync_opportunity_and_suggestions_step'))
+        .to.equal('Sync Opportunity And Suggestions Step');
     });
 
     it('returns empty string for empty / undefined input', () => {

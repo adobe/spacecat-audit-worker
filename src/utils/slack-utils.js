@@ -15,8 +15,22 @@ import { formatAllowlistMessage, hasText } from '@adobe/spacecat-shared-utils';
 
 /**
  * Sends a message to Slack using the provided context and slackContext.
- * Mirrors the say() utility in spacecat-task-processor for consistent Slack messaging
- * across audit-triggered flows. Only sends when both channelId and threadTs are present.
+ * Mirrors the say() utility in spacecat-task-processor for consistent Slack
+ * messaging across audit-triggered flows. Only sends when both channelId and
+ * threadTs are present.
+ *
+ * Why both `say` and `postMessageOptional` (below) exist:
+ *   - `say(env, log, slackContext, message)` is the canonical helper for
+ *     audit-triggered Slack threads: takes a curated env subset, mirrors the
+ *     task-processor signature, posts with `unfurl_links: false`.
+ *   - `postMessageOptional(context, channelId, text, options)` is the general
+ *     non-audit Slack sender used by other code paths in this repo: takes a
+ *     full Lambda context, configurable target workspace, blocks/attachments.
+ *
+ * Both guard on `channelId` + `threadTs` and build a `WORKSPACE_INTERNAL`
+ * client by default; if a future change makes one of them strictly more
+ * capable than the other, prefer consolidating onto a single entry point.
+ *
  * @param {object} env - The environment variables
  * @param {object} log - The logger
  * @param {object} slackContext - The Slack context containing channelId and threadTs
@@ -310,10 +324,15 @@ export function formatAuditCompletionMessage(auditType, siteUrl) {
 }
 
 /**
- * Converts a camelCase or snake_case step identifier into a human-readable label.
+ * Converts a kebab-case, snake_case, or camelCase step identifier into a
+ * human-readable Title Case label. Acronym runs are preserved (CWVData stays
+ * "CWV Data", not "C W V Data").
+ *
  * Examples:
- *   'collectCWVDataAndImportCode' -> 'Collect CWV Data And Import Code'
+ *   'send-to-mystique'                   -> 'Send To Mystique'
+ *   'run-audit-and-generate-suggestions' -> 'Run Audit And Generate Suggestions'
  *   'sync_opportunity_and_suggestions_step' -> 'Sync Opportunity And Suggestions Step'
+ *   'collectCWVDataAndImportCode'        -> 'Collect CWV Data And Import Code'
  *
  * @param {string} stepName
  * @returns {string}
@@ -323,14 +342,16 @@ export function humanizeStepName(stepName) {
     return '';
   }
   return stepName
-    .replace(/_/g, ' ')
-    // Insert space before each uppercase letter that follows a lowercase letter or
-    // a sequence of uppercase letters followed by a lowercase one (so 'CWVData'
-    // becomes 'CWV Data', not 'C W V Data').
+    // kebab-case and snake_case separators -> spaces
+    .replace(/[_-]/g, ' ')
+    // camelCase / acronym boundaries — first rule splits lower→Upper ('aB' -> 'a B'),
+    // second keeps acronym runs together ('CWVData' -> 'CWV Data', not 'C W V Data').
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .trim()
-    .replace(/^\w/, (c) => c.toUpperCase());
+    // Title-case every word. \b\w is a no-op on already-uppercase letters,
+    // so acronyms in camelCase input survive intact.
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
@@ -382,8 +403,15 @@ export async function sendAuditFailureNotification(context, {
   // error that an inner audit class (RunnerAudit / StepAudit / handleAbort) has
   // already reported. Without this guard, a single StepAudit failure produces
   // two alerts: one from the step-audit catch and one from the index.js catch
-  // on the re-thrown error. The inner reporter sets this flag before re-throwing.
-  if (auditContext?.slackContext?.notifiedAt) {
+  // on the re-thrown error.
+  //
+  // The marker lives on `context` (the Lambda invocation object) — NOT on
+  // slackContext. slackContext is a serializable payload that gets propagated
+  // onto downstream SQS messages via preserveSlackContext, and we don't want
+  // dedup state to leak there. context is the in-memory per-invocation handle
+  // that every catch site shares; both runner-audit/step-audit and the outer
+  // index.js dispatcher read the same reference.
+  if (context.slackFailureNotifiedAt) {
     return;
   }
 
@@ -404,9 +432,9 @@ export async function sendAuditFailureNotification(context, {
   }
 
   await say(env, log, slackContext, message);
-  // Mark the slackContext on the in-memory message so a subsequent re-throw
-  // catcher in the same Lambda invocation does not double-fire.
-  slackContext.notifiedAt = new Date().toISOString();
+  // Set the dedup marker so a subsequent re-throw catcher in the same Lambda
+  // invocation does not double-fire. Stays in-memory; never serialized.
+  context.slackFailureNotifiedAt = new Date().toISOString();
 }
 
 export { SLACK_TARGETS };
