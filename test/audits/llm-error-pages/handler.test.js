@@ -15,6 +15,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { upsertWeekHistory } from '../../../src/llm-error-pages/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1863,7 +1864,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       Opportunity: {
         allBySiteIdAndStatus: sandbox.stub().resolves(overrides.existingOpportunities || []),
       },
-      Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      Suggestion: {
+        bulkUpdateStatus: sandbox.stub().resolves(),
+        removeByIds: sandbox.stub().resolves(),
+      },
     },
     ...overrides.contextOverrides,
   });
@@ -1969,10 +1973,75 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     expect(merged.confidenceScore).to.be.undefined;
   });
 
+  it('mapNewSuggestion seeds data.history with this week as the first entry', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+    const mapped = mapNewSuggestion({
+      url: '/p1',
+      httpStatus: 404,
+      hitCount: 10,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+    expect(mapped.data.history).to.have.lengthOf(1);
+    expect(mapped.data.history[0]).to.deep.equal({
+      periodIdentifier: 'w15-2026',
+      hitCount: 10,
+      httpStatus: 404,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+  });
+
+  it('mergeDataFunction appends the current week to an existing data.history', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        history: [{
+          periodIdentifier: 'w14-2026',
+          hitCount: 7,
+          httpStatus: 404,
+          agentTypes: ['Chatbots'],
+          userAgents: ['ChatGPT'],
+          avgTtfb: '40.0',
+        }],
+      },
+      {
+        hitCount: 99,
+        httpStatus: 404,
+        agentTypes: ['Chatbots'],
+        userAgents: ['Claude'],
+        avgTtfb: '30.0',
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.hitCount).to.equal(99);
+    expect(merged.history).to.have.lengthOf(2);
+    expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
+    expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
+  });
+
   it('runs retention sweep on existing opportunity for empty buckets', async () => {
     const sandbox = sinon.createSandbox();
 
     const staleSuggestion = {
+      getId: () => 'sug-403-stale',
       getData: () => ({ url: '/old', periodIdentifier: 'w01-2025' }),
       getStatus: () => 'NEW',
     };
@@ -1994,18 +2063,16 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     await handler.runAuditAndSendToMystique(ctx);
 
     expect(staleOpportunity.getSuggestions).to.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledWith(['sug-403-stale']);
     sandbox.restore();
   });
 
-  it('skips suggestions with no periodIdentifier in retention check', async () => {
+  it('does NOT delete a suggestion with no periodIdentifier (age unknowable)', async () => {
     const sandbox = sinon.createSandbox();
     const sugWithoutPeriod = {
+      getId: () => 'sug-legacy',
       getData: () => ({ url: '/legacy' }),
       getStatus: () => 'NEW',
-    };
-    const sugWithTerminal = {
-      getData: () => ({ url: '/done', periodIdentifier: 'w01-2020' }),
-      getStatus: () => 'RESOLVED',
     };
     const oldOpp = {
       getId: () => 'opp-404',
@@ -2014,7 +2081,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       setStatus: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod, sugWithTerminal]),
+      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod]),
     };
     const { handler, mockConvertToOpportunity } = await buildHandler(sandbox, {
       convertToOpportunity: sandbox.stub().resolves(oldOpp),
@@ -2023,14 +2090,83 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     expect(mockConvertToOpportunity).to.have.been.called;
     sandbox.restore();
   });
 
-  it('calls bulkUpdateStatus when suggestions are stale', async () => {
+  const sweepWith = async (sandbox, { status, parseResult }) => {
+    const staleSug = {
+      getId: () => 'sug-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => status,
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(parseResult),
+    });
+    const ctx = buildContext(sandbox);
+    await handler.runAuditAndSendToMystique(ctx);
+    return ctx;
+  };
+
+  it('DELETES a stale system-managed (NEW) suggestion past the window', async () => {
     const sandbox = sinon.createSandbox();
-    const stale = {
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledOnceWith(['sug-stale']);
+    sandbox.restore();
+  });
+
+  it('does NOT delete a customer-actioned terminal suggestion (FIXED audit trail), even when stale', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'FIXED', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete/outdate a suggestion with an unparseable periodIdentifier (epoch sentinel → skip)', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date(0) });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT outdate a SKIPPED suggestion in the middle tier (customer action preserved)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'SKIPPED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT re-outdate an already-OUTDATED suggestion in the middle tier (only NEW ages out)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'OUTDATED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('skips the retention sweep entirely in backfill mode (weekOffset set)', async () => {
+    const sandbox = sinon.createSandbox();
+    const staleSug = {
+      getId: () => 'sug-stale',
       getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
       getStatus: () => 'NEW',
     };
@@ -2041,17 +2177,149 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       setStatus: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      getSuggestions: sandbox.stub().resolves([stale]),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
     };
     const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // epoch → always stale
+      parsePeriodIdentifier: sandbox.stub().returns(new Date('2020-01-01T00:00:00Z')),
+    });
+    const ctx = buildContext(sandbox);
+    ctx.auditContext = { weekOffset: -1 };
+    await handler.runAuditAndSendToMystique(ctx);
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete a suggestion whose URL appears in the current run', async () => {
+    const sandbox = sinon.createSandbox();
+    const currentUrlSug = {
+      getId: () => 'sug-current',
+      getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([currentUrlSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)),
     });
     const ctx = buildContext(sandbox);
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith([stale], 'OUTDATED');
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  const weeksAgo = (n) => new Date(Date.now() - n * 7 * 24 * 60 * 60 * 1000);
+
+  it('marks a suggestion OUTDATED when last seen 5-6 weeks ago (middle tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const midTier = {
+      getId: () => 'sug-mid',
+      getData: () => ({ url: '/gone', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([midTier]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith([midTier], 'OUTDATED');
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('leaves a suggestion NEW when last seen within 4 weeks (fresh tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fresh = {
+      getId: () => 'sug-fresh',
+      getData: () => ({ url: '/recent', periodIdentifier: 'w22-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fresh]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(2)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT flip a terminal-state suggestion to OUTDATED in the middle tier', async () => {
+    const sandbox = sinon.createSandbox();
+    const fixedMid = {
+      getId: () => 'sug-fixed-mid',
+      getData: () => ({ url: '/fixed', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'FIXED',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fixedMid]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -2231,9 +2499,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // /p1 is in scrapedUrlsSet (it's the 404 URL in default fixture), so it
-    // must NOT appear in the OUTDATED batch even though the period parses as stale.
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -2259,8 +2525,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // Suggestion with null data is gracefully skipped (no lastSeen → return false).
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -2389,5 +2654,62 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     // 403 and 5xx still synced — proves per-bucket isolation.
     expect(mockSyncSuggestions).to.have.been.calledTwice;
     sandbox.restore();
+  });
+});
+
+describe('LLM Error Pages Handler — upsertWeekHistory', () => {
+  const entry = (periodIdentifier, hitCount = 1) => ({
+    periodIdentifier,
+    hitCount,
+    httpStatus: 404,
+    agentTypes: ['Chatbots'],
+    userAgents: ['ChatGPT'],
+    avgTtfb: '50.0',
+  });
+
+  it('seeds history when there is none (undefined existing)', () => {
+    const result = upsertWeekHistory(undefined, entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('treats a non-array existing history as empty (defensive)', () => {
+    const result = upsertWeekHistory('not-an-array', entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('appends a new week and orders oldest-first by ISO week', () => {
+    const result = upsertWeekHistory([entry('w12-2026'), entry('w10-2026')], entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w10-2026', 'w12-2026', 'w15-2026']);
+  });
+
+  it('replaces (does not duplicate) a re-run of the same week — idempotent', () => {
+    const result = upsertWeekHistory([entry('w15-2026', 7)], entry('w15-2026', 99));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].hitCount).to.equal(99);
+  });
+
+  it('prunes to the most recent RETENTION_WEEKS (6) entries', () => {
+    const existing = [
+      entry('w10-2026'), entry('w11-2026'), entry('w12-2026'),
+      entry('w13-2026'), entry('w14-2026'), entry('w15-2026'),
+    ];
+    const result = upsertWeekHistory(existing, entry('w16-2026'));
+    expect(result).to.have.lengthOf(6);
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal([
+      'w11-2026', 'w12-2026', 'w13-2026', 'w14-2026', 'w15-2026', 'w16-2026',
+    ]);
+  });
+
+  it('skips malformed existing entries lacking a periodIdentifier', () => {
+    const existing = [entry('w12-2026'), { hitCount: 5 }, null];
+    const result = upsertWeekHistory(existing, entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w12-2026', 'w15-2026']);
+  });
+
+  it('orders an unparseable periodIdentifier (epoch fallback) before real weeks', () => {
+    const result = upsertWeekHistory([entry('w15-2026')], entry('garbage'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['garbage', 'w15-2026']);
   });
 });

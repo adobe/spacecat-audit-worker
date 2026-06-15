@@ -15,15 +15,10 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { syncSuggestions } from '../../../src/utils/data-access.js';
-import { toPathname } from '../../../src/prerender/utils/utils.js';
+import { buildSuggestionKey as buildKey, toPathname } from '../../../src/prerender/utils/utils.js';
+import { DOMAIN_WIDE_SUGGESTION_KEY as DOMAIN_WIDE_KEY } from '../../../src/prerender/utils/constants.js';
 
 use(sinonChai);
-
-// Mirrors the buildKey in processOpportunityAndSuggestions
-const buildKey = (data) => {
-  if (data.key) return data.key;
-  return toPathname(data.url);
-};
 
 // Mirrors the pathname-normalized scrapedUrlsSet created in processOpportunityAndSuggestions
 const makeScrapedUrlsSet = (urls) => {
@@ -216,6 +211,137 @@ describe('Prerender syncSuggestions integration', () => {
     expect(created[0].data.contentGainRatio).to.equal(3.0);
     // Nothing outdated or updated
     expect(bulkUpdateStatus).to.not.have.been.called;
+    expect(saveMany).to.not.have.been.called;
+  });
+
+  it('Case 6 — existing domain-wide suggestion (isDomainWide:true, no .key) is matched and updated, not duplicated', async () => {
+    // Simulates the stale DB record: stored data has isDomainWide but no .key field.
+    // Before the fix, buildKey returned a pathname-based key for the stored record and
+    // DOMAIN_WIDE_KEY for the incoming item, so they never matched and a duplicate was created.
+    const existingDomainWide = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      pathPattern: '/*',
+      allowedRegexPatterns: ['/*'],
+      wordCountBefore: 10,
+      wordCountAfter: 20,
+      contentGainRatio: 0.5,
+    }, 'OUTDATED');
+
+    // Incoming domain-wide from a new audit run — has .key field
+    const incomingDomainWide = {
+      key: DOMAIN_WIDE_KEY,
+      data: {
+        isDomainWide: true,
+        url: 'https://example.com/* (All Domain URLs)',
+        pathPattern: '/*',
+        allowedRegexPatterns: ['/*'],
+        wordCountBefore: 15,
+        wordCountAfter: 35,
+        contentGainRatio: 1.2,
+      },
+    };
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [incomingDomainWide],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d.data ?? d }),
+      existingSuggestions: [existingDomainWide],
+    });
+
+    // Existing was updated in place — no duplicate created
+    expect(saveMany).to.have.been.calledOnce;
+    expect(addSuggestions).to.not.have.been.called;
+    // Fresh aggregated data was applied
+    expect(existingDomainWide.getData().contentGainRatio).to.equal(1.2);
+    expect(existingDomainWide.getData().wordCountBefore).to.equal(15);
+  });
+
+  it('Case 6b — multiple OUTDATED domain-wide duplicates are all updated via buildKey match, no new one created', async () => {
+    // Tests the buildKey fix path: when existing domain-wide suggestions are not
+    // preservable (OUTDATED, no edgeDeployed), the new domain-wide IS in newData
+    // and buildSuggestionKey matches all existing OUTDATED entries for update.
+    const dup1 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.5,
+    }, 'OUTDATED');
+    const dup2 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.6,
+    }, 'OUTDATED');
+    const dup3 = makeSuggestion({
+      isDomainWide: true,
+      url: 'https://example.com/* (All Domain URLs)',
+      contentGainRatio: 0.7,
+    }, 'OUTDATED');
+
+    const incomingDomainWide = {
+      key: DOMAIN_WIDE_KEY,
+      data: {
+        isDomainWide: true,
+        url: 'https://example.com/* (All Domain URLs)',
+        contentGainRatio: 2.0,
+      },
+    };
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [incomingDomainWide],
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d.data ?? d }),
+      existingSuggestions: [dup1, dup2, dup3],
+    });
+
+    // All three share the same buildKey, so all are matched and data-refreshed
+    expect(saveMany).to.have.been.calledOnce;
+    const savedSuggestions = saveMany.firstCall.args[0];
+    expect(savedSuggestions).to.have.lengthOf(3);
+    savedSuggestions.forEach((s) => {
+      expect(s.getData().contentGainRatio).to.equal(2.0);
+    });
+
+    // No new suggestion created — the key is already present among existing
+    expect(addSuggestions).to.not.have.been.called;
+
+    // Domain-wide suggestions are protected by the isDomainWide guard in
+    // handleOutdatedSuggestions, so bulkUpdateStatus must not be called for them
+    const outdatedCall = bulkUpdateStatus.getCalls().find((c) => c.args[1] === 'OUTDATED');
+    expect(outdatedCall).to.be.undefined;
+  });
+
+  it('Case 6c — multiple NEW domain-wide duplicates from a race are not outdated or duplicated further', async () => {
+    // Reproduces the exact production incident: concurrent Lambdas created multiple
+    // NEW domain-wide suggestions. On the next single-threaded audit run,
+    // findPreservableDomainWideSuggestion finds one of them (NEW is preservable)
+    // and excludes domain-wide from newData entirely. The isDomainWide guard in
+    // handleOutdatedSuggestions must protect all NEW entries from being marked OUTDATED.
+    const dup1 = makeSuggestion({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' }, 'NEW');
+    const dup2 = makeSuggestion({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' }, 'NEW');
+    const dup3 = makeSuggestion({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' }, 'NEW');
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [], // domain-wide excluded because findPreservableDomainWideSuggestion found a NEW one
+      buildKey,
+      mergeDataFunction,
+      mapNewSuggestion: (d) => ({ data: d }),
+      existingSuggestions: [dup1, dup2, dup3],
+    });
+
+    // isDomainWide guard in handleOutdatedSuggestions must protect all three NEW entries
+    const outdatedCall = bulkUpdateStatus.getCalls().find((c) => c.args[1] === 'OUTDATED');
+    expect(outdatedCall).to.be.undefined;
+    // No new domain-wide created
+    expect(addSuggestions).to.not.have.been.called;
+    // No spurious data updates (nothing to match against in newData)
     expect(saveMany).to.not.have.been.called;
   });
 

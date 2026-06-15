@@ -888,11 +888,12 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that saveMany is called with the updated suggestion
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-      // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      // With no data changes and no status change, save should be skipped
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      // Verify that setData is NOT called when data hasn't changed
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      // Verify that skip log is called
+      expect(mockLogger.debug).to.have.been.calledWith(sinon.match(/Skipping update for suggestion/));
     });
 
     it('should preserve REJECTED status when data changes', async () => {
@@ -1022,6 +1023,141 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
         .calledOnceWith([existingSuggestions[0]]);
       expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should update suggestion when status changes but data does not', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.ERROR),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Same data (data unchanged)
+      const newData = [
+        { key: '1', title: 'same title', description: 'same description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify status changed (ERROR -> NEW per defaultMergeStatusFunction)
+      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+      // Verify setData called even though data unchanged (required for update path)
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify setUpdatedBy called only on status change
+      expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should preserve attribution when only data changes (no status change)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed but status stays NEW (defaultMergeStatusFunction returns null for NEW)
+      const newData = [
+        { key: '1', title: 'new title', description: 'new description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify data updated
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      // Verify status NOT changed (defaultMergeStatusFunction returns null for NEW -> NEW)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify setUpdatedBy NOT called (preserves original human attribution)
+      expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+      // Verify saveMany called
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
+    });
+
+    it('should warn when mergeDataFunction returns same reference (defensive guard)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'title', count: 5 },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', count: 10 },
+      ];
+
+      // Merge function that mutates in place (contract violation)
+      const badMergeFunction = sinon.stub().callsFake((existing, newItem) => {
+        // eslint-disable-next-line no-param-reassign
+        existing.title = newItem.title;
+        // eslint-disable-next-line no-param-reassign
+        existing.count = newItem.count;
+        return existing; // Returns same reference - triggers warning
+      });
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        mergeDataFunction: badMergeFunction,
+      });
+
+      // Verify warning was logged
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/forcing dataChanged=true to prevent silent skip/),
+      );
+      // Verify the merge function was called
+      expect(badMergeFunction).to.have.been.called;
+      // Verify fail-open behavior: update still happens despite broken merge function
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should transition ERROR suggestions to NEW so a re-audit re-dispatches them', async () => {
@@ -1921,12 +2057,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*7/);
-        // Check that full sample is logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*7:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 7 matched suggestions, updated 7/);
       });
 
       it('should log only first 10 items when there are more than 10 updated suggestions', async () => {
@@ -1951,12 +2083,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*12/);
-        // Check that only first 10 are logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*12:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that processed/updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Processed 12 matched suggestions, updated 12/);
       });
 
       it('should log full data when there are 1-10 new suggestions', async () => {

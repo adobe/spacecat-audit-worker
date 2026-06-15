@@ -21,6 +21,9 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
+// ----- version ----------------------------------------------------------------
+export const COMMON_VERSION = 101; // manually update as needed
+
 // ----- performance tuning constants ------------------------------------------
 
 // GET timeout for robots.txt and each sitemap.xml file
@@ -49,16 +52,16 @@ export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay betwee
 
 // ----- internal constants ----------------------------------------------------
 export const ERROR_CODES = Object.freeze({
-  INVALID_URL: 'INVALID URL',
+  // ... codes applicable for the /robots.txt file ...
+  CANNOT_READ_ROBOTS: 'CANNOT READ ROBOTS',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
-  NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
+  // ... codes applicable for a specific sitemap.xml URL ...
   SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
-  SITEMAP_EMPTY: 'EMPTY SITEMAP',
-  SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
-  FETCH_ERROR: 'ERROR FETCHING DATA',
-  MISSING_PRODUCT_URL_TEMPLATE: 'MISSING PRODUCT URL TEMPLATE IN THE SITE CONFIGURATION',
-  COLLECTING_PRODUCTS_BACKEND_FAILED: 'COLLECTING PRODUCTS FROM BACKEND FAILED',
-  UNSUPPORTED_DELIVERY_TYPE: 'UNSUPPORTED DELIVERY TYPE',
+  CANNOT_READ_SITEMAP: 'ERROR FETCHING DATA',
+  INVALID_SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
+  NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
+  // ... audit-level codes ...
+  GENERAL_ERROR: 'INVALID URL', // the customer's URL provided for the audit is not valid
 });
 
 const VALID_MIME_TYPES = Object.freeze([
@@ -1005,6 +1008,10 @@ export async function checkRobotsForSitemap(protocol, domain) {
     }
   }
 
+  // note: If `sitemapPaths` is empty, then this is not necessarily an error condition ... yet;
+  //       it just means that there are no sitemap URLs declared in robots.txt.
+  //       If `sitemapPath` is empty, then we will need to look at other common places for
+  //       sitemap URLs, such as the root-level sitemap.xml file.
   return {
     paths: sitemapPaths,
     reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
@@ -1035,7 +1042,7 @@ export async function checkSitemap(sitemapUrl, log) {
     if (!isValidFormat) {
       return {
         existsAndIsValid: false,
-        reasons: [ERROR_CODES.SITEMAP_FORMAT],
+        reasons: [ERROR_CODES.INVALID_SITEMAP_FORMAT],
       };
     }
 
@@ -1050,7 +1057,7 @@ export async function checkSitemap(sitemapUrl, log) {
     const isNotFound = error.message.includes('404');
     return {
       existsAndIsValid: false,
-      reasons: [isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.FETCH_ERROR],
+      reasons: [isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.CANNOT_READ_SITEMAP],
     };
   }
 }
@@ -1129,7 +1136,7 @@ export async function getSitemapUrls(inputUrl, log) {
     log?.error(`Sitemap: Invalid URL provided: ${inputUrl}`);
     return {
       success: false,
-      reasons: [{ value: inputUrl, error: ERROR_CODES.INVALID_URL }],
+      reasons: [{ value: inputUrl, error: ERROR_CODES.GENERAL_ERROR }],
     };
   }
 
@@ -1150,7 +1157,7 @@ export async function getSitemapUrls(inputUrl, log) {
     // If robots.txt fails, return error immediately (since something is horribly wrong)
     return {
       success: false,
-      reasons: [{ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR }],
+      reasons: [{ value: `${error.message}`, error: ERROR_CODES.CANNOT_READ_ROBOTS }],
     };
   }
 
@@ -1168,6 +1175,7 @@ export async function getSitemapUrls(inputUrl, log) {
     });
 
     if (!sitemapUrls.ok?.length) {
+      // Since we cannot find any sitemap.xml URLs whatsoever, return an error.
       return {
         success: false,
         reasons: [{

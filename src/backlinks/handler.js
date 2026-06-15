@@ -22,6 +22,7 @@ import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
@@ -471,6 +472,20 @@ export const generateSuggestionData = async (context) => {
       )),
     )
   ).flat();
+
+  // Count outstanding NEW suggestions after sync. `suggestions` was queried by status
+  // so all items are NEW (or PENDING_VALIDATION for requiresValidation sites, filtered out).
+  // Resolved backlinks are marked OUTDATED by syncSuggestionsWithPublishDetection and
+  // excluded from this query — this reflects the PLG customer's current dashboard view.
+  const newSuggestionCount = suggestions.filter(
+    (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
+  ).length;
+  await sendLowSuggestionCountAlert(
+    site,
+    Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+    newSuggestionCount,
+    context,
+  );
 
   // Build broken links array
   const brokenLinks = suggestions

@@ -32,7 +32,6 @@ import {
   downloadExistingCdnSheet,
   groupErrorsByUrl,
   parsePeriodIdentifier,
-  EXCLUDED_URL_SUFFIXES,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
@@ -99,16 +98,6 @@ describe('LLM Error Pages Utils', () => {
     it('should be case insensitive', () => {
       const result = getLlmProviderPattern('CHATGPT');
       expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
-    });
-  });
-
-  describe('EXCLUDED_URL_SUFFIXES', () => {
-    it('should include common image and document extensions', () => {
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.jpg');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.jpeg');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.png');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.pdf');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.docx');
     });
   });
 
@@ -286,18 +275,6 @@ describe('LLM Error Pages Utils', () => {
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
-    });
-
-    it('should pass excludedUrlSuffixesFilter excluding static asset extensions', async () => {
-      await utils.buildLlmErrorPagesQuery(mockOptions);
-
-      const callArg = mockGetStaticContent.firstCall.args[0];
-      expect(callArg).to.have.property('excludedUrlSuffixesFilter');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('NOT regexp_like(url');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.pdf');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.jpg');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.png');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.docx');
     });
 
     it('should handle template with only static content', async () => {
