@@ -1,3 +1,11 @@
+## [1.474.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.0...v1.474.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* bump spacecat-shared-utils and rum-api-client for RUM 404 log downgrade ([#2666](https://github.com/adobe/spacecat-audit-worker/issues/2666)) ([0f8ed95](https://github.com/adobe/spacecat-audit-worker/commit/0f8ed952a9929858c3f8e5eb4579cbd1e2103eae))
+* **deps:** update adobe fixes to v3.75.0 ([#2664](https://github.com/adobe/spacecat-audit-worker/issues/2664)) ([d5d00a3](https://github.com/adobe/spacecat-audit-worker/commit/d5d00a31bd12230cfdc51a2c383404002d73a0b3))
+
 # [1.474.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.473.0...v1.474.0) (2026-06-15)
 
 
