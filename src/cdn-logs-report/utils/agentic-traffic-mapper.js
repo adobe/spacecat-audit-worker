@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { joinBaseAndPath } from '../../utils/url-utils.js';
 import { validateCountryCode } from './report-utils.js';
 import { inferProviderFromUserAgent } from '../../common/user-agent-classification.js';
@@ -89,7 +89,7 @@ export function getLlmVisibilityScore({
     return 100;
   }
   if (Number.isFinite(wordCountBefore) && Number.isFinite(wordCountAfter) && wordCountAfter > 0) {
-    return Math.min(100, Math.round((wordCountBefore / wordCountAfter) * 100));
+    return Math.max(0, Math.min(100, Math.round((wordCountBefore / wordCountAfter) * 100)));
   }
   return 0;
 }
@@ -146,14 +146,17 @@ function buildCitabilityMap(suggestions, log) {
 // dashboard UI 1:1 (getLlmVisibilityScore). URLs the prerender audit skipped (e.g. content gain
 // below threshold) get no citability_score, same as the UI shows nothing for them. This is
 // narrower than the old PageCitability table, which could carry scores for URLs the UI doesn't.
-async function getCitabilityScores(site, context) {
-  const { Opportunity, Suggestion: SuggestionDA } = context?.dataAccess ?? {};
-  if (!Opportunity?.allBySiteIdAndStatus || !SuggestionDA?.allByOpportunityIdAndStatus) {
+async function getPrerenderSuggestions(site, context) {
+  const { Opportunity: OpportunityDA, Suggestion: SuggestionDA } = context?.dataAccess ?? {};
+  if (!OpportunityDA?.allBySiteIdAndStatus || !SuggestionDA?.allByOpportunityIdAndStatus) {
     return [];
   }
 
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const opportunities = await OpportunityDA.allBySiteIdAndStatus(
+      site.getId(),
+      Opportunity.STATUSES.NEW,
+    );
     const opportunity = (opportunities || []).find(
       (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER,
     );
@@ -195,7 +198,7 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
   }
 
   const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
-  const prerenderSuggestions = await getCitabilityScores(site, context);
+  const prerenderSuggestions = await getPrerenderSuggestions(site, context);
   const citabilityMap = buildCitabilityMap(prerenderSuggestions, context?.log);
   const baseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL || site.getBaseURL();
   const defaultHost = new URL(baseURL).host;

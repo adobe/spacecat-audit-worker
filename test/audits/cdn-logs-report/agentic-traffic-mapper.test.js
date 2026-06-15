@@ -87,6 +87,10 @@ describe('agentic traffic mapper', () => {
       expect(getLlmVisibilityScore({ wordCountBefore: 10, wordCountAfter: 0 })).to.equal(0);
       expect(getLlmVisibilityScore({})).to.equal(0);
     });
+
+    it('floors a negative ratio at 0', () => {
+      expect(getLlmVisibilityScore({ wordCountBefore: -50, wordCountAfter: 100 })).to.equal(0);
+    });
   });
 
   it('maps Athena rows into traffic and classification bundle rows', async () => {
