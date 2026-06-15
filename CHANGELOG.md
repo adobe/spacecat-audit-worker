@@ -1,3 +1,38 @@
+## [1.471.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.5...v1.471.6) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.29.1 ([#2658](https://github.com/adobe/spacecat-audit-worker/issues/2658)) ([23fa5b7](https://github.com/adobe/spacecat-audit-worker/commit/23fa5b7868544af620a6204573b7ec28720151ae))
+
+## [1.471.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.4...v1.471.5) (2026-06-15)
+
+
+### Bug Fixes
+
+* remove unreachable `payload.checks` narrowing branch in preflight audit ([#2646](https://github.com/adobe/spacecat-audit-worker/issues/2646)) ([6fb263f](https://github.com/adobe/spacecat-audit-worker/commit/6fb263f042ea57ebe3eedf27ba52574060d03d7c))
+
+## [1.471.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.3...v1.471.4) (2026-06-14)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** HEAD-check Mystique suggestions and write empty rows to DB ([#2635](https://github.com/adobe/spacecat-audit-worker/issues/2635)) ([a76dce5](https://github.com/adobe/spacecat-audit-worker/commit/a76dce593b8805ed2d657f00cb151290191e8e05))
+
+## [1.471.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.2...v1.471.3) (2026-06-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2656](https://github.com/adobe/spacecat-audit-worker/issues/2656)) ([81f2425](https://github.com/adobe/spacecat-audit-worker/commit/81f2425869232504e526aa309f460a4f97def9d5))
+
+## [1.471.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.1...v1.471.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2654](https://github.com/adobe/spacecat-audit-worker/issues/2654)) ([b84b906](https://github.com/adobe/spacecat-audit-worker/commit/b84b9066602cfa901c233800e609f8e8c69be84c))
+
 ## [1.471.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.0...v1.471.1) (2026-06-12)
 
 
