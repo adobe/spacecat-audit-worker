@@ -87,14 +87,17 @@ describe('prerender-citability util', () => {
       expect(map.size).to.equal(0);
     });
 
-    it('treats a domain-wide /* fix as covering all other URLs', () => {
+    it('does not blanket-cover URLs just because a domain-wide suggestion exists', () => {
       const map = buildPrerenderCitabilityMap({
         suggestions: [
           sug({ isDomainWide: true, allowedRegexPatterns: ['/*'], edgeDeployed: 'x' }),
-          sug({ url: 'https://e.com/a', wordCountBefore: 10, wordCountAfter: 100 }),
+          // own coveredByDomainWide ⇒ 100; the other keeps its ratio.
+          sug({ url: 'https://e.com/covered', coveredByDomainWide: 'true' }),
+          sug({ url: 'https://e.com/uncovered', wordCountBefore: 10, wordCountAfter: 100 }),
         ],
       });
-      expect(map.get('/a')).to.deep.equal({ score: 100, deployedAtEdge: true });
+      expect(map.get('/covered')).to.deep.equal({ score: 100, deployedAtEdge: true });
+      expect(map.get('/uncovered')).to.deep.equal({ score: 10, deployedAtEdge: false });
     });
 
     it('folds status.json edge-deployed pages into the suggestion score', () => {

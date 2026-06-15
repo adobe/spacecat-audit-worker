@@ -47,21 +47,18 @@ export function getLlmVisibilityScore({
   return 0;
 }
 
-function hasDomainWideFix(active) {
-  // '/*' is a convention sentinel meaning "whole domain", matched literally — not a regex.
-  return active.some(({ status, data = {} }) => data.isDomainWide
-    && (status === 'FIXED' || data.edgeDeployed)
-    && (data.allowedRegexPatterns || []).includes('/*'));
-}
-
-function addSuggestions(map, active, edgeDeployedPaths, domainWideFix) {
+// A URL is 100 only via its own deploy/cover signals (edge-deployed, FIXED, covered by a
+// domain-wide or pattern deployment) or status.json. We do NOT blanket-cover every URL just
+// because a domain-wide suggestion exists — the audit stamps coveredByDomainWide on the URLs
+// actually covered, and genuinely-deployed URLs are already reflected in status.json.
+function addSuggestions(map, active, edgeDeployedPaths) {
   active.forEach(({ status, data = {} }) => {
     if (data.isDomainWide || !data.url) {
       return;
     }
     const path = normalizePath(data.url);
     const isDeployed = !!data.edgeDeployed || status === 'FIXED' || edgeDeployedPaths.has(path);
-    const coveredByDomainWide = domainWideFix || !!data.coveredByDomainWide;
+    const coveredByDomainWide = !!data.coveredByDomainWide;
     const coveredByPattern = !!data.coveredByPattern;
     const { wordCountBefore, wordCountAfter } = data;
     const hasValidData = isDeployed || coveredByDomainWide || coveredByPattern
@@ -103,7 +100,7 @@ export function buildPrerenderCitabilityMap({ suggestions = [], statusJson = {} 
   );
 
   const map = new Map();
-  addSuggestions(map, active, edgeDeployedPaths, hasDomainWideFix(active));
+  addSuggestions(map, active, edgeDeployedPaths);
   addStatusPages(map, pages);
   return map;
 }
