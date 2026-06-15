@@ -28,6 +28,7 @@ import {
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { weekClosingSundayKey } from '../utils/date-utils.js';
 import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
@@ -206,16 +207,12 @@ export async function findRecentUploads(s3Client, bucketName, pathId, auditDate,
 }
 
 /**
- * Triggers cdn-logs-analysis sub-audits for each detected day, and one
- * date-based cdn-logs-report per detected day.
- *
- * Sub-audits include isSubAudit: true to prevent recursive scanning,
- * and forceReprocess: true because the same day may already have partial
- * aggregated data from an earlier run.
- *
- * cdn-logs-report messages are delayed by 900s so analysis finishes first.
+ * Triggers cdn-logs-analysis sub-audits per detected day, and a date-based
+ * cdn-logs-report per detected day plus each completed week's closing Sunday
+ * (so past-week backfills roll up to the weekly view even with no Sunday file).
+ * Sub-audits use isSubAudit/forceReprocess; reports are delayed so analysis finishes first.
  */
-async function triggerSubAudits(context, site, detectedDays) {
+async function triggerSubAudits(context, site, detectedDays, auditDate) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -242,11 +239,19 @@ async function triggerSubAudits(context, site, detectedDays) {
     log.info(`Triggered cdn-logs-analysis sub-audit for siteId=${siteId} day=${dayKey}`);
   }
 
-  // One date-based cdn-logs-report per detected day. cdn-logs-report exports the
-  // day BEFORE auditContext.date, so send day + 1 as the reference. Delayed by a
-  // base wait (so the analysis sub-audits above have time to finish) plus a per-day
-  // stagger, capped at the SQS max, so the reports don't all fire at once.
-  for (const [index, dayKey] of [...detectedDays].entries()) {
+  // Report per detected day + each completed week's closing Sunday (deduped). Report
+  // exports the day BEFORE auditContext.date, so send day + 1; staggered under the SQS cap.
+  const reportDayKeys = [...detectedDays];
+  const seenReportDays = new Set(detectedDays);
+  for (const dayKey of detectedDays) {
+    const sundayKey = weekClosingSundayKey(dayKey, auditDate);
+    if (sundayKey && !seenReportDays.has(sundayKey)) {
+      seenReportDays.add(sundayKey);
+      reportDayKeys.push(sundayKey);
+    }
+  }
+
+  for (const [index, dayKey] of reportDayKeys.entries()) {
     const [year, month, day] = dayKey.split('/').map(Number);
     const reportDate = new Date(Date.UTC(year, month - 1, day + 1)).toISOString();
     const delaySeconds = Math.min(
@@ -342,7 +347,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     try {
       const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, auditDate, log);
       if (recentUploads.size > 0) {
-        await triggerSubAudits(context, site, recentUploads);
+        await triggerSubAudits(context, site, recentUploads, auditDate);
       } else {
         log.info(`No recent byocdn-other files found for siteId=${siteId}, nothing to trigger`);
       }

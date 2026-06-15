@@ -1,3 +1,73 @@
+## [1.471.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.3...v1.471.4) (2026-06-14)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** HEAD-check Mystique suggestions and write empty rows to DB ([#2635](https://github.com/adobe/spacecat-audit-worker/issues/2635)) ([a76dce5](https://github.com/adobe/spacecat-audit-worker/commit/a76dce593b8805ed2d657f00cb151290191e8e05))
+
+## [1.471.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.2...v1.471.3) (2026-06-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2656](https://github.com/adobe/spacecat-audit-worker/issues/2656)) ([81f2425](https://github.com/adobe/spacecat-audit-worker/commit/81f2425869232504e526aa309f460a4f97def9d5))
+
+## [1.471.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.1...v1.471.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2654](https://github.com/adobe/spacecat-audit-worker/issues/2654)) ([b84b906](https://github.com/adobe/spacecat-audit-worker/commit/b84b9066602cfa901c233800e609f8e8c69be84c))
+
+## [1.471.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.0...v1.471.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** roll up completed weeks on byocdn-other past-week backfills ([#2653](https://github.com/adobe/spacecat-audit-worker/issues/2653)) ([bf27a9d](https://github.com/adobe/spacecat-audit-worker/commit/bf27a9d8bc7bb21442f0e81abed66a9a9e74f358)), closes [#2632](https://github.com/adobe/spacecat-audit-worker/issues/2632)
+
+# [1.471.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.5...v1.471.0) (2026-06-12)
+
+
+### Features
+
+* **prerender:** support CSV URL scoping for ai-only mode batches ([#2652](https://github.com/adobe/spacecat-audit-worker/issues/2652)) ([b849fa6](https://github.com/adobe/spacecat-audit-worker/commit/b849fa6e7982c57482da69f6cd2ff5e3a7f90d92))
+
+## [1.470.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.4...v1.470.5) (2026-06-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.74.3 ([#2649](https://github.com/adobe/spacecat-audit-worker/issues/2649)) ([2dd8196](https://github.com/adobe/spacecat-audit-worker/commit/2dd8196ff63d0e4dfbadc0e3c6e9f686e06cf983))
+
+## [1.470.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.3...v1.470.4) (2026-06-12)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate domain-wide suggestions via buildKey symmetry ([#2650](https://github.com/adobe/spacecat-audit-worker/issues/2650)) ([0a20d6d](https://github.com/adobe/spacecat-audit-worker/commit/0a20d6dfe79a648b0fd742d336c748cd2ad531ef))
+
+## [1.470.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.2...v1.470.3) (2026-06-12)
+
+
+### Bug Fixes
+
+* **sync:** prevent spurious updatedAt bumps on terminal suggestions ([#2593](https://github.com/adobe/spacecat-audit-worker/issues/2593)) ([081e7a9](https://github.com/adobe/spacecat-audit-worker/commit/081e7a91d5b330f336df1862cb777a61b9b8bad2))
+
+## [1.470.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.1...v1.470.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* drop resolved per-issue entries so UI doesn't show below-threshold issues ([#2648](https://github.com/adobe/spacecat-audit-worker/issues/2648)) ([4d72976](https://github.com/adobe/spacecat-audit-worker/commit/4d729762a7c36189e81f653614f2637d82e0545b))
+
+## [1.470.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.470.0...v1.470.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* prepare Sitemap error codes for UI consistency ([#2640](https://github.com/adobe/spacecat-audit-worker/issues/2640)) ([a8de015](https://github.com/adobe/spacecat-audit-worker/commit/a8de0153803ac984055d461ea828dbb39818f3dd))
+
 # [1.470.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.469.1...v1.470.0) (2026-06-11)
 
 
