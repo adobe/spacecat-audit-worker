@@ -10,10 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Opportunity, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { joinBaseAndPath } from '../../utils/url-utils.js';
 import { validateCountryCode } from './report-utils.js';
 import { inferProviderFromUserAgent } from '../../common/user-agent-classification.js';
+import { buildPrerenderCitabilityMap, normalizePath } from './prerender-citability.js';
+
+export { getLlmVisibilityScore } from './prerender-citability.js';
 
 const MAX_AVG_TTFB_MS = 999999.99;
 const UNSUPPORTED_URL_PREFIXES = ['data:', `java${'script:'}`, 'blob:', 'mailto:'];
@@ -80,96 +84,50 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
-// Mirrors getLlmVisibilityScore in project-elmo-ui: 100 when deployed/covered, else the
-// word-count ratio capped at 100.
-export function getLlmVisibilityScore({
-  wordCountBefore, wordCountAfter, isDeployed, coveredByDomainWide, coveredByPattern,
-}) {
-  if (isDeployed || coveredByDomainWide || coveredByPattern) {
-    return 100;
+// Citability comes from the prerender opportunity's suggestions (per-URL word-count ratios)
+// merged with the prerender status.json (already-optimised / edge-deployed URLs score 100),
+// matching how the dashboard's getLlmVisibilityScore computes per-URL scores.
+async function readPrerenderStatusJson(site, context) {
+  const { s3Client, env, log } = context;
+  if (!env?.S3_SCRAPER_BUCKET_NAME || !s3Client) {
+    return {};
   }
-  if (Number.isFinite(wordCountBefore) && Number.isFinite(wordCountAfter) && wordCountAfter > 0) {
-    return Math.max(0, Math.min(100, Math.round((wordCountBefore / wordCountAfter) * 100)));
-  }
-  return 0;
-}
-
-// Builds a pathname -> { score, isDeployedAtEdge, updatedAt } map from prerender suggestions.
-// Skips domain-wide aggregates and entries with neither a deploy signal nor usable word counts.
-function buildCitabilityMap(suggestions, log) {
-  return suggestions.reduce((acc, suggestion) => {
-    const data = suggestion?.getData?.() ?? {};
-    if (!data.url || data.isDomainWide) {
-      return acc;
-    }
-
-    let pathname;
-    try {
-      ({ pathname } = new URL(data.url));
-    } catch (error) {
-      log?.warn?.(`Skipping malformed citability URL during agentic mapping: ${error.message}`);
-      return acc;
-    }
-
-    const isDeployed = !!data.edgeDeployed;
-    const coveredByDomainWide = !!data.coveredByDomainWide;
-    const coveredByPattern = !!data.coveredByPattern;
-    const isDeployedAtEdge = isDeployed || coveredByDomainWide || coveredByPattern;
-
-    const { wordCountBefore, wordCountAfter } = data;
-    const hasUsableWordCounts = Number.isFinite(wordCountBefore)
-      && Number.isFinite(wordCountAfter) && wordCountAfter > 0;
-    if (!isDeployedAtEdge && !hasUsableWordCounts) {
-      return acc;
-    }
-
-    const updatedAt = suggestion.getUpdatedAt?.() || new Date(0).toISOString();
-    const existing = acc[pathname];
-    if (!existing || new Date(updatedAt) > new Date(existing.updatedAt)) {
-      acc[pathname] = {
-        score: getLlmVisibilityScore({
-          wordCountBefore, wordCountAfter, isDeployed, coveredByDomainWide, coveredByPattern,
-        }),
-        isDeployedAtEdge,
-        updatedAt,
-      };
-    }
-
-    return acc;
-  }, {});
-}
-
-// Reads the NEW suggestions from the site's prerender opportunity (replaces PageCitability).
-// Fetching by status keeps the query scoped to fresh, per-URL rows.
-//
-// Scope note: this intentionally covers only URLs with a NEW prerender suggestion, matching the
-// dashboard UI 1:1 (getLlmVisibilityScore). URLs the prerender audit skipped (e.g. content gain
-// below threshold) get no citability_score, same as the UI shows nothing for them. This is
-// narrower than the old PageCitability table, which could carry scores for URLs the UI doesn't.
-async function getPrerenderSuggestions(site, context) {
-  const { Opportunity: OpportunityDA, Suggestion: SuggestionDA } = context?.dataAccess ?? {};
-  if (!OpportunityDA?.allBySiteIdAndStatus || !SuggestionDA?.allByOpportunityIdAndStatus) {
-    return [];
-  }
-
+  const Key = `${Audit.AUDIT_TYPES.PRERENDER}/scrapes/${site.getId()}/status.json`;
   try {
-    const opportunities = await OpportunityDA.allBySiteIdAndStatus(
-      site.getId(),
-      Opportunity.STATUSES.NEW,
+    const res = await s3Client.send(
+      new GetObjectCommand({ Bucket: env.S3_SCRAPER_BUCKET_NAME, Key }),
     );
+    return JSON.parse(await res.Body.transformToString());
+  } catch (error) {
+    if (error.name !== 'NoSuchKey') {
+      log?.warn?.(`Could not read prerender status.json for agentic mapping: ${error.message}`);
+    }
+    return {};
+  }
+}
+
+async function getCitabilityMap(site, context) {
+  const { Opportunity, Suggestion } = context?.dataAccess ?? {};
+  if (!Opportunity?.allBySiteIdAndStatus || !Suggestion?.allByOpportunityId) {
+    return new Map();
+  }
+  try {
+    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
     const opportunity = (opportunities || []).find(
       (o) => o.getType?.() === Audit.AUDIT_TYPES.PRERENDER,
     );
-    if (!opportunity) {
-      return [];
-    }
-    return await SuggestionDA.allByOpportunityIdAndStatus(
-      opportunity.getId(),
-      Suggestion.STATUSES.NEW,
-    );
+    const [rawSuggestions, statusJson] = await Promise.all([
+      opportunity ? Suggestion.allByOpportunityId(opportunity.getId()) : [],
+      readPrerenderStatusJson(site, context),
+    ]);
+    const suggestions = (rawSuggestions || []).map((s) => ({
+      status: s.getStatus(),
+      data: s.getData() ?? {},
+    }));
+    return buildPrerenderCitabilityMap({ suggestions, statusJson });
   } catch (error) {
-    context?.log?.warn?.(`Failed to fetch prerender suggestions for agentic mapping: ${error.message}`);
-    return [];
+    context?.log?.warn?.(`Failed to build citability map for agentic mapping: ${error.message}`);
+    return new Map();
   }
 }
 
@@ -198,8 +156,7 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
   }
 
   const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
-  const prerenderSuggestions = await getPrerenderSuggestions(site, context);
-  const citabilityMap = buildCitabilityMap(prerenderSuggestions, context?.log);
+  const citabilityMap = await getCitabilityMap(site, context);
   const baseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL || site.getBaseURL();
   const defaultHost = new URL(baseURL).host;
   const classificationMap = new Map();
@@ -220,15 +177,12 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
       }
 
       const host = normalizeText(row.host, defaultHost) || defaultHost;
-      const citability = citabilityMap[urlPath];
+      const citability = citabilityMap.get(normalizePath(urlPath));
       const dimensions = {};
 
-      if (citability?.score !== undefined && citability?.score !== null) {
+      if (citability) {
         dimensions.citability_score = citability.score;
-      }
-
-      if (citability?.isDeployedAtEdge !== undefined) {
-        dimensions.deployed_at_edge = citability.isDeployedAtEdge;
+        dimensions.deployed_at_edge = citability.deployedAtEdge;
       }
 
       const classificationKey = `${host}|${urlPath}`;

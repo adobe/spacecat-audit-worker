@@ -23,29 +23,42 @@ import {
 use(sinonChai);
 
 // Builds a stub prerender suggestion exposing the data-access accessors the mapper uses.
-const makeSuggestion = (data, { updatedAt = '2026-03-31T00:00:00.000Z' } = {}) => ({
+const makeSuggestion = (data, { status = 'NEW' } = {}) => ({
+  getStatus: () => status,
   getData: () => data,
-  getUpdatedAt: () => updatedAt,
 });
 
 // Builds a context whose Opportunity data-access returns a single prerender opportunity and
-// whose Suggestion data-access returns the supplied NEW suggestions for that opportunity.
+// whose Suggestion data-access returns the supplied suggestions for that opportunity.
+// Pass statusJson to stub the prerender status.json S3 read.
 const makeContext = (suggestions, {
   type = Audit.AUDIT_TYPES.PRERENDER,
+  statusJson = null,
   log = { warn: sinon.spy() },
-} = {}) => ({
-  log,
-  dataAccess: {
-    Opportunity: {
-      allBySiteIdAndStatus: sinon.stub().resolves([
-        { getType: () => type, getId: () => 'oppty-1' },
-      ]),
+} = {}) => {
+  const context = {
+    log,
+    dataAccess: {
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([
+          { getType: () => type, getId: () => 'oppty-1' },
+        ]),
+      },
+      Suggestion: {
+        allByOpportunityId: sinon.stub().resolves(suggestions),
+      },
     },
-    Suggestion: {
-      allByOpportunityIdAndStatus: sinon.stub().resolves(suggestions),
-    },
-  },
-});
+  };
+  if (statusJson) {
+    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
+    context.s3Client = {
+      send: sinon.stub().resolves({
+        Body: { transformToString: async () => JSON.stringify(statusJson) },
+      }),
+    };
+  }
+  return context;
+};
 
 const baseSite = (overrides = {}) => ({
   getId: () => 'site-1',
@@ -150,10 +163,6 @@ describe('agentic traffic mapper', () => {
       content_type: 'html',
       updated_by: 'audit-worker:agentic-daily-export',
     });
-    // The malformed suggestion URL is logged and skipped.
-    expect(context.log.warn).to.have.been.calledWith(
-      'Skipping malformed citability URL during agentic mapping: Invalid URL',
-    );
   });
 
   it('computes citability from word counts for non-deployed suggestions', async () => {
@@ -225,7 +234,10 @@ describe('agentic traffic mapper', () => {
     const result = await mapToAgenticTrafficBundle([
       chatbotRow('/assets/hero.png', { number_of_hits: 12, category: 'Asset' }),
       chatbotRow('/favicon.ico', { number_of_hits: 6, category: 'Asset' }),
+      chatbotRow('/photo.jpg', { number_of_hits: 3, category: 'Asset' }),
     ], baseSite(), { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.classificationRows.map((r) => r.content_type)).to.include('jpg');
 
     expect(result.classificationRows).to.deep.include({
       host: 'www.example.com',
@@ -247,109 +259,75 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('uses the newest suggestion for a path and supports missing Opportunity access', async () => {
-    const context = makeContext([
-      makeSuggestion(
-        { url: 'https://www.example.com/image.jpg', wordCountBefore: 10, wordCountAfter: 100 },
-        { updatedAt: '2026-03-30T00:00:00.000Z' },
-      ),
-      makeSuggestion(
-        { url: 'https://www.example.com/image.jpg', edgeDeployed: 'x' },
-        { updatedAt: '2026-03-31T00:00:00.000Z' },
-      ),
-    ]);
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/image.jpg', { category: 'Asset' })],
-      baseSite(),
-      context,
-      '2026-03-31',
+  it('scores already-optimised and edge-deployed status.json pages at 100', async () => {
+    const context = makeContext(
+      [makeSuggestion({
+        url: 'https://www.example.com/guide', wordCountBefore: 30, wordCountAfter: 120,
+      })],
+      {
+        statusJson: {
+          pages: [
+            { url: 'https://www.example.com/optimised', needsPrerender: false, scrapingStatus: 'success' },
+            { url: 'https://www.example.com/edge', isDeployedAtEdge: true, needsPrerender: true },
+          ],
+        },
+      },
     );
 
-    // Newest record (edge-deployed) wins.
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
-    });
-    expect(result.classificationRows[0].content_type).to.equal('jpg');
+    const result = await mapToAgenticTrafficBundle([
+      chatbotRow('/guide'),
+      chatbotRow('/optimised'),
+      chatbotRow('/edge'),
+    ], baseSite(), context, '2026-03-31');
 
-    // No Opportunity data-access at all ⇒ no citability dimensions.
-    const noCitabilityResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/brochure.gif', { category: 'Asset' })],
-      baseSite(),
-      { log: { warn: sinon.spy() } },
-      '2026-03-31',
-    );
-    expect(noCitabilityResult.trafficRows[0].dimensions).to.deep.equal({});
-    expect(noCitabilityResult.classificationRows[0].content_type).to.equal('gif');
+    const byPath = Object.fromEntries(result.trafficRows.map((r) => [r.url_path, r.dimensions]));
+    expect(byPath['/guide']).to.deep.equal({ citability_score: 25, deployed_at_edge: false });
+    expect(byPath['/optimised']).to.deep.equal({ citability_score: 100, deployed_at_edge: false });
+    expect(byPath['/edge']).to.deep.equal({ citability_score: 100, deployed_at_edge: true });
   });
 
-  it('keeps an older record when a newer-dated path entry is processed second', async () => {
+  it('matches a suggestion URL to an agentic path ignoring a trailing slash', async () => {
     const context = makeContext([
-      makeSuggestion(
-        { url: 'https://www.example.com/page', edgeDeployed: 'x' },
-        { updatedAt: '2026-03-31T00:00:00.000Z' },
-      ),
-      makeSuggestion(
-        { url: 'https://www.example.com/page', wordCountBefore: 10, wordCountAfter: 100 },
-        { updatedAt: '2026-03-30T00:00:00.000Z' },
-      ),
+      makeSuggestion({
+        url: 'https://www.example.com/docs/', wordCountBefore: 50, wordCountAfter: 100,
+      }),
     ]);
 
     const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/page')],
+      [chatbotRow('/docs/')],
       baseSite(),
       context,
       '2026-03-31',
     );
 
     expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
+      citability_score: 50,
+      deployed_at_edge: false,
     });
   });
 
-  it('replaces a path entry that has a missing updatedAt with a later timestamped one', async () => {
-    const context = makeContext([
-      // Missing updatedAt ⇒ normalized to epoch 0, so it must never block a real timestamp.
-      makeSuggestion(
-        { url: 'https://www.example.com/page', wordCountBefore: 10, wordCountAfter: 100 },
-        { updatedAt: null },
-      ),
-      makeSuggestion(
-        { url: 'https://www.example.com/page', edgeDeployed: 'x' },
-        { updatedAt: '2026-03-31T00:00:00.000Z' },
-      ),
-    ]);
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/page')],
-      baseSite(),
-      context,
-      '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
-    });
-  });
-
-  it('returns no citability when the prerender opportunity or its suggestions are absent', async () => {
-    // No prerender-typed opportunity in the NEW list.
+  it('returns no citability when the prerender opportunity is absent or data-access is missing', async () => {
+    // No prerender-typed opportunity.
     const wrongTypeContext = makeContext(
       [makeSuggestion({ url: 'https://www.example.com/x', edgeDeployed: 'x' })],
       { type: 'broken-internal-links' },
     );
     const wrongTypeResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')],
-      baseSite(),
-      wrongTypeContext,
-      '2026-03-31',
+      [chatbotRow('/x')], baseSite(), wrongTypeContext, '2026-03-31',
     );
     expect(wrongTypeResult.trafficRows[0].dimensions).to.deep.equal({});
 
-    // Opportunity data-access present, but the Suggestion data-access is missing.
+    // No dataAccess at all ⇒ empty citability map.
+    const noDaResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/brochure.gif', { category: 'Asset' })],
+      baseSite(),
+      { log: { warn: sinon.spy() } },
+      '2026-03-31',
+    );
+    expect(noDaResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(noDaResult.classificationRows[0].content_type).to.equal('gif');
+
+    // Opportunity present, Suggestion data-access missing ⇒ guarded.
     const noSuggestionDaContext = {
       log: { warn: sinon.spy() },
       dataAccess: {
@@ -361,43 +339,49 @@ describe('agentic traffic mapper', () => {
       },
     };
     const noSuggestionDaResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')],
-      baseSite(),
-      noSuggestionDaContext,
-      '2026-03-31',
+      [chatbotRow('/x')], baseSite(), noSuggestionDaContext, '2026-03-31',
     );
     expect(noSuggestionDaResult.trafficRows[0].dimensions).to.deep.equal({});
 
     // allBySiteIdAndStatus resolves null ⇒ tolerated.
-    const nullOppsContext = {
-      log: { warn: sinon.spy() },
-      dataAccess: {
-        Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves(null) },
-        Suggestion: { allByOpportunityIdAndStatus: sinon.stub().resolves([]) },
-      },
-    };
+    const nullOppsContext = makeContext([]);
+    nullOppsContext.dataAccess.Opportunity.allBySiteIdAndStatus = sinon.stub().resolves(null);
     const nullOppsResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')],
-      baseSite(),
-      nullOppsContext,
-      '2026-03-31',
+      [chatbotRow('/x')], baseSite(), nullOppsContext, '2026-03-31',
     );
     expect(nullOppsResult.trafficRows[0].dimensions).to.deep.equal({});
+
+    // Opportunity present but allByOpportunityId resolves null ⇒ tolerated.
+    const nullSugsContext = makeContext([]);
+    nullSugsContext.dataAccess.Suggestion.allByOpportunityId = sinon.stub().resolves(null);
+    const nullSugsResult = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), nullSugsContext, '2026-03-31',
+    );
+    expect(nullSugsResult.trafficRows[0].dimensions).to.deep.equal({});
   });
 
-  it('logs and tolerates prerender suggestion fetch failures', async () => {
+  it('skips the status.json read when the scraper bucket is set but no S3 client is present', async () => {
+    const context = makeContext([
+      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 70, wordCountAfter: 100 }),
+    ]);
+    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 70,
+      deployed_at_edge: false,
+    });
+  });
+
+  it('logs and tolerates citability lookup failures', async () => {
     const warn = sinon.spy();
-    const context = {
-      log: { warn },
-      dataAccess: {
-        Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().rejects(new Error('opportunity unavailable')),
-        },
-        Suggestion: {
-          allByOpportunityIdAndStatus: sinon.stub().resolves([]),
-        },
-      },
-    };
+    const context = makeContext([]);
+    context.log = { warn };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sinon.stub()
+      .rejects(new Error('opportunity unavailable'));
 
     const result = await mapToAgenticTrafficBundle(
       [chatbotRow('/download/file.bin', { category: 'Asset' })],
@@ -409,7 +393,47 @@ describe('agentic traffic mapper', () => {
     expect(result.trafficRows[0].dimensions).to.deep.equal({});
     expect(result.classificationRows[0].content_type).to.equal('other');
     expect(warn).to.have.been.calledWith(
-      'Failed to fetch prerender suggestions for agentic mapping: opportunity unavailable',
+      'Failed to build citability map for agentic mapping: opportunity unavailable',
+    );
+  });
+
+  it('tolerates a missing status.json (NoSuchKey) without failing', async () => {
+    const context = makeContext([
+      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 60, wordCountAfter: 100 }),
+    ]);
+    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
+    const noSuchKey = Object.assign(new Error('not found'), { name: 'NoSuchKey' });
+    context.s3Client = { send: sinon.stub().rejects(noSuchKey) };
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 60,
+      deployed_at_edge: false,
+    });
+  });
+
+  it('logs unexpected status.json read errors and falls back to suggestions only', async () => {
+    const warn = sinon.spy();
+    const context = makeContext([
+      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 40, wordCountAfter: 100 }),
+    ]);
+    context.log = { warn };
+    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
+    context.s3Client = { send: sinon.stub().rejects(new Error('access denied')) };
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 40,
+      deployed_at_edge: false,
+    });
+    expect(warn).to.have.been.calledWith(
+      'Could not read prerender status.json for agentic mapping: access denied',
     );
   });
 
