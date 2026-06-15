@@ -71,3 +71,9 @@ export const DRS_TERMINAL_STATUSES = new Set([
   'FAILED',
   'CANCELLED',
 ]);
+// Terminal statuses that produced usable scraped data. Used to decide which
+// downstream analysis audits to auto-trigger after DRS scraping completes.
+export const DRS_SUCCESS_STATUSES = new Set([
+  'COMPLETED',
+  'COMPLETED_WITH_ERRORS',
+]);
