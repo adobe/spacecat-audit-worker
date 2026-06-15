@@ -1,3 +1,11 @@
+# [1.472.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.6...v1.472.0) (2026-06-15)
+
+
+### Features
+
+* llm error pages suggestion history ([#2655](https://github.com/adobe/spacecat-audit-worker/issues/2655)) ([c7c8716](https://github.com/adobe/spacecat-audit-worker/commit/c7c87160be44fdeec494ef5af24094c2c5419367))
+* **llm-error-pages:** dual-publish observation:llm-broken-urls behin… ([#2634](https://github.com/adobe/spacecat-audit-worker/issues/2634)) ([a649ef9](https://github.com/adobe/spacecat-audit-worker/commit/a649ef96d45e9c4c29c0aa63e710e8e1e01c6fb7))
+
 ## [1.471.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.5...v1.471.6) (2026-06-15)
 
 
