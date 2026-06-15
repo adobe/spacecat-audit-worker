@@ -15,9 +15,6 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-// Direct import of the pure history-merge helper so its ordering/pruning tests
-// run against the REAL parsePeriodIdentifier (the esmocked handler stubs that
-// dependency with a constant Date, which would defeat the sort assertions).
 import { upsertWeekHistory } from '../../../src/llm-error-pages/handler.js';
 
 use(sinonChai);
@@ -1715,9 +1712,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
         category: 'C',
       },
     );
-    // Top-level snapshot reflects the latest week (back-compat for the UI).
     expect(merged.hitCount).to.equal(99);
-    // History carries both weeks; the new week is keyed by the run's periodIdentifier.
     expect(merged.history).to.have.lengthOf(2);
     expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
     expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
@@ -1749,8 +1744,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     await handler.runAuditAndSendToMystique(ctx);
 
     expect(staleOpportunity.getSuggestions).to.have.been.called;
-    // Empty-bucket stale suggestion (w01-2025, parsed by the mocked
-    // parsePeriodIdentifier to a date older than the 4-week cutoff) is deleted.
     expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledWith(['sug-403-stale']);
     sandbox.restore();
   });
@@ -1783,9 +1776,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     sandbox.restore();
   });
 
-  // Helper: build a single-404-bucket handler whose lone stale suggestion has
-  // the given status + a parse result, so we can assert the sweep's per-status
-  // and parse-failure behaviour in isolation.
   const sweepWith = async (sandbox, { status, parseResult }) => {
     const staleSug = {
       getId: () => 'sug-stale',
@@ -1830,8 +1820,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
   it('does NOT delete/outdate a suggestion with an unparseable periodIdentifier (epoch sentinel → skip)', async () => {
     const sandbox = sinon.createSandbox();
-    // parsePeriodIdentifier returns epoch(0) for any format it cannot parse —
-    // that must be treated as "age unknowable" (skip), not a stale hard-delete.
     const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date(0) });
     expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
@@ -1889,8 +1877,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
   it('does NOT delete a suggestion whose URL appears in the current run', async () => {
     const sandbox = sinon.createSandbox();
-    // Same URL as the current 404 (/p1) — must be kept even if its stored
-    // periodIdentifier would otherwise parse as stale.
     const currentUrlSug = {
       getId: () => 'sug-current',
       getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
@@ -1906,13 +1892,11 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       getSuggestions: sandbox.stub().resolves([currentUrlSug]),
     };
     const { handler } = await buildHandler(sandbox, {
-      // Single 404 bucket whose only error URL is /p1 — matches the suggestion,
-      // so it's in scrapedUrls and must be kept.
       errorPages: [
         { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
       ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // epoch → would be stale
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)),
     });
     const ctx = buildContext(sandbox);
 
@@ -1945,7 +1929,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
         { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
       ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)), // between 4 and 6 weeks
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
     });
     const ctx = buildContext(sandbox);
 
@@ -1977,7 +1961,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
         { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
       ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(2)), // within 4 weeks
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(2)),
     });
     const ctx = buildContext(sandbox);
 
@@ -1990,8 +1974,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
   it('does NOT flip a terminal-state suggestion to OUTDATED in the middle tier', async () => {
     const sandbox = sinon.createSandbox();
-    // FIXED + last seen 5 weeks ago: middle tier would OUTDATE a NEW one, but a
-    // customer-actioned terminal state is preserved (only the >6wk purge removes it).
     const fixedMid = {
       getId: () => 'sug-fixed-mid',
       getData: () => ({ url: '/fixed', periodIdentifier: 'w19-2026' }),
@@ -2198,8 +2180,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // /p1 is in scrapedUrlsSet (it's the 404 URL in default fixture), so it
-    // must NOT be deleted even though the period parses as stale.
     expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
@@ -2226,7 +2206,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // Suggestion with null data is gracefully skipped (no lastSeen → return false).
     expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
@@ -2393,14 +2372,12 @@ describe('LLM Error Pages Handler — upsertWeekHistory', () => {
   });
 
   it('prunes to the most recent RETENTION_WEEKS (6) entries', () => {
-    // 7 distinct weeks → keep the most recent 6, drop the oldest.
     const existing = [
       entry('w10-2026'), entry('w11-2026'), entry('w12-2026'),
       entry('w13-2026'), entry('w14-2026'), entry('w15-2026'),
     ];
     const result = upsertWeekHistory(existing, entry('w16-2026'));
     expect(result).to.have.lengthOf(6);
-    // Oldest (w10) dropped; window keeps w11..w16.
     expect(result.map((h) => h.periodIdentifier)).to.deep.equal([
       'w11-2026', 'w12-2026', 'w13-2026', 'w14-2026', 'w15-2026', 'w16-2026',
     ]);
@@ -2414,7 +2391,6 @@ describe('LLM Error Pages Handler — upsertWeekHistory', () => {
 
   it('orders an unparseable periodIdentifier (epoch fallback) before real weeks', () => {
     const result = upsertWeekHistory([entry('w15-2026')], entry('garbage'));
-    // parsePeriodIdentifier returns epoch (Date(0)) for non-matching ids, so it sorts first.
     expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['garbage', 'w15-2026']);
   });
 });

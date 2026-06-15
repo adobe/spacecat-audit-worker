@@ -43,32 +43,17 @@ const STATUS_BUCKETS = [
   { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
 ];
 
-// Suggestion lifecycle by last-seen recency (3-tier):
-//   ≤ NEW_WINDOW_WEEKS        → stays NEW (fresh issue)
-//   NEW_WINDOW..RETENTION     → flipped to OUTDATED (kept + in history, not fresh)
-//   > DB_RETENTION_WEEKS      → deleted (removeByIds), system-managed states only
-// A URL seen in the current run is always kept (and reappearing OUTDATED ones
-// transition back to NEW via syncSuggestions' defaultMergeStatusFunction).
-//
-// Three independent knobs that happen to share a value today — keep them
-// separate so bumping one (e.g. a longer trend) doesn't silently change the
-// others (DB purge window, or the per-suggestion JSON payload size).
-const DB_RETENTION_WEEKS = 6; // hard-delete + OUTDATED-window ceiling
-export const HISTORY_RETENTION_WEEKS = 6; // max weeks kept in data.history[]
+// Separate lifecycle windows for freshness, DB purge, and history size.
+const DB_RETENTION_WEEKS = 6;
+export const HISTORY_RETENTION_WEEKS = 6;
 const RETENTION_MS = DB_RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 const NEW_WINDOW_WEEKS = 4;
 const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
-// Cap on agent/user-agent arrays stored per week in data.history[]. A UA-rotating
-// bot produces an unbounded list; retaining it for HISTORY_RETENTION_WEEKS would
-// multiply the suggestion JSON blob and widen the window for inadvertent PII
-// retention in a UI-exposed field. Top-N by insertion order is enough for the UI.
+// Limit per-week agent lists so history payloads stay bounded.
 const MAX_AGENT_ENTRIES = 10;
 
-// Customer-actioned / in-flight statuses the retention sweep must never touch —
-// neither hard-delete (FIXED is an audit trail of remediation) nor auto-OUTDATE.
-// Only system-managed NEW/OUTDATED rows age out. Sourced from the canonical enum
-// so it stays correct if STATUSES change.
+// Statuses protected from automatic retention changes.
 const PROTECTED_SWEEP_STATUSES = new Set([
   SuggestionModel.STATUSES.FIXED,
   SuggestionModel.STATUSES.APPROVED,
@@ -83,26 +68,12 @@ const TOP_404_LIMIT = 50;
 
 /**
  * Builds one per-week history record for an llm-error-pages suggestion.
- *
- * The top-level suggestion `data` fields stay a "latest week" snapshot (so
- * the existing UI keeps reading `hitCount`/`agentTypes`/… unchanged); this
- * record captures the same metrics scoped to a single audit week so we can
- * reconstruct week-over-week trend (TTFB drift, hit-count trajectory,
- * which LLM bots discovered the URL when).
- *
- * @param {object} item       A grouped-error row for the URL this week.
- * @param {string} periodIdentifier ISO week id (e.g. `w24-2026`).
- * @returns {object} The per-week record stored in `data.history[]`.
  */
 function buildWeekHistoryEntry(item, periodIdentifier) {
   return {
     periodIdentifier,
     hitCount: item.hitCount,
     httpStatus: item.httpStatus,
-    // Capped (see MAX_AGENT_ENTRIES) — these are retained per week, not just on
-    // the latest-week snapshot, so an unbounded array would bloat the blob 6×.
-    // groupErrorsByUrl always yields arrays (matches the unguarded access in
-    // mergeDataFunction above), so slice directly — no nullish fallback needed.
     agentTypes: item.agentTypes.slice(0, MAX_AGENT_ENTRIES),
     userAgents: item.userAgents.slice(0, MAX_AGENT_ENTRIES),
     avgTtfb: item.avgTtfb,
@@ -110,21 +81,7 @@ function buildWeekHistoryEntry(item, periodIdentifier) {
 }
 
 /**
- * Merges this week's history record into a suggestion's existing
- * `data.history[]`, then orders + prunes it.
- *
- * - Keyed by `periodIdentifier`: re-running the SAME week (the Monday
- *   two-week loop, or a manual backfill) REPLACES that week's record
- *   rather than appending a duplicate — the merge is idempotent.
- * - Ordered oldest-first by ISO week so consumers can render a trend
- *   left-to-right without re-sorting.
- * - Pruned to the most recent `RETENTION_WEEKS` so the array can't grow
- *   unbounded as a URL stays broken for months. Matches the audit's
- *   existing `RETENTION_WEEKS` retention window.
- *
- * @param {Array<object>} [existingHistory] Prior history (may be undefined).
- * @param {object} weekEntry The current week's record (carries periodIdentifier).
- * @returns {Array<object>} Merged, ordered, pruned history (oldest-first).
+ * Upserts, orders, and prunes per-week suggestion history.
  */
 export function upsertWeekHistory(existingHistory, weekEntry) {
   const byPeriod = new Map();
@@ -435,9 +392,7 @@ export async function runAuditAndSendToMystique(context) {
                   product: newDataItem.product,
                   category: newDataItem.category,
                   periodIdentifier,
-                  // Append this week to the per-week trend; idempotent + pruned
-                  // to RETENTION_WEEKS (see upsertWeekHistory). Top-level fields
-                  // above remain the latest-week snapshot for the existing UI.
+                  // Keep top-level fields as latest snapshot and history as trend.
                   history: upsertWeekHistory(
                     existingData.history,
                     buildWeekHistoryEntry(newDataItem, periodIdentifier),
@@ -463,7 +418,6 @@ export async function runAuditAndSendToMystique(context) {
                     product: error.product,
                     category: error.category,
                     periodIdentifier,
-                    // Seed the per-week trend with this URL's first sighting.
                     history: [buildWeekHistoryEntry(error, periodIdentifier)],
                   },
                 }),
@@ -476,25 +430,7 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
-            // 3-tier retention by last-seen recency (see constants block):
-            //   > DB_RETENTION_WEEKS  → delete (removeByIds)
-            //   NEW_WINDOW..RETENTION → mark OUTDATED (kept, no longer fresh)
-            //   ≤ NEW_WINDOW_WEEKS    → leave as-is (stays NEW)
-            // Guards (skip → no delete, no outdate):
-            //   - URL present in this run (fresh; syncSuggestions returns it to NEW)
-            //   - no periodIdentifier (age unknowable)
-            //   - UNPARSEABLE periodIdentifier — parsePeriodIdentifier returns
-            //     epoch(0) on a format mismatch (e.g. 'w5-2026', '2026-W15'),
-            //     which is < every cutoff and would otherwise be silently
-            //     hard-purged with no recovery. Same "age unknowable" treatment.
-            //   - customer-actioned / in-flight status (PROTECTED_SWEEP_STATUSES):
-            //     never delete (FIXED is an audit trail) nor auto-OUTDATE.
-            // Only system-managed NEW/OUTDATED rows age out; OUTDATE flips NEW only.
-            //
-            // Backfill (auditContext.weekOffset set) runs the Athena query for a
-            // HISTORICAL week, so scrapedUrls only holds that week's URLs and the
-            // wall-clock cutoffs would mis-classify current suggestions. Skip the
-            // sweep entirely in backfill mode.
+            // Skip backfill sweeps; otherwise age only system-managed stale suggestions.
             const isBackfill = context.auditContext?.weekOffset !== undefined;
             const toDelete = [];
             const toOutdate = [];
