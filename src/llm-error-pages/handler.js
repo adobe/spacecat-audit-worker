@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -46,13 +46,38 @@ const STATUS_BUCKETS = [
 // Suggestion lifecycle by last-seen recency (3-tier):
 //   ≤ NEW_WINDOW_WEEKS        → stays NEW (fresh issue)
 //   NEW_WINDOW..RETENTION     → flipped to OUTDATED (kept + in history, not fresh)
-//   > RETENTION_WEEKS         → deleted (removeByIds)
+//   > DB_RETENTION_WEEKS      → deleted (removeByIds), system-managed states only
 // A URL seen in the current run is always kept (and reappearing OUTDATED ones
 // transition back to NEW via syncSuggestions' defaultMergeStatusFunction).
-const RETENTION_WEEKS = 6;
-const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+//
+// Three independent knobs that happen to share a value today — keep them
+// separate so bumping one (e.g. a longer trend) doesn't silently change the
+// others (DB purge window, or the per-suggestion JSON payload size).
+const DB_RETENTION_WEEKS = 6; // hard-delete + OUTDATED-window ceiling
+export const HISTORY_RETENTION_WEEKS = 6; // max weeks kept in data.history[]
+const RETENTION_MS = DB_RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 const NEW_WINDOW_WEEKS = 4;
 const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
+
+// Cap on agent/user-agent arrays stored per week in data.history[]. A UA-rotating
+// bot produces an unbounded list; retaining it for HISTORY_RETENTION_WEEKS would
+// multiply the suggestion JSON blob and widen the window for inadvertent PII
+// retention in a UI-exposed field. Top-N by insertion order is enough for the UI.
+const MAX_AGENT_ENTRIES = 10;
+
+// Customer-actioned / in-flight statuses the retention sweep must never touch —
+// neither hard-delete (FIXED is an audit trail of remediation) nor auto-OUTDATE.
+// Only system-managed NEW/OUTDATED rows age out. Sourced from the canonical enum
+// so it stays correct if STATUSES change.
+const PROTECTED_SWEEP_STATUSES = new Set([
+  SuggestionModel.STATUSES.FIXED,
+  SuggestionModel.STATUSES.APPROVED,
+  SuggestionModel.STATUSES.REJECTED,
+  SuggestionModel.STATUSES.SKIPPED,
+  SuggestionModel.STATUSES.ERROR,
+  SuggestionModel.STATUSES.IN_PROGRESS,
+  SuggestionModel.STATUSES.PENDING_VALIDATION,
+]);
 
 const TOP_404_LIMIT = 50;
 
@@ -74,8 +99,12 @@ function buildWeekHistoryEntry(item, periodIdentifier) {
     periodIdentifier,
     hitCount: item.hitCount,
     httpStatus: item.httpStatus,
-    agentTypes: item.agentTypes,
-    userAgents: item.userAgents,
+    // Capped (see MAX_AGENT_ENTRIES) — these are retained per week, not just on
+    // the latest-week snapshot, so an unbounded array would bloat the blob 6×.
+    // groupErrorsByUrl always yields arrays (matches the unguarded access in
+    // mergeDataFunction above), so slice directly — no nullish fallback needed.
+    agentTypes: item.agentTypes.slice(0, MAX_AGENT_ENTRIES),
+    userAgents: item.userAgents.slice(0, MAX_AGENT_ENTRIES),
     avgTtfb: item.avgTtfb,
   };
 }
@@ -109,7 +138,7 @@ export function upsertWeekHistory(existingHistory, weekEntry) {
   return Array.from(byPeriod.values())
     .sort((a, b) => parsePeriodIdentifier(a.periodIdentifier).getTime()
       - parsePeriodIdentifier(b.periodIdentifier).getTime())
-    .slice(-RETENTION_WEEKS);
+    .slice(-HISTORY_RETENTION_WEEKS);
 }
 
 /**
@@ -448,45 +477,61 @@ export async function runAuditAndSendToMystique(context) {
             }
 
             // 3-tier retention by last-seen recency (see constants block):
-            //   > RETENTION_WEEKS    → delete (removeByIds)
+            //   > DB_RETENTION_WEEKS  → delete (removeByIds)
             //   NEW_WINDOW..RETENTION → mark OUTDATED (kept, no longer fresh)
-            //   ≤ NEW_WINDOW_WEEKS   → leave as-is (stays NEW)
-            // Two guards: never touch a URL present in this run (it's fresh —
-            // syncSuggestions keeps/returns it to NEW), and never touch one
-            // with no periodIdentifier (age unknowable). Delete ignores status
-            // (hard purge); OUTDATED skips customer-actioned terminal states so
-            // a FIXED/APPROVED row isn't silently regressed before it's purged.
+            //   ≤ NEW_WINDOW_WEEKS    → leave as-is (stays NEW)
+            // Guards (skip → no delete, no outdate):
+            //   - URL present in this run (fresh; syncSuggestions returns it to NEW)
+            //   - no periodIdentifier (age unknowable)
+            //   - UNPARSEABLE periodIdentifier — parsePeriodIdentifier returns
+            //     epoch(0) on a format mismatch (e.g. 'w5-2026', '2026-W15'),
+            //     which is < every cutoff and would otherwise be silently
+            //     hard-purged with no recovery. Same "age unknowable" treatment.
+            //   - customer-actioned / in-flight status (PROTECTED_SWEEP_STATUSES):
+            //     never delete (FIXED is an audit trail) nor auto-OUTDATE.
+            // Only system-managed NEW/OUTDATED rows age out; OUTDATE flips NEW only.
+            //
+            // Backfill (auditContext.weekOffset set) runs the Athena query for a
+            // HISTORICAL week, so scrapedUrls only holds that week's URLs and the
+            // wall-clock cutoffs would mis-classify current suggestions. Skip the
+            // sweep entirely in backfill mode.
+            const isBackfill = context.auditContext?.weekOffset !== undefined;
             const toDelete = [];
             const toOutdate = [];
-            existingSuggestions.forEach((s) => {
-              const data = s.getData() || {};
-              if (scrapedUrls.has(data.url)) {
-                return;
-              }
-              const lastSeen = data.periodIdentifier;
-              if (!lastSeen) {
-                return;
-              }
-              const seenAt = parsePeriodIdentifier(lastSeen);
-              if (seenAt < deleteCutoff) {
-                toDelete.push(s);
-              } else if (seenAt < outdatedCutoff) {
-                const status = s.getStatus();
-                if (![
-                  'OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED',
-                ].includes(status)) {
+            if (!isBackfill) {
+              existingSuggestions.forEach((s) => {
+                const data = s.getData() || {};
+                if (scrapedUrls.has(data.url)) {
+                  return;
+                }
+                const lastSeen = data.periodIdentifier;
+                if (!lastSeen) {
+                  return;
+                }
+                if (PROTECTED_SWEEP_STATUSES.has(s.getStatus())) {
+                  return;
+                }
+                const seenAt = parsePeriodIdentifier(lastSeen);
+                if (seenAt.getTime() === 0) {
+                  log.warn(`[LLM-ERROR-PAGES] Skipping suggestion ${s.getId()} with unparseable periodIdentifier: "${lastSeen}" for ${auditType}`);
+                  return;
+                }
+                const isNew = s.getStatus() === SuggestionModel.STATUSES.NEW;
+                if (seenAt < deleteCutoff) {
+                  toDelete.push(s);
+                } else if (seenAt < outdatedCutoff && isNew) {
                   toOutdate.push(s);
                 }
-              }
-            });
+              });
+            }
 
             if (toDelete.length > 0) {
               await Suggestion.removeByIds(toDelete.map((s) => s.getId()));
-              log.info(`[LLM-ERROR-PAGES] Deleted ${toDelete.length} suggestions older than ${RETENTION_WEEKS} weeks for ${auditType}`);
+              log.info(`[LLM-ERROR-PAGES] Deleted ${toDelete.length} suggestions older than ${DB_RETENTION_WEEKS} weeks for ${auditType}`);
             }
             if (toOutdate.length > 0) {
               await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
-              log.info(`[LLM-ERROR-PAGES] Marked ${toOutdate.length} suggestions OUTDATED (last seen ${NEW_WINDOW_WEEKS}-${RETENTION_WEEKS} weeks ago) for ${auditType}`);
+              log.info(`[LLM-ERROR-PAGES] Marked ${toOutdate.length} suggestions OUTDATED (last seen ${NEW_WINDOW_WEEKS}-${DB_RETENTION_WEEKS} weeks ago) for ${auditType}`);
             }
           } catch (bucketError) {
             log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {

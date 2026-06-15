@@ -1783,14 +1783,14 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     sandbox.restore();
   });
 
-  it('DELETES stale suggestions regardless of status (terminal states included)', async () => {
-    const sandbox = sinon.createSandbox();
-    // A terminal/customer-actioned suggestion that is older than the window:
-    // the hard rolling-window policy deletes it too.
-    const staleResolved = {
-      getId: () => 'sug-old-resolved',
+  // Helper: build a single-404-bucket handler whose lone stale suggestion has
+  // the given status + a parse result, so we can assert the sweep's per-status
+  // and parse-failure behaviour in isolation.
+  const sweepWith = async (sandbox, { status, parseResult }) => {
+    const staleSug = {
+      getId: () => 'sug-stale',
       getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
-      getStatus: () => 'RESOLVED',
+      getStatus: () => status,
     };
     const opp = {
       getId: () => 'opp-404',
@@ -1799,21 +1799,90 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       setStatus: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      getSuggestions: sandbox.stub().resolves([staleResolved]),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
     };
     const { handler } = await buildHandler(sandbox, {
-      // Single 404 bucket so the stub opp is only swept once.
       errorPages: [
         { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
       ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // epoch → always stale
+      parsePeriodIdentifier: sandbox.stub().returns(parseResult),
     });
     const ctx = buildContext(sandbox);
-
     await handler.runAuditAndSendToMystique(ctx);
+    return ctx;
+  };
 
-    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledOnceWith(['sug-old-resolved']);
+  it('DELETES a stale system-managed (NEW) suggestion past the window', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledOnceWith(['sug-stale']);
+    sandbox.restore();
+  });
+
+  it('does NOT delete a customer-actioned terminal suggestion (FIXED audit trail), even when stale', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'FIXED', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete/outdate a suggestion with an unparseable periodIdentifier (epoch sentinel → skip)', async () => {
+    const sandbox = sinon.createSandbox();
+    // parsePeriodIdentifier returns epoch(0) for any format it cannot parse —
+    // that must be treated as "age unknowable" (skip), not a stale hard-delete.
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date(0) });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT outdate a SKIPPED suggestion in the middle tier (customer action preserved)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'SKIPPED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT re-outdate an already-OUTDATED suggestion in the middle tier (only NEW ages out)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'OUTDATED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('skips the retention sweep entirely in backfill mode (weekOffset set)', async () => {
+    const sandbox = sinon.createSandbox();
+    const staleSug = {
+      getId: () => 'sug-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date('2020-01-01T00:00:00Z')),
+    });
+    const ctx = buildContext(sandbox);
+    ctx.auditContext = { weekOffset: -1 };
+    await handler.runAuditAndSendToMystique(ctx);
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     sandbox.restore();
   });
