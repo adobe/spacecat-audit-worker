@@ -14,7 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { toPathname } from '../../../src/prerender/utils/utils.js';
+import { toPathname, normalizePathnameWithQuery } from '../../../src/prerender/utils/utils.js';
 
 use(sinonChai);
 
@@ -460,6 +460,44 @@ describe('Prerender Utils', () => {
 
     it('should return / for a bare domain with no path', () => {
       expect(toPathname('https://adobe.com')).to.equal('/');
+    });
+
+    it('should lowercase the pathname', () => {
+      expect(toPathname('https://www.adobe.com/Test/Page')).to.equal('/test/page');
+    });
+
+    it('should lowercase and strip trailing slash together', () => {
+      expect(toPathname('https://www.adobe.com/Test/Page/')).to.equal('/test/page');
+    });
+  });
+
+  describe('normalizePathnameWithQuery', () => {
+    it('should return the pathname for a valid URL', () => {
+      expect(normalizePathnameWithQuery('https://www.adobe.com/test/page')).to.equal('/test/page');
+    });
+
+    it('should strip trailing slash from non-root paths', () => {
+      expect(normalizePathnameWithQuery('https://www.adobe.com/test/page/')).to.equal('/test/page');
+    });
+
+    it('should preserve / for root path', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/')).to.equal('/');
+    });
+
+    it('should append the query string', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/test?foo=bar')).to.equal('/test?foo=bar');
+    });
+
+    it('should lowercase the pathname but preserve query param casing', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/Test/Page?Token=ABC')).to.equal('/test/page?Token=ABC');
+    });
+
+    it('should lowercase and strip trailing slash together', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/Test/Page/?foo=bar')).to.equal('/test/page?foo=bar');
+    });
+
+    it('should return lowercased raw string for an invalid URL', () => {
+      expect(normalizePathnameWithQuery('Not-A-URL')).to.equal('not-a-url');
     });
   });
 
