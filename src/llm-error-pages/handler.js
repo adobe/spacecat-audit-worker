@@ -286,7 +286,12 @@ async function publishObservationLlmBrokenUrls({
       // set this `sorted404` was consolidated from, keyed by the raw `url` — so
       // every sorted404 url has a facet row (agentTypes is always an array;
       // avgTtfb/category/product/countryCode may be undefined on sparse rows).
-      const f = facetsByUrl.get(errorPage.url);
+      // The `|| { agentTypes: [] }` is an unreachable-but-defensive default: if
+      // consolidateErrorsByUrl and groupErrorsByUrl ever diverge, a missing
+      // facet row degrades to empty facets instead of throwing a TypeError the
+      // outer try/catch would swallow (silently dropping the whole publish).
+      /* c8 ignore next */
+      const f = facetsByUrl.get(errorPage.url) || { agentTypes: [] };
       const existing = byUrl.get(fullUrl);
       if (existing) {
         existing.hits += entryHits;
@@ -337,7 +342,7 @@ async function publishObservationLlmBrokenUrls({
         agentTypes: Array.from(v.agentTypes)
           .slice(0, OBSERVATION_MAX_USER_AGENTS_PER_URL)
           .map((at) => String(at).slice(0, OBSERVATION_MAX_USER_AGENT_LENGTH)),
-        avgTtfb: v.avgTtfb === null || v.avgTtfb === undefined ? '' : String(v.avgTtfb),
+        avgTtfb: String(v.avgTtfb),
         category: v.category || '',
         product: v.product ?? null,
         countryCode: v.countryCode || 'GLOBAL',

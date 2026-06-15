@@ -684,6 +684,37 @@ describe('LLM Error Pages Handler', function () {
       expect(urlEntry.countryCode).to.equal('US');
     });
 
+    it('observation falls back to safe defaults for empty periodIdentifier and country_code', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Empty periodIdentifier exercises the `periodIdentifier || ''` fallback;
+      // an explicit empty country_code survives the `?? 'GLOBAL'` build-stage
+      // default and exercises the output-stage `countryCode || 'GLOBAL'` fallback.
+      mockGenerateReportingPeriods.returns({
+        weeks: [{
+          weekNumber: 34,
+          year: 2025,
+          startDate: new Date('2025-08-18T00:00:00Z'),
+          endDate: new Date('2025-08-24T23:59:59Z'),
+          periodIdentifier: '',
+        }],
+      });
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          country_code: '',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.periodIdentifier).to.equal('');
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
     it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {
       // Existing consolidateErrorsByUrl keys by (url, provider) — same URL hit
       // by N providers produces N entries. The observation wire format wants
