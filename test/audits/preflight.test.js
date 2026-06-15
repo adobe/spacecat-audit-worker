@@ -23,6 +23,7 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
+  PREFLIGHT_META_TAGS_WAIT_MS,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
@@ -536,6 +537,7 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication: true,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
     });
@@ -568,8 +570,26 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
+    });
+
+    it('sets waitTimeoutForMetaTags so slow-rendering SPA pages are captured after hydration', async () => {
+      const context = {
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: PREFLIGHT_STEP_IDENTIFY,
+              urls: ['https://main--example--page.aem.page'],
+            },
+          }),
+        },
+      };
+      const result = await scrapePages(context);
+      expect(result.options.waitTimeoutForMetaTags).to.equal(PREFLIGHT_META_TAGS_WAIT_MS);
+      expect(PREFLIGHT_META_TAGS_WAIT_MS).to.equal(5000);
     });
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {

@@ -36,6 +36,18 @@ export const PREFLIGHT_STEP_IDENTIFY = 'identify';
 export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 
 /**
+ * Per-selector timeout (ms) handed to the content scraper's meta-tags wait via the
+ * scrape `options`. When set, the scraper waits for `title`/`h1`/`description` to
+ * appear (non-throwing `Promise.allSettled`) before capturing, and resolves the
+ * instant they land — so fast pages are unaffected while slow-rendering SPA pages
+ * are captured after hydration instead of as an empty shell.
+ *
+ * Fixes SITES-46324: slow-rendering AEM author SPAs (e.g. Cox) whose `<h1>` paints
+ * after the scraper's fixed ~5s wait, causing a false "h1 not found".
+ */
+export const PREFLIGHT_META_TAGS_WAIT_MS = 5000;
+
+/**
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
@@ -101,6 +113,7 @@ export async function scrapePages(context) {
     options: {
       enableAuthentication,
       screenshotTypes: [],
+      waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
   };
