@@ -26,6 +26,7 @@ import {
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
+  TOP_CITED_EXCLUDED_DOMAINS,
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_MAX_WAIT_SECONDS,
   DRS_STATUS_AUDIT_TYPE,
@@ -176,6 +177,13 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
         return null;
       }
+      return { url: normalizeUrl(parsed, domain), domain };
+    }
+  }
+
+  // Tag (but don't scrape) these so selectTopUrls keeps them out of top-cited.
+  for (const domain of TOP_CITED_EXCLUDED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -800,7 +808,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   // Sort once, partition into per-domain + top-cited buckets
-  const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
+  const excludedFromTopCited = [...Object.keys(OFFSITE_DOMAINS), ...TOP_CITED_EXCLUDED_DOMAINS];
   const {
     topByDomain, topCited,
   } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
