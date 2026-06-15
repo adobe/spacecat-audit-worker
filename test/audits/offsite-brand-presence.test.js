@@ -120,6 +120,10 @@ describe('Offsite Brand Presence Handler', () => {
     };
 
     context = { dataAccess, env, log };
+    context.sqs = context.sqs || { sendMessage: sandbox.stub().resolves() };
+    context.dataAccess.Configuration = context.dataAccess.Configuration || {
+      findLatest: sandbox.stub().resolves({ getQueues: () => ({ audits: 'audits-queue-url' }) }),
+    };
   });
 
   afterEach(() => {
@@ -1491,6 +1495,42 @@ describe('Offsite Brand Presence Handler', () => {
       expect(callText).to.match(/skipped/i);
       expect(callText).to.include('imsOrgId');
       expect(callText).to.include(BASE_URL);
+    });
+  });
+
+  describe('DRS status poll scheduling', () => {
+    it('enqueues a poll message when a Slack thread and a successful job exist', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg, groupId, delaySeconds] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
+      expect(msg.siteId).to.equal(SITE_ID);
+      expect(msg.auditContext.slackContext).to.deep.equal({ channelId: 'C123', threadTs: '111.222' });
+      expect(msg.auditContext.jobs[0]).to.include({ jobId: 'mock-job' });
+      expect(msg.auditContext.deadline).to.be.a('number');
+      expect(groupId).to.equal(null);
+      expect(delaySeconds).to.equal(120);
+    });
+
+    it('does not enqueue a poll message without a Slack thread context', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not enqueue a poll message when all DRS jobs failed (no successful job_id)', async () => {
+      mockSubmitScrapeJob.rejects(new Error('DRS error'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
   });
 
