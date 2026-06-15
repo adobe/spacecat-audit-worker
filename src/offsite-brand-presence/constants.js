@@ -40,11 +40,11 @@ export const OFFSITE_DOMAINS = Object.freeze({
     auditType: Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
     datasetIds: [SCRAPE_DATASET_IDS.REDDIT_POSTS, SCRAPE_DATASET_IDS.REDDIT_COMMENTS],
   },
-  'wikipedia.org': {
-    auditType: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
-    datasetIds: [SCRAPE_DATASET_IDS.WIKIPEDIA],
-  },
 });
+
+// Recognized only to keep their URLs out of the top-cited bucket; not DRS-scraped here.
+// wikipedia-analysis is handled independently by Mystique (fetches Wikipedia directly).
+export const TOP_CITED_EXCLUDED_DOMAINS = Object.freeze(['wikipedia.org']);
 
 export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
