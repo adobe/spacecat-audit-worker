@@ -1,3 +1,10 @@
+# [1.474.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.473.0...v1.474.0) (2026-06-15)
+
+
+### Features
+
+* **offsite-brand-presence:** report DRS job completion status in Slack ([#2663](https://github.com/adobe/spacecat-audit-worker/issues/2663)) ([863f8ca](https://github.com/adobe/spacecat-audit-worker/commit/863f8cad99c4ee8b3eb7571e89b57011c85c88f3))
+
 # [1.473.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.472.0...v1.473.0) (2026-06-15)
 
 
