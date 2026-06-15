@@ -1532,6 +1532,17 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
+
+    it('does not fail the run when scheduling the poll throws', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS unavailable'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+    });
   });
 
   describe('Full Integration Flow', () => {

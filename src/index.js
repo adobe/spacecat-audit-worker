@@ -229,6 +229,9 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  // Utility handler (not an AuditBuilder audit): polls DRS job status and posts a
+  // Slack summary. It produces no audit result, so it intentionally skips the audit
+  // framework, like the drs:prompt_generation_base_url handler above.
   'offsite-brand-presence-drs-status': offsiteBrandPresenceDrsStatus,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,

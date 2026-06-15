@@ -819,7 +819,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     await notifyDrsSkipped(skipped, baseURL, context, channelId, threadTs);
   } else {
     await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
-    await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+    // Best-effort follow-up: a failure here (e.g. transient Configuration/SQS error)
+    // must not fail the run, which already submitted the DRS jobs (POST /jobs is not
+    // idempotent) and posted the initial notification. Re-running would duplicate both.
+    try {
+      await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+    } catch (err) {
+      log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
+    }
   }
 
   // TODO: temporarily disabled

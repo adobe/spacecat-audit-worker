@@ -94,6 +94,9 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(text).to.include('reddit_comments');
     expect(text).to.include('COMPLETED');
     expect(text).to.include('COMPLETED_WITH_ERRORS');
+    // All jobs terminal → header says "complete".
+    expect(text).to.include('complete');
+    expect(text).to.not.include('status update');
   });
 
   it('includes the error message for a failed job', async () => {
@@ -162,6 +165,9 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(mockPostMessageOptional).to.have.been.calledOnce;
     const text = mockPostMessageOptional.firstCall.args[2];
     expect(text).to.include('still running (timed out waiting)');
+    // Not all jobs terminal → header says "status update", not "complete".
+    expect(text).to.include('status update');
+    expect(text).to.not.include('jobs *complete*');
   });
 
   it('treats a getJob error as non-terminal and keeps polling', async () => {

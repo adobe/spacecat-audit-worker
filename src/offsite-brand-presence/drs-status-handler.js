@@ -29,7 +29,11 @@ const SQS_MAX_DELAY_SECONDS = 900;
  * @returns {string} Slack message text
  */
 function buildSummary(baseURL, statuses) {
-  const lines = [`:checkered_flag: *offsite-brand-presence* DRS jobs *complete* for *${baseURL}*:`];
+  const allTerminal = statuses.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
+  const header = allTerminal
+    ? `:checkered_flag: *offsite-brand-presence* DRS jobs *complete* for *${baseURL}*:`
+    : `:hourglass_flowing_sand: *offsite-brand-presence* DRS jobs *status update* for *${baseURL}* (timed out waiting):`;
+  const lines = [header];
   for (const s of statuses) {
     const label = `\`${s.domain}\` / \`${s.datasetId}\``;
     if (!DRS_TERMINAL_STATUSES.has(s.status)) {
@@ -95,6 +99,10 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     return ok();
   }
 
+  // Accepted trade-off: SQS at-least-once delivery means a crash after this post but
+  // before the message is deleted could redeliver and post the summary twice. There is
+  // no idempotency key; a duplicate Slack summary is preferable to the complexity of
+  // deduplication for a best-effort notification.
   await postMessageOptional(context, channelId, buildSummary(baseURL, statuses), { threadTs });
   log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
   return ok();
