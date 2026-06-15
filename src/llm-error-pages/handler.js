@@ -224,10 +224,6 @@ export async function submitForScraping(context) {
  *   - empty-array guard so we never emit a payload mystique's `min_length=1`
  *     would reject at the Pydantic boundary
  *
- * Phase 4 cutover: delete the legacy `guidance:llm-error-pages` publish block
- * and the `OBSERVATION_LLM_BROKEN_URLS_ENABLED` guard at the call site. This
- * helper stays in place.
- *
  * @param {object} args
  * @param {object[]} args.sorted404      Pre-consolidated 404 rows (output of
  *                                       `consolidateErrorsByUrl` + sort).
@@ -306,10 +302,6 @@ async function publishObservationLlmBrokenUrls({
         // URL in a given publish — not a per-URL last-hit timestamp.
         // `observedThrough` makes that semantics explicit and avoids a
         // UI label ("Last seen: ...") that would lie to customers.
-        //
-        // CROSS-REPO COORDINATION: mystique PR #2490 accepts this field
-        // name (renamed `last_seen` → `observed_through` on the Pydantic
-        // model, or via a Pydantic alias).
         observedThrough: endDate.toISOString(),
       }));
 
