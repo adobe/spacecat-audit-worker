@@ -307,29 +307,30 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('returns no citability when the prerender opportunity is absent or data-access is missing', async () => {
-    // No prerender-typed opportunity.
-    const wrongTypeContext = makeContext(
+  it('emits no citability when there is no prerender-typed opportunity', async () => {
+    const context = makeContext(
       [makeSuggestion({ url: 'https://www.example.com/x', edgeDeployed: 'x' })],
       { type: 'broken-internal-links' },
     );
-    const wrongTypeResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), wrongTypeContext, '2026-03-31',
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
     );
-    expect(wrongTypeResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+  });
 
-    // No dataAccess at all ⇒ empty citability map.
-    const noDaResult = await mapToAgenticTrafficBundle(
+  it('emits no citability when dataAccess is absent', async () => {
+    const result = await mapToAgenticTrafficBundle(
       [chatbotRow('/brochure.gif', { category: 'Asset' })],
       baseSite(),
       { log: { warn: sinon.spy() } },
       '2026-03-31',
     );
-    expect(noDaResult.trafficRows[0].dimensions).to.deep.equal({});
-    expect(noDaResult.classificationRows[0].content_type).to.equal('gif');
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.classificationRows[0].content_type).to.equal('gif');
+  });
 
-    // Opportunity present, Suggestion data-access missing ⇒ guarded.
-    const noSuggestionDaContext = {
+  it('emits no citability when the Suggestion data-access is missing', async () => {
+    const context = {
       log: { warn: sinon.spy() },
       dataAccess: {
         Opportunity: {
@@ -339,36 +340,39 @@ describe('agentic traffic mapper', () => {
         },
       },
     };
-    const noSuggestionDaResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), noSuggestionDaContext, '2026-03-31',
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
     );
-    expect(noSuggestionDaResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+  });
 
-    // A prerender opportunity in a non-active status is ignored.
-    const inactiveOppContext = makeContext(
+  it('ignores a prerender opportunity in a non-active status', async () => {
+    const context = makeContext(
       [makeSuggestion({ url: 'https://www.example.com/x', wordCountBefore: 5, wordCountAfter: 10 })],
       { status: 'RESOLVED' },
     );
-    const inactiveOppResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), inactiveOppContext, '2026-03-31',
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
     );
-    expect(inactiveOppResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+  });
 
-    // allBySiteId resolves null ⇒ tolerated.
-    const nullOppsContext = makeContext([]);
-    nullOppsContext.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves(null);
-    const nullOppsResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), nullOppsContext, '2026-03-31',
+  it('tolerates allBySiteId resolving null', async () => {
+    const context = makeContext([]);
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves(null);
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
     );
-    expect(nullOppsResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+  });
 
-    // Opportunity present but allByOpportunityId resolves null ⇒ tolerated.
-    const nullSugsContext = makeContext([]);
-    nullSugsContext.dataAccess.Suggestion.allByOpportunityId = sinon.stub().resolves(null);
-    const nullSugsResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), nullSugsContext, '2026-03-31',
+  it('tolerates allByOpportunityId resolving null', async () => {
+    const context = makeContext([]);
+    context.dataAccess.Suggestion.allByOpportunityId = sinon.stub().resolves(null);
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
     );
-    expect(nullSugsResult.trafficRows[0].dimensions).to.deep.equal({});
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
   });
 
   it('skips the status.json read when the scraper bucket is set but no S3 client is present', async () => {
@@ -444,7 +448,7 @@ describe('agentic traffic mapper', () => {
       deployed_at_edge: false,
     });
     expect(warn).to.have.been.calledWith(
-      'Could not read prerender status.json for agentic mapping: access denied',
+      'Could not read prerender status.json (prerender/scrapes/site-1/status.json) for agentic mapping: access denied',
     );
   });
 

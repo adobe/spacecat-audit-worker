@@ -19,7 +19,8 @@ const ACTIVE_STATUSES = new Set([
 ]);
 
 // pathname only, trailing slash stripped — matches getUrlPath in the UI and avoids
-// www/non-www and trailing-slash mismatches between sources.
+// www/non-www and trailing-slash mismatches between sources. Falsy input is returned
+// unchanged; callers only pass non-empty URLs/paths (they guard on url presence first).
 export function normalizePath(input) {
   if (!input) {
     return input;
@@ -47,6 +48,7 @@ export function getLlmVisibilityScore({
 }
 
 function hasDomainWideFix(active) {
+  // '/*' is a convention sentinel meaning "whole domain", matched literally — not a regex.
   return active.some(({ status, data = {} }) => data.isDomainWide
     && (status === 'FIXED' || data.edgeDeployed)
     && (data.allowedRegexPatterns || []).includes('/*'));

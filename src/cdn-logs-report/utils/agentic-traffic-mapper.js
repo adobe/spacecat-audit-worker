@@ -100,7 +100,7 @@ async function readPrerenderStatusJson(site, context) {
     return JSON.parse(await res.Body.transformToString());
   } catch (error) {
     if (error.name !== 'NoSuchKey') {
-      log?.warn?.(`Could not read prerender status.json for agentic mapping: ${error.message}`);
+      log?.warn?.(`Could not read prerender status.json (${Key}) for agentic mapping: ${error.message}`);
     }
     return {};
   }
