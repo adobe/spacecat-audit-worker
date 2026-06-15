@@ -637,11 +637,82 @@ describe('LLM Error Pages Handler', function () {
       // comment in handler.js. Pin to the audit-window end value so a
       // future refactor that swaps in `new Date().toISOString()` would
       // fail this test instead of silently shipping wrong semantics.
-      expect(urlEntry).to.have.all.keys('url', 'hits', 'userAgents', 'observedThrough');
+      expect(urlEntry).to.have.all.keys(
+        'url', 'hits', 'userAgents', 'observedThrough',
+        // CDN-log trend facets (spacecat #2655) the ELMO UI renders.
+        'periodIdentifier', 'agentTypes', 'avgTtfb', 'category', 'product', 'countryCode',
+      );
       expect(urlEntry.url).to.include('/dead');
       expect(urlEntry.hits).to.equal(47);
       expect(urlEntry.userAgents).to.deep.equal(['ChatGPT']);
       expect(urlEntry.observedThrough).to.equal(observationMessage.data.period.end);
+      // This row carries no facet fields → safe defaults (proves the
+      // backwards-compatible path; a facet-rich row is covered separately).
+      expect(urlEntry.periodIdentifier).to.be.a('string');
+      expect(urlEntry.agentTypes).to.deep.equal([]);
+      expect(urlEntry.avgTtfb).to.equal('');
+      expect(urlEntry.category).to.equal('');
+      expect(urlEntry.product).to.equal(null);
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation carries CDN-log trend facets (agentTypes/avgTtfb/category/product/countryCode) when present', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // A raw categorized row carrying the facets groupErrorsByUrl aggregates.
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          agent_type: 'Training bots',
+          avg_ttfb_ms: 131,
+          country_code: 'US',
+          product: 'Other',
+          category: 'static asset',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.agentTypes).to.deep.equal(['Training bots']);
+      // avgTtfb stringified to match mystique's string field.
+      expect(urlEntry.avgTtfb).to.equal('131');
+      expect(urlEntry.category).to.equal('static asset');
+      expect(urlEntry.product).to.equal('Other');
+      expect(urlEntry.countryCode).to.equal('US');
+    });
+
+    it('observation falls back to safe defaults for empty periodIdentifier and country_code', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Empty periodIdentifier exercises the `periodIdentifier || ''` fallback;
+      // an explicit empty country_code survives the `?? 'GLOBAL'` build-stage
+      // default and exercises the output-stage `countryCode || 'GLOBAL'` fallback.
+      mockGenerateReportingPeriods.returns({
+        weeks: [{
+          weekNumber: 34,
+          year: 2025,
+          startDate: new Date('2025-08-18T00:00:00Z'),
+          endDate: new Date('2025-08-24T23:59:59Z'),
+          periodIdentifier: '',
+        }],
+      });
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          country_code: '',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.periodIdentifier).to.equal('');
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
     });
 
     it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {
