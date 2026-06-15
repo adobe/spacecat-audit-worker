@@ -106,4 +106,95 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(text).to.include('FAILED');
     expect(text).to.include('boom');
   });
+
+  it('omits the error suffix for a failed job with no error message', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'CANCELLED' });
+
+    await handler.default(buildMessage(), context);
+
+    const text = mockPostMessageOptional.firstCall.args[2];
+    expect(text).to.include('CANCELLED');
+    // The line should end with the status, not have a ": <error>" suffix
+    expect(text).to.match(/CANCELLED\s*$/m);
+  });
+
+  it('re-enqueues with a delay when jobs are still pending and budget remains', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+    const result = await handler.default(buildMessage(), context);
+
+    expect(result.status).to.equal(200);
+    expect(mockPostMessageOptional).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [queueUrl, sentMessage, groupId, delaySeconds] = context.sqs.sendMessage.firstCall.args;
+    expect(queueUrl).to.equal('audits-queue-url');
+    expect(sentMessage.type).to.equal('offsite-brand-presence-drs-status');
+    expect(sentMessage.auditContext.jobs).to.have.length(2);
+    expect(groupId).to.equal(null);
+    expect(delaySeconds).to.equal(120);
+  });
+
+  it('caps the re-enqueue delay at the seconds remaining until the deadline', async () => {
+    mockGetJob.resolves({ status: 'RUNNING' });
+
+    // 30s left before deadline → delay should be 30, not the 120s interval.
+    await handler.default(buildMessage({ deadline: Date.now() + 30000 }), context);
+
+    const delaySeconds = context.sqs.sendMessage.firstCall.args[3];
+    expect(delaySeconds).to.be.at.most(30);
+    expect(delaySeconds).to.be.greaterThan(0);
+  });
+
+  it('posts the summary at the deadline even if jobs are still running', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+    await handler.default(buildMessage({ deadline: Date.now() - 1 }), context);
+
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(mockPostMessageOptional).to.have.been.calledOnce;
+    const text = mockPostMessageOptional.firstCall.args[2];
+    expect(text).to.include('still running (timed out waiting)');
+  });
+
+  it('treats a getJob error as non-terminal and keeps polling', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').rejects(new Error('DRS 503'));
+
+    const result = await handler.default(buildMessage(), context);
+
+    expect(result.status).to.equal(200);
+    expect(mockPostMessageOptional).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(log.warn).to.have.been.calledWithMatch(/getJob failed for job-2/);
+  });
+
+  it('reports a job as still running when getJob errors past the deadline', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').rejects(new Error('DRS 503'));
+
+    await handler.default(buildMessage({ deadline: Date.now() - 1 }), context);
+
+    expect(mockPostMessageOptional).to.have.been.calledOnce;
+    expect(mockPostMessageOptional.firstCall.args[2]).to.include('still running (timed out waiting)');
+  });
+
+  it('no-ops when slackContext is missing', async () => {
+    const result = await handler.default(buildMessage({ slackContext: {} }), context);
+
+    expect(result.status).to.equal(200);
+    expect(mockGetJob).to.not.have.been.called;
+    expect(mockPostMessageOptional).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('no-ops when there are no jobs to track', async () => {
+    const result = await handler.default(buildMessage({ jobs: [] }), context);
+
+    expect(result.status).to.equal(200);
+    expect(mockGetJob).to.not.have.been.called;
+    expect(mockPostMessageOptional).to.not.have.been.called;
+  });
 });
