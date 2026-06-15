@@ -107,7 +107,7 @@ Logic per invocation:
    - Return `ok()`.
 4. Else if `Date.now() >= deadline`:
    - Post the summary anyway; jobs that are still non-terminal are reported as
-     `still running (timed out waiting after 20m)`.
+     `still running (timed out waiting)`.
    - Return `ok()`.
 5. Else (jobs pending, budget remaining):
    - Re-enqueue the **same** message (unchanged `deadline`) with

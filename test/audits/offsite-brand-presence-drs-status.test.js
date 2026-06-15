@@ -123,7 +123,9 @@ describe('offsite-brand-presence DRS status handler', () => {
     mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
     mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
 
-    const result = await handler.default(buildMessage(), context);
+    const message = buildMessage();
+    const originalDeadline = message.auditContext.deadline;
+    const result = await handler.default(message, context);
 
     expect(result.status).to.equal(200);
     expect(mockPostMessageOptional).to.not.have.been.called;
@@ -132,6 +134,9 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(queueUrl).to.equal('audits-queue-url');
     expect(sentMessage.type).to.equal('offsite-brand-presence-drs-status');
     expect(sentMessage.auditContext.jobs).to.have.length(2);
+    // The absolute deadline must be preserved across re-enqueues so the wait budget
+    // genuinely bounds total polling time regardless of SQS delivery jitter.
+    expect(sentMessage.auditContext.deadline).to.equal(originalDeadline);
     expect(groupId).to.equal(null);
     expect(delaySeconds).to.equal(120);
   });
