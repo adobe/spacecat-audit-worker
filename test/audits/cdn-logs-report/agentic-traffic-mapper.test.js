@@ -305,6 +305,32 @@ describe('agentic traffic mapper', () => {
     });
   });
 
+  it('replaces a path entry that has a missing updatedAt with a later timestamped one', async () => {
+    const context = makeContext([
+      // Missing updatedAt ⇒ normalized to epoch 0, so it must never block a real timestamp.
+      makeSuggestion(
+        { url: 'https://www.example.com/page', wordCountBefore: 10, wordCountAfter: 100 },
+        { updatedAt: null },
+      ),
+      makeSuggestion(
+        { url: 'https://www.example.com/page', edgeDeployed: 'x' },
+        { updatedAt: '2026-03-31T00:00:00.000Z' },
+      ),
+    ]);
+
+    const result = await mapToAgenticTrafficBundle(
+      [chatbotRow('/page')],
+      baseSite(),
+      context,
+      '2026-03-31',
+    );
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({
+      citability_score: 100,
+      deployed_at_edge: true,
+    });
+  });
+
   it('returns no citability when the prerender opportunity or its suggestions are absent', async () => {
     // No prerender-typed opportunity in the NEW list.
     const wrongTypeContext = makeContext(

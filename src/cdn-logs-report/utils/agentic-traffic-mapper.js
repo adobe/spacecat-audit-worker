@@ -123,7 +123,7 @@ function buildCitabilityMap(suggestions, log) {
       return acc;
     }
 
-    const updatedAt = suggestion.getUpdatedAt?.();
+    const updatedAt = suggestion.getUpdatedAt?.() || new Date(0).toISOString();
     const existing = acc[pathname];
     if (!existing || new Date(updatedAt) > new Date(existing.updatedAt)) {
       acc[pathname] = {
@@ -141,6 +141,11 @@ function buildCitabilityMap(suggestions, log) {
 
 // Reads the NEW suggestions from the site's prerender opportunity (replaces PageCitability).
 // Fetching by status keeps the query scoped to fresh, per-URL rows.
+//
+// Scope note: this intentionally covers only URLs with a NEW prerender suggestion, matching the
+// dashboard UI 1:1 (getLlmVisibilityScore). URLs the prerender audit skipped (e.g. content gain
+// below threshold) get no citability_score, same as the UI shows nothing for them. This is
+// narrower than the old PageCitability table, which could carry scores for URLs the UI doesn't.
 async function getCitabilityScores(site, context) {
   const { Opportunity, Suggestion: SuggestionDA } = context?.dataAccess ?? {};
   if (!Opportunity?.allBySiteIdAndStatus || !SuggestionDA?.allByOpportunityIdAndStatus) {
