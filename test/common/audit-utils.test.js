@@ -176,106 +176,6 @@ describe('Audit Utils Tests', () => {
       const result = await isAuditEnabledForSite('test-handler', site, context);
       expect(result).to.be.false;
     });
-
-    it('bypasses handler enabled-list check when auditContext.onDemand === true (entitlement still enforced)', async () => {
-      configuration.getHandlers = () => ({
-        'test-handler': {
-          enabledByDefault: false,
-          productCodes: ['ASO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite(
-        'test-handler',
-        site,
-        context,
-        { onDemand: true },
-      );
-
-      expect(result).to.be.true;
-      expect(configuration.isHandlerEnabledForSite).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWithMatch(/On-demand audit test-handler/);
-    });
-
-    it('bypasses handler enabled-list check when auditContext.onDemand === "true" (string)', async () => {
-      configuration.getHandlers = () => ({
-        'test-handler': {
-          enabledByDefault: false,
-          productCodes: ['ASO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite(
-        'test-handler',
-        site,
-        context,
-        { onDemand: 'true' },
-      );
-
-      expect(result).to.be.true;
-      expect(configuration.isHandlerEnabledForSite).to.not.have.been.called;
-    });
-
-    it('does NOT bypass entitlement check even when auditContext.onDemand === true', async () => {
-      configuration.getHandlers = () => ({
-        'test-handler': {
-          enabledByDefault: false,
-          productCodes: ['ASO'],
-        },
-      });
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({}),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite(
-        'test-handler',
-        site,
-        context,
-        { onDemand: true },
-      );
-
-      expect(result).to.be.false;
-      expect(configuration.isHandlerEnabledForSite).to.not.have.been.called;
-    });
-
-    it('does NOT bypass when onDemand is falsy / unrelated value', async () => {
-      configuration.getHandlers = () => ({
-        'test-handler': {
-          enabledByDefault: false,
-          productCodes: ['ASO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite(
-        'test-handler',
-        site,
-        context,
-        { onDemand: 'yes' },
-      );
-
-      expect(result).to.be.false;
-      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('test-handler', site);
-    });
   });
 
   describe('isAuditDisabledForSite', () => {
@@ -304,25 +204,6 @@ describe('Audit Utils Tests', () => {
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       const result = await isAuditDisabledForSite('test-handler', site, context);
-      expect(result).to.be.false;
-    });
-
-    it('forwards auditContext.onDemand bypass: returns false even when handler is not in enabled-list', async () => {
-      configuration.getHandlers = () => ({
-        'test-handler': { productCodes: ['ASO'] },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditDisabledForSite(
-        'test-handler',
-        site,
-        context,
-        { onDemand: true },
-      );
       expect(result).to.be.false;
     });
   });

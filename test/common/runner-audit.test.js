@@ -39,17 +39,17 @@ describe('buildRunnerAuditContext', () => {
 describe('RunnerAudit', () => {
   let sandbox;
   let RunnerAudit;
-  let isAuditDisabledForSite;
+  let checkProductCodeEntitlements;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    isAuditDisabledForSite = sandbox.stub().resolves(false);
+    checkProductCodeEntitlements = sandbox.stub().resolves(true);
     const mod = await esmock(
       '../../src/common/runner-audit.js',
       import.meta.url,
       {
         '../../src/common/audit-utils.js': {
-          isAuditDisabledForSite,
+          checkProductCodeEntitlements,
           parseMessageDataForRunnerAudit,
         },
       },
@@ -85,6 +85,26 @@ describe('RunnerAudit', () => {
     };
   }
 
+  // Builds a context whose Configuration exposes a handler for the audit type.
+  // Defaults to a handler with product codes so the entitlement gate can pass.
+  function buildContext(handler = { productCodes: ['product-1'] }) {
+    const configuration = {
+      getHandlers: sandbox.stub().returns({ 'reddit-analysis': handler }),
+    };
+    return {
+      log: {
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      dataAccess: {
+        Configuration: { findLatest: sandbox.stub().resolves(configuration) },
+      },
+      invocation: {},
+    };
+  }
+
   it('attaches parsed message.data as auditContext.messageData before invoking the runner', async () => {
     const runner = sandbox.stub().resolves({
       auditResult: { success: true },
@@ -94,16 +114,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub().resolves(auditRecord);
     const { instance, site } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     const message = {
       type: 'reddit-analysis',
@@ -133,16 +144,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
     const { instance, site } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     await instance.run(
       {
@@ -162,22 +164,64 @@ describe('RunnerAudit', () => {
     );
   });
 
-  it('returns ok when the audit is disabled for the site', async () => {
-    isAuditDisabledForSite.resolves(true);
+  it('runs the audit for an entitled site regardless of the handler enabled-list', async () => {
+    const runner = sandbox.stub().resolves({
+      auditResult: { success: true },
+      fullAuditRef: 'https://example.com',
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
+    const { instance, site } = buildInstance(runner, persister);
+
+    const context = buildContext();
+
+    await instance.run(
+      {
+        type: 'reddit-analysis',
+        siteId: 'site-1',
+        auditContext: {},
+      },
+      context,
+    );
+
+    expect(checkProductCodeEntitlements).to.have.been.calledWith(
+      ['product-1'],
+      site,
+      context,
+    );
+    expect(runner).to.have.been.called;
+  });
+
+  it('returns ok and skips when the handler has no product codes', async () => {
     const runner = sandbox.stub();
     const persister = sandbox.stub();
     const { instance } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
+    const context = buildContext({});
+
+    const result = await instance.run(
+      {
+        type: 'reddit-analysis',
+        siteId: 'site-1',
+        auditContext: {},
       },
-      dataAccess: {},
-      invocation: {},
-    };
+      context,
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(runner).not.to.have.been.called;
+    expect(checkProductCodeEntitlements).not.to.have.been.called;
+    expect(context.log.info).to.have.been.calledWith(
+      'Audit reddit-analysis skipped for site site-1: missing product codes or site enrollment',
+    );
+  });
+
+  it('returns ok and skips when the site is not entitled', async () => {
+    checkProductCodeEntitlements.resolves(false);
+    const runner = sandbox.stub();
+    const persister = sandbox.stub();
+    const { instance } = buildInstance(runner, persister);
+
+    const context = buildContext();
 
     const result = await instance.run(
       {
@@ -191,43 +235,7 @@ describe('RunnerAudit', () => {
     expect(result.status).to.equal(ok().status);
     expect(runner).not.to.have.been.called;
     expect(context.log.info).to.have.been.calledWith(
-      'Audit reddit-analysis is disabled for site site-1, skipping',
-    );
-  });
-
-  it('forwards auditContext (including onDemand) to isAuditDisabledForSite', async () => {
-    const runner = sandbox.stub().resolves({
-      auditResult: { success: true },
-      fullAuditRef: 'https://example.com',
-    });
-    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
-    const { instance, site } = buildInstance(runner, persister);
-
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
-
-    await instance.run(
-      {
-        type: 'reddit-analysis',
-        siteId: 'site-1',
-        auditContext: { onDemand: true, slackContext: { channelId: 'C' } },
-      },
-      context,
-    );
-
-    expect(isAuditDisabledForSite).to.have.been.calledWith(
-      'reddit-analysis',
-      site,
-      context,
-      sinon.match({ onDemand: true }),
+      'Audit reddit-analysis skipped for site site-1: missing product codes or site enrollment',
     );
   });
 
@@ -236,16 +244,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub();
     const { instance } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     await expect(
       instance.run(

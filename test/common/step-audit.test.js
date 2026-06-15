@@ -152,39 +152,28 @@ describe('Step-based Audit Tests', () => {
         .build();
     });
 
-    it('skips when audit is disabled for site', async () => {
-      configuration.isHandlerEnabledForSite.returns(false);
+    it('skips when the handler has no product codes', async () => {
+      configuration.getHandlers.returns({ 'content-audit': {} });
 
       const result = await audit.run(message, context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    it('does NOT skip when auditContext.onDemand is true even if site not in handler enabled-list', async () => {
-      configuration.isHandlerEnabledForSite.returns(false);
-      nock('https://space.cat').get('/').reply(200, 'Success');
+    it('skips when the site is not entitled', async () => {
+      TierClient.createForSite.returns({
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: false }),
+      });
 
-      const onDemandMessage = {
-        ...message,
-        auditContext: { onDemand: true },
-      };
-
-      const createdAudit = {
-        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
-        getAuditType: () => 'content-audit',
-        getFullAuditRef: () => 's3://test/123',
-      };
-      context.dataAccess.Audit.create.resolves(createdAudit);
-
-      const result = await audit.run(onDemandMessage, context);
+      const result = await audit.run(message, context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.info).to.have.been.calledWithMatch(/On-demand audit content-audit/);
-      expect(context.log.info).to.not.have.been.calledWithMatch(/disabled for site.*skipping/);
-      expect(context.dataAccess.Audit.create).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
+      expect(context.dataAccess.Audit.create).not.to.have.been.called;
+      expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
     it('executes first step and creates audit record', async () => {

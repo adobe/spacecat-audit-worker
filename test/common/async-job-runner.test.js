@@ -106,8 +106,8 @@ describe('Job-based Step-Audit Tests', () => {
     };
   }
 
-  it('skips when audit is disabled for site', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
+  it('skips and cancels the job when the handler has no product codes', async () => {
+    configuration.getHandlers.returns({ 'content-audit': {} });
 
     const runner = new AuditBuilder()
       .withAsyncJob()
@@ -128,46 +128,42 @@ describe('Job-based Step-Audit Tests', () => {
     const result = await runner.run(message, context);
 
     expect(result.status).to.equal(200);
-    expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
     expect(job.setStatus).to.have.been.calledWith('CANCELLED');
     expect(job.setMetadata).to.have.been.calledWith({
       payload: {
         siteId: site.getId(),
-        reason: 'content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        reason: 'content-audit audit skipped for site 42322ae6-b8b1-4a61-9c88-25205fa65b07: missing product codes or site enrollment',
       },
     });
   });
 
-  it('does NOT skip when auditContext.onDemand is true even if site not in handler enabled-list', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
+  it('skips and cancels the job when the site is not entitled', async () => {
+    TierClient.createForSite.returns({
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: false }),
+    });
 
     const runner = new AuditBuilder()
       .withAsyncJob()
-      .addStep('first', async () => ({ foo: 'bar' }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-      .addStep('second', async () => ({ baz: 'qux' }))
+      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
       .build();
 
     const job = createMockJob({
-      jobId: 'job-123',
       payload: { siteId: site.getId() },
     });
 
     runner.jobProvider = async () => job;
 
-    context.sqs.sendMessage = context.sqs.sendMessage || sandbox.stub();
-
     const message = {
       type: 'content-audit',
       jobId: 'job-123',
-      auditContext: { onDemand: true },
     };
 
     const result = await runner.run(message, context);
 
     expect(result.status).to.equal(200);
-    expect(context.log.info).to.have.been.calledWithMatch(/On-demand audit content-audit/);
-    expect(context.log.info).to.not.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
-    expect(job.setStatus).to.not.have.been.calledWith('CANCELLED');
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
+    expect(job.setStatus).to.have.been.calledWith('CANCELLED');
   });
 
   it('executes first step and sends continuation message', async () => {

@@ -222,8 +222,10 @@ describe('Audit tests', () => {
       expect(finalURL).to.equal('https://www.spacekitty.cat');
     });
 
-    it('audit run skips when audit is disabled for site', async () => {
-      configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
+    it('audit run skips when site is not entitled', async () => {
+      TierClient.createForSite.returns({
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: false }),
+      });
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
@@ -238,7 +240,7 @@ describe('Audit tests', () => {
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
     });
 

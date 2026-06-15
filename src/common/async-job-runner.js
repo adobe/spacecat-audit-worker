@@ -10,13 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import {
   sendContinuationMessage,
-  isAuditDisabledForSite,
+  checkProductCodeEntitlements,
   preserveOnDemand,
   preserveSlackContext,
 } from './audit-utils.js';
@@ -90,13 +90,17 @@ export class AsyncJobRunner extends StepAudit {
 
       const site = await this.siteProvider(siteId, context);
 
-      if (await isAuditDisabledForSite(type, site, context, auditContext)) {
-        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
+      const { Configuration } = context.dataAccess;
+      const configuration = await Configuration.findLatest();
+      const handler = configuration.getHandlers()?.[type];
+      if (!isNonEmptyArray(handler?.productCodes)
+        || !(await checkProductCodeEntitlements(handler.productCodes, site, context))) {
+        log.info(`Audit ${type} skipped for site ${site.getId()}: missing product codes or site enrollment`);
         job.setStatus(AsyncJob.Status.CANCELLED);
         job.setMetadata({
           payload: {
             siteId,
-            reason: `${type} audits disabled for site ${siteId}`,
+            reason: `${type} audit skipped for site ${siteId}: missing product codes or site enrollment`,
           },
         });
         await job.save();
