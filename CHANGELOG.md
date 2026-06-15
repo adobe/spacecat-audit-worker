@@ -1,3 +1,10 @@
+## [1.471.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.4...v1.471.5) (2026-06-15)
+
+
+### Bug Fixes
+
+* remove unreachable `payload.checks` narrowing branch in preflight audit ([#2646](https://github.com/adobe/spacecat-audit-worker/issues/2646)) ([6fb263f](https://github.com/adobe/spacecat-audit-worker/commit/6fb263f042ea57ebe3eedf27ba52574060d03d7c))
+
 ## [1.471.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.3...v1.471.4) (2026-06-14)
 
 
