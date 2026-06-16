@@ -1,3 +1,10 @@
+## [1.476.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.4...v1.476.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade expected audit-enrollment skip from error to info ([#2677](https://github.com/adobe/spacecat-audit-worker/issues/2677)) ([d17a44d](https://github.com/adobe/spacecat-audit-worker/commit/d17a44dc4003421caf05354bf8bae693a18376d7))
+
 ## [1.476.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.3...v1.476.4) (2026-06-16)
 
 
