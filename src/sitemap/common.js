@@ -22,7 +22,7 @@ import {
 } from '../support/utils.js';
 
 // ----- version ----------------------------------------------------------------
-export const COMMON_VERSION = 101; // manually update as needed
+export const COMMON_VERSION = 102; // manually update as needed
 
 // ----- performance tuning constants ------------------------------------------
 
@@ -52,16 +52,16 @@ export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay betwee
 
 // ----- internal constants ----------------------------------------------------
 export const ERROR_CODES = Object.freeze({
-  // ... codes applicable for the /robots.txt file ...
-  CANNOT_READ_ROBOTS: 'CANNOT READ ROBOTS',
-  NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
   // ... codes applicable for a specific sitemap.xml URL ...
-  SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
-  CANNOT_READ_SITEMAP: 'ERROR FETCHING DATA',
-  INVALID_SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
-  NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
+  SITEMAP_NOT_FOUND: 'sitemap-not-found', // was 'NO SITEMAP FOUND'
+  CANNOT_READ_SITEMAP: 'cannot-read-sitemap', // was 'ERROR FETCHING DATA'
+  INVALID_SITEMAP_FORMAT: 'invalid-sitemap-format', // was 'INVALID SITEMAP FORMAT'
+  NO_VALID_PATHS_EXTRACTED: 'no-valid-urls-in-sitemap', // was 'NO VALID URLs FOUND IN SITEMAP'
+  // ... codes applicable for the /robots.txt file ...
+  CANNOT_READ_ROBOTS: 'cannot-read-robots', // was 'CANNOT READ ROBOTS'
+  NO_SITEMAP_IN_ROBOTS: 'robots-missing-sitemap', // wsa 'NO SITEMAP FOUND IN ROBOTS'
   // ... audit-level codes ...
-  GENERAL_ERROR: 'INVALID URL', // the customer's URL provided for the audit is not valid
+  GENERAL_ERROR: 'general-error', // was 'INVALID URL'
 });
 
 const VALID_MIME_TYPES = Object.freeze([
