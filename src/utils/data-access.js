@@ -520,7 +520,7 @@ export async function syncSuggestions({
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
     const { rank } = mapNewSuggestion(newDataItem);
-    if (rank !== undefined) {
+    if (rank != null) {
       existing.setRank?.(rank);
     }
 
