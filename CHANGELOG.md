@@ -1,3 +1,17 @@
+## [1.478.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.0...v1.478.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** sync suggestion rank with traffic_domain on re-audit ([#2673](https://github.com/adobe/spacecat-audit-worker/issues/2673)) ([25f214a](https://github.com/adobe/spacecat-audit-worker/commit/25f214a58eab1341ccf4aa586394f8a5731f9782))
+
+# [1.478.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.3...v1.478.0) (2026-06-16)
+
+
+### Features
+
+* filter out URLs from non-english speaking regions ([#2681](https://github.com/adobe/spacecat-audit-worker/issues/2681)) ([a3e84c3](https://github.com/adobe/spacecat-audit-worker/commit/a3e84c3607a10bd815b01d5aee6a56ed39af3861))
+
 ## [1.477.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.2...v1.477.3) (2026-06-16)
 
 
