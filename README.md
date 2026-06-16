@@ -73,7 +73,7 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/). 
 If you don’t have access, please refer to the engineering onboarding guide or contact your Spacecat team representative.
 
-After logging into KLAM, you’ll receive the following credentials required to access AWS resources such as DynamoDB and S3 for local development:
+After logging into KLAM, you’ll receive the following credentials required to access AWS resources such as S3 for local development:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
@@ -90,7 +90,7 @@ Both development scripts (`npm start` and `npm run start:unpacked`) require envi
 
 The `.env` file should contain:
 
-1. **AWS Credentials** (from KLAM) for accessing DynamoDB, S3, and other AWS services
+1. **AWS Credentials** (from KLAM) for accessing S3 and other AWS services
 2. **Application Secrets** required by various audits (API keys, service endpoints, etc.)
 
 **Creating your `.env` file:**
@@ -105,7 +105,7 @@ AWS_SECRET_ACCESS_KEY=<your-secret-key-from-klam>
 AWS_SESSION_TOKEN=<your-session-token-from-klam>
 
 # Core Spacecat Configuration
-DYNAMO_TABLE_NAME_DATA=spacecat-services-data
+POSTGREST_URL=<your-postgrest-endpoint>
 S3_SCRAPER_BUCKET_NAME=spacecat-scraper-results
 
 # Add additional secrets as needed for specific audits
@@ -234,9 +234,9 @@ curl -X POST http://localhost:3000 \
      -d '{ "type": "apex", "siteId": "9ab0575a-c238-4470-ae82-9d37fb2d0e78" }'
 ```
 
-#### 4. Inspect the Audit Result in DynamoDB
+#### 4. Inspect the Audit Result
 
-Once the audit completes, the results are saved to DynamoDB by default (unless configured otherwise).
+Once the audit completes, the results are saved to the Postgres data store.
 
 To retrieve the audit result, use the [Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit/operation/getLatestAuditForSite).
 
@@ -284,7 +284,7 @@ A Spacecat audit is an operation designed for various purposes, including inspec
 
 2. **Step-based Audits**: Multi-step workflows where each step can be processed by different specialized workers. Ideal for complex scenarios requiring different processing capabilities or coordination between multiple services.
 
-Spacecat audits run periodically: weekly, daily, and even hourly. By default, the results of these audits are automatically stored in DynamoDB and sent to the `audit-results-queue`. The results can then be queried by type via [the Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit).
+Spacecat audits run periodically: weekly, daily, and even hourly. By default, the results of these audits are automatically stored in the Postgres data store and sent to the `audit-results-queue`. The results can then be queried by type via [the Spacecat API](https://opensource.adobe.com/spacecat-api-service/#tag/audit).
 
 ## Audit Steps
 
