@@ -1,3 +1,51 @@
+## [1.476.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.3...v1.476.4) (2026-06-16)
+
+
+### Bug Fixes
+
+* **cwv:** filter out 4xx URLs from CWV opportunities (SITES-40803) ([#2034](https://github.com/adobe/spacecat-audit-worker/issues/2034)) ([cfa74e3](https://github.com/adobe/spacecat-audit-worker/commit/cfa74e33ebc24bfb84aafdf7318219b09823e7b8))
+
+## [1.476.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.2...v1.476.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade product-metatags empty-extraction log to warn + re-pin data-access 3.75.2 (pageCitability url-upsert) ([#2675](https://github.com/adobe/spacecat-audit-worker/issues/2675)) ([566c569](https://github.com/adobe/spacecat-audit-worker/commit/566c5690dd3790178c1554982cc6805d459d653d)), closes [adobe/spacecat-shared#1683](https://github.com/adobe/spacecat-shared/issues/1683)
+
+## [1.476.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.1...v1.476.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **toc:** exclude headings inside button elements from TOC suggestions (LLMO-5474) ([#2647](https://github.com/adobe/spacecat-audit-worker/issues/2647)) ([5cc9440](https://github.com/adobe/spacecat-audit-worker/commit/5cc944072c8f686135135fd7fc1ce1b1a4ead7f1))
+* **toc:** filter unrendered AEM template placeholder headings (LLMO-5322) ([#2600](https://github.com/adobe/spacecat-audit-worker/issues/2600)) ([9bb4cc3](https://github.com/adobe/spacecat-audit-worker/commit/9bb4cc3d2ec92b5c67da228b062a0a2e818cf6b1))
+
+## [1.476.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.0...v1.476.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2672](https://github.com/adobe/spacecat-audit-worker/issues/2672)) ([7c5cffa](https://github.com/adobe/spacecat-audit-worker/commit/7c5cffa958d12a83ccbc2c6d2724a0aef2614578))
+
+# [1.476.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.475.0...v1.476.0) (2026-06-15)
+
+
+### Features
+
+* **llm-error-pages:** enable observation:llm-broken-urls publish by default ([#2671](https://github.com/adobe/spacecat-audit-worker/issues/2671)) ([d4c2bd0](https://github.com/adobe/spacecat-audit-worker/commit/d4c2bd076ea626c5c9bdfa69692f0a1c85706f05))
+
+# [1.475.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.2...v1.475.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **preflight:** wait for meta tags so slow-rendering SPAs aren't captured as empty shells ([#2670](https://github.com/adobe/spacecat-audit-worker/issues/2670)) ([a7b6f3c](https://github.com/adobe/spacecat-audit-worker/commit/a7b6f3c418406a5fe203159de8ca190222646fba))
+
+
+### Features
+
+* **offsite-brand-presence:** stop DRS-scraping wikipedia ([#2669](https://github.com/adobe/spacecat-audit-worker/issues/2669)) ([8b5d654](https://github.com/adobe/spacecat-audit-worker/commit/8b5d6542c8fcb3b08837001dc203bf7909d87ac2)), closes [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667) [#2668](https://github.com/adobe/spacecat-audit-worker/issues/2668) [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)
+
 ## [1.474.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.1...v1.474.2) (2026-06-15)
 
 

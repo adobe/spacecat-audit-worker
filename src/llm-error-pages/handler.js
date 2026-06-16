@@ -224,11 +224,6 @@ export async function submitForScraping(context) {
  *   - empty-array guard so we never emit a payload mystique's `min_length=1`
  *     would reject at the Pydantic boundary
  *
- * Phase 4 cutover (post-merge of mystique PR #2490 + projector PR #200):
- * remove the `if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true')`
- * guard at the call site and delete the legacy `guidance:llm-error-pages`
- * publish block above it. This helper stays in place.
- *
  * @param {object} args
  * @param {object[]} args.sorted404      Pre-consolidated 404 rows (output of
  *                                       `consolidateErrorsByUrl` + sort).
@@ -326,13 +321,6 @@ async function publishObservationLlmBrokenUrls({
         // URL in a given publish — not a per-URL last-hit timestamp.
         // `observedThrough` makes that semantics explicit and avoids a
         // UI label ("Last seen: ...") that would lie to customers.
-        //
-        // CROSS-REPO COORDINATION: mystique PR #2490 must accept this
-        // field name (either rename `last_seen` → `observed_through`
-        // on the Pydantic model, or add a Pydantic alias) BEFORE the
-        // OBSERVATION_LLM_BROKEN_URLS_ENABLED flag is flipped on in
-        // any environment. Safe to land unilaterally here because the
-        // flag is OFF by default.
         observedThrough: endDate.toISOString(),
         // CDN-log trend facets the ELMO UI renders (mystique #2490 accepts
         // these; the projector builds the weekly history[] + filters from them).
@@ -733,21 +721,10 @@ export async function runAuditAndSendToMystique(context) {
             await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
             log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
 
-            // Phase 3 dual-publish: also emit the new observation:llm-broken-urls
-            // message that feeds the Mysticat blackboard cascade in mystique
-            // (LlmBrokenUrlsIngestionTask → o_llm_broken_urls → verifier →
-            // alternatives → projector). The legacy guidance:llm-error-pages
-            // message above continues to feed the old crew flow during shadow
-            // validation; Phase 4 cutover removes that block.
-            //
-            // Feature-flagged so this PR can land safely before mystique's
-            // ingestion dispatcher (PR #2490) and projector (PR #200) merge.
-            // With the flag off, behaviour is unchanged.
-            //
-            // All defence/observability logic lives in the helper. Phase 4
-            // cutover = delete the legacy publish above AND this flag check;
-            // the helper call stays.
-            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true') {
+            // Dual-publish the observation:llm-broken-urls message feeding the
+            // Mysticat blackboard cascade alongside the legacy guidance message.
+            // On by default; set OBSERVATION_LLM_BROKEN_URLS_ENABLED='false' to disable.
+            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED !== 'false') {
               // Per-URL CDN-log facets (agentTypes / avgTtfb / category /
               // product / countryCode) the ELMO UI renders. groupErrorsByUrl
               // collapses the raw rows to one entry per URL with these facets;
