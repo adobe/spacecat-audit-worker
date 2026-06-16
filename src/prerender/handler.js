@@ -337,6 +337,7 @@ function normalizePathname(url) {
 
 /**
  * Returns pathnames from siteStatus pages processed within the configured recent window.
+ * Returns pathnames from siteStatus pages processed within the configured recent window.
  * @param {Object} status - siteStatus object with a pages array
  * @returns {Set<string>}
  */
