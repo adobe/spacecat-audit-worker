@@ -521,7 +521,7 @@ export async function syncSuggestions({
 
     const { rank } = mapNewSuggestion(newDataItem);
     if (rank !== undefined) {
-      existing.setRank(rank);
+      existing.setRank?.(rank);
     }
 
     // Use the merge status function to determine if status should change
