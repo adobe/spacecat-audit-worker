@@ -1,3 +1,10 @@
+## [1.477.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.0...v1.477.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* remove dormant data-access-v2 fallback (drops electrodb/jsonschema, fixes DEP0169 log noise) ([#2679](https://github.com/adobe/spacecat-audit-worker/issues/2679)) ([6a78abe](https://github.com/adobe/spacecat-audit-worker/commit/6a78abeeaca2824880b75a0476bdd87d5273c945))
+
 # [1.477.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.7...v1.477.0) (2026-06-16)
 
 
