@@ -259,28 +259,23 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
-    it('should extract URLs from all regions', async () => {
+    it('extracts rows from accepted regions and skips others', async () => {
       mockLoadBrandPresenceData.resolves({
         data: [
-          {
-            Sources: 'https://youtube.com/v1', Region: 'EU',
-          },
-          {
-            Sources: 'https://youtube.com/v2', Region: 'US',
-          },
-          {
-            Sources: 'https://youtube.com/ok', Region: 'US',
-          },
-          {
-            Sources: 'https://reddit.com/r/ok/', Region: 'US',
-          },
+          // Not in ACCEPTED_REGIONS -> skipped.
+          { Sources: 'https://youtube.com/v1', Region: 'EU' },
+          // Accepted region.
+          { Sources: 'https://youtube.com/v2', Region: 'US' },
+          // Accepted non-US region.
+          { Sources: 'https://youtube.com/ok', Region: 'GB' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'US' },
         ],
       });
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      // All three YouTube URLs (including the EU one) are counted.
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(3);
+      // US + GB YouTube URLs counted; the EU row is excluded.
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
