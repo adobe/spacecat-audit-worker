@@ -446,8 +446,8 @@ describe('Prerender Utils', () => {
       expect(toPathname('https://www.adobe.com/test/page')).to.equal('/test/page');
     });
 
-    it('should return the raw string for an invalid URL', () => {
-      expect(toPathname('not-a-valid-url')).to.equal('not-a-valid-url');
+    it('should return lowercased raw string for an invalid URL', () => {
+      expect(toPathname('Not-A-Valid-URL')).to.equal('not-a-valid-url');
     });
 
     it('should strip trailing slash from non-root paths', () => {

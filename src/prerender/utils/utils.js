@@ -58,7 +58,7 @@ export function toPathname(url) {
     const { pathname } = new URL(url);
     return pathname === '/' ? pathname : pathname.replace(/\/$/, '').toLowerCase();
   } catch {
-    return url;
+    return url.toLowerCase();
   }
 }
 
