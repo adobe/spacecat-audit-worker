@@ -25,4 +25,9 @@ describe('paid-keyword-optimizer utils — normalizeUrl', () => {
   it('returns the input unchanged when it is not a parseable URL', () => {
     expect(normalizeUrl('not a url')).to.equal('not a url');
   });
+
+  it('preserves port, query, and fragment while stripping www.', () => {
+    expect(normalizeUrl('https://www.example.com:8080/path?q=1#hash'))
+      .to.equal('https://example.com:8080/path?q=1#hash');
+  });
 });
