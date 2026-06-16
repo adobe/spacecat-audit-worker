@@ -1,3 +1,11 @@
+## [1.476.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.1...v1.476.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **toc:** exclude headings inside button elements from TOC suggestions (LLMO-5474) ([#2647](https://github.com/adobe/spacecat-audit-worker/issues/2647)) ([5cc9440](https://github.com/adobe/spacecat-audit-worker/commit/5cc944072c8f686135135fd7fc1ce1b1a4ead7f1))
+* **toc:** filter unrendered AEM template placeholder headings (LLMO-5322) ([#2600](https://github.com/adobe/spacecat-audit-worker/issues/2600)) ([9bb4cc3](https://github.com/adobe/spacecat-audit-worker/commit/9bb4cc3d2ec92b5c67da228b062a0a2e818cf6b1))
+
 ## [1.476.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.0...v1.476.1) (2026-06-15)
 
 
