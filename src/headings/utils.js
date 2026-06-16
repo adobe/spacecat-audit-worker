@@ -320,6 +320,9 @@ export function extractTocData($, getHeadingSelectorFn) {
       if (!text) {
         return false;
       }
+      if (/^\{[^}]+\}$/.test(text)) {
+        return false;
+      }
       if (isHeadingInExcludedContainer(h, $)) {
         return false;
       }
