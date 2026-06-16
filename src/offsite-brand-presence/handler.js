@@ -239,7 +239,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (!sources || row.Region !== 'US') {
+    if (!sources) {
       // eslint-disable-next-line no-continue
       continue;
     }

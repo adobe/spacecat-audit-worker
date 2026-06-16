@@ -259,7 +259,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
-    it('should only extract URLs with Region=US', async () => {
+    it('should extract URLs from all regions', async () => {
       mockLoadBrandPresenceData.resolves({
         data: [
           {
@@ -279,7 +279,8 @@ describe('Offsite Brand Presence Handler', () => {
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
+      // All three YouTube URLs (including the EU one) are counted.
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(3);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
