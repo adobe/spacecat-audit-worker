@@ -835,6 +835,21 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.recommendedAction.clusters[0].keywords[0].searchVolume).to.equal(0);
     });
 
+    it('falls back to [] when a poor cluster has no keywords field', () => {
+      const cluster = {
+        clusterId: 'c-nokw',
+        representativeKeyword: 'k',
+        overallAlignmentScore: 'poor',
+        analysisStatus: 'ok',
+        gapAnalysis: { keywordToPageGap: { explanation: 'x' } },
+        // intentionally NO `keywords` key -> exercises the `c.keywords || []` right arm
+      };
+      const message = createClusterMessage({ clusterResults: [cluster] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, {});
+      expect(result.data.recommendedAction.clusters[0].keywords).to.deep.equal([]);
+      expect(result.data.recommendedAction.totalKeywords).to.equal(0);
+    });
+
     describe('reason resolution chain', () => {
       const reasonOf = (gapAnalysis) => {
         const message = createClusterMessage({ clusterResults: [poorCluster({ gapAnalysis })] });
