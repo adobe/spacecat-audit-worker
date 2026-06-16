@@ -15,7 +15,6 @@
  * overwrites process.env on the first request.
  */
 const SAM_TEMPLATE_POSTGREST = {
-  DATA_SERVICE_PROVIDER: process.env.DATA_SERVICE_PROVIDER,
   POSTGREST_URL: process.env.POSTGREST_URL,
   POSTGREST_SCHEMA: process.env.POSTGREST_SCHEMA,
   POSTGREST_API_KEY: process.env.POSTGREST_API_KEY,

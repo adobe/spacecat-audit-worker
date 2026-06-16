@@ -26,6 +26,9 @@ export const PROVIDERS = Object.freeze([
 export const PROVIDERS_SET = new Set(PROVIDERS);
 export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
+// Region codes whose brand-presence rows are processed. Limited to English-speaking markets.
+export const ACCEPTED_REGIONS = Object.freeze(new Set(['US', 'GB', 'CA', 'AU', 'IE', 'NZ']));
+
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
   FAILED: 'failed',
@@ -70,4 +73,10 @@ export const DRS_TERMINAL_STATUSES = new Set([
   'COMPLETED_WITH_ERRORS',
   'FAILED',
   'CANCELLED',
+]);
+// Terminal statuses that produced usable scraped data. Used to decide which
+// downstream analysis audits to auto-trigger after DRS scraping completes.
+export const DRS_SUCCESS_STATUSES = new Set([
+  'COMPLETED',
+  'COMPLETED_WITH_ERRORS',
 ]);

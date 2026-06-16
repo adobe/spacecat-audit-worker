@@ -85,7 +85,10 @@ describe('offsite-brand-presence DRS status handler', () => {
     const result = await handler.default(buildMessage(), context);
 
     expect(result.status).to.equal(200);
-    expect(context.sqs.sendMessage).to.not.have.been.called;
+    // No re-enqueue (all terminal); instead the analysis audits are triggered.
+    const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+    expect(sentTypes).to.not.include('offsite-brand-presence-drs-status');
+    expect(sentTypes).to.have.members(['reddit-analysis', 'youtube-analysis']);
     expect(mockPostMessageOptional).to.have.been.calledOnce;
     const [, channelId, text, opts] = mockPostMessageOptional.firstCall.args;
     expect(channelId).to.equal('C123');
@@ -161,7 +164,9 @@ describe('offsite-brand-presence DRS status handler', () => {
 
     await handler.default(buildMessage({ deadline: Date.now() - 1 }), context);
 
-    expect(context.sqs.sendMessage).to.not.have.been.called;
+    // No re-enqueue past the deadline; only the succeeded domain's audit is triggered.
+    const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+    expect(sentTypes).to.deep.equal(['reddit-analysis']);
     expect(mockPostMessageOptional).to.have.been.calledOnce;
     const text = mockPostMessageOptional.firstCall.args[2];
     expect(text).to.include('still running (timed out waiting)');
@@ -207,5 +212,86 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(result.status).to.equal(200);
     expect(mockGetJob).to.not.have.been.called;
     expect(mockPostMessageOptional).to.not.have.been.called;
+  });
+
+  describe('analysis audit auto-triggering', () => {
+    it('triggers an analysis audit for each succeeded domain with forwarded Slack context', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED_WITH_ERRORS' });
+
+      await handler.default(buildMessage(), context);
+
+      const calls = context.sqs.sendMessage.getCalls();
+      expect(calls).to.have.length(2);
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[0]).to.equal('audits-queue-url');
+      expect(reddit.args[1]).to.deep.equal({
+        type: 'reddit-analysis',
+        siteId: SITE_ID,
+        auditContext: { slackContext: { channelId: 'C123', threadTs: '111.222' } },
+      });
+    });
+
+    it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
+      mockGetJob.withArgs('job-c').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-w').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'top-cited', datasetId: 'top_cited', jobId: 'job-c' },
+          // wikipedia is no longer DRS-scraped, so a wikipedia.org job maps to nothing.
+          { domain: 'wikipedia.org', datasetId: 'wikipedia', jobId: 'job-w' },
+        ],
+      }), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.deep.equal(['cited-analysis']);
+    });
+
+    it('triggers a domain\'s analysis audit only once across multiple datasets', async () => {
+      mockGetJob.withArgs('job-rp').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-rc').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'reddit.com', datasetId: 'reddit_posts', jobId: 'job-rp' },
+          { domain: 'reddit.com', datasetId: 'reddit_comments', jobId: 'job-rc' },
+        ],
+      }), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.deep.equal(['reddit-analysis']);
+    });
+
+    it('does not trigger analysis audits for failed or cancelled domains', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'FAILED', error_message: 'x' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'CANCELLED' });
+
+      await handler.default(buildMessage(), context);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('skips domains that do not map to an analysis audit', async () => {
+      mockGetJob.withArgs('job-x').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({
+        jobs: [{ domain: 'unknown.com', datasetId: 'whatever', jobId: 'job-x' }],
+      }), context);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not fail the run when triggering an analysis audit throws', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+      context.sqs.sendMessage.rejects(new Error('SQS down'));
+
+      const result = await handler.default(buildMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits/);
+    });
   });
 });

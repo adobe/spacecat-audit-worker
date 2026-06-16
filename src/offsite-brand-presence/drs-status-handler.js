@@ -13,10 +13,75 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
-import { DRS_POLL_INTERVAL_SECONDS, DRS_TERMINAL_STATUSES } from './constants.js';
+import {
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_TERMINAL_STATUSES,
+  DRS_SUCCESS_STATUSES,
+  OFFSITE_DOMAINS,
+  CITED_ANALYSIS_DRS_CONFIG,
+} from './constants.js';
 
 const LOG_PREFIX = '[offsite-brand-presence][drs-status]';
 const SQS_MAX_DELAY_SECONDS = 900;
+// The top-cited bucket is keyed by this domain in the scrape jobs (see the runner's
+// addUrlsToUrlStore). All other buckets are keyed by their OFFSITE_DOMAINS domain.
+const TOP_CITED_DOMAIN = 'top-cited';
+
+/**
+ * Maps a scrape job's bucket/domain to the analysis audit type that consumes its data.
+ * Returns undefined for an unknown domain.
+ *
+ * @param {string} domain - Job bucket key ('reddit.com', 'youtube.com', 'top-cited', …)
+ * @returns {string|undefined} Analysis audit type (e.g. 'reddit-analysis')
+ */
+function resolveAnalysisAuditType(domain) {
+  if (domain === TOP_CITED_DOMAIN) {
+    return CITED_ANALYSIS_DRS_CONFIG.auditType;
+  }
+  return OFFSITE_DOMAINS[domain]?.auditType;
+}
+
+/**
+ * Triggers the downstream analysis audits for every domain whose scrape jobs produced
+ * usable data (a DRS_SUCCESS_STATUSES terminal status). Each audit type is triggered at
+ * most once. The originating Slack context is forwarded so each analysis audit posts its
+ * results to the same thread. Domains that failed, were cancelled, or are still running
+ * at the deadline are skipped — there is no fresh data to analyze.
+ *
+ * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
+ * @param {string} siteId - The site ID
+ * @param {object} slackContext - { channelId, threadTs } forwarded to the triggered audits
+ * @param {object} context - Universal context (sqs, dataAccess, log)
+ */
+async function triggerAnalysisAudits(statuses, siteId, slackContext, context) {
+  const { sqs, dataAccess, log } = context;
+
+  const auditTypes = new Set();
+  for (const s of statuses) {
+    if (DRS_SUCCESS_STATUSES.has(s.status)) {
+      const auditType = resolveAnalysisAuditType(s.domain);
+      if (auditType) {
+        auditTypes.add(auditType);
+      }
+    }
+  }
+
+  if (auditTypes.size === 0) {
+    return;
+  }
+
+  const configuration = await dataAccess.Configuration.findLatest();
+  const queueUrl = configuration.getQueues().audits;
+  for (const type of auditTypes) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(queueUrl, {
+      type,
+      siteId,
+      auditContext: { slackContext },
+    });
+    log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
+  }
+}
 
 /**
  * Builds the Slack completion summary. One line per job: terminal jobs show their
@@ -105,5 +170,16 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // deduplication for a best-effort notification.
   await postMessageOptional(context, channelId, buildSummary(baseURL, statuses), { threadTs });
   log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
+
+  // Auto-trigger the analysis audits for domains whose scrapes succeeded, so the
+  // offsite-brand-presence run no longer needs reddit/youtube/cited/wikipedia to be
+  // triggered manually. Best-effort: a failure here must not cause the message to be
+  // redelivered (which would re-post the summary and re-trigger the audits).
+  try {
+    await triggerAnalysisAudits(statuses, siteId, slackContext, context);
+  } catch (err) {
+    log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
+  }
+
   return ok();
 }
