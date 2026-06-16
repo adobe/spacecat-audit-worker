@@ -328,11 +328,11 @@ function normalizePathname(url) {
 }
 
 /**
- * Returns pathnames from siteStatus pages scraped within the configured recent window.
+ * Returns pathnames from siteStatus pages processed within the configured recent window.
  * @param {Object} status - siteStatus object with a pages array
  * @returns {Set<string>}
  */
-function getRecentlyScrapedPathnames(status) {
+function getRecentlyProcessedPathnames(status) {
   const pages = Array.isArray(status?.pages) ? status.pages : [];
   const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
   const pathnames = new Set();
@@ -1009,7 +1009,7 @@ export async function submitForScraping(context) {
     agenticUrlsCount = agenticUrls.length;
 
     // Daily batching: filter URLs recently scraped within the rolling recent window
-    const recentPathnames = getRecentlyScrapedPathnames(siteStatus);
+    const recentPathnames = getRecentlyProcessedPathnames(siteStatus);
     edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
 
     const filteredOrganicUrls = rebasedTopPagesUrls
