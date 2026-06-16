@@ -3062,6 +3062,30 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(result).to.have.lengthOf(2);
         expect(result.map((r) => r.text)).to.deep.equal(['Get Your Quote', 'Why Choose Us']);
       });
+      it('excludes headings inside button elements (e.g. skip-to-main-content widgets)', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">ICICI Bank</h1>'
+          + '<button class="skip-main-content-btn"><h2>Skip to main content</h2></button>'
+          + '<h2 id="products">Credit Cards</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['ICICI Bank', 'Credit Cards']);
+      });
+      it('excludes headings inside role="button" elements', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">Home</h1>'
+          + '<div role="button"><h2>Skip to content</h2></div>'
+          + '<h2 id="main">Main Content</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Home', 'Main Content']);
+      });
       it('deduplicates headings with identical normalised text', () => {
         const $ = cheerioLoad(
           '<body>'
