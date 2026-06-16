@@ -56,9 +56,9 @@ function hasNonHtmlExtension(pathname) {
 export function toPathname(url) {
   try {
     const { pathname } = new URL(url);
-    return pathname === '/' ? pathname : pathname.replace(/\/$/, '');
+    return pathname === '/' ? pathname : pathname.replace(/\/$/, '').toLowerCase();
   } catch {
-    return url;
+    return url.toLowerCase();
   }
 }
 
@@ -72,10 +72,10 @@ export function toPathname(url) {
 export function normalizePathnameWithQuery(url) {
   try {
     const { pathname, search } = new URL(url);
-    const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    const normalized = (pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname).toLowerCase();
     return search ? `${normalized}${search}` : normalized;
   } catch {
-    return url;
+    return url.toLowerCase();
   }
 }
 

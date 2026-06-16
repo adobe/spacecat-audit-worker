@@ -618,7 +618,7 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   log.info(`[PRODUCT-METATAGS] Extracted tags from ${extractedTagsCount} pages`);
 
   if (extractedTagsCount === 0) {
-    log.error(`[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+    log.warn(`[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
   }
 
   // Perform SEO checks with product filtering

@@ -3062,6 +3062,30 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(result).to.have.lengthOf(2);
         expect(result.map((r) => r.text)).to.deep.equal(['Get Your Quote', 'Why Choose Us']);
       });
+      it('excludes headings inside button elements (e.g. skip-to-main-content widgets)', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">ICICI Bank</h1>'
+          + '<button class="skip-main-content-btn"><h2>Skip to main content</h2></button>'
+          + '<h2 id="products">Credit Cards</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['ICICI Bank', 'Credit Cards']);
+      });
+      it('excludes headings inside role="button" elements', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">Home</h1>'
+          + '<div role="button"><h2>Skip to content</h2></div>'
+          + '<h2 id="main">Main Content</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Home', 'Main Content']);
+      });
       it('deduplicates headings with identical normalised text', () => {
         const $ = cheerioLoad(
           '<body>'
@@ -3074,6 +3098,29 @@ describe('TOC (Table of Contents) Audit', () => {
         const result = extractTocData($, stubGetHeadingSelector);
         expect(result).to.have.lengthOf(3);
         expect(result.map((r) => r.text)).to.deep.equal(['Coverage Options', 'Section One', 'Section Two']);
+      });
+      it('excludes headings whose entire text is an unrendered template placeholder', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">PlayStation</h1>'
+          + '<h2 id="b">PS5 Games</h2>'
+          + '<h2 id="c" class="txt-style-{STYLE} txt-block-title__title">{TITLE}</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['PlayStation', 'PS5 Games']);
+      });
+      it('does not exclude headings that merely contain curly braces alongside other text', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">Welcome to {Brand}</h1>'
+          + '<h2 id="b">{TITLE} and more</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Welcome to {Brand}', '{TITLE} and more']);
       });
     });
 

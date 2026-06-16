@@ -38,7 +38,9 @@ describe('Index siteId handling and validation flag', () => {
           }),
         },
       },
-      env: {},
+      env: {
+        POSTGREST_URL: 'https://data-svc.test',
+      },
       log: {
         debug: sandbox.spy(),
         info: sandbox.spy(),
