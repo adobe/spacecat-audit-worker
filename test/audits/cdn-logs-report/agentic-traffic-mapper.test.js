@@ -14,52 +14,11 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   mapToAgenticTrafficBundle,
-  getLlmVisibilityScore,
 } from '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js';
 
 use(sinonChai);
-
-// Builds a stub prerender suggestion exposing the data-access accessors the mapper uses.
-const makeSuggestion = (data, { status = 'NEW' } = {}) => ({
-  getStatus: () => status,
-  getData: () => data,
-});
-
-// Builds a context whose Opportunity data-access returns a single prerender opportunity and
-// whose Suggestion data-access returns the supplied suggestions for that opportunity.
-// Pass statusJson to stub the prerender status.json S3 read.
-const makeContext = (suggestions, {
-  type = Audit.AUDIT_TYPES.PRERENDER,
-  status = 'NEW',
-  statusJson = null,
-  log = { warn: sinon.spy() },
-} = {}) => {
-  const context = {
-    log,
-    dataAccess: {
-      Opportunity: {
-        allBySiteId: sinon.stub().resolves([
-          { getType: () => type, getStatus: () => status, getId: () => 'oppty-1' },
-        ]),
-      },
-      Suggestion: {
-        allByOpportunityId: sinon.stub().resolves(suggestions),
-      },
-    },
-  };
-  if (statusJson) {
-    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
-    context.s3Client = {
-      send: sinon.stub().resolves({
-        Body: { transformToString: async () => JSON.stringify(statusJson) },
-      }),
-    };
-  }
-  return context;
-};
 
 const baseSite = (overrides = {}) => ({
   getId: () => 'site-1',
@@ -85,43 +44,7 @@ const chatbotRow = (url, overrides = {}) => ({
 });
 
 describe('agentic traffic mapper', () => {
-  describe('getLlmVisibilityScore', () => {
-    it('returns 100 when deployed, covered by domain-wide, or covered by pattern', () => {
-      expect(getLlmVisibilityScore({ isDeployed: true })).to.equal(100);
-      expect(getLlmVisibilityScore({ coveredByDomainWide: true })).to.equal(100);
-      expect(getLlmVisibilityScore({ coveredByPattern: true })).to.equal(100);
-    });
-
-    it('computes the word-count ratio and caps it at 100', () => {
-      expect(getLlmVisibilityScore({ wordCountBefore: 30, wordCountAfter: 120 })).to.equal(25);
-      expect(getLlmVisibilityScore({ wordCountBefore: 200, wordCountAfter: 100 })).to.equal(100);
-    });
-
-    it('returns 0 when word counts are missing or unusable', () => {
-      expect(getLlmVisibilityScore({ wordCountBefore: 10, wordCountAfter: 0 })).to.equal(0);
-      expect(getLlmVisibilityScore({})).to.equal(0);
-    });
-
-    it('floors a negative ratio at 0', () => {
-      expect(getLlmVisibilityScore({ wordCountBefore: -50, wordCountAfter: 100 })).to.equal(0);
-    });
-  });
-
   it('maps Athena rows into traffic and classification bundle rows', async () => {
-    const context = makeContext([
-      makeSuggestion({
-        url: 'https://www.example.com/docs/page',
-        wordCountBefore: 80,
-        wordCountAfter: 100,
-        edgeDeployed: '2026-03-31T00:00:00.000Z',
-      }),
-      makeSuggestion({
-        url: '/bad-url',
-        wordCountBefore: 5,
-        wordCountAfter: 10,
-      }),
-    ]);
-
     const result = await mapToAgenticTrafficBundle([
       chatbotRow('/docs/page', {
         number_of_hits: 12, avg_ttfb_ms: 123.45, host: 'docs.example.com',
@@ -133,7 +56,7 @@ describe('agentic traffic mapper', () => {
       chatbotRow('/skip-me', { number_of_hits: 0, host: 'docs.example.com' }),
     ], baseSite({
       getConfig: () => ({ getLlmoCountryCodeIgnoreList: () => ['AA'] }),
-    }), context, '2026-03-31');
+    }), { log: { warn: sinon.spy() } }, '2026-03-31');
 
     expect(result.trafficRows).to.have.length(2);
     expect(result.classificationRows).to.have.length(1);
@@ -149,11 +72,8 @@ describe('agentic traffic mapper', () => {
       hits: 12,
       updated_by: 'audit-worker:agentic-daily-export',
     });
-    // Edge-deployed suggestion ⇒ visibility score forced to 100.
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
-    });
+    // Citability is computed UI-side now; the mapper emits an empty dimensions object.
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
 
     expect(result.classificationRows[0]).to.deep.equal({
       host: 'docs.example.com',
@@ -163,63 +83,6 @@ describe('agentic traffic mapper', () => {
       page_type: 'Documentation',
       content_type: 'html',
       updated_by: 'audit-worker:agentic-daily-export',
-    });
-  });
-
-  it('computes citability from word counts for non-deployed suggestions', async () => {
-    const context = makeContext([
-      makeSuggestion({
-        url: 'https://www.example.com/guide',
-        wordCountBefore: 30,
-        wordCountAfter: 120,
-      }),
-    ]);
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/guide')],
-      baseSite(),
-      context,
-      '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 25,
-      deployed_at_edge: false,
-    });
-  });
-
-  it('treats coveredByPattern suggestions as deployed', async () => {
-    const patternContext = makeContext([
-      makeSuggestion({ url: 'https://www.example.com/pattern', coveredByPattern: 'p1' }),
-    ]);
-    const patternResult = await mapToAgenticTrafficBundle(
-      [chatbotRow('/pattern')],
-      baseSite(),
-      patternContext,
-      '2026-03-31',
-    );
-    expect(patternResult.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 100,
-      deployed_at_edge: true,
-    });
-  });
-
-  it('skips domain-wide, url-less, and undeployed-no-wordcount suggestions', async () => {
-    const context = makeContext([
-      makeSuggestion({ url: 'https://www.example.com/dw', isDomainWide: true, edgeDeployed: 'x' }),
-      makeSuggestion({ wordCountBefore: 5, wordCountAfter: 10 }),
-      makeSuggestion({ url: 'https://www.example.com/nodata', wordCountAfter: 0 }),
-      makeSuggestion(undefined),
-    ]);
-
-    const result = await mapToAgenticTrafficBundle([
-      chatbotRow('/dw'),
-      chatbotRow('/nodata'),
-    ], baseSite(), context, '2026-03-31');
-
-    // None of the suggestions contribute a citability entry.
-    result.trafficRows.forEach((row) => {
-      expect(row.dimensions).to.deep.equal({});
     });
   });
 
@@ -236,9 +99,11 @@ describe('agentic traffic mapper', () => {
       chatbotRow('/assets/hero.png', { number_of_hits: 12, category: 'Asset' }),
       chatbotRow('/favicon.ico', { number_of_hits: 6, category: 'Asset' }),
       chatbotRow('/photo.jpg', { number_of_hits: 3, category: 'Asset' }),
+      chatbotRow('/brochure.gif', { number_of_hits: 2, category: 'Asset' }),
     ], baseSite(), { log: { warn: sinon.spy() } }, '2026-03-31');
 
     expect(result.classificationRows.map((r) => r.content_type)).to.include('jpg');
+    expect(result.classificationRows.map((r) => r.content_type)).to.include('gif');
 
     expect(result.classificationRows).to.deep.include({
       host: 'www.example.com',
@@ -260,196 +125,14 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('scores already-optimised and edge-deployed status.json pages at 100', async () => {
-    const context = makeContext(
-      [makeSuggestion({
-        url: 'https://www.example.com/guide', wordCountBefore: 30, wordCountAfter: 120,
-      })],
-      {
-        statusJson: {
-          pages: [
-            { url: 'https://www.example.com/optimised', needsPrerender: false, scrapingStatus: 'success' },
-            { url: 'https://www.example.com/edge', isDeployedAtEdge: true, needsPrerender: true },
-          ],
-        },
-      },
-    );
-
-    const result = await mapToAgenticTrafficBundle([
-      chatbotRow('/guide'),
-      chatbotRow('/optimised'),
-      chatbotRow('/edge'),
-    ], baseSite(), context, '2026-03-31');
-
-    const byPath = Object.fromEntries(result.trafficRows.map((r) => [r.url_path, r.dimensions]));
-    expect(byPath['/guide']).to.deep.equal({ citability_score: 25, deployed_at_edge: false });
-    expect(byPath['/optimised']).to.deep.equal({ citability_score: 100, deployed_at_edge: false });
-    expect(byPath['/edge']).to.deep.equal({ citability_score: 100, deployed_at_edge: true });
-  });
-
-  it('matches a suggestion URL to an agentic path ignoring a trailing slash', async () => {
-    const context = makeContext([
-      makeSuggestion({
-        url: 'https://www.example.com/docs/', wordCountBefore: 50, wordCountAfter: 100,
-      }),
-    ]);
-
+  it('always emits an empty dimensions object', async () => {
     const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/docs/')],
-      baseSite(),
-      context,
-      '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 50,
-      deployed_at_edge: false,
-    });
-  });
-
-  it('emits no citability when there is no prerender-typed opportunity', async () => {
-    const context = makeContext(
-      [makeSuggestion({ url: 'https://www.example.com/x', edgeDeployed: 'x' })],
-      { type: 'broken-internal-links' },
-    );
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
-  it('emits no citability when dataAccess is absent', async () => {
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/brochure.gif', { category: 'Asset' })],
+      [chatbotRow('/guide')],
       baseSite(),
       { log: { warn: sinon.spy() } },
       '2026-03-31',
     );
     expect(result.trafficRows[0].dimensions).to.deep.equal({});
-    expect(result.classificationRows[0].content_type).to.equal('gif');
-  });
-
-  it('emits no citability when the Suggestion data-access is missing', async () => {
-    const context = {
-      log: { warn: sinon.spy() },
-      dataAccess: {
-        Opportunity: {
-          allBySiteId: sinon.stub().resolves([
-            { getType: () => Audit.AUDIT_TYPES.PRERENDER, getStatus: () => 'NEW', getId: () => 'o1' },
-          ]),
-        },
-      },
-    };
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
-  it('ignores a prerender opportunity in a non-active status', async () => {
-    const context = makeContext(
-      [makeSuggestion({ url: 'https://www.example.com/x', wordCountBefore: 5, wordCountAfter: 10 })],
-      { status: 'RESOLVED' },
-    );
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
-  it('tolerates allBySiteId resolving null', async () => {
-    const context = makeContext([]);
-    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves(null);
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
-  it('tolerates allByOpportunityId resolving null', async () => {
-    const context = makeContext([]);
-    context.dataAccess.Suggestion.allByOpportunityId = sinon.stub().resolves(null);
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/x')], baseSite(), context, '2026-03-31',
-    );
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-  });
-
-  it('skips the status.json read when the scraper bucket is set but no S3 client is present', async () => {
-    const context = makeContext([
-      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 70, wordCountAfter: 100 }),
-    ]);
-    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 70,
-      deployed_at_edge: false,
-    });
-  });
-
-  it('logs and tolerates citability lookup failures', async () => {
-    const warn = sinon.spy();
-    const context = makeContext([]);
-    context.log = { warn };
-    context.dataAccess.Opportunity.allBySiteId = sinon.stub()
-      .rejects(new Error('opportunity unavailable'));
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/download/file.bin', { category: 'Asset' })],
-      baseSite(),
-      context,
-      '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({});
-    expect(result.classificationRows[0].content_type).to.equal('other');
-    expect(warn).to.have.been.calledWith(
-      'Failed to build citability map for agentic mapping: opportunity unavailable',
-    );
-  });
-
-  it('tolerates a missing status.json (NoSuchKey) without failing', async () => {
-    const context = makeContext([
-      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 60, wordCountAfter: 100 }),
-    ]);
-    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
-    const noSuchKey = Object.assign(new Error('not found'), { name: 'NoSuchKey' });
-    context.s3Client = { send: sinon.stub().rejects(noSuchKey) };
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 60,
-      deployed_at_edge: false,
-    });
-  });
-
-  it('logs unexpected status.json read errors and falls back to suggestions only', async () => {
-    const warn = sinon.spy();
-    const context = makeContext([
-      makeSuggestion({ url: 'https://www.example.com/guide', wordCountBefore: 40, wordCountAfter: 100 }),
-    ]);
-    context.log = { warn };
-    context.env = { S3_SCRAPER_BUCKET_NAME: 'scraper-bucket' };
-    context.s3Client = { send: sinon.stub().rejects(new Error('access denied')) };
-
-    const result = await mapToAgenticTrafficBundle(
-      [chatbotRow('/guide')], baseSite(), context, '2026-03-31',
-    );
-
-    expect(result.trafficRows[0].dimensions).to.deep.equal({
-      citability_score: 40,
-      deployed_at_edge: false,
-    });
-    expect(warn).to.have.been.calledWith(
-      'Could not read prerender status.json (prerender/scrapes/site-1/status.json) for agentic mapping: access denied',
-    );
   });
 
   it('uses site and row fallbacks for host, base URL, status, and timing fields', async () => {
@@ -497,7 +180,7 @@ describe('agentic traffic mapper', () => {
     });
   });
 
-  it('classifies the remaining known file extensions and tolerates absent citability', async () => {
+  it('classifies the remaining known file extensions', async () => {
     const result = await mapToAgenticTrafficBundle([
       chatbotRow('/a.webp', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
       chatbotRow('/a.svg', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
@@ -507,7 +190,8 @@ describe('agentic traffic mapper', () => {
       chatbotRow('/guide.pdf', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
       chatbotRow('/index.htm', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
       chatbotRow('/notes.txt', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
-    ], baseSite(), { log: { warn: sinon.spy() }, dataAccess: {} }, '2026-03-31');
+      chatbotRow('/download/file.bin', { number_of_hits: 1, avg_ttfb_ms: 10, category: 'Asset' }),
+    ], baseSite(), { log: { warn: sinon.spy() } }, '2026-03-31');
 
     expect(result.classificationRows.map((row) => row.content_type)).to.deep.equal([
       'webp',
@@ -518,6 +202,7 @@ describe('agentic traffic mapper', () => {
       'pdf',
       'html',
       'txt',
+      'other',
     ]);
   });
 
