@@ -1,3 +1,10 @@
+## [1.478.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.1...v1.478.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* Sitemap uses kebab-case token for its error codes ([#2674](https://github.com/adobe/spacecat-audit-worker/issues/2674)) ([04d2441](https://github.com/adobe/spacecat-audit-worker/commit/04d2441102bb076b7cbec3e969b799d3f9afb164))
+
 ## [1.478.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.0...v1.478.1) (2026-06-16)
 
 
