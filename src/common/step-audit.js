@@ -157,7 +157,11 @@ export class StepAudit extends BaseAudit {
             log.warn(
               `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit for jobId=${jobId}`,
             );
-            return handleAbort(abort, jobId, type, site, siteId, { ...context, auditContext });
+            // Pass the live context reference so the dedup marker
+            // (context.slackFailureNotifiedAt) lands on the shared object.
+            // Mutate auditContext on it rather than spreading a throwaway copy.
+            context.auditContext = auditContext;
+            return handleAbort(abort, jobId, type, site, siteId, context);
           }
           // Some URLs blocked but not all - continue audit processing
           // blockedUrlsCount should be >= 1 if abortInfo exists, but check for safety
@@ -174,8 +178,7 @@ export class StepAudit extends BaseAudit {
             // despite a partial bot-protection block. No-op when not triggered
             // from Slack.
             await say(
-              context.env,
-              log,
+              context,
               auditContext?.slackContext,
               formatBotProtectionPartialBlockMessage({
                 auditType: type,
@@ -241,16 +244,14 @@ export class StepAudit extends BaseAudit {
         // intentionally NOT covered here — its success surfaces via the
         // overall "Audit Completed" message below.
         await say(
-          context.env,
-          log,
+          context,
           auditContext?.slackContext,
           formatStepCompletionMessage(type, siteUrl, stepName),
         );
       } else {
         // Last step done — overall audit pipeline completed end-to-end.
         await say(
-          context.env,
-          log,
+          context,
           auditContext?.slackContext,
           formatAuditCompletionMessage(type, siteUrl),
         );
@@ -262,7 +263,7 @@ export class StepAudit extends BaseAudit {
       const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
 
-      // Slack notification to the originating thread (deduped via slackContext.notifiedAt).
+      // Slack notification to the originating thread (deduped via context.slackFailureNotifiedAt).
       await sendAuditFailureNotification(context, {
         type,
         siteUrl,

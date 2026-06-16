@@ -81,8 +81,7 @@ export class RunnerAudit extends BaseAudit {
       // Notify the originating Slack thread that the audit completed.
       // No-op when the audit was not triggered from Slack.
       await say(
-        context.env,
-        log,
+        context,
         auditContext?.slackContext,
         formatAuditCompletionMessage(type, siteUrl),
       );

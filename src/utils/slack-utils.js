@@ -31,31 +31,34 @@ import { formatAllowlistMessage, hasText } from '@adobe/spacecat-shared-utils';
  * client by default; if a future change makes one of them strictly more
  * capable than the other, prefer consolidating onto a single entry point.
  *
- * @param {object} env - The environment variables
- * @param {object} log - The logger
+ * @param {object} context - The Lambda context (must contain env, log; the same
+ *   shape `BaseSlackClient.createFrom` consumes — pass the real Lambda context,
+ *   not a synthetic env subset, so all keys BaseSlackClient reads from
+ *   `context.env` (SLACK_TOKEN_WORKSPACE_INTERNAL, SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+ *   SLACK_OPS_ADMINS_WORKSPACE_INTERNAL, …) are present)
  * @param {object} slackContext - The Slack context containing channelId and threadTs
  * @param {string} message - The message text to send
  * @returns {Promise<void>}
  */
-export async function say(env, log, slackContext, message) {
+export async function say(context, slackContext, message) {
+  const { log } = context;
+  // Temporary diagnostic — fires before any early-return so it proves whether
+  // this code path is reached at all on a Slack-triggered audit. Remove once
+  // we confirm Slack messages are landing.
+  if (log?.info) {
+    log.info('[slack-debug] say() called', {
+      hasChannelId: !!slackContext?.channelId,
+      hasThreadTs: !!slackContext?.threadTs,
+      hasWorkspaceToken: !!context?.env?.SLACK_TOKEN_WORKSPACE_INTERNAL,
+      hasOpsChannel: !!context?.env?.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+    });
+  }
   // No-op when not triggered from Slack (no channel/thread to reply on).
   if (!hasText(slackContext?.channelId) || !hasText(slackContext?.threadTs)) {
     return;
   }
   try {
-    const slackClientContext = {
-      channelId: slackContext.channelId,
-      threadTs: slackContext.threadTs,
-      log,
-      env: {
-        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
-        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
-        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
-      },
-    };
-    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
-    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
+    const slackClient = BaseSlackClient.createFrom(context, SLACK_TARGETS.WORKSPACE_INTERNAL);
     await slackClient.postMessage({
       channel: slackContext.channelId,
       thread_ts: slackContext.threadTs,
@@ -415,25 +418,41 @@ export async function sendAuditFailureNotification(context, {
     return;
   }
 
-  let message;
-
-  if (abort?.reason === 'bot-protection') {
-    const botIps = env?.SPACECAT_BOT_IPS;
-    const allowlistInfo = formatAllowlistMessage(botIps);
-    message = formatBotProtectionSlackMessage({
-      auditType: type,
-      siteUrl,
-      details: abort.details || {},
-      allowlistIps: allowlistInfo.ips,
-      allowlistUserAgent: allowlistInfo.userAgent,
-    });
-  } else {
-    message = formatAuditFailureMessage(type, siteUrl, error);
+  // Wrap the formatter + send in a defensive try/catch. say() already swallows
+  // its own network errors, but the formatters (formatBotProtectionSlackMessage,
+  // formatAllowlistMessage, formatAuditFailureMessage) run before say() and are
+  // NOT inside say()'s try block. A formatter throw here — called from the
+  // audit catch path — would replace the original audit error with a Slack
+  // formatting error, masking the real failure in the re-thrown `cause` chain.
+  try {
+    let message;
+    if (abort?.reason === 'bot-protection') {
+      const botIps = env?.SPACECAT_BOT_IPS;
+      const allowlistInfo = formatAllowlistMessage(botIps);
+      message = formatBotProtectionSlackMessage({
+        auditType: type,
+        siteUrl,
+        details: abort.details || {},
+        allowlistIps: allowlistInfo.ips,
+        allowlistUserAgent: allowlistInfo.userAgent,
+      });
+    } else {
+      message = formatAuditFailureMessage(type, siteUrl, error);
+    }
+    await say(context, slackContext, message);
+  } catch (notifyError) {
+    if (log) {
+      log.error('Error preparing Slack failure notification:', {
+        error: notifyError.message,
+        stack: notifyError.stack,
+        errorType: notifyError.name,
+      });
+    }
   }
-
-  await say(env, log, slackContext, message);
   // Set the dedup marker so a subsequent re-throw catcher in the same Lambda
   // invocation does not double-fire. Stays in-memory; never serialized.
+  // Marker is set even when the post threw — we don't want to retry-and-loop
+  // on a broken formatter; one log entry is enough.
   context.slackFailureNotifiedAt = new Date().toISOString();
 }
 
