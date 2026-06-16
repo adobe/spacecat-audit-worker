@@ -766,6 +766,101 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
     });
   });
 
+  describe('mapToKeywordOptimizerOpportunity — recommendedAction', () => {
+    const poorCluster = (over = {}) => makeCluster({
+      clusterId: 'c-poor',
+      overallAlignmentScore: 'poor',
+      representativeKeyword: 'okta verify app',
+      keywords: [{ keyword: 'okta verify app', traffic: 565, cpc: 1.2 }],
+      gapAnalysis: { keywordToPageGap: { explanation: 'wrong product intent', gapDescription: '' } },
+      ...over,
+    });
+
+    it('builds an exclude action listing poor clusters and their keywords', () => {
+      const message = createClusterMessage({ clusterResults: [poorCluster()] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+
+      expect(result.data.recommendedAction).to.deep.equal({
+        actionType: 'exclude',
+        totalClusters: 1,
+        totalKeywords: 1,
+        totalSearchVolume: 565,
+        clusters: [{
+          clusterId: 'c-poor',
+          representativeKeyword: 'okta verify app',
+          alignmentScore: 'poor',
+          reason: 'wrong product intent',
+          keywords: [{ keyword: 'okta verify app', searchVolume: 565 }],
+        }],
+      });
+    });
+
+    it('returns null when there are no poor clusters', () => {
+      const message = createClusterMessage({ clusterResults: [makeCluster({ overallAlignmentScore: 'good' })] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      expect(result.data.recommendedAction).to.equal(null);
+    });
+
+    it('excludes a poor cluster whose analysisStatus is failed', () => {
+      const message = createClusterMessage({ clusterResults: [poorCluster({ analysisStatus: 'failed' })] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      expect(result.data.recommendedAction).to.equal(null);
+    });
+
+    it('dedupes a keyword shared across two poor clusters in the totals', () => {
+      const a = poorCluster({ clusterId: 'a', keywords: [{ keyword: 'dup', traffic: 100 }, { keyword: 'x', traffic: 50 }] });
+      const b = poorCluster({ clusterId: 'b', keywords: [{ keyword: 'dup', traffic: 100 }] });
+      const message = createClusterMessage({ clusterResults: [a, b] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+
+      expect(result.data.recommendedAction.totalClusters).to.equal(2);
+      expect(result.data.recommendedAction.totalKeywords).to.equal(2); // dup + x, distinct
+      expect(result.data.recommendedAction.totalSearchVolume).to.equal(150); // 100 + 50, dup counted once
+    });
+
+    it('handles a poor cluster with empty keywords (contributes 0)', () => {
+      const message = createClusterMessage({ clusterResults: [poorCluster({ keywords: [] })] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      expect(result.data.recommendedAction.clusters[0].keywords).to.deep.equal([]);
+      expect(result.data.recommendedAction.totalKeywords).to.equal(0);
+      expect(result.data.recommendedAction.totalSearchVolume).to.equal(0);
+    });
+
+    it('maps keyword traffic null/undefined to searchVolume 0', () => {
+      const message = createClusterMessage({ clusterResults: [poorCluster({ keywords: [{ keyword: 'novol' }] })] });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      expect(result.data.recommendedAction.clusters[0].keywords[0].searchVolume).to.equal(0);
+    });
+
+    describe('reason resolution chain', () => {
+      const reasonOf = (gapAnalysis) => {
+        const message = createClusterMessage({ clusterResults: [poorCluster({ gapAnalysis })] });
+        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+        return result.data.recommendedAction.clusters[0].reason;
+      };
+
+      it('uses keywordToPageGap.explanation when set', () => {
+        expect(reasonOf({ keywordToPageGap: { explanation: 'why', gapDescription: 'desc' } })).to.equal('why');
+      });
+      it('falls back to gapDescription when explanation is empty', () => {
+        expect(reasonOf({ keywordToPageGap: { explanation: '  ', gapDescription: 'desc' } })).to.equal('desc');
+      });
+      it('returns null when both are empty', () => {
+        expect(reasonOf({ keywordToPageGap: { explanation: '', gapDescription: '' } })).to.equal(null);
+      });
+      it('returns null when gapAnalysis has no keywordToPageGap', () => {
+        expect(reasonOf({})).to.equal(null);
+      });
+      it('returns null when the cluster has no gapAnalysis', () => {
+        const message = createClusterMessage({
+          clusterResults: [makeCluster({ overallAlignmentScore: 'poor', gapAnalysis: undefined, keywords: [{ keyword: 'k', traffic: 1 }] })],
+        });
+        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+        expect(result.data.recommendedAction.clusters[0].reason).to.equal(null);
+      });
+    });
+  });
+
   describe('mapClusterToSuggestion', () => {
     it('creates suggestion with correct structure', () => {
       const context = { site: { requiresValidation: false } };

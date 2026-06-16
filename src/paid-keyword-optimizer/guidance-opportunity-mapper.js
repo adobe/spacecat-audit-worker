@@ -16,6 +16,64 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 const MISALIGNED_SCORES = new Set(['poor', 'fair']);
 
+// Stricter than MISALIGNED_SCORES ({poor, fair}) on purpose: only the worst-aligned clusters
+// are proposed for keyword exclusion. Product decision, v4. Widen this set to extend the policy.
+const EXCLUDE_ALIGNMENT_SCORES = new Set(['poor']);
+
+/**
+ * Resolves the "why excluded" text for a poor cluster. Only keyword->page signals justify
+ * excluding a keyword; cluster.summary / keywordToAdGap are intentionally NOT in the chain.
+ * @param {Object} cluster - cluster result
+ * @returns {string|null} reason text, or null when no source text exists
+ */
+function resolveExclusionReason(cluster) {
+  const kpg = cluster.gapAnalysis?.keywordToPageGap;
+  const candidates = [kpg?.explanation, kpg?.gapDescription];
+  const reason = candidates.find((s) => typeof s === 'string' && s.trim().length > 0);
+  return reason ? reason.trim() : null;
+}
+
+/**
+ * Builds the "exclude keywords" recommended action from poorly-aligned clusters.
+ * Totals are computed over the DISTINCT keyword set across listed clusters.
+ * @param {Array} clusterResults - cluster results from the guidance body
+ * @returns {Object|null} recommendedAction, or null when no poor clusters
+ */
+function buildRecommendedAction(clusterResults) {
+  const poor = clusterResults.filter(
+    (c) => c.analysisStatus !== 'failed' && EXCLUDE_ALIGNMENT_SCORES.has(c.overallAlignmentScore),
+  );
+  if (poor.length === 0) {
+    return null;
+  }
+
+  const clusters = poor.map((c) => ({
+    clusterId: c.clusterId,
+    representativeKeyword: c.representativeKeyword,
+    alignmentScore: c.overallAlignmentScore,
+    reason: resolveExclusionReason(c),
+    keywords: (c.keywords || []).map((k) => ({ keyword: k.keyword, searchVolume: k.traffic ?? 0 })),
+  }));
+
+  // keyword -> searchVolume (Semrush volume is market-wide, identical per keyword)
+  const distinct = new Map();
+  for (const c of clusters) {
+    for (const k of c.keywords) {
+      if (!distinct.has(k.keyword)) {
+        distinct.set(k.keyword, k.searchVolume);
+      }
+    }
+  }
+
+  return {
+    actionType: 'exclude',
+    totalClusters: clusters.length,
+    totalKeywords: distinct.size,
+    totalSearchVolume: [...distinct.values()].reduce((sum, v) => sum + v, 0),
+    clusters,
+  };
+}
+
 /**
  * Formats a currency value with $ prefix and K suffix for thousands.
  * @param {number} num - The number to format
@@ -118,6 +176,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     (sum, c) => sum + (c.clusterMisalignedSpend || 0),
     0,
   );
+  const recommendedAction = buildRecommendedAction(clusterResults);
 
   const description = 'Multiple keyword intent groups target this page. '
     + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
@@ -151,6 +210,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       resolvedPageHeading,
       pageTopics,
       whatsLikelyHappening,
+      recommendedAction,
     },
     status: 'NEW',
     tags: [
