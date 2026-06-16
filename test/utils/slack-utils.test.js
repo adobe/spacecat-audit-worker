@@ -573,6 +573,44 @@ describe('Slack Utils', () => {
       expect(slackContext).to.not.have.property('notifiedAt');
       expect(clonedSlackContext).to.not.have.property('notifiedAt');
     });
+
+    it('logs and swallows formatter errors so the audit error is not masked', async () => {
+      // Triggers formatAllowlistMessage to throw by omitting SPACECAT_BOT_IPS on
+      // the bot-protection path. The outer try/catch in sendAuditFailureNotification
+      // must log the formatter error (lines 443-451) and still set the dedup
+      // marker so a subsequent retry doesn't loop on the same broken formatter.
+      const ctx = {
+        env: {
+          SLACK_BOT_TOKEN: 'tok',
+          SLACK_TOKEN_WORKSPACE_INTERNAL: 'wtok',
+          SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: 'ops',
+          // SPACECAT_BOT_IPS deliberately omitted → formatAllowlistMessage throws
+        },
+        log: { error: sinon.stub(), info: sinon.stub() },
+      };
+      const abort = {
+        reason: 'bot-protection',
+        details: { blockedUrlsCount: 1, totalUrlsCount: 1 },
+      };
+
+      await sendAuditFailureNotification(ctx, {
+        type: 'cwv',
+        siteUrl: 'https://example.com',
+        auditContext: { slackContext: { channelId: 'C123', threadTs: '1.2' } },
+        abort,
+      });
+
+      // No Slack post — the formatter threw before say() was reached.
+      expect(mockSlackClient.postMessage.called).to.be.false;
+      // The formatter error was logged under the dedicated diagnostic key.
+      expect(ctx.log.error.calledOnce).to.be.true;
+      expect(ctx.log.error.firstCall.args[0])
+        .to.equal('Error preparing Slack failure notification:');
+      const errArg = ctx.log.error.firstCall.args[1];
+      expect(errArg.error).to.include('SPACECAT_BOT_IPS');
+      // Dedup marker still set so we don't retry-and-loop on a broken formatter.
+      expect(ctx.slackFailureNotifiedAt).to.be.a('string');
+    });
   });
 
   describe('formatAuditCompletionMessage', () => {
