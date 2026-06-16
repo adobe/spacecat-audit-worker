@@ -1,3 +1,10 @@
+## [1.477.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.1...v1.477.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **prerender:** normalize URL pathnames to lowercase to prevent case-variant duplicate suggestions ([#2665](https://github.com/adobe/spacecat-audit-worker/issues/2665)) ([1721597](https://github.com/adobe/spacecat-audit-worker/commit/1721597fbd521d969c1ee8f8c96c34ff080c9645)), closes [#2397](https://github.com/adobe/spacecat-audit-worker/issues/2397) [#2650](https://github.com/adobe/spacecat-audit-worker/issues/2650)
+
 ## [1.477.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.0...v1.477.1) (2026-06-16)
 
 
