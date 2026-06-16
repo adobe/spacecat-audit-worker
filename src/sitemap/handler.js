@@ -65,6 +65,96 @@ const SLOW_PAGE_URL_BATCH_OPTIONS = Object.freeze({
   pageUrlHttpRequestIntervalMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
 });
 
+/** Error codes where neither sitemapUrl nor recommendedAction apply (BackOffice-aligned). */
+const ERROR_CODES_WITHOUT_DETAIL = Object.freeze([
+  ERROR_CODES.CANNOT_READ_ROBOTS,
+  ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+]);
+
+/**
+ * Normalizes a string for error-type suggestion fields and buildKey segments.
+ * Missing, null, and non-string values become an empty string; strings are trimmed.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * Builds a sync key for error-type sitemap suggestions. Examples:
+ *  * cannot-read-robots||
+ *  * sitemap-not-found|https://www.example.com/sitemap.xml|
+ *  * general-error||Something horrible happened
+ *
+ * @param {Object} data
+ * @returns {string}
+ */
+export const buildSitemapErrorSuggestionKey = (data) => [
+  normalizeString(data?.error),
+  normalizeString(data?.sitemapUrl),
+  normalizeString(data?.recommendedAction),
+].join('|');
+
+/**
+ * Builds a sync key for sitemap suggestions (url or error type).
+ *
+ * @param {Object} data
+ * @returns {string}
+ */
+export const buildSitemapSuggestionKey = (data) => (
+  data?.type === 'url'
+    ? `${data.sitemapUrl}|${data.pageUrl}`
+    : buildSitemapErrorSuggestionKey(data)
+);
+
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isAbsoluteHttpUrlWithPath(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return false;
+  }
+  try {
+    const url = new URL(value.trim());
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname.length > 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Maps an audit failure reason to an error-type suggestion payload aligned with BackOffice.
+ *
+ * @param {{ error?: string, value?: string }} reason
+ * @returns {{ type: 'error', error: string, sitemapUrl: string, recommendedAction: string }}
+ */
+export function buildErrorSuggestionFromReason({ error, value }) {
+  const errorCode = normalizeString(error);
+  const suggestion = {
+    type: 'error',
+    error: errorCode,
+    sitemapUrl: '',
+    recommendedAction: '',
+  };
+
+  if (ERROR_CODES_WITHOUT_DETAIL.includes(errorCode)) {
+    return suggestion; // '/robots.txt' type of errors
+  }
+
+  if (errorCode === ERROR_CODES.GENERAL_ERROR) {
+    return {
+      ...suggestion,
+      recommendedAction: normalizeString(value), // since it has free-form text
+    };
+  }
+
+  return { // otherwise, the set of errors involving sitemap URLs
+    ...suggestion,
+    sitemapUrl: isAbsoluteHttpUrlWithPath(value) ? normalizeString(value) : '',
+  };
+}
+
 /**
  * Only return the statistics if they justify slowing down our current rate of probing.
  * Otherwise, return null.
@@ -244,7 +334,7 @@ export async function findSitemap(inputUrl, log) {
   return {
     success: false,
     reasons: [{
-      value: filteredSitemapUrls[0],
+      value: filteredSitemapUrls[0], // a sitemap URL ... granted, the 1st if there is a list
       error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
     }],
     url: inputUrl,
@@ -312,19 +402,26 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   const response = success
     ? []
-    : reasons.map(({ error }) => ({ type: 'error', error }));
+    : reasons
+      .filter((reason) => reason?.error)
+      .map((reason) => buildErrorSuggestionFromReason(reason));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
   /* c8 ignore next */
   log.info(`Sitemap: Found ${pagesWithIssues.length} pages with issues in sitemaps for ${auditUrl}`);
   const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
-    .map((issue) => ({
-      ...issue,
-      recommendedAction: issue.urlsSuggested
-        ? `use this URL instead: ${issue.urlsSuggested}`
-        : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
-    }));
+    .map((issue) => {
+      if (issue.type === 'error') {
+        return issue;
+      }
+      return { // issue.type === 'url'
+        ...issue,
+        recommendedAction: issue.urlsSuggested
+          ? `use this URL instead: ${issue.urlsSuggested}`
+          : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+      };
+    });
 
   /* c8 ignore next */
   log.info(`Sitemap audit generated ${suggestions.length} suggestions for ${auditUrl}`);
@@ -381,7 +478,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
-  const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
+  const buildKey = buildSitemapSuggestionKey;
 
   await syncSuggestions({
     opportunity,
