@@ -1,3 +1,10 @@
+# [1.478.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.3...v1.478.0) (2026-06-16)
+
+
+### Features
+
+* filter out URLs from non-english speaking regions ([#2681](https://github.com/adobe/spacecat-audit-worker/issues/2681)) ([a3e84c3](https://github.com/adobe/spacecat-audit-worker/commit/a3e84c3607a10bd815b01d5aee6a56ed39af3861))
+
 ## [1.477.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.2...v1.477.3) (2026-06-16)
 
 
