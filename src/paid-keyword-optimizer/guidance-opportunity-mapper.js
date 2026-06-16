@@ -13,6 +13,7 @@
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
+import { normalizeUrl } from './utils.js';
 
 const MISALIGNED_SCORES = new Set(['poor', 'fair']);
 
@@ -135,9 +136,10 @@ export function assignClusterRanks(clusterResults) {
  * @param {string} siteId - The site ID
  * @param {Object} audit - The audit object
  * @param {Object} message - The SQS message from mystique
+ * @param {Object} auditResult - The audit result (truthy, provided by the guidance handler)
  * @returns {Object} Opportunity entity
  */
-export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
+export function mapToKeywordOptimizerOpportunity(siteId, audit, message, auditResult) {
   const { guidance } = message.data;
   const guidanceBody = guidance?.[0]?.body || {};
   const url = message.data?.url;
@@ -178,6 +180,17 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   );
   const recommendedAction = buildRecommendedAction(clusterResults);
 
+  // auditResult is provided (and truthy) by the guidance handler, which returns early if absent.
+  const paidPages = auditResult.predominantlyPaidPages || [];
+  const matchedPage = paidPages.find((p) => normalizeUrl(p.url) === normalizeUrl(url));
+  const landingPageMetrics = matchedPage
+    ? {
+      bounceRate: matchedPage.bounceRate,
+      engagedScrollRate: matchedPage.engagedScrollRate,
+      paidTrafficShare: matchedPage.paidTrafficShare ?? null,
+    }
+    : null;
+
   const description = 'Multiple keyword intent groups target this page. '
     + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
     + `Estimated misaligned spend: ~${formatCurrency(totalMisalignedSpend)}/month (based on Semrush data).`;
@@ -211,6 +224,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       pageTopics,
       whatsLikelyHappening,
       recommendedAction,
+      landingPageMetrics,
     },
     status: 'NEW',
     tags: [

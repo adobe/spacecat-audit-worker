@@ -373,6 +373,45 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
 
       expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
     });
+
+    it('populates landingPageMetrics when auditResult has a matching predominantlyPaidPages entry', async () => {
+      Audit.findById.resolves({
+        getAuditId: () => 'auditId',
+        getAuditType: () => 'paid-keyword-optimizer',
+        getAuditResult: () => ({
+          totalPageViews: 10000,
+          averageBounceRate: 0.45,
+          predominantlyPaidPages: [{
+            url: TEST_URL,
+            bounceRate: 0.55,
+            engagedScrollRate: 0.22,
+            paidTrafficShare: 0.80,
+          }],
+        }),
+      });
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.landingPageMetrics).to.deep.equal({
+        bounceRate: 0.55,
+        engagedScrollRate: 0.22,
+        paidTrafficShare: 0.80,
+      });
+    });
+
+    it('sets landingPageMetrics to null when auditResult has no predominantlyPaidPages', async () => {
+      // Default Audit.findById mock returns no predominantlyPaidPages (set up in beforeEach)
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.landingPageMetrics).to.equal(null);
+    });
   });
 
   describe('observability logging', () => {

@@ -91,6 +91,9 @@ function createMockAudit() {
 }
 
 describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
+  // auditResult passed by the guidance handler; default mock has no predominantlyPaidPages
+  const AR = () => createMockAudit().getAuditResult();
+
   let sandbox;
 
   beforeEach(() => {
@@ -345,7 +348,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.siteId).to.equal(TEST_SITE_ID);
       expect(result.id).to.be.a('string');
@@ -360,7 +363,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
     });
@@ -374,7 +377,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.description).to.include('2 of 3 clusters show significant alignment gaps');
       expect(result.description).to.include('~$1.0K/month');
@@ -387,7 +390,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.description).to.include('~$50/month');
     });
@@ -396,7 +399,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
@@ -408,7 +411,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.url).to.equal(TEST_URL);
       expect(result.data.page).to.equal(TEST_URL);
@@ -419,7 +422,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const portfolioMetrics = { totalSpend: 5000, avgCpc: 2.5 };
       const message = createClusterMessage({ portfolioMetrics });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.portfolioMetrics).to.deep.equal(portfolioMetrics);
     });
@@ -432,7 +435,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.hasConflictingHeadlineRecommendations).to.be.true;
     });
@@ -445,7 +448,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.hasConflictingHeadlineRecommendations).to.be.false;
     });
@@ -458,7 +461,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.hasConflictingHeadlineRecommendations).to.be.false;
     });
@@ -470,7 +473,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         langfuseTraceUrl: 'https://langfuse.example.com/trace/abc',
       });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.langfuseTraceId).to.equal('trace-abc');
       expect(result.data.langfuseTraceUrl).to.equal('https://langfuse.example.com/trace/abc');
@@ -485,7 +488,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.totalClusters).to.equal(3);
       expect(result.data.misalignedClusters).to.equal(1);
@@ -509,7 +512,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.totalClusters).to.equal(2);
       expect(result.data.misalignedClusters).to.equal(1);
@@ -527,7 +530,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.misalignedClusters).to.equal(1);
     });
@@ -543,7 +546,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.misalignedClusters).to.equal(0);
     });
@@ -552,7 +555,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.tags).to.deep.equal(['Paid', 'SEO']);
     });
@@ -568,7 +571,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       };
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.totalClusters).to.equal(0);
       expect(result.data.misalignedClusters).to.equal(0);
@@ -590,7 +593,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       };
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.url).to.be.undefined;
       expect(result.data.page).to.be.undefined;
@@ -603,7 +606,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.description).to.include('~$0/month');
     });
@@ -616,7 +619,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ clusterResults: clusters });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       // c1 is failed so not counted as misaligned even though it has a recommendation
       expect(result.data.misalignedClusters).to.equal(1);
@@ -645,7 +648,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.resolvedPageHeading).to.equal('Fast, reliable email delivery');
       expect(result.data.pageTopics).to.have.lengthOf(2);
@@ -664,7 +667,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       // No extraBody — guidanceBody has neither resolvedPageHeading nor pageTopics
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.resolvedPageHeading).to.be.null;
       expect(result.data.pageTopics).to.be.an('array').that.is.empty;
@@ -679,7 +682,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.resolvedPageHeading).to.be.null;
       expect(result.data.pageTopics).to.be.an('array').that.is.empty;
@@ -705,7 +708,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       // All existing data keys still present with expected values.
       expect(result.data.url).to.equal(TEST_URL);
@@ -732,7 +735,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         },
       });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
       expect(result.guidance).to.be.null;
@@ -742,7 +745,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ extraBody: { whatsLikelyHappening: 'spend leaks here' } });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.whatsLikelyHappening).to.equal('spend leaks here');
     });
@@ -751,7 +754,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.whatsLikelyHappening).to.equal(null);
     });
@@ -760,7 +763,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({ extraBody: { whatsLikelyHappening: null } });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message, AR());
 
       expect(result.data.whatsLikelyHappening).to.equal(null);
     });
@@ -778,7 +781,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
     it('builds an exclude action listing poor clusters and their keywords', () => {
       const message = createClusterMessage({ clusterResults: [poorCluster()] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
 
       expect(result.data.recommendedAction).to.deep.equal({
         actionType: 'exclude',
@@ -797,13 +800,13 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
     it('returns null when there are no poor clusters', () => {
       const message = createClusterMessage({ clusterResults: [makeCluster({ overallAlignmentScore: 'good' })] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
       expect(result.data.recommendedAction).to.equal(null);
     });
 
     it('excludes a poor cluster whose analysisStatus is failed', () => {
       const message = createClusterMessage({ clusterResults: [poorCluster({ analysisStatus: 'failed' })] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
       expect(result.data.recommendedAction).to.equal(null);
     });
 
@@ -811,7 +814,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const a = poorCluster({ clusterId: 'a', keywords: [{ keyword: 'dup', traffic: 100 }, { keyword: 'x', traffic: 50 }] });
       const b = poorCluster({ clusterId: 'b', keywords: [{ keyword: 'dup', traffic: 100 }] });
       const message = createClusterMessage({ clusterResults: [a, b] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
 
       expect(result.data.recommendedAction.totalClusters).to.equal(2);
       expect(result.data.recommendedAction.totalKeywords).to.equal(2); // dup + x, distinct
@@ -820,7 +823,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
     it('handles a poor cluster with empty keywords (contributes 0)', () => {
       const message = createClusterMessage({ clusterResults: [poorCluster({ keywords: [] })] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
       expect(result.data.recommendedAction.clusters[0].keywords).to.deep.equal([]);
       expect(result.data.recommendedAction.totalKeywords).to.equal(0);
       expect(result.data.recommendedAction.totalSearchVolume).to.equal(0);
@@ -828,14 +831,14 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
     it('maps keyword traffic null/undefined to searchVolume 0', () => {
       const message = createClusterMessage({ clusterResults: [poorCluster({ keywords: [{ keyword: 'novol' }] })] });
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
       expect(result.data.recommendedAction.clusters[0].keywords[0].searchVolume).to.equal(0);
     });
 
     describe('reason resolution chain', () => {
       const reasonOf = (gapAnalysis) => {
         const message = createClusterMessage({ clusterResults: [poorCluster({ gapAnalysis })] });
-        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
         return result.data.recommendedAction.clusters[0].reason;
       };
 
@@ -855,7 +858,7 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
         const message = createClusterMessage({
           clusterResults: [makeCluster({ overallAlignmentScore: 'poor', gapAnalysis: undefined, keywords: [{ keyword: 'k', traffic: 1 }] })],
         });
-        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message);
+        const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, AR());
         expect(result.data.recommendedAction.clusters[0].reason).to.equal(null);
       });
     });
@@ -1016,6 +1019,64 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
       expect(result.rank).to.equal(5);
+    });
+  });
+
+  describe('mapToKeywordOptimizerOpportunity — landingPageMetrics', () => {
+    const auditResultWithPage = (over = {}) => ({
+      predominantlyPaidPages: [{
+        url: TEST_URL, bounceRate: 0.62, engagedScrollRate: 0.18, paidTrafficShare: 0.91, ...over,
+      }],
+    });
+
+    it('builds landingPageMetrics from the matching predominantlyPaidPages row', () => {
+      const result = mapToKeywordOptimizerOpportunity(
+        TEST_SITE_ID, createMockAudit(), createClusterMessage(), auditResultWithPage(),
+      );
+      expect(result.data.landingPageMetrics).to.deep.equal({
+        bounceRate: 0.62, engagedScrollRate: 0.18, paidTrafficShare: 0.91,
+      });
+    });
+
+    it('returns null when auditResult has no predominantlyPaidPages', () => {
+      const result = mapToKeywordOptimizerOpportunity(
+        TEST_SITE_ID, createMockAudit(), createClusterMessage(), {},
+      );
+      expect(result.data.landingPageMetrics).to.equal(null);
+    });
+
+    it('returns null when the opportunity URL is not in predominantlyPaidPages', () => {
+      const ar = { predominantlyPaidPages: [{ url: 'https://other/page', bounceRate: 0.5, engagedScrollRate: 0.1, paidTrafficShare: 0.8 }] };
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), createClusterMessage(), ar);
+      expect(result.data.landingPageMetrics).to.equal(null);
+    });
+
+    it('sets paidTrafficShare to null when the matched row predates the field', () => {
+      const ar = { predominantlyPaidPages: [{ url: TEST_URL, bounceRate: 0.62, engagedScrollRate: 0.18 }] };
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), createClusterMessage(), ar);
+      expect(result.data.landingPageMetrics.paidTrafficShare).to.equal(null);
+    });
+
+    it('matches the URL ignoring a www. difference', () => {
+      const ar = { predominantlyPaidPages: [{ url: 'https://www.sample-page/page1', bounceRate: 0.4, engagedScrollRate: 0.2, paidTrafficShare: 0.75 }] };
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), createClusterMessage(), ar);
+      expect(result.data.landingPageMetrics).to.deep.equal({ bounceRate: 0.4, engagedScrollRate: 0.2, paidTrafficShare: 0.75 });
+    });
+
+    // Spec B.3 final bullet: existing keys + top-level title/guidance survive WHEN the new keys are present.
+    it('preserves existing opportunity fields when the new keys are present', () => {
+      const message = createClusterMessage({ extraBody: { whatsLikelyHappening: 'narr' } });
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, createMockAudit(), message, auditResultWithPage());
+
+      expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
+      expect(result.guidance).to.equal(null);
+      expect(result.data.url).to.equal(TEST_URL);
+      expect(result.data.page).to.equal(TEST_URL);
+      expect(result.data.portfolioMetrics).to.exist;
+      expect(result.data.totalClusters).to.be.a('number');
+      expect(result.data.langfuseTraceId).to.equal('trace-123');
+      expect(result.data.whatsLikelyHappening).to.equal('narr');
+      expect(result.data.landingPageMetrics).to.not.equal(null);
     });
   });
 });

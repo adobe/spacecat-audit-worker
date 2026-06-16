@@ -123,7 +123,7 @@ export default async function handler(message, context) {
   }
 
   // Create the opportunity (1 per URL)
-  const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
+  const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message, auditResult);
   const opportunity = await Opportunity.create(entity);
   paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
