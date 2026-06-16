@@ -499,6 +499,10 @@ describe('Prerender Utils', () => {
     it('should return lowercased raw string for an invalid URL', () => {
       expect(normalizePathnameWithQuery('Not-A-URL')).to.equal('not-a-url');
     });
+
+    it('should preserve percent-encoding and lowercase hex digits (%41BC/Page → %41bc/page)', () => {
+      expect(normalizePathnameWithQuery('https://example.com/%41BC/Page')).to.equal('/%41bc/page');
+    });
   });
 
   describe('pathname-based suggestion key dedup', () => {
