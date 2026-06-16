@@ -645,6 +645,25 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Restricts the selected buckets to a single scope for granular single-audit runs.
+ * Non-scoped per-domain buckets are emptied (kept as keys so addUrlsToUrlStore stays
+ * happy); `'top-cited'` keeps only the top-cited bucket, any other value keeps only
+ * that offsite-domain bucket.
+ *
+ * @param {Object<string, string[]>} topByDomain
+ * @param {string[]} topCited
+ * @param {string} domainScope - An OFFSITE_DOMAINS key or 'top-cited'
+ * @returns {{ topByDomain: Object<string, string[]>, topCited: string[] }}
+ */
+function scopeBucketsToDomain(topByDomain, topCited, domainScope) {
+  const scoped = {};
+  for (const domain of Object.keys(topByDomain)) {
+    scoped[domain] = domain === domainScope ? topByDomain[domain] : [];
+  }
+  return { topByDomain: scoped, topCited: domainScope === 'top-cited' ? topCited : [] };
+}
+
+/**
  * Sends a Slack notification when DRS scraping was skipped before any jobs were
  * triggered (e.g. DRS not configured, or the organization has no imsOrgId).
  * Posts only when a Slack thread context is available (manual runs);
@@ -753,6 +772,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { dataAccess, log } = context;
   const { slackContext, messageData } = auditContext || {};
   const spacecatOrgId = messageData?.spacecatOrgId;
+  // Granular single-audit runs (triggered by an analysis audit that found no scraped
+  // content) scope collection + scraping to one bucket so only that audit re-triggers.
+  const domainScope = messageData?.domainScope;
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
@@ -810,9 +832,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   // Sort once, partition into per-domain + top-cited buckets
   const excludedFromTopCited = [...Object.keys(OFFSITE_DOMAINS), ...TOP_CITED_EXCLUDED_DOMAINS];
-  const {
-    topByDomain, topCited,
-  } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+  let { topByDomain, topCited } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+
+  if (domainScope) {
+    ({ topByDomain, topCited } = scopeBucketsToDomain(topByDomain, topCited, domainScope));
+    log.info(`${LOG_PREFIX} Scoped run to '${domainScope}'`);
+  }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const { skipped, results: drsResults } = await triggerDrsScraping(

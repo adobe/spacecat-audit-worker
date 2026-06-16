@@ -1547,6 +1547,36 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('Domain-scoped runs (granular single-audit triggers)', () => {
+    const MULTI = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://thirdparty.com/page';
+
+    it('scrapes only the scoped offsite domain', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'reddit.com' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.have.members([
+        SCRAPE_DATASET_IDS.REDDIT_POSTS,
+        SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      ]);
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+    });
+
+    it('scrapes only top-cited when scoped to top-cited', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'top-cited' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.deep.equal([SCRAPE_DATASET_IDS.TOP_CITED]);
+    });
+  });
+
   describe('Full Integration Flow', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
