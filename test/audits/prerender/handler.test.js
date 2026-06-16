@@ -1072,6 +1072,28 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
+        it('should filter out URLs where needsPrerender is false but scrapingStatus is success', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-success',
+            'https://example.com/agentic-other',
+          ];
+          // Page was scraped successfully but didn't need prerender — still counts as recently processed
+          const recentPage = {
+            url: 'https://example.com/agentic-success',
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: false,
+            scrapingStatus: 'success',
+          };
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([recentPage]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.not.include('https://example.com/agentic-success');
+          expect(resultUrls).to.include('https://example.com/agentic-other');
+        });
+
         it('should include agentic URLs when status.json has no recent pages', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
