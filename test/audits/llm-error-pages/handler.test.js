@@ -15,6 +15,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { upsertWeekHistory } from '../../../src/llm-error-pages/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -345,6 +346,10 @@ describe('LLM Error Pages Handler', function () {
   });
 
   describe('runAuditAndSendToMystique', () => {
+    beforeEach(() => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'false';
+    });
+
     it('should run audit, generate reports, and send to Mystique successfully', async () => {
       const result = await runAuditAndSendToMystique(context);
 
@@ -535,6 +540,419 @@ describe('LLM Error Pages Handler', function () {
       expect(brokenLink.urlTo).to.include('/same-page');
       expect(brokenLink.urlFrom).to.include('ChatGPT');
       expect(brokenLink.urlFrom).to.include('Perplexity');
+    });
+
+    // observation:llm-broken-urls dual-publish. On by default; set
+    // OBSERVATION_LLM_BROKEN_URLS_ENABLED='false' to disable.
+
+    // Tests upstream of this block identity-mock consolidateErrorsByUrl, so they
+    // use the raw Athena shape (user_agent / total_requests). The observation
+    // publish reads the consolidated shape (totalRequests / rawUserAgents), so
+    // these tests provide pre-consolidated rows directly.
+    const _consolidatedRow = ({
+      url, totalRequests, rawUserAgents, userAgent = rawUserAgents[0],
+    }) => ({
+      url,
+      status: 404,
+      userAgent,
+      rawUserAgents,
+      totalRequests,
+      user_agent: userAgent,
+      total_requests: totalRequests,
+    });
+
+    it('publishes observation:llm-broken-urls by default when flag is unset', async () => {
+      delete context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED;
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      expect(observationMessage.type).to.equal('observation:llm-broken-urls');
+    });
+
+    it('does not publish observation:llm-broken-urls when flag is "false"', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'false';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.firstCall.args;
+      expect(message.type).to.equal('guidance:llm-error-pages');
+    });
+
+    it('publishes observation:llm-broken-urls for any value other than "false"', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+      for (const v of ['true', '1', 'yes', 'on', 'TRUE', '', 'true ', ' true', true]) {
+        context.sqs.sendMessage.resetHistory();
+        context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = v;
+        // eslint-disable-next-line no-await-in-loop
+        await runAuditAndSendToMystique(context);
+        expect(context.sqs.sendMessage, `value=${v}`).to.have.been.calledTwice;
+        const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+        expect(observationMessage.type, `value=${v}`).to.equal('observation:llm-broken-urls');
+      }
+    });
+
+    it('publishes observation:llm-broken-urls alongside the legacy message when flag is on', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          _consolidatedRow({ url: '/dead-1', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+          _consolidatedRow({ url: '/dead-2', totalRequests: 9, rawUserAgents: ['GPTBot'] }),
+        ],
+        summary: { uniqueUrls: 2, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      expect(observationMessage.type).to.equal('observation:llm-broken-urls');
+    });
+
+    it('observation message body matches the mystique wire schema', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage).to.have.property('type', 'observation:llm-broken-urls');
+      expect(observationMessage).to.have.property('siteId', 'site-id-123');
+      expect(observationMessage).to.have.property('auditId');
+      expect(observationMessage).to.have.property('baseURL', 'https://example.com');
+      expect(observationMessage).to.have.property('deliveryType');
+      expect(observationMessage).to.have.property('time').that.is.a('string');
+      expect(observationMessage.data).to.have.property('period');
+      expect(observationMessage.data.period.start).to.match(/^\d{4}-\d{2}-\d{2}T/);
+      expect(observationMessage.data.period.end).to.match(/^\d{4}-\d{2}-\d{2}T/);
+      expect(observationMessage.data.urls).to.be.an('array').with.lengthOf(1);
+      const urlEntry = observationMessage.data.urls[0];
+      // Wire schema uses `observedThrough` (not `lastSeen`) — see helper
+      // comment in handler.js. Pin to the audit-window end value so a
+      // future refactor that swaps in `new Date().toISOString()` would
+      // fail this test instead of silently shipping wrong semantics.
+      expect(urlEntry).to.have.all.keys(
+        'url', 'hits', 'userAgents', 'observedThrough',
+        // CDN-log trend facets (spacecat #2655) the ELMO UI renders.
+        'periodIdentifier', 'agentTypes', 'avgTtfb', 'category', 'product', 'countryCode',
+      );
+      expect(urlEntry.url).to.include('/dead');
+      expect(urlEntry.hits).to.equal(47);
+      expect(urlEntry.userAgents).to.deep.equal(['ChatGPT']);
+      expect(urlEntry.observedThrough).to.equal(observationMessage.data.period.end);
+      // This row carries no facet fields → safe defaults (proves the
+      // backwards-compatible path; a facet-rich row is covered separately).
+      expect(urlEntry.periodIdentifier).to.be.a('string');
+      expect(urlEntry.agentTypes).to.deep.equal([]);
+      expect(urlEntry.avgTtfb).to.equal('');
+      expect(urlEntry.category).to.equal('');
+      expect(urlEntry.product).to.equal(null);
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation carries CDN-log trend facets (agentTypes/avgTtfb/category/product/countryCode) when present', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // A raw categorized row carrying the facets groupErrorsByUrl aggregates.
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          agent_type: 'Training bots',
+          avg_ttfb_ms: 131,
+          country_code: 'US',
+          product: 'Other',
+          category: 'static asset',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.agentTypes).to.deep.equal(['Training bots']);
+      // avgTtfb stringified to match mystique's string field.
+      expect(urlEntry.avgTtfb).to.equal('131');
+      expect(urlEntry.category).to.equal('static asset');
+      expect(urlEntry.product).to.equal('Other');
+      expect(urlEntry.countryCode).to.equal('US');
+    });
+
+    it('observation falls back to safe defaults for empty periodIdentifier and country_code', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Empty periodIdentifier exercises the `periodIdentifier || ''` fallback;
+      // an explicit empty country_code survives the `?? 'GLOBAL'` build-stage
+      // default and exercises the output-stage `countryCode || 'GLOBAL'` fallback.
+      mockGenerateReportingPeriods.returns({
+        weeks: [{
+          weekNumber: 34,
+          year: 2025,
+          startDate: new Date('2025-08-18T00:00:00Z'),
+          endDate: new Date('2025-08-24T23:59:59Z'),
+          periodIdentifier: '',
+        }],
+      });
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          country_code: '',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.periodIdentifier).to.equal('');
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {
+      // Existing consolidateErrorsByUrl keys by (url, provider) — same URL hit
+      // by N providers produces N entries. The observation wire format wants
+      // ONE entry per URL with userAgents unioned.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          _consolidatedRow({ url: '/same-page', totalRequests: 10, rawUserAgents: ['ChatGPT'] }),
+          _consolidatedRow({ url: '/same-page', totalRequests: 5, rawUserAgents: ['Perplexity'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.data.urls).to.have.lengthOf(1);
+      const entry = observationMessage.data.urls[0];
+      expect(entry.url).to.include('/same-page');
+      // Hits are summed across providers.
+      expect(entry.hits).to.equal(15);
+      // userAgents are unioned across providers.
+      expect(entry.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
+    });
+
+    it('observation publish is skipped when baseURL is missing even with flag on', async () => {
+      // Defense in depth: a misconfigured site without a baseURL would emit a
+      // payload mystique rejects at the HttpUrl boundary. Skip cleanly with
+      // a warning instead of generating poison messages.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Make getBaseURL return falsy
+      context.site.getBaseURL = () => '';
+
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 5, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy message still sent (baseURL absence handled within its own block);
+      // observation publish skipped.
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No baseURL available — skipping observation:llm-broken-urls/),
+      );
+    });
+
+    it('observation publish handles missing optional fields with safe fallbacks', async () => {
+      // Defensive: covers the `|| 0`, `|| []`, `|| null` fallback branches
+      // for entries with missing totalRequests / rawUserAgents and a site
+      // without auditId / deliveryType.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      context.audit = null; // → auditId resolves to null
+      context.site.getDeliveryType = undefined; // → deliveryType resolves to null
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          // Missing totalRequests and rawUserAgents — but include legacy
+          // snake_case fields so the legacy message-build path doesn't crash.
+          {
+            url: '/sparse',
+            status: 404,
+            userAgent: 'Bot',
+            user_agent: 'Bot',
+            total_requests: 1,
+          },
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.auditId).to.be.null;
+      expect(observationMessage.deliveryType).to.be.null;
+      const entry = observationMessage.data.urls[0];
+      expect(entry.hits).to.equal(0); // totalRequests missing → fallback to 0
+      expect(entry.userAgents).to.deep.equal([]); // rawUserAgents missing → fallback to []
+    });
+
+    it('observation publish caps user-agents at 50 per URL and 512 chars each (defense in depth)', async () => {
+      // Mystique-side enforces these caps via Pydantic. Audit-worker normalizes
+      // UAs so the cap is rarely hit, but a hostile log record shouldn't be
+      // able to blow up the SQS body. Cover the slice/truncate path.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      const longUa = 'A'.repeat(1000); // > 512 chars
+      const manyUas = Array.from({ length: 60 }, (_, i) => `ua-${i}`); // > 50 cap
+      manyUas.push(longUa);
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/popular', totalRequests: 100, rawUserAgents: manyUas }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 61 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(observationMessage.data.urls).to.have.lengthOf(1);
+      const entry = observationMessage.data.urls[0];
+      expect(entry.userAgents.length).to.be.at.most(50);
+      entry.userAgents.forEach((ua) => {
+        expect(ua.length).to.be.at.most(512);
+      });
+    });
+
+    it('observation publish failure does NOT propagate (legacy publish unaffected, audit succeeds)', async () => {
+      // The whole point of dual-publish behind a flag is that the new
+      // (shadow) path cannot regress the production (legacy) path. If
+      // the observation sendMessage rejects, the audit run must still
+      // succeed and SQS must not re-deliver the inbound audit message
+      // (which would cause a DUPLICATE legacy publish).
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 5, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      // First call (legacy) succeeds, second call (observation) throws.
+      context.sqs.sendMessage
+        .onFirstCall().resolves()
+        .onSecondCall().rejects(new Error('simulated SQS throttle'));
+
+      // Must NOT throw — the helper's try/catch contains the failure.
+      const result = await runAuditAndSendToMystique(context);
+
+      // Legacy publish recorded; observation publish attempted and caught.
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      // Error logged, not thrown.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to publish observation:llm-broken-urls/),
+      );
+      // Audit result for the week is still success — the legacy path
+      // was the actual production-critical write and it succeeded.
+      expect(result.auditResult.some((r) => r.success === true)).to.be.true;
+    });
+
+    it('observation publish is skipped (with a warn log) when site has no baseURL configured', async () => {
+      // `messageBaseUrl` comes from `site.getBaseURL()`. If that returns
+      // an empty string, the legacy publish still emits relative paths
+      // (its `new URL` is gated by `messageBaseUrl ? ... : path`) but the
+      // observation publish has nothing to anchor against — emit a warn
+      // and skip rather than send a message with broken URLs.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      context.site.getBaseURL = () => '';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/x', totalRequests: 1, rawUserAgents: ['Bot1'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped (no second call).
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No baseURL available/),
+      );
+    });
+
+    it('observation publish skips when serialized message exceeds size budget', async () => {
+      // SQS standard-queue cap is 256 KB. A pathological payload (many
+      // URLs each with the maximum number of maximum-length UAs) can
+      // exceed the safety budget; skip rather than throw + fail the
+      // audit.
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // 50 unique 512-char UAs per URL × 50 URLs. UAs MUST be unique
+      // because the helper stores them in a Set; identical strings
+      // collapse to one entry and the payload stays small.
+      const uniqueUas = (urlIdx) => Array.from(
+        { length: 50 },
+        (_, j) => `${'A'.repeat(500)}-u${urlIdx}-${j.toString().padStart(3, '0')}`,
+      );
+      const errorPages = Array.from({ length: 50 }, (_, i) => (
+        _consolidatedRow({ url: `/dead-${i}`, totalRequests: 1, rawUserAgents: uniqueUas(i) })
+      ));
+      mockProcessResults.returns({
+        totalErrors: errorPages.length,
+        errorPages,
+        summary: { uniqueUrls: errorPages.length, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      // Legacy publish present, observation publish skipped due to size.
+      const observationCalls = context.sqs.sendMessage.getCalls().filter(
+        (c) => c.args[1]?.type === 'observation:llm-broken-urls',
+      );
+      expect(observationCalls).to.have.lengthOf(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/exceeds budget/),
+      );
     });
 
     it('should generate separate Excel files for 404, 403, and 5xx', async () => {
@@ -1544,7 +1962,10 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       Opportunity: {
         allBySiteIdAndStatus: sandbox.stub().resolves(overrides.existingOpportunities || []),
       },
-      Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      Suggestion: {
+        bulkUpdateStatus: sandbox.stub().resolves(),
+        removeByIds: sandbox.stub().resolves(),
+      },
     },
     ...overrides.contextOverrides,
   });
@@ -1650,10 +2071,75 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     expect(merged.confidenceScore).to.be.undefined;
   });
 
+  it('mapNewSuggestion seeds data.history with this week as the first entry', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+    const mapped = mapNewSuggestion({
+      url: '/p1',
+      httpStatus: 404,
+      hitCount: 10,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+    expect(mapped.data.history).to.have.lengthOf(1);
+    expect(mapped.data.history[0]).to.deep.equal({
+      periodIdentifier: 'w15-2026',
+      hitCount: 10,
+      httpStatus: 404,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT'],
+      avgTtfb: '50.0',
+    });
+  });
+
+  it('mergeDataFunction appends the current week to an existing data.history', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        history: [{
+          periodIdentifier: 'w14-2026',
+          hitCount: 7,
+          httpStatus: 404,
+          agentTypes: ['Chatbots'],
+          userAgents: ['ChatGPT'],
+          avgTtfb: '40.0',
+        }],
+      },
+      {
+        hitCount: 99,
+        httpStatus: 404,
+        agentTypes: ['Chatbots'],
+        userAgents: ['Claude'],
+        avgTtfb: '30.0',
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.hitCount).to.equal(99);
+    expect(merged.history).to.have.lengthOf(2);
+    expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
+    expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
+  });
+
   it('runs retention sweep on existing opportunity for empty buckets', async () => {
     const sandbox = sinon.createSandbox();
 
     const staleSuggestion = {
+      getId: () => 'sug-403-stale',
       getData: () => ({ url: '/old', periodIdentifier: 'w01-2025' }),
       getStatus: () => 'NEW',
     };
@@ -1675,18 +2161,16 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     await handler.runAuditAndSendToMystique(ctx);
 
     expect(staleOpportunity.getSuggestions).to.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledWith(['sug-403-stale']);
     sandbox.restore();
   });
 
-  it('skips suggestions with no periodIdentifier in retention check', async () => {
+  it('does NOT delete a suggestion with no periodIdentifier (age unknowable)', async () => {
     const sandbox = sinon.createSandbox();
     const sugWithoutPeriod = {
+      getId: () => 'sug-legacy',
       getData: () => ({ url: '/legacy' }),
       getStatus: () => 'NEW',
-    };
-    const sugWithTerminal = {
-      getData: () => ({ url: '/done', periodIdentifier: 'w01-2020' }),
-      getStatus: () => 'RESOLVED',
     };
     const oldOpp = {
       getId: () => 'opp-404',
@@ -1695,7 +2179,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       setStatus: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod, sugWithTerminal]),
+      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod]),
     };
     const { handler, mockConvertToOpportunity } = await buildHandler(sandbox, {
       convertToOpportunity: sandbox.stub().resolves(oldOpp),
@@ -1704,14 +2188,83 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     expect(mockConvertToOpportunity).to.have.been.called;
     sandbox.restore();
   });
 
-  it('calls bulkUpdateStatus when suggestions are stale', async () => {
+  const sweepWith = async (sandbox, { status, parseResult }) => {
+    const staleSug = {
+      getId: () => 'sug-stale',
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => status,
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(parseResult),
+    });
+    const ctx = buildContext(sandbox);
+    await handler.runAuditAndSendToMystique(ctx);
+    return ctx;
+  };
+
+  it('DELETES a stale system-managed (NEW) suggestion past the window', async () => {
     const sandbox = sinon.createSandbox();
-    const stale = {
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.have.been.calledOnceWith(['sug-stale']);
+    sandbox.restore();
+  });
+
+  it('does NOT delete a customer-actioned terminal suggestion (FIXED audit trail), even when stale', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'FIXED', parseResult: new Date('2020-01-01T00:00:00Z') });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete/outdate a suggestion with an unparseable periodIdentifier (epoch sentinel → skip)', async () => {
+    const sandbox = sinon.createSandbox();
+    const ctx = await sweepWith(sandbox, { status: 'NEW', parseResult: new Date(0) });
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT outdate a SKIPPED suggestion in the middle tier (customer action preserved)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'SKIPPED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT re-outdate an already-OUTDATED suggestion in the middle tier (only NEW ages out)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fiveWeeksAgo = new Date(Date.now() - 5 * 7 * 24 * 60 * 60 * 1000);
+    const ctx = await sweepWith(sandbox, { status: 'OUTDATED', parseResult: fiveWeeksAgo });
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('skips the retention sweep entirely in backfill mode (weekOffset set)', async () => {
+    const sandbox = sinon.createSandbox();
+    const staleSug = {
+      getId: () => 'sug-stale',
       getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
       getStatus: () => 'NEW',
     };
@@ -1722,17 +2275,149 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       setStatus: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      getSuggestions: sandbox.stub().resolves([stale]),
+      getSuggestions: sandbox.stub().resolves([staleSug]),
     };
     const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
       convertToOpportunity: sandbox.stub().resolves(opp),
-      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // epoch → always stale
+      parsePeriodIdentifier: sandbox.stub().returns(new Date('2020-01-01T00:00:00Z')),
+    });
+    const ctx = buildContext(sandbox);
+    ctx.auditContext = { weekOffset: -1 };
+    await handler.runAuditAndSendToMystique(ctx);
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT delete a suggestion whose URL appears in the current run', async () => {
+    const sandbox = sinon.createSandbox();
+    const currentUrlSug = {
+      getId: () => 'sug-current',
+      getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([currentUrlSug]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)),
     });
     const ctx = buildContext(sandbox);
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith([stale], 'OUTDATED');
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  const weeksAgo = (n) => new Date(Date.now() - n * 7 * 24 * 60 * 60 * 1000);
+
+  it('marks a suggestion OUTDATED when last seen 5-6 weeks ago (middle tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const midTier = {
+      getId: () => 'sug-mid',
+      getData: () => ({ url: '/gone', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([midTier]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith([midTier], 'OUTDATED');
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('leaves a suggestion NEW when last seen within 4 weeks (fresh tier)', async () => {
+    const sandbox = sinon.createSandbox();
+    const fresh = {
+      getId: () => 'sug-fresh',
+      getData: () => ({ url: '/recent', periodIdentifier: 'w22-2026' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fresh]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(2)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('does NOT flip a terminal-state suggestion to OUTDATED in the middle tier', async () => {
+    const sandbox = sinon.createSandbox();
+    const fixedMid = {
+      getId: () => 'sug-fixed-mid',
+      getData: () => ({ url: '/fixed', periodIdentifier: 'w19-2026' }),
+      getStatus: () => 'FIXED',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getStatus: () => 'NEW',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([fixedMid]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(weeksAgo(5)),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -1912,9 +2597,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // /p1 is in scrapedUrlsSet (it's the 404 URL in default fixture), so it
-    // must NOT appear in the OUTDATED batch even though the period parses as stale.
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -1940,8 +2623,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
 
     await handler.runAuditAndSendToMystique(ctx);
 
-    // Suggestion with null data is gracefully skipped (no lastSeen → return false).
-    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.removeByIds).to.not.have.been.called;
     sandbox.restore();
   });
 
@@ -2070,5 +2752,62 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     // 403 and 5xx still synced — proves per-bucket isolation.
     expect(mockSyncSuggestions).to.have.been.calledTwice;
     sandbox.restore();
+  });
+});
+
+describe('LLM Error Pages Handler — upsertWeekHistory', () => {
+  const entry = (periodIdentifier, hitCount = 1) => ({
+    periodIdentifier,
+    hitCount,
+    httpStatus: 404,
+    agentTypes: ['Chatbots'],
+    userAgents: ['ChatGPT'],
+    avgTtfb: '50.0',
+  });
+
+  it('seeds history when there is none (undefined existing)', () => {
+    const result = upsertWeekHistory(undefined, entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('treats a non-array existing history as empty (defensive)', () => {
+    const result = upsertWeekHistory('not-an-array', entry('w15-2026'));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].periodIdentifier).to.equal('w15-2026');
+  });
+
+  it('appends a new week and orders oldest-first by ISO week', () => {
+    const result = upsertWeekHistory([entry('w12-2026'), entry('w10-2026')], entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w10-2026', 'w12-2026', 'w15-2026']);
+  });
+
+  it('replaces (does not duplicate) a re-run of the same week — idempotent', () => {
+    const result = upsertWeekHistory([entry('w15-2026', 7)], entry('w15-2026', 99));
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].hitCount).to.equal(99);
+  });
+
+  it('prunes to the most recent RETENTION_WEEKS (6) entries', () => {
+    const existing = [
+      entry('w10-2026'), entry('w11-2026'), entry('w12-2026'),
+      entry('w13-2026'), entry('w14-2026'), entry('w15-2026'),
+    ];
+    const result = upsertWeekHistory(existing, entry('w16-2026'));
+    expect(result).to.have.lengthOf(6);
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal([
+      'w11-2026', 'w12-2026', 'w13-2026', 'w14-2026', 'w15-2026', 'w16-2026',
+    ]);
+  });
+
+  it('skips malformed existing entries lacking a periodIdentifier', () => {
+    const existing = [entry('w12-2026'), { hitCount: 5 }, null];
+    const result = upsertWeekHistory(existing, entry('w15-2026'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['w12-2026', 'w15-2026']);
+  });
+
+  it('orders an unparseable periodIdentifier (epoch fallback) before real weeks', () => {
+    const result = upsertWeekHistory([entry('w15-2026')], entry('garbage'));
+    expect(result.map((h) => h.periodIdentifier)).to.deep.equal(['garbage', 'w15-2026']);
   });
 });
