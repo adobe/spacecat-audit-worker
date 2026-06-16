@@ -1,3 +1,10 @@
+## [1.476.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.3...v1.476.4) (2026-06-16)
+
+
+### Bug Fixes
+
+* **cwv:** filter out 4xx URLs from CWV opportunities (SITES-40803) ([#2034](https://github.com/adobe/spacecat-audit-worker/issues/2034)) ([cfa74e3](https://github.com/adobe/spacecat-audit-worker/commit/cfa74e33ebc24bfb84aafdf7318219b09823e7b8))
+
 ## [1.476.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.2...v1.476.3) (2026-06-16)
 
 
