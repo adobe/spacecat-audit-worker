@@ -1008,7 +1008,7 @@ export async function submitForScraping(context) {
     const agenticUrls = await getTopAgenticUrls(site, context);
     agenticUrlsCount = agenticUrls.length;
 
-    // Daily batching: filter URLs recently scraped within the rolling recent window
+    // Daily batching: filter URLs recently processed within the rolling recent window
     const recentPathnames = getRecentlyProcessedPathnames(siteStatus);
     edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
 
