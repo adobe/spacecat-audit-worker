@@ -462,7 +462,13 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
     // Get paid traffic rows for predominantly paid paths
     const predominantlyPaidPages = predominantlyPaidPaths
       .map((path) => getPaidTrafficRow(pathTrafficMap, path))
-      .filter((row) => row !== null);
+      .filter((row) => row !== null)
+      .map((row) => {
+        const td = pathTrafficMap.get(row.path);
+        // total > 0 is guaranteed here: only predominantly-paid paths reach this point
+        // (isPredominantlyPaid filters out total === 0). No ternary -> no dead branch.
+        return { ...row, paidTrafficShare: td.paid / td.total };
+      });
 
     // Calculate statistics
     const totalPageViews = predominantlyPaidPages

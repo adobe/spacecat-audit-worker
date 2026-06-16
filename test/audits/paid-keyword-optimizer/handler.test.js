@@ -1670,6 +1670,15 @@ describe('Paid Keyword Optimizer Audit', () => {
       const weekClauses = result.auditResult.temporalCondition.split(' OR ');
       expect(weekClauses.length).to.be.at.least(4);
     });
+
+    it('attaches paidTrafficShare = paid / total to each predominantly-paid page', async () => {
+      const result = await paidKeywordOptimizerRunner(auditUrl, context, site);
+      const byPath = new Map(
+        result.auditResult.predominantlyPaidPages.map((p) => [p.path, p]),
+      );
+      expect(byPath.get('/page1').paidTrafficShare).to.be.closeTo(1000 / 1100, 1e-9);
+      expect(byPath.get('/page2').paidTrafficShare).to.be.closeTo(800 / 850, 1e-9);
+    });
   });
 
 });
