@@ -120,6 +120,10 @@ describe('Offsite Brand Presence Handler', () => {
     };
 
     context = { dataAccess, env, log };
+    context.sqs = context.sqs || { sendMessage: sandbox.stub().resolves() };
+    context.dataAccess.Configuration = context.dataAccess.Configuration || {
+      findLatest: sandbox.stub().resolves({ getQueues: () => ({ audits: 'audits-queue-url' }) }),
+    };
   });
 
   afterEach(() => {
@@ -464,7 +468,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
-      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(0);
+      // wikipedia is no longer a scraped offsite domain, so it is not counted.
+      expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
       expect(result.fullAuditRef).to.equal(FINAL_URL);
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No offsite URLs found/),
@@ -599,15 +604,23 @@ describe('Offsite Brand Presence Handler', () => {
       expect(auditTypes).to.include('reddit-analysis');
     });
 
-    it('should add wikipedia URLs to URL store with wikipedia-analysis audit type', async () => {
+    it('does not store or scrape wikipedia URLs (analyzed independently by Mystique)', async () => {
       stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const createCalls = dataAccess.AuditUrl.create.getCalls();
-      const wikiCalls = createCalls.filter((c) => c.args[0].audits[0] === 'wikipedia-analysis');
-      expect(wikiCalls).to.have.lengthOf(1);
-      expect(wikiCalls[0].args[0].url).to.include('wikipedia.org');
+      // Recognized for exclusion only: not bucketed, persisted, or scraped.
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+    });
+
+    it('excludes a bare wikipedia.org host (exact match, no subdomain)', async () => {
+      stubBrandPresenceData(['https://wikipedia.org/wiki/Adobe']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
   });
 
@@ -1200,17 +1213,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(commentsCall.args[0]).to.not.have.property('sortBy');
     });
 
-    it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {
+    it('does not submit a DRS scrape job for wikipedia URLs', async () => {
       stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(mockSubmitScrapeJob).to.have.been.calledOnce;
-      expect(mockSubmitScrapeJob.firstCall.args[0]).to.deep.include({
-        datasetId: SCRAPE_DATASET_IDS.WIKIPEDIA,
-        siteId: SITE_ID,
-      });
-      expect(mockSubmitScrapeJob.firstCall.args[0].urls[0]).to.include('wikipedia.org');
+      // Not scraped and excluded from top-cited, so no job for a wikipedia-only run.
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
 
     it('should handle DRS API returning error response', async () => {
@@ -1295,7 +1304,8 @@ describe('Offsite Brand Presence Handler', () => {
       const auditContext = { messageData: { spacecatOrgId: 'org-multi' } };
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
-      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      // youtube (2) + reddit (2) + top-cited (1); wikipedia is excluded, not scraped.
+      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
       for (const call of mockSubmitScrapeJob.getCalls()) {
         expect(call.args[0].spacecatOrgId).to.equal('org-multi');
       }
@@ -1494,6 +1504,53 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('DRS status poll scheduling', () => {
+    it('enqueues a poll message when a Slack thread and a successful job exist', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg, groupId, delaySeconds] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
+      expect(msg.siteId).to.equal(SITE_ID);
+      expect(msg.auditContext.slackContext).to.deep.equal({ channelId: 'C123', threadTs: '111.222' });
+      expect(msg.auditContext.jobs[0]).to.include({ jobId: 'mock-job' });
+      expect(msg.auditContext.deadline).to.be.a('number');
+      expect(groupId).to.equal(null);
+      expect(delaySeconds).to.equal(120);
+    });
+
+    it('does not enqueue a poll message without a Slack thread context', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not enqueue a poll message when all DRS jobs failed (no successful job_id)', async () => {
+      mockSubmitScrapeJob.rejects(new Error('DRS error'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not fail the run when scheduling the poll throws', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS unavailable'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+    });
+  });
+
   describe('Full Integration Flow', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
@@ -1507,8 +1564,10 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(1);
-      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      // wikipedia is not scraped/counted and stays out of top-cited (cited-analysis).
+      expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
+      // youtube (2) + reddit (2) + top-cited (1) = 5 jobs, no wikipedia.
+      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
       expect(result.fullAuditRef).to.equal(FINAL_URL);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();

@@ -346,6 +346,10 @@ describe('LLM Error Pages Handler', function () {
   });
 
   describe('runAuditAndSendToMystique', () => {
+    beforeEach(() => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'false';
+    });
+
     it('should run audit, generate reports, and send to Mystique successfully', async () => {
       const result = await runAuditAndSendToMystique(context);
 
@@ -538,43 +542,13 @@ describe('LLM Error Pages Handler', function () {
       expect(brokenLink.urlFrom).to.include('Perplexity');
     });
 
-    // =========================================================================
-    // observation:llm-broken-urls dual-publish (Phase 3 shadow validation).
-    // Feature-flagged behind OBSERVATION_LLM_BROKEN_URLS_ENABLED. Off by default
-    // so PR 4 can land safely before mystique PR #2490 + #200 merge.
-    // =========================================================================
+    // observation:llm-broken-urls dual-publish. On by default; set
+    // OBSERVATION_LLM_BROKEN_URLS_ENABLED='false' to disable.
 
-    it('does not publish observation:llm-broken-urls when feature flag is unset', async () => {
-      // Default: env flag absent → only legacy message published (current behaviour).
-      await runAuditAndSendToMystique(context);
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const [, message] = context.sqs.sendMessage.firstCall.args;
-      expect(message.type).to.equal('guidance:llm-error-pages');
-    });
-
-    it('does not publish observation:llm-broken-urls when flag is anything except literal "true"', async () => {
-      // Strict 'true' comparison — '1', 'yes', 'on', boolean true, even
-      // 'true ' with trailing space all do nothing. Matches the
-      // explicit-opt-in posture for a feature gating production traffic.
-      // Also verifies the single call is the LEGACY message — not an
-      // accidental observation publish — so a future flip of the
-      // conditional inside the helper would fail this test.
-      for (const v of ['false', '1', 'yes', 'on', 'TRUE', '', 'true ', ' true', true]) {
-        context.sqs.sendMessage.resetHistory();
-        context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = v;
-        // eslint-disable-next-line no-await-in-loop
-        await runAuditAndSendToMystique(context);
-        expect(context.sqs.sendMessage, `value=${v}`).to.have.been.calledOnce;
-        const [, message] = context.sqs.sendMessage.firstCall.args;
-        expect(message.type, `value=${v}`).to.equal('guidance:llm-error-pages');
-      }
-    });
-
-    // Helper: tests upstream of this block identity-mock consolidateErrorsByUrl,
-    // so test fixtures use the raw Athena shape (user_agent / total_requests).
-    // The observation publish reads the *consolidated* shape produced by the
-    // real `consolidateErrorsByUrl` (totalRequests / rawUserAgents), so these
-    // tests provide pre-consolidated rows directly.
+    // Tests upstream of this block identity-mock consolidateErrorsByUrl, so they
+    // use the raw Athena shape (user_agent / total_requests). The observation
+    // publish reads the consolidated shape (totalRequests / rawUserAgents), so
+    // these tests provide pre-consolidated rows directly.
     const _consolidatedRow = ({
       url, totalRequests, rawUserAgents, userAgent = rawUserAgents[0],
     }) => ({
@@ -583,10 +557,63 @@ describe('LLM Error Pages Handler', function () {
       userAgent,
       rawUserAgents,
       totalRequests,
-      // Snake-case fallbacks so the OTHER (legacy) message-build code path
-      // that reads `user_agent` / `total_requests` doesn't see undefined.
       user_agent: userAgent,
       total_requests: totalRequests,
+    });
+
+    it('publishes observation:llm-broken-urls by default when flag is unset', async () => {
+      delete context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED;
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const [, legacyMessage] = context.sqs.sendMessage.firstCall.args;
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      expect(legacyMessage.type).to.equal('guidance:llm-error-pages');
+      expect(observationMessage.type).to.equal('observation:llm-broken-urls');
+    });
+
+    it('does not publish observation:llm-broken-urls when flag is "false"', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'false';
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.firstCall.args;
+      expect(message.type).to.equal('guidance:llm-error-pages');
+    });
+
+    it('publishes observation:llm-broken-urls for any value other than "false"', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          _consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['ChatGPT'] }),
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+      for (const v of ['true', '1', 'yes', 'on', 'TRUE', '', 'true ', ' true', true]) {
+        context.sqs.sendMessage.resetHistory();
+        context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = v;
+        // eslint-disable-next-line no-await-in-loop
+        await runAuditAndSendToMystique(context);
+        expect(context.sqs.sendMessage, `value=${v}`).to.have.been.calledTwice;
+        const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+        expect(observationMessage.type, `value=${v}`).to.equal('observation:llm-broken-urls');
+      }
     });
 
     it('publishes observation:llm-broken-urls alongside the legacy message when flag is on', async () => {
@@ -637,11 +664,82 @@ describe('LLM Error Pages Handler', function () {
       // comment in handler.js. Pin to the audit-window end value so a
       // future refactor that swaps in `new Date().toISOString()` would
       // fail this test instead of silently shipping wrong semantics.
-      expect(urlEntry).to.have.all.keys('url', 'hits', 'userAgents', 'observedThrough');
+      expect(urlEntry).to.have.all.keys(
+        'url', 'hits', 'userAgents', 'observedThrough',
+        // CDN-log trend facets (spacecat #2655) the ELMO UI renders.
+        'periodIdentifier', 'agentTypes', 'avgTtfb', 'category', 'product', 'countryCode',
+      );
       expect(urlEntry.url).to.include('/dead');
       expect(urlEntry.hits).to.equal(47);
       expect(urlEntry.userAgents).to.deep.equal(['ChatGPT']);
       expect(urlEntry.observedThrough).to.equal(observationMessage.data.period.end);
+      // This row carries no facet fields → safe defaults (proves the
+      // backwards-compatible path; a facet-rich row is covered separately).
+      expect(urlEntry.periodIdentifier).to.be.a('string');
+      expect(urlEntry.agentTypes).to.deep.equal([]);
+      expect(urlEntry.avgTtfb).to.equal('');
+      expect(urlEntry.category).to.equal('');
+      expect(urlEntry.product).to.equal(null);
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
+    });
+
+    it('observation carries CDN-log trend facets (agentTypes/avgTtfb/category/product/countryCode) when present', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // A raw categorized row carrying the facets groupErrorsByUrl aggregates.
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          agent_type: 'Training bots',
+          avg_ttfb_ms: 131,
+          country_code: 'US',
+          product: 'Other',
+          category: 'static asset',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.agentTypes).to.deep.equal(['Training bots']);
+      // avgTtfb stringified to match mystique's string field.
+      expect(urlEntry.avgTtfb).to.equal('131');
+      expect(urlEntry.category).to.equal('static asset');
+      expect(urlEntry.product).to.equal('Other');
+      expect(urlEntry.countryCode).to.equal('US');
+    });
+
+    it('observation falls back to safe defaults for empty periodIdentifier and country_code', async () => {
+      context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'true';
+      // Empty periodIdentifier exercises the `periodIdentifier || ''` fallback;
+      // an explicit empty country_code survives the `?? 'GLOBAL'` build-stage
+      // default and exercises the output-stage `countryCode || 'GLOBAL'` fallback.
+      mockGenerateReportingPeriods.returns({
+        weeks: [{
+          weekNumber: 34,
+          year: 2025,
+          startDate: new Date('2025-08-18T00:00:00Z'),
+          endDate: new Date('2025-08-24T23:59:59Z'),
+          periodIdentifier: '',
+        }],
+      });
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{
+          ..._consolidatedRow({ url: '/dead', totalRequests: 47, rawUserAgents: ['GPTBot'] }),
+          country_code: '',
+        }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, observationMessage] = context.sqs.sendMessage.secondCall.args;
+      const urlEntry = observationMessage.data.urls[0];
+      expect(urlEntry.periodIdentifier).to.equal('');
+      expect(urlEntry.countryCode).to.equal('GLOBAL');
     });
 
     it('observation message unions user-agents per URL across providers (one entry per URL)', async () => {

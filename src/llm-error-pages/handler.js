@@ -224,11 +224,6 @@ export async function submitForScraping(context) {
  *   - empty-array guard so we never emit a payload mystique's `min_length=1`
  *     would reject at the Pydantic boundary
  *
- * Phase 4 cutover (post-merge of mystique PR #2490 + projector PR #200):
- * remove the `if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true')`
- * guard at the call site and delete the legacy `guidance:llm-error-pages`
- * publish block above it. This helper stays in place.
- *
  * @param {object} args
  * @param {object[]} args.sorted404      Pre-consolidated 404 rows (output of
  *                                       `consolidateErrorsByUrl` + sort).
@@ -243,7 +238,8 @@ export async function submitForScraping(context) {
  * @param {object}   args.log            Logger (info/warn/error).
  */
 async function publishObservationLlmBrokenUrls({
-  sorted404, messageBaseUrl, startDate, endDate, site, audit, sqs, env, log,
+  sorted404, facetsByUrl, periodIdentifier, messageBaseUrl, startDate, endDate,
+  site, audit, sqs, env, log,
 }) {
   try {
     if (!messageBaseUrl) {
@@ -281,14 +277,32 @@ async function publishObservationLlmBrokenUrls({
       const fullUrl = new URL(path, messageBaseUrl).toString();
       const entryHits = Number(errorPage.totalRequests) || 0;
       const entryUas = errorPage.rawUserAgents || [];
+      // groupErrorsByUrl produced one facet row per URL from the SAME errors404
+      // set this `sorted404` was consolidated from, keyed by the raw `url` — so
+      // every sorted404 url has a facet row (agentTypes is always an array;
+      // avgTtfb/category/product/countryCode may be undefined on sparse rows).
+      // The `|| { agentTypes: [] }` is an unreachable-but-defensive default: if
+      // consolidateErrorsByUrl and groupErrorsByUrl ever diverge, a missing
+      // facet row degrades to empty facets instead of throwing a TypeError the
+      // outer try/catch would swallow (silently dropping the whole publish).
+      /* c8 ignore next */
+      const f = facetsByUrl.get(errorPage.url) || { agentTypes: [] };
       const existing = byUrl.get(fullUrl);
       if (existing) {
         existing.hits += entryHits;
         entryUas.forEach((ua) => existing.userAgents.add(ua));
+        f.agentTypes.forEach((at) => existing.agentTypes.add(at));
       } else {
         byUrl.set(fullUrl, {
           hits: entryHits,
           userAgents: new Set(entryUas),
+          // Facets are URL-stable across providers/rows; first sighting seeds
+          // them, agentTypes unions across rows mapping to the same full URL.
+          agentTypes: new Set(f.agentTypes),
+          avgTtfb: f.avgTtfb ?? '',
+          category: f.category ?? '',
+          product: f.product ?? null,
+          countryCode: f.countryCode ?? 'GLOBAL',
         });
       }
     });
@@ -307,14 +321,19 @@ async function publishObservationLlmBrokenUrls({
         // URL in a given publish — not a per-URL last-hit timestamp.
         // `observedThrough` makes that semantics explicit and avoids a
         // UI label ("Last seen: ...") that would lie to customers.
-        //
-        // CROSS-REPO COORDINATION: mystique PR #2490 must accept this
-        // field name (either rename `last_seen` → `observed_through`
-        // on the Pydantic model, or add a Pydantic alias) BEFORE the
-        // OBSERVATION_LLM_BROKEN_URLS_ENABLED flag is flipped on in
-        // any environment. Safe to land unilaterally here because the
-        // flag is OFF by default.
         observedThrough: endDate.toISOString(),
+        // CDN-log trend facets the ELMO UI renders (mystique #2490 accepts
+        // these; the projector builds the weekly history[] + filters from them).
+        // periodIdentifier is the same for every URL in this publish (the audit
+        // week). avgTtfb is stringified to match the consumer's string field.
+        periodIdentifier: periodIdentifier || '',
+        agentTypes: Array.from(v.agentTypes)
+          .slice(0, OBSERVATION_MAX_USER_AGENTS_PER_URL)
+          .map((at) => String(at).slice(0, OBSERVATION_MAX_USER_AGENT_LENGTH)),
+        avgTtfb: String(v.avgTtfb),
+        category: v.category || '',
+        product: v.product ?? null,
+        countryCode: v.countryCode || 'GLOBAL',
       }));
 
     // NOTE: `observationUrls` is guaranteed non-empty here.
@@ -703,23 +722,22 @@ export async function runAuditAndSendToMystique(context) {
             await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
             log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
 
-            // Phase 3 dual-publish: also emit the new observation:llm-broken-urls
-            // message that feeds the Mysticat blackboard cascade in mystique
-            // (LlmBrokenUrlsIngestionTask → o_llm_broken_urls → verifier →
-            // alternatives → projector). The legacy guidance:llm-error-pages
-            // message above continues to feed the old crew flow during shadow
-            // validation; Phase 4 cutover removes that block.
-            //
-            // Feature-flagged so this PR can land safely before mystique's
-            // ingestion dispatcher (PR #2490) and projector (PR #200) merge.
-            // With the flag off, behaviour is unchanged.
-            //
-            // All defence/observability logic lives in the helper. Phase 4
-            // cutover = delete the legacy publish above AND this flag check;
-            // the helper call stays.
-            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED === 'true') {
+            // Dual-publish the observation:llm-broken-urls message feeding the
+            // Mysticat blackboard cascade alongside the legacy guidance message.
+            // On by default; set OBSERVATION_LLM_BROKEN_URLS_ENABLED='false' to disable.
+            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED !== 'false') {
+              // Per-URL CDN-log facets (agentTypes / avgTtfb / category /
+              // product / countryCode) the ELMO UI renders. groupErrorsByUrl
+              // collapses the raw rows to one entry per URL with these facets;
+              // keyed by the raw `url` so the helper can look them up while it
+              // re-groups sorted404 into the observation wire shape.
+              const facetsByUrl = new Map(
+                groupErrorsByUrl(errors404).map((r) => [r.url, r]),
+              );
               await publishObservationLlmBrokenUrls({
                 sorted404,
+                facetsByUrl,
+                periodIdentifier,
                 messageBaseUrl,
                 startDate,
                 endDate,

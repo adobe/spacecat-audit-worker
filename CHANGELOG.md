@@ -1,3 +1,100 @@
+## [1.476.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.4...v1.476.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade expected audit-enrollment skip from error to info ([#2677](https://github.com/adobe/spacecat-audit-worker/issues/2677)) ([d17a44d](https://github.com/adobe/spacecat-audit-worker/commit/d17a44dc4003421caf05354bf8bae693a18376d7))
+
+## [1.476.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.3...v1.476.4) (2026-06-16)
+
+
+### Bug Fixes
+
+* **cwv:** filter out 4xx URLs from CWV opportunities (SITES-40803) ([#2034](https://github.com/adobe/spacecat-audit-worker/issues/2034)) ([cfa74e3](https://github.com/adobe/spacecat-audit-worker/commit/cfa74e33ebc24bfb84aafdf7318219b09823e7b8))
+
+## [1.476.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.2...v1.476.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade product-metatags empty-extraction log to warn + re-pin data-access 3.75.2 (pageCitability url-upsert) ([#2675](https://github.com/adobe/spacecat-audit-worker/issues/2675)) ([566c569](https://github.com/adobe/spacecat-audit-worker/commit/566c5690dd3790178c1554982cc6805d459d653d)), closes [adobe/spacecat-shared#1683](https://github.com/adobe/spacecat-shared/issues/1683)
+
+## [1.476.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.1...v1.476.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **toc:** exclude headings inside button elements from TOC suggestions (LLMO-5474) ([#2647](https://github.com/adobe/spacecat-audit-worker/issues/2647)) ([5cc9440](https://github.com/adobe/spacecat-audit-worker/commit/5cc944072c8f686135135fd7fc1ce1b1a4ead7f1))
+* **toc:** filter unrendered AEM template placeholder headings (LLMO-5322) ([#2600](https://github.com/adobe/spacecat-audit-worker/issues/2600)) ([9bb4cc3](https://github.com/adobe/spacecat-audit-worker/commit/9bb4cc3d2ec92b5c67da228b062a0a2e818cf6b1))
+
+## [1.476.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.0...v1.476.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2672](https://github.com/adobe/spacecat-audit-worker/issues/2672)) ([7c5cffa](https://github.com/adobe/spacecat-audit-worker/commit/7c5cffa958d12a83ccbc2c6d2724a0aef2614578))
+
+# [1.476.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.475.0...v1.476.0) (2026-06-15)
+
+
+### Features
+
+* **llm-error-pages:** enable observation:llm-broken-urls publish by default ([#2671](https://github.com/adobe/spacecat-audit-worker/issues/2671)) ([d4c2bd0](https://github.com/adobe/spacecat-audit-worker/commit/d4c2bd076ea626c5c9bdfa69692f0a1c85706f05))
+
+# [1.475.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.2...v1.475.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **preflight:** wait for meta tags so slow-rendering SPAs aren't captured as empty shells ([#2670](https://github.com/adobe/spacecat-audit-worker/issues/2670)) ([a7b6f3c](https://github.com/adobe/spacecat-audit-worker/commit/a7b6f3c418406a5fe203159de8ca190222646fba))
+
+
+### Features
+
+* **offsite-brand-presence:** stop DRS-scraping wikipedia ([#2669](https://github.com/adobe/spacecat-audit-worker/issues/2669)) ([8b5d654](https://github.com/adobe/spacecat-audit-worker/commit/8b5d6542c8fcb3b08837001dc203bf7909d87ac2)), closes [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667) [#2668](https://github.com/adobe/spacecat-audit-worker/issues/2668) [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)
+
+## [1.474.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.1...v1.474.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** raise DRS poll budget to 30 minutes ([#2668](https://github.com/adobe/spacecat-audit-worker/issues/2668)) ([baad0b8](https://github.com/adobe/spacecat-audit-worker/commit/baad0b87ca4507f0c1d5ffbcac07ec993b8a21c8))
+
+## [1.474.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.474.0...v1.474.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* bump spacecat-shared-utils and rum-api-client for RUM 404 log downgrade ([#2666](https://github.com/adobe/spacecat-audit-worker/issues/2666)) ([0f8ed95](https://github.com/adobe/spacecat-audit-worker/commit/0f8ed952a9929858c3f8e5eb4579cbd1e2103eae))
+* **deps:** update adobe fixes to v3.75.0 ([#2664](https://github.com/adobe/spacecat-audit-worker/issues/2664)) ([d5d00a3](https://github.com/adobe/spacecat-audit-worker/commit/d5d00a31bd12230cfdc51a2c383404002d73a0b3))
+
+# [1.474.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.473.0...v1.474.0) (2026-06-15)
+
+
+### Features
+
+* **offsite-brand-presence:** report DRS job completion status in Slack ([#2663](https://github.com/adobe/spacecat-audit-worker/issues/2663)) ([863f8ca](https://github.com/adobe/spacecat-audit-worker/commit/863f8cad99c4ee8b3eb7571e89b57011c85c88f3))
+
+# [1.473.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.472.0...v1.473.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v2.43.0 ([#2660](https://github.com/adobe/spacecat-audit-worker/issues/2660)) ([a56ab46](https://github.com/adobe/spacecat-audit-worker/commit/a56ab467c2561e2a0cb3840bdb294c321c35c811))
+
+
+### Features
+
+* **llm-error-pages:** enrich observation:llm-broken-urls with CDN-log trend facets ([#2661](https://github.com/adobe/spacecat-audit-worker/issues/2661)) ([0fb053a](https://github.com/adobe/spacecat-audit-worker/commit/0fb053a47dcc66f720191dce0a35968451407f56))
+
+# [1.472.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.6...v1.472.0) (2026-06-15)
+
+
+### Features
+
+* llm error pages suggestion history ([#2655](https://github.com/adobe/spacecat-audit-worker/issues/2655)) ([c7c8716](https://github.com/adobe/spacecat-audit-worker/commit/c7c87160be44fdeec494ef5af24094c2c5419367))
+* **llm-error-pages:** dual-publish observation:llm-broken-urls behin… ([#2634](https://github.com/adobe/spacecat-audit-worker/issues/2634)) ([a649ef9](https://github.com/adobe/spacecat-audit-worker/commit/a649ef96d45e9c4c29c0aa63e710e8e1e01c6fb7))
+
 ## [1.471.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.471.5...v1.471.6) (2026-06-15)
 
 
