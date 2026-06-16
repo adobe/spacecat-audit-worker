@@ -102,6 +102,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
    */
   const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
   const pageTopics = guidanceBody.pageTopics ?? [];
+  const whatsLikelyHappening = guidanceBody.whatsLikelyHappening ?? null;
   const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
@@ -149,6 +150,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       totalMisalignedSpend,
       resolvedPageHeading,
       pageTopics,
+      whatsLikelyHappening,
     },
     status: 'NEW',
     tags: [

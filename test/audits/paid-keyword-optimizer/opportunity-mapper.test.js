@@ -737,6 +737,33 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
       expect(result.guidance).to.be.null;
     });
+
+    it('passes whatsLikelyHappening through to data when present', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage({ extraBody: { whatsLikelyHappening: 'spend leaks here' } });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.whatsLikelyHappening).to.equal('spend leaks here');
+    });
+
+    it('sets whatsLikelyHappening to null when absent', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.whatsLikelyHappening).to.equal(null);
+    });
+
+    it('coerces an explicit null whatsLikelyHappening to null', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage({ extraBody: { whatsLikelyHappening: null } });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.whatsLikelyHappening).to.equal(null);
+    });
   });
 
   describe('mapClusterToSuggestion', () => {
