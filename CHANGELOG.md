@@ -1,3 +1,10 @@
+# [1.477.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.7...v1.477.0) (2026-06-16)
+
+
+### Features
+
+* **offsite-brand-presence:** auto-trigger analysis audits after DRS completion ([#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)) ([ffcaa65](https://github.com/adobe/spacecat-audit-worker/commit/ffcaa65453a9901f950082058a3af9a7dd800d39))
+
 ## [1.476.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.6...v1.476.7) (2026-06-16)
 
 
