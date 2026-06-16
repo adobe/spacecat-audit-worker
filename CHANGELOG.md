@@ -1,3 +1,10 @@
+## [1.476.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.5...v1.476.6) (2026-06-16)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** un-hide bucket Opps now that ELMO UI supports them ([#2662](https://github.com/adobe/spacecat-audit-worker/issues/2662)) ([4898862](https://github.com/adobe/spacecat-audit-worker/commit/48988623fdff12a3ddd35880a20fc89b55f3d264))
+
 ## [1.476.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.4...v1.476.5) (2026-06-16)
 
 
