@@ -1,3 +1,10 @@
+## [1.476.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.2...v1.476.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade product-metatags empty-extraction log to warn + re-pin data-access 3.75.2 (pageCitability url-upsert) ([#2675](https://github.com/adobe/spacecat-audit-worker/issues/2675)) ([566c569](https://github.com/adobe/spacecat-audit-worker/commit/566c5690dd3790178c1554982cc6805d459d653d)), closes [adobe/spacecat-shared#1683](https://github.com/adobe/spacecat-shared/issues/1683)
+
 ## [1.476.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.1...v1.476.2) (2026-06-16)
 
 
