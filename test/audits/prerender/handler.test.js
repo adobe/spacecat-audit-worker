@@ -3777,6 +3777,81 @@ describe('Prerender Audit', () => {
         expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
 
+      it('should preserve first NEW domain-wide when duplicates exist, passing no domain-wide into syncSuggestions', async () => {
+        // Two NEW domain-wide suggestions accumulated from the pre-#2650 asymmetric-buildKey bug.
+        // findPreservableDomainWideSuggestion returns the first NEW and leaves dw2 untouched.
+        // The mergeStatusFunction closure in syncSuggestions guards against future all-OUTDATED
+        // promotions (separate code path). For the 2-NEW case, existing duplicates must be
+        // manually cleaned up; new duplicates cannot form after PR #2650.
+        const setStatusStub1 = sinon.stub();
+        const setStatusStub2 = sinon.stub();
+
+        const dw1 = {
+          getId: () => 'dw-id-1',
+          getStatus: () => 'NEW',
+          getData: () => ({ isDomainWide: true, pathPattern: '/*' }),
+          setStatus: setStatusStub1,
+          setUpdatedBy: sinon.stub(),
+        };
+        const dw2 = {
+          getId: () => 'dw-id-2',
+          getStatus: () => 'NEW',
+          getData: () => ({ isDomainWide: true, pathPattern: '/*' }),
+          setStatus: setStatusStub2,
+          setUpdatedBy: sinon.stub(),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([dw1, dw2]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+            defaultMergeStatusFunction: sinon.stub(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED' },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        // Neither dw1 nor dw2 should have their status mutated by findPreservableDomainWideSuggestion
+        expect(setStatusStub1).not.to.have.been.called;
+        expect(setStatusStub2).not.to.have.been.called;
+
+        // Since dw1 is preserved, no domain-wide item should be in syncSuggestions newData
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const domainWideInNewData = syncSuggestionsStub.firstCall.args[0].newData.find((s) => s.key);
+        expect(domainWideInNewData).to.be.undefined;
+      });
+
       it('should not detect domain-wide suggestion by pathPattern alone (requires isDomainWide flag)', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',

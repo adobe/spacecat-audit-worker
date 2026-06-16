@@ -1,3 +1,66 @@
+## [1.478.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.0...v1.478.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** sync suggestion rank with traffic_domain on re-audit ([#2673](https://github.com/adobe/spacecat-audit-worker/issues/2673)) ([25f214a](https://github.com/adobe/spacecat-audit-worker/commit/25f214a58eab1341ccf4aa586394f8a5731f9782))
+
+# [1.478.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.3...v1.478.0) (2026-06-16)
+
+
+### Features
+
+* filter out URLs from non-english speaking regions ([#2681](https://github.com/adobe/spacecat-audit-worker/issues/2681)) ([a3e84c3](https://github.com/adobe/spacecat-audit-worker/commit/a3e84c3607a10bd815b01d5aee6a56ed39af3861))
+
+## [1.477.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.2...v1.477.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.75.4 ([#2680](https://github.com/adobe/spacecat-audit-worker/issues/2680)) ([8e6c613](https://github.com/adobe/spacecat-audit-worker/commit/8e6c613f7da9baf969fa9a79e4d7d0037312cd5a))
+
+## [1.477.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.1...v1.477.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **prerender:** normalize URL pathnames to lowercase to prevent case-variant duplicate suggestions ([#2665](https://github.com/adobe/spacecat-audit-worker/issues/2665)) ([1721597](https://github.com/adobe/spacecat-audit-worker/commit/1721597fbd521d969c1ee8f8c96c34ff080c9645)), closes [#2397](https://github.com/adobe/spacecat-audit-worker/issues/2397) [#2650](https://github.com/adobe/spacecat-audit-worker/issues/2650)
+
+## [1.477.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.0...v1.477.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* remove dormant data-access-v2 fallback (drops electrodb/jsonschema, fixes DEP0169 log noise) ([#2679](https://github.com/adobe/spacecat-audit-worker/issues/2679)) ([6a78abe](https://github.com/adobe/spacecat-audit-worker/commit/6a78abeeaca2824880b75a0476bdd87d5273c945))
+
+# [1.477.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.7...v1.477.0) (2026-06-16)
+
+
+### Features
+
+* **offsite-brand-presence:** auto-trigger analysis audits after DRS completion ([#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)) ([ffcaa65](https://github.com/adobe/spacecat-audit-worker/commit/ffcaa65453a9901f950082058a3af9a7dd800d39))
+
+## [1.476.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.6...v1.476.7) (2026-06-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2676](https://github.com/adobe/spacecat-audit-worker/issues/2676)) ([17a768f](https://github.com/adobe/spacecat-audit-worker/commit/17a768fff13ac82142299b86439c89a1b988091c))
+
+## [1.476.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.5...v1.476.6) (2026-06-16)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** un-hide bucket Opps now that ELMO UI supports them ([#2662](https://github.com/adobe/spacecat-audit-worker/issues/2662)) ([4898862](https://github.com/adobe/spacecat-audit-worker/commit/48988623fdff12a3ddd35880a20fc89b55f3d264))
+
+## [1.476.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.4...v1.476.5) (2026-06-16)
+
+
+### Bug Fixes
+
+* downgrade expected audit-enrollment skip from error to info ([#2677](https://github.com/adobe/spacecat-audit-worker/issues/2677)) ([d17a44d](https://github.com/adobe/spacecat-audit-worker/commit/d17a44dc4003421caf05354bf8bae693a18376d7))
+
 ## [1.476.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.476.3...v1.476.4) (2026-06-16)
 
 

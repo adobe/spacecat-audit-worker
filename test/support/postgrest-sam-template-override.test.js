@@ -25,7 +25,6 @@ const MODULE_PATH = pathToFileURL(
 ).href;
 
 const TRACKED_ENV_KEYS = [
-  'DATA_SERVICE_PROVIDER',
   'POSTGREST_URL',
   'POSTGREST_SCHEMA',
   'POSTGREST_API_KEY',
@@ -94,7 +93,6 @@ describe('postgrest-sam-template-override', () => {
 
   it('merges snapshot values into context.env and process.env when POSTGREST_USE_SAM_TEMPLATE is true', async () => {
     const postgrestSamTemplateOverride = await loadPostgrestOverride({
-      DATA_SERVICE_PROVIDER: 'pg',
       POSTGREST_URL: 'https://snap.example.com',
       POSTGREST_SCHEMA: 'public',
       POSTGREST_API_KEY: 'secret',
@@ -105,7 +103,6 @@ describe('postgrest-sam-template-override', () => {
 
     await postgrestSamTemplateOverride(next)(request, context);
 
-    expect(context.env.DATA_SERVICE_PROVIDER).to.equal('pg');
     expect(context.env.POSTGREST_URL).to.equal('https://snap.example.com');
     expect(context.env.POSTGREST_SCHEMA).to.equal('public');
     expect(context.env.POSTGREST_API_KEY).to.equal('secret');
