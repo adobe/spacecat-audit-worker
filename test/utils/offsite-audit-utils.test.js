@@ -16,8 +16,11 @@ import sinonChai from 'sinon-chai';
 import {
   DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
+  NON_EARNED_EXCLUDED_DOMAINS,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  computeBrandTokens,
+  isExcludedCitedHost,
 } from '../../src/utils/offsite-audit-utils.js';
 
 use(sinonChai);
@@ -252,6 +255,86 @@ describe('offsite-audit-utils', () => {
       expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 1.5 } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(log.warn).to.have.been.calledTwice;
+    });
+  });
+
+  describe('NON_EARNED_EXCLUDED_DOMAINS', () => {
+    it('is a frozen list of social/search/aggregator domains', () => {
+      expect(NON_EARNED_EXCLUDED_DOMAINS).to.be.an('array');
+      expect(Object.isFrozen(NON_EARNED_EXCLUDED_DOMAINS)).to.be.true;
+      expect(NON_EARNED_EXCLUDED_DOMAINS).to.include.members([
+        'google.com', 'facebook.com', 'instagram.com', 'groupon.com',
+      ]);
+    });
+
+    it('does not include youtube/reddit (routed to their own analyses)', () => {
+      expect(NON_EARNED_EXCLUDED_DOMAINS).to.not.include('youtube.com');
+      expect(NON_EARNED_EXCLUDED_DOMAINS).to.not.include('reddit.com');
+    });
+  });
+
+  describe('computeBrandTokens', () => {
+    it('derives a token from the site apex label', () => {
+      const tokens = computeBrandTokens('lovesac.com');
+      expect([...tokens]).to.deep.equal(['lovesac']);
+    });
+
+    it('strips a leading subdomain to use only the first label', () => {
+      // www-stripped hostnames are passed in; the apex label is the first label.
+      expect([...computeBrandTokens('bmw.com')]).to.deep.equal(['bmw']);
+    });
+
+    it('unions normalized brand keywords with the apex label', () => {
+      const tokens = computeBrandTokens('lovesac.com', ['Loved By Lovesac', 'SACTIONAL']);
+      expect(tokens.has('lovesac')).to.be.true;
+      expect(tokens.has('lovedbylovesac')).to.be.true;
+      expect(tokens.has('sactional')).to.be.true;
+    });
+
+    it('drops tokens shorter than 3 chars (apex label and keywords)', () => {
+      const tokens = computeBrandTokens('hp.com', ['ab', 'xyz']);
+      expect(tokens.has('hp')).to.be.false;
+      expect(tokens.has('ab')).to.be.false;
+      expect(tokens.has('xyz')).to.be.true;
+    });
+
+    it('returns an empty set for missing hostname and keywords', () => {
+      expect([...computeBrandTokens()]).to.deep.equal([]);
+      expect([...computeBrandTokens('', null)]).to.deep.equal([]);
+    });
+  });
+
+  describe('isExcludedCitedHost', () => {
+    const tokens = computeBrandTokens('lovesac.com');
+
+    it('excludes non-earned domains and their subdomains', () => {
+      expect(isExcludedCitedHost('google.com')).to.be.true;
+      expect(isExcludedCitedHost('www.facebook.com')).to.be.true;
+      expect(isExcludedCitedHost('m.instagram.com')).to.be.true;
+      expect(isExcludedCitedHost('groupon.com')).to.be.true;
+    });
+
+    it('excludes brand-owned lookalike hosts via brand-token substring', () => {
+      expect(isExcludedCitedHost('lovedbylovesac.com', tokens)).to.be.true;
+      expect(isExcludedCitedHost('www.lovesac.com', tokens)).to.be.true;
+      // accepted false positive: independent reviewer with brand name in host
+      expect(isExcludedCitedHost('lovesac-reviews.com', tokens)).to.be.true;
+    });
+
+    it('keeps neutral third-party hosts (no token, no path matching)', () => {
+      expect(isExcludedCitedHost('techradar.com', tokens)).to.be.false;
+      expect(isExcludedCitedHost('caranddriver.com', tokens)).to.be.false;
+    });
+
+    it('does not match a non-earned domain as a bare substring', () => {
+      // "notgoogle.com" is not google.com nor a subdomain of it.
+      expect(isExcludedCitedHost('notgoogle.com')).to.be.false;
+    });
+
+    it('returns false for empty host and when no brand tokens are supplied', () => {
+      expect(isExcludedCitedHost('')).to.be.false;
+      expect(isExcludedCitedHost(undefined, tokens)).to.be.false;
+      expect(isExcludedCitedHost('lovedbylovesac.com')).to.be.false;
     });
   });
 });

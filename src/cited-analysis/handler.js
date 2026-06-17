@@ -21,6 +21,8 @@ import {
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
+  computeBrandTokens,
+  isExcludedCitedHost,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
@@ -134,6 +136,35 @@ function partitionOwnedUrls(urls, brandBaseURL) {
 }
 
 /**
+ * Drops cited URLs that are not earned third-party editorial content:
+ * social/search/deal-aggregator domains (google, facebook, instagram, groupon)
+ * and brand-owned lookalike domains whose host contains a brand token
+ * (e.g. ``lovedbylovesac.com`` for the Lovesac customer).
+ *
+ * This is read-time defense in depth — the write path (offsite-brand-presence)
+ * applies the same exclusion before storing — and additionally filters URLs
+ * that were already stored before that filter existed.
+ *
+ * Unparseable URLs are kept (a no-op `host`), matching `partitionOwnedUrls`.
+ * @param {Array<{url: string}>} urls
+ * @param {Set<string>} brandTokens
+ * @returns {{ kept: Array<{url: string}>, droppedCount: number }}
+ */
+function partitionExcludedUrls(urls, brandTokens) {
+  const kept = [];
+  let droppedCount = 0;
+  for (const entry of urls) {
+    const host = toApexHost(entry.url);
+    if (host && isExcludedCitedHost(host, brandTokens)) {
+      droppedCount += 1;
+    } else {
+      kept.push(entry);
+    }
+  }
+  return { kept, droppedCount };
+}
+
+/**
  * Fetches all required data from stores for Cited analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
@@ -153,9 +184,10 @@ async function fetchStoreData(siteId, context, site) {
   // EARNED citations — pages on ``bmw.com`` for the BMW customer would
   // skew earned-media reporting. The mystique flow re-applies the same
   // filter for defense in depth.
+  const baseURL = site?.getBaseURL?.();
   const { kept: earnedUrls, droppedCount: ownedDroppedCount } = partitionOwnedUrls(
     rawUrls,
-    site?.getBaseURL?.(),
+    baseURL,
   );
   if (ownedDroppedCount > 0) {
     log.info(
@@ -164,10 +196,26 @@ async function fetchStoreData(siteId, context, site) {
     );
   }
 
+  // Drop social/search/deal-aggregator domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com). Defense in depth for the write-path filter, and
+  // catches URLs stored before that filter existed.
+  const brandKeywords = site?.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(toApexHost(baseURL), brandKeywords);
+  const { kept: curatedUrls, droppedCount: nonEarnedDroppedCount } = partitionExcludedUrls(
+    earnedUrls,
+    brandTokens,
+  );
+  if (nonEarnedDroppedCount > 0) {
+    log.info(
+      `${LOG_PREFIX} Excluded ${nonEarnedDroppedCount} non-earned/branded URLs `
+      + '(social, search, deal-aggregator, or brand-owned lookalike)',
+    );
+  }
+
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
   const urls = await filterUrlsByDrsStatus(
-    earnedUrls,
+    curatedUrls,
     datasetIds,
     siteId,
     drsClient,

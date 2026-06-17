@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { computeBrandTokens, isExcludedCitedHost } from '../utils/offsite-audit-utils.js';
 import {
   DRS_URLS_LIMIT,
   RETRIABLE_STATUSES,
@@ -156,9 +157,11 @@ function normalizeUrl(parsed, domain) {
  * @param {string} rawUrl - The raw URL string to classify and normalize
  * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
  *   matching this hostname or any subdomain of it are excluded
+ * @param {Set<string>} [brandTokens] - brand tokens (see `computeBrandTokens`); URLs whose
+ *   host is a non-earned/social domain or contains a brand token are excluded
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname) {
+function classifyAndNormalize(rawUrl, siteHostname, brandTokens) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -175,6 +178,14 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       return null;
     }
   }
+
+  // Drop social/search/deal-aggregator domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) before they can enter the URL Store. Cited
+  // analysis measures earned, non-branded, non-social citations only.
+  if (isExcludedCitedHost(hostname, brandTokens)) {
+    return null;
+  }
+
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
@@ -240,8 +251,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
  * @param {string} [siteHostname] - Client site hostname to exclude
+ * @param {Set<string>} [brandTokens] - brand tokens used to exclude non-earned/branded hosts
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandTokens) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -263,7 +275,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed, siteHostname);
+      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -811,6 +823,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
   }
 
+  // Brand tokens drop social/search domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) from the cited URLs before they are stored.
+  const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
+
   const brandPresenceData = await loadBrandPresenceData({
     siteId, site, previousWeeks, context,
   });
@@ -818,7 +835,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const allUrls = new Map();
   if (brandPresenceData) {
     const topicMap = new Map();
-    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
   }
 
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);

@@ -19,6 +19,89 @@
 export const MYSTIQUE_URLS_LIMIT = 50;
 
 /**
+ * Social, search, and deal-aggregator domains that are NOT earned third-party
+ * editorial content. Cited analysis measures earned brand perception, so these
+ * are dropped entirely.
+ *
+ * Note: `youtube.com` / `reddit.com` are intentionally absent — they are routed
+ * to their own dedicated analyses via `OFFSITE_DOMAINS` and are therefore
+ * already excluded from the top-cited bucket.
+ *
+ * @type {readonly string[]}
+ */
+export const NON_EARNED_EXCLUDED_DOMAINS = Object.freeze([
+  'google.com',
+  'facebook.com',
+  'instagram.com',
+  'groupon.com',
+]);
+
+// Tokens shorter than this are dropped from brand-token matching: a 1-2 char
+// substring would match almost any host and turn the branded filter into a
+// blunt instrument.
+const MIN_BRAND_TOKEN_LENGTH = 3;
+
+/**
+ * Builds the set of lowercase brand tokens used to detect brand-owned lookalike
+ * domains that are not subdomains of the brand apex (e.g. `lovedbylovesac.com`
+ * for `lovesac.com`, which does not end in `.lovesac.com`).
+ *
+ * Tokens are sourced from:
+ *  - the site apex label (`lovesac.com` → `lovesac`), and
+ *  - each configured brand keyword, normalized to `[a-z0-9]` only.
+ *
+ * @param {string} [siteHostname] - www-stripped client hostname (e.g. `lovesac.com`)
+ * @param {string[]} [brandKeywords] - brand keywords from site config
+ * @returns {Set<string>} lowercase tokens at least `MIN_BRAND_TOKEN_LENGTH` chars long
+ */
+export function computeBrandTokens(siteHostname, brandKeywords = []) {
+  const tokens = new Set();
+  const apexLabel = String(siteHostname || '').toLowerCase().split('.')[0];
+  if (apexLabel.length >= MIN_BRAND_TOKEN_LENGTH) {
+    tokens.add(apexLabel);
+  }
+  for (const keyword of brandKeywords || []) {
+    const normalized = String(keyword).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalized.length >= MIN_BRAND_TOKEN_LENGTH) {
+      tokens.add(normalized);
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Predicate for cited URLs that must NOT enter the URL Store / cited analysis.
+ *
+ * A host is excluded when it is (or is a subdomain of) a non-earned domain, or
+ * when it contains a brand token as a substring (branded-lookalike match).
+ * Matching is on the host only — never the path — so a third-party review at
+ * `techradar.com/is-lovesac-good` is kept while `lovedbylovesac.com` is dropped.
+ *
+ * @param {string} hostname - URL hostname (may include a leading `www.`)
+ * @param {Set<string>} [brandTokens] - tokens from {@link computeBrandTokens}
+ * @returns {boolean}
+ */
+export function isExcludedCitedHost(hostname, brandTokens) {
+  if (!hostname) {
+    return false;
+  }
+  const bare = String(hostname).toLowerCase().replace(/^www\./, '');
+  for (const domain of NON_EARNED_EXCLUDED_DOMAINS) {
+    if (bare === domain || bare.endsWith(`.${domain}`)) {
+      return true;
+    }
+  }
+  if (brandTokens) {
+    for (const token of brandTokens) {
+      if (bare.includes(token)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Effective max URLs to send to Mystique for store-backed guidance audits
  * (reddit / youtube / cited). Optional limit from `auditContext.messageData.urlLimit`
  * (RunnerAudit). Runners merge the resolved value into `auditResult.config.urlLimit` for
