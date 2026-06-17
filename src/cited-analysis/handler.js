@@ -30,6 +30,15 @@ import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js
 
 const LOG_PREFIX = '[Cited]';
 
+// SQS standard-queue maximum payload is 256 KB (262144 bytes). Stay under a
+// safety budget so worst-case serialisation doesn't hit the hard reject.
+const SQS_MAX_SAFE_BYTES = 200 * 1024;
+
+// Cap subPrompts carried per URL. Each URL can accumulate a subPrompt entry
+// for every topic it appears in; without a cap the prompts array alone can
+// push a 50-URL payload well past 256 KB.
+const MAX_PROMPTS_PER_URL = 20;
+
 /**
  * Cited Analysis Audit Handler
  *
@@ -321,8 +330,20 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
+    // Project only the fields Mystique reads (url, categories, prompts,
+    // timesCited) and cap prompts per URL so the payload stays bounded.
+    // URL Store metadata (siteId, byCustomer, audits, timestamps) is not
+    // needed downstream and contributes significant per-URL bloat.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, urlLimit);
+      .slice(0, urlLimit)
+      .map(({
+        url: urlStr, categories, timesCited, prompts,
+      }) => ({
+        url: urlStr,
+        ...(categories?.length > 0 && { categories }),
+        ...(timesCited > 0 && { timesCited }),
+        ...(prompts?.length > 0 && { prompts: prompts.slice(0, MAX_PROMPTS_PER_URL) }),
+      }));
 
     const baseMessage = {
       type: 'guidance:cited-analysis',
@@ -350,6 +371,22 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
     const message = applyBrandScope(baseMessage, brand);
 
+    // Safety guard: if the serialised message still exceeds the budget after
+    // per-URL projection and prompt capping, drop URLs from the tail until
+    // it fits rather than letting SQS reject the send entirely.
+    let sentUrlCount = message.data.urls.length;
+    while (sentUrlCount > 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes <= SQS_MAX_SAFE_BYTES) {
+        break;
+      }
+      sentUrlCount -= 1;
+      message.data.urls = enrichedUrls.slice(0, sentUrlCount);
+      log.warn(
+        `${LOG_PREFIX} Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
+      );
+    }
+
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
@@ -357,7 +394,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
+        + `with ${message.data.urls.length} URLs${scopeForLog}`,
     );
     return auditData;
   } catch (error) {

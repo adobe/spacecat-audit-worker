@@ -627,7 +627,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
 
-    it('should send raw urls when no topics are available', async () => {
+    it('should send projected urls when no topics are available', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -644,7 +644,10 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.deep.equal(mockUrls);
+      // URL Store metadata (type, metadata, siteId, etc.) is stripped; only
+      // url/categories/timesCited/prompts are projected for the SQS payload.
+      const expectedUrls = mockUrls.map(({ url }) => ({ url }));
+      expect(sentMessage.data.urls).to.deep.equal(expectedUrls);
     });
 
     it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
@@ -699,6 +702,85 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
+    });
+
+    it('should strip URL Store metadata and keep only url/categories/timesCited/prompts', async () => {
+      const urlsWithMetadata = [
+        {
+          url: 'https://techreview.io/review-of-example',
+          siteId: 'some-site-id',
+          byCustomer: false,
+          audits: ['cited-analysis'],
+          createdAt: '2026-06-16T10:00:00.000Z',
+          updatedAt: '2026-06-16T10:00:00.000Z',
+          createdBy: 'system',
+          updatedBy: 'system',
+        },
+      ];
+
+      const topicsWithData = [
+        {
+          name: 'Test Topic',
+          urls: [{
+            url: 'https://techreview.io/review-of-example',
+            timesCited: 5,
+            category: 'review',
+            subPrompts: ['prompt one'],
+          }],
+        },
+      ];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: urlsWithMetadata,
+            sentimentConfig: { topics: topicsWithData, guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      const sentUrl = sentMessage.data.urls[0];
+      expect(sentUrl).to.have.property('url', 'https://techreview.io/review-of-example');
+      expect(sentUrl).to.have.property('categories');
+      expect(sentUrl).to.have.property('timesCited', 5);
+      expect(sentUrl).to.have.property('prompts');
+      expect(sentUrl).to.not.have.any.keys('siteId', 'byCustomer', 'audits', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy');
+    });
+
+    it('should reduce URL count when serialised message exceeds size budget', async () => {
+      // 50 URLs × 20 prompts × 500 bytes each = ~500 KB, well over the 200 KB budget.
+      const largePrompt = 'x'.repeat(500);
+      const bigUrls = Array.from({ length: 50 }, (_, i) => ({
+        url: `https://example.com/page-${i}`,
+        prompts: Array.from({ length: 20 }, () => largePrompt),
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: bigUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls.length).to.be.lessThan(50);
+      expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });
 
     it('should skip sending message when audit failed', async () => {
