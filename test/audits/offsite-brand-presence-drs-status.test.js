@@ -228,7 +228,10 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(reddit.args[1]).to.deep.equal({
         type: 'reddit-analysis',
         siteId: SITE_ID,
-        auditContext: { slackContext: { channelId: 'C123', threadTs: '111.222' } },
+        auditContext: {
+          slackContext: { channelId: 'C123', threadTs: '111.222' },
+          drsScrapeRequested: true,
+        },
       });
     });
 
