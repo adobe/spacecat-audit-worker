@@ -95,6 +95,11 @@ function resolveRedditCommentsParams(messageData) {
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
+// The top-cited bucket key (mirrors addUrlsToUrlStore) — also a valid granular scope.
+const TOP_CITED_BUCKET = 'top-cited';
+// Valid values for messageData.domainScope on granular single-audit runs.
+const VALID_DOMAIN_SCOPES = new Set([...Object.keys(OFFSITE_DOMAINS), TOP_CITED_BUCKET]);
+
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
@@ -660,7 +665,7 @@ function scopeBucketsToDomain(topByDomain, topCited, domainScope) {
   for (const domain of Object.keys(topByDomain)) {
     scoped[domain] = domain === domainScope ? topByDomain[domain] : [];
   }
-  return { topByDomain: scoped, topCited: domainScope === 'top-cited' ? topCited : [] };
+  return { topByDomain: scoped, topCited: domainScope === TOP_CITED_BUCKET ? topCited : [] };
 }
 
 /**
@@ -779,6 +784,17 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+
+  // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
+  // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
+  if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
+    log.error(`${LOG_PREFIX} Unknown domainScope '${domainScope}', aborting run`);
+    return {
+      auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
+      fullAuditRef: finalUrl,
+    };
+  }
+
   const organization = await site.getOrganization();
   const imsOrgId = organization?.getImsOrgId();
   const previousWeeks = getPreviousWeeks();

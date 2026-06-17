@@ -283,6 +283,17 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available after scraping/);
     });
 
+    it('still returns pending_scrape when the scrape request fails (transient infra)', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+      context.sqs.sendMessage.rejects(new Error('SQS throttled'));
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
+    });
+
     it('should return error when urlStore returns empty', async () => {
       mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No reddit-analysis URLs found'));
 

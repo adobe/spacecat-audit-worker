@@ -151,17 +151,25 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
  * @param {string} siteId - The site ID
  * @param {string} domainScope - An OFFSITE_DOMAINS key (e.g. 'reddit.com') or 'top-cited'
  * @param {object} [slackContext] - Forwarded so notifications/results post to the thread
+ *
+ * Best-effort: a transient Configuration/SQS failure is logged and swallowed rather than
+ * thrown, so the analysis audit degrades to its pending_scrape result instead of failing
+ * the run with an opaque infra error.
  */
 export async function requestOffsiteScrape(context, siteId, domainScope, slackContext) {
   const { sqs, dataAccess, log } = context;
-  const configuration = await dataAccess.Configuration.findLatest();
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: 'offsite-brand-presence',
-    siteId,
-    auditContext: {
-      ...(slackContext && { slackContext }),
-      messageData: { domainScope },
-    },
-  });
-  log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);
+  try {
+    const configuration = await dataAccess.Configuration.findLatest();
+    await sqs.sendMessage(configuration.getQueues().audits, {
+      type: 'offsite-brand-presence',
+      siteId,
+      auditContext: {
+        ...(slackContext && { slackContext }),
+        messageData: { domainScope },
+      },
+    });
+    log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);
+  } catch (error) {
+    log?.warn(`Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`);
+  }
 }

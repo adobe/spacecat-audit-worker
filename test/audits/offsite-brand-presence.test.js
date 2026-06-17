@@ -1575,6 +1575,18 @@ describe('Offsite Brand Presence Handler', () => {
       const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
       expect(datasets).to.deep.equal([SCRAPE_DATASET_IDS.TOP_CITED]);
     });
+
+    it('aborts with an explicit error for an unrecognized domainScope', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'bogus.com' },
+      });
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.match(/Unknown domainScope: bogus\.com/);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+    });
   });
 
   describe('Full Integration Flow', () => {
