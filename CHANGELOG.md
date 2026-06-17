@@ -1,3 +1,10 @@
+## [1.480.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.1...v1.480.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* Sitemap buildKey function enabled for "error" suggestions ([#2685](https://github.com/adobe/spacecat-audit-worker/issues/2685)) ([047cfcb](https://github.com/adobe/spacecat-audit-worker/commit/047cfcb57e6167190293709990ebeeef8adf2765))
+
 ## [1.480.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.0...v1.480.1) (2026-06-17)
 
 
