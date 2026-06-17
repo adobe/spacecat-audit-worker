@@ -51,9 +51,17 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const { hasDomainKey, timedOut } = await resolveRumDomainKey(site, context);
+  let hasDomainKey;
+  let timedOut;
+  try {
+    ({ hasDomainKey, timedOut } = await resolveRumDomainKey(site, context));
+  } catch (e) {
+    log.error(`[rum-config-refresh] resolveRumDomainKey failed for site ${siteId}: ${e.message}`);
+    return internalServerError(`RUM domain key check failed: ${e.message}`);
+  }
 
   if (timedOut) {
+    log.warn(`[rum-config-refresh] RUM domain key check timed out for site ${siteId}, skipping config update`);
     return ok({ skipped: true, reason: 'timeout' });
   }
 

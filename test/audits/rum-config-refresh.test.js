@@ -175,6 +175,18 @@ describe('rum-config-refresh handler', function () {
       expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
       expect(mockConfig.updateRumConfig).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch('timed out');
+    });
+
+    it('returns 500 when resolveRumDomainKey rejects unexpectedly', async () => {
+      resolveRumDomainKeyStub.rejects(new Error('network timeout'));
+
+      const result = await handler.default({ siteId: SITE_ID }, context);
+
+      expect(result.status).to.equal(500);
+      expect(mockConfig.updateRumConfig).not.to.have.been.called;
+      expect(mockSite.save).not.to.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch('resolveRumDomainKey failed');
     });
   });
 
