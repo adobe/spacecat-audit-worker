@@ -796,7 +796,12 @@ describe('Cited Analysis Handler', () => {
     it('should strip prompts from single URL when payload still exceeds budget', async () => {
       // One URL whose prompts alone push it over the 200 KB budget.
       const hugePrompt = 'x'.repeat(300 * 1024); // 300 KB in a single prompt entry
-      const singleBigUrl = [{ url: 'https://example.com/huge', prompts: [hugePrompt] }];
+      const singleBigUrl = [{
+        url: 'https://example.com/huge',
+        categories: ['Tech'],
+        timesCited: 7,
+        prompts: [hugePrompt],
+      }];
 
       const auditData = {
         siteId,
@@ -818,6 +823,9 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.length(1);
       expect(sentMessage.data.urls[0].url).to.equal('https://example.com/huge');
       expect(sentMessage.data.urls[0].prompts).to.be.undefined;
+      // Lightweight metadata is preserved even when prompts are stripped.
+      expect(sentMessage.data.urls[0].categories).to.deep.equal(['Tech']);
+      expect(sentMessage.data.urls[0].timesCited).to.equal(7);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
     });
@@ -935,6 +943,26 @@ describe('Cited Analysis Handler', () => {
       expect(text).to.include(baseURL);
       expect(text).to.include('Message must be shorter than 262144 bytes');
       expect(opts.threadTs).to.equal('1234567890.000100');
+    });
+
+    it('should fall back to siteId in the Slack message when companyWebsite is absent', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+          slackContext: { channelId: 'C12345', threadTs: '1234567890.000100' },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [, , text] = mockPostMessageOptional.firstCall.args;
+      expect(text).to.include(siteId);
     });
 
     it('should not post to Slack when SQS send fails without slackContext', async () => {
