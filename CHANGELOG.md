@@ -1,3 +1,10 @@
+## [1.480.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.0...v1.480.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* **cited-analysis:** prevent SQS 256 KB message size limit failures ([#2691](https://github.com/adobe/spacecat-audit-worker/issues/2691)) ([08d887b](https://github.com/adobe/spacecat-audit-worker/commit/08d887b0f7c88263dfde07e164e42631182899d8))
+
 # [1.480.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.479.1...v1.480.0) (2026-06-17)
 
 
