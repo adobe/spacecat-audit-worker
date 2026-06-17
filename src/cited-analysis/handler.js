@@ -18,7 +18,6 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   DrsNoContentAvailableError,
-  MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
@@ -27,8 +26,19 @@ import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.j
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const LOG_PREFIX = '[Cited]';
+
+// SQS standard-queue maximum payload is 256 KB (262144 bytes). Stay under a
+// safety budget so worst-case serialisation doesn't hit the hard reject.
+const SQS_MAX_SAFE_BYTES = 200 * 1024;
+
+// Cited-analysis-specific URL cap. Lower than the global MYSTIQUE_URLS_LIMIT
+// (50) because: (a) each URL requires a full DRS scrape — 50 URLs can take
+// 30-40 min; (b) 40 URLs with full prompts fits within the SQS budget after
+// field projection, removing the need for a per-URL prompts cap.
+const CITED_ANALYSIS_URLS_LIMIT = 40;
 
 /**
  * Cited Analysis Audit Handler
@@ -231,7 +241,10 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const urlLimit = Math.min(
+      resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX),
+      CITED_ANALYSIS_URLS_LIMIT,
+    );
 
     const { slackContext } = auditContext;
 
@@ -317,12 +330,25 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
+    const urlLimit = config?.urlLimit ?? CITED_ANALYSIS_URLS_LIMIT;
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
+    // Project only the fields Mystique reads (url, categories, prompts,
+    // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
+    // is not needed downstream and contributes significant per-URL bloat.
+    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=40 keeps the payload
+    // within the SQS budget without capping per-URL prompts.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, urlLimit);
+      .slice(0, urlLimit)
+      .map(({
+        url: urlStr, categories, timesCited, prompts,
+      }) => ({
+        url: urlStr,
+        ...(categories?.length > 0 && { categories }),
+        ...(timesCited > 0 && { timesCited }),
+        ...(prompts?.length > 0 && { prompts }),
+      }));
 
     const baseMessage = {
       type: 'guidance:cited-analysis',
@@ -350,6 +376,42 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
     const message = applyBrandScope(baseMessage, brand);
 
+    // Safety guard: if the serialised message still exceeds the budget after
+    // per-URL projection, drop URLs from the tail until it fits rather than
+    // letting SQS reject the send entirely. This re-serialises the message once
+    // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
+    // stays small (40); switch to a binary search / byte-per-URL estimate if the
+    // cap ever grows large enough for the linear passes to matter.
+    let sentUrlCount = message.data.urls.length;
+    while (sentUrlCount > 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes <= SQS_MAX_SAFE_BYTES) {
+        break;
+      }
+      sentUrlCount -= 1;
+      message.data.urls = enrichedUrls.slice(0, sentUrlCount);
+      log.warn(
+        `${LOG_PREFIX} Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
+      );
+    }
+
+    // Last-resort: a single URL with extremely long prompts can still exceed
+    // the budget. Strip its prompts so the URL itself always gets through.
+    if (sentUrlCount === 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes > SQS_MAX_SAFE_BYTES) {
+        log.warn(
+          `${LOG_PREFIX} Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
+        );
+        const [singleUrl] = message.data.urls;
+        message.data.urls = [{
+          url: singleUrl.url,
+          ...(singleUrl.categories?.length > 0 && { categories: singleUrl.categories }),
+          ...(singleUrl.timesCited > 0 && { timesCited: singleUrl.timesCited }),
+        }];
+      }
+    }
+
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
@@ -357,11 +419,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
+        + `with ${message.data.urls.length} URLs${scopeForLog}`,
     );
     return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    // Notify the Slack thread that triggered this audit so the operator knows
+    // Mystique was never reached and doesn't wait for results that won't come.
+    const slackContext = auditResult?.slackContext;
+    if (slackContext) {
+      const { channelId, threadTs } = slackContext;
+      const siteLabel = auditResult.config?.companyWebsite || siteId;
+      await postMessageOptional(
+        context,
+        channelId,
+        `:x: *cited-analysis* failed to queue for *${siteLabel}*\n• Reason: ${error.message}`,
+        { threadTs },
+      );
+    }
     throw error;
   }
 }
