@@ -378,7 +378,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     // Safety guard: if the serialised message still exceeds the budget after
     // per-URL projection, drop URLs from the tail until it fits rather than
-    // letting SQS reject the send entirely.
+    // letting SQS reject the send entirely. This re-serialises the message once
+    // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
+    // stays small (40); switch to a binary search / byte-per-URL estimate if the
+    // cap ever grows large enough for the linear passes to matter.
     let sentUrlCount = message.data.urls.length;
     while (sentUrlCount > 1) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
