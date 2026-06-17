@@ -26,6 +26,7 @@ import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.j
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const LOG_PREFIX = '[Cited]';
 
@@ -403,6 +404,19 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    // Notify the Slack thread that triggered this audit so the operator knows
+    // Mystique was never reached and doesn't wait for results that won't come.
+    const slackContext = auditResult?.slackContext;
+    if (slackContext) {
+      const { channelId, threadTs } = slackContext;
+      const siteLabel = auditResult.config?.companyWebsite || siteId;
+      await postMessageOptional(
+        context,
+        channelId,
+        `:x: *cited-analysis* failed to queue for *${siteLabel}*\n• Reason: ${error.message}`,
+        { threadTs },
+      );
+    }
     throw error;
   }
 }

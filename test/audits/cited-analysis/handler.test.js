@@ -42,6 +42,7 @@ describe('Cited Analysis Handler', () => {
   let mockComputeTopicsFromBrandPresence;
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
+  let mockPostMessageOptional;
   let citedAnalysisHandler;
   let StoreEmptyError;
 
@@ -97,6 +98,7 @@ describe('Cited Analysis Handler', () => {
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
     mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
 
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
@@ -134,6 +136,9 @@ describe('Cited Analysis Handler', () => {
       },
       '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
+      },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     });
 
@@ -876,6 +881,47 @@ describe('Cited Analysis Handler', () => {
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
+    });
+
+    it('should post a Slack failure message when SQS send fails and slackContext is present', async () => {
+      context.sqs.sendMessage.rejects(new Error('Message must be shorter than 262144 bytes'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test', companyWebsite: baseURL },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+          slackContext: { channelId: 'C12345', threadTs: '1234567890.000100' },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('Message must be shorter than 262144 bytes');
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [, channelId, text, opts] = mockPostMessageOptional.firstCall.args;
+      expect(channelId).to.equal('C12345');
+      expect(text).to.include(':x:');
+      expect(text).to.include(baseURL);
+      expect(text).to.include('Message must be shorter than 262144 bytes');
+      expect(opts.threadTs).to.equal('1234567890.000100');
+    });
+
+    it('should not post to Slack when SQS send fails without slackContext', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(mockPostMessageOptional).to.not.have.been.called;
     });
 
     // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)
