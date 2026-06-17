@@ -18,7 +18,6 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   DrsNoContentAvailableError,
-  MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
@@ -34,10 +33,11 @@ const LOG_PREFIX = '[Cited]';
 // safety budget so worst-case serialisation doesn't hit the hard reject.
 const SQS_MAX_SAFE_BYTES = 200 * 1024;
 
-// Cap subPrompts carried per URL. Each URL can accumulate a subPrompt entry
-// for every topic it appears in; without a cap the prompts array alone can
-// push a 50-URL payload well past 256 KB.
-const MAX_PROMPTS_PER_URL = 20;
+// Cited-analysis-specific URL cap. Lower than the global MYSTIQUE_URLS_LIMIT
+// (50) because: (a) each URL requires a full DRS scrape — 50 URLs can take
+// 30-40 min; (b) 40 URLs with full prompts fits within the SQS budget after
+// field projection, removing the need for a per-URL prompts cap.
+const CITED_ANALYSIS_URLS_LIMIT = 40;
 
 /**
  * Cited Analysis Audit Handler
@@ -240,7 +240,10 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const urlLimit = Math.min(
+      resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX),
+      CITED_ANALYSIS_URLS_LIMIT,
+    );
 
     const { slackContext } = auditContext;
 
@@ -326,14 +329,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
+    const urlLimit = config?.urlLimit ?? CITED_ANALYSIS_URLS_LIMIT;
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
-    // timesCited) and cap prompts per URL so the payload stays bounded.
-    // URL Store metadata (siteId, byCustomer, audits, timestamps) is not
-    // needed downstream and contributes significant per-URL bloat.
+    // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
+    // is not needed downstream and contributes significant per-URL bloat.
+    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=40 keeps the payload
+    // within the SQS budget without capping per-URL prompts.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit)
       .map(({
@@ -342,7 +346,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         url: urlStr,
         ...(categories?.length > 0 && { categories }),
         ...(timesCited > 0 && { timesCited }),
-        ...(prompts?.length > 0 && { prompts: prompts.slice(0, MAX_PROMPTS_PER_URL) }),
+        ...(prompts?.length > 0 && { prompts }),
       }));
 
     const baseMessage = {
