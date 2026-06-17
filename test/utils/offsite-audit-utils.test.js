@@ -222,6 +222,7 @@ describe('offsite-audit-utils', () => {
       expect(result).to.have.lengthOf(2);
       expect(result[0].url).to.equal('https://example.com/a');
       expect(result[1].url).to.equal('https://example.com/b');
+      expect(log.info).to.have.been.calledWith('[T] URL limit reached (2), additional available URLs not collected');
     });
 
     it('applies limit when DRS client is not configured (fallback path)', async () => {

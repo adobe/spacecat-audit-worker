@@ -122,17 +122,22 @@ export async function filterUrlsByDrsStatus(
   }
 
   const filtered = [];
+  let drsRejected = 0;
   for (const item of urls) {
     if (availableUrls.has(item.url)) {
       filtered.push(item);
       if (limit && filtered.length >= limit) {
         break;
       }
+    } else {
+      drsRejected += 1;
     }
   }
-  const removed = urls.length - filtered.length;
-  if (removed > 0) {
-    log?.info(`${prefix} DRS availability filter: removed ${removed} URL(s) not yet scraped, ${filtered.length} remaining`);
+  if (drsRejected > 0) {
+    log?.info(`${prefix} DRS availability filter: removed ${drsRejected} URL(s) not yet scraped, ${filtered.length} remaining`);
+  }
+  if (limit && filtered.length === limit) {
+    log?.info(`${prefix} URL limit reached (${limit}), additional available URLs not collected`);
   }
   return filtered;
 }
