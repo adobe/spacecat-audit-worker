@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { resolveRumDomainKey } from '@adobe/spacecat-shared-rum-api-client';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 
 const STALENESS_DAYS = 7;
 const STALENESS_MS = STALENESS_DAYS * 24 * 60 * 60 * 1000;
-const RUM_CHECK_TIMEOUT_MS = 3000;
 
 /**
  * Periodic refresh handler for site RUM domain key availability.
@@ -52,83 +51,10 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const overrideBaseURL = siteConfig.getFetchConfig()?.overrideBaseURL;
-  let overrideHostname = null;
-  if (overrideBaseURL) {
-    try {
-      overrideHostname = new URL(overrideBaseURL).hostname;
-    } catch {
-      log.warn(`[rum-config-refresh] Malformed overrideBaseURL for site ${siteId}: ${overrideBaseURL}, falling back to baseURL`);
-    }
-  }
+  const { hasDomainKey, timedOut } = await resolveRumDomainKey(site, context);
 
-  let baseHostname;
-  try {
-    baseHostname = new URL(site.getBaseURL()).hostname;
-  } catch {
-    log.error(`[rum-config-refresh] Malformed baseURL for site ${siteId}: ${site.getBaseURL()}, skipping`);
-    return ok({ skipped: true, reason: 'malformed baseURL' });
-  }
-
-  // override-first: overrideBaseURL is the site's canonical RUM domain when set.
-  // For each candidate, also try the www. variant as a fallback — domain keys are
-  // frequently registered under www.{domain} even when the site's base URL is bare.
-  const withWwwFallback = (d) => (d && !d.startsWith('www.') ? `www.${d}` : null);
-
-  const domains = [...new Set([
-    overrideHostname,
-    withWwwFallback(overrideHostname),
-    baseHostname,
-    withWwwFallback(baseHostname),
-  ].filter(Boolean))];
-
-  let hasDomainKey = false;
-  let timeoutId;
-  let timedOut = false;
-  let cancelled = false;
-
-  const rumApiClient = RUMAPIClient.createFrom(context);
-
-  // RUM_CHECK_TIMEOUT_MS is a shared budget for the full candidate loop,
-  // not a per-domain limit, so total RUM check time stays bounded.
-  try {
-    await Promise.race([
-      (async () => {
-        for (const domain of domains) {
-          if (cancelled) {
-            break;
-          }
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await rumApiClient.retrieveDomainkey(domain);
-            hasDomainKey = true;
-            return;
-          } catch (e) {
-            log.info(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
-          }
-        }
-      })(),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-          timedOut = true;
-          cancelled = true;
-          reject(new Error('RUM check timed out'));
-        }, RUM_CHECK_TIMEOUT_MS);
-      }),
-    ]);
-    if (!hasDomainKey) {
-      log.warn(`[rum-config-refresh] No domain key found for site ${siteId} across all candidates: ${domains.join(', ')}`);
-    }
-  } catch (e) {
-    if (timedOut) {
-      log.error(`[rum-config-refresh] RUM check timed out for ${domains.join(', ')}, skipping config update`);
-      return ok({ skipped: true, reason: 'timeout' });
-    /* c8 ignore next 3 */
-    } else {
-      log.warn(`[rum-config-refresh] Unexpected error during RUM check for site ${siteId}: ${e.message}`);
-    }
-  } finally {
-    clearTimeout(timeoutId);
+  if (timedOut) {
+    return ok({ skipped: true, reason: 'timeout' });
   }
 
   try {
