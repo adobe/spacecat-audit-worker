@@ -296,7 +296,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       log,
     });
     if (orgId) {
-      const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
+      const isV2 = onboardingMode !== 'v1'
+        && await isBrandalfEnabled(orgId, context.dataAccess?.services?.postgrestClient, log);
       if (isV2) {
         organizationId = orgId;
         const brand = await findActiveBrandForSite(context, { orgId, siteId });

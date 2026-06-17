@@ -27,6 +27,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   let readFromSharePointStub;
   let uploadToSharePointStub;
   let publishToAdminHlxStub;
+  let filterReachableUrlsStub;
 
   beforeEach(async () => {
     // Mock all report-uploader functions
@@ -34,6 +35,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     readFromSharePointStub = sandbox.stub();
     uploadToSharePointStub = sandbox.stub().resolves();
     publishToAdminHlxStub = sandbox.stub().resolves();
+    // Passthrough HEAD-check by default; individual tests override.
+    filterReachableUrlsStub = sandbox.stub().callsFake(async (urls) => urls);
 
     guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
       '../../../src/utils/report-uploader.js': {
@@ -41,6 +44,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         readFromSharePoint: readFromSharePointStub,
         uploadToSharePoint: uploadToSharePointStub,
         publishToAdminHlx: publishToAdminHlxStub,
+      },
+      '../../../src/llm-error-pages/url-health-check.js': {
+        filterOutConfirmedBrokenUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -503,8 +509,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
 
-    // Verify that the warning about empty suggestions was logged
-    expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+    // Empty-suggestion rows now log at debug (aggregate counter in
+    // head-check-summary is the real signal); warn must NOT fire.
+    expect(logMock.debug.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+    expect(logMock.warn).to.not.have.been.calledWith('No suggested URLs for broken link: https://example.com/test-page');
   });
 
   it('handles user agent mismatch scenario - now updates regardless', async () => {
@@ -1088,12 +1096,15 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
   let readFromSharePointStub;
   let uploadToSharePointStub;
   let publishToAdminHlxStub;
+  let filterReachableUrlsStub;
 
   beforeEach(async () => {
     createLLMOSharepointClientStub = sandbox.stub().resolves({});
     readFromSharePointStub = sandbox.stub();
     uploadToSharePointStub = sandbox.stub().resolves();
     publishToAdminHlxStub = sandbox.stub().resolves();
+    // Passthrough HEAD-check by default; individual tests override.
+    filterReachableUrlsStub = sandbox.stub().callsFake(async (urls) => urls);
 
     // Default: Excel read returns a workbook so the Excel block succeeds.
     const wb = new ExcelJS.Workbook();
@@ -1108,6 +1119,9 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
         readFromSharePoint: readFromSharePointStub,
         uploadToSharePoint: uploadToSharePointStub,
         publishToAdminHlx: publishToAdminHlxStub,
+      },
+      '../../../src/llm-error-pages/url-health-check.js': {
+        filterOutConfirmedBrokenUrls: filterReachableUrlsStub,
       },
     });
   });
@@ -1295,7 +1309,9 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
     expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
 
-  it('skips brokenLinks with empty suggestedUrls', async () => {
+  it('persists empty-suggestion rows to DB (Excel↔DB consistency — gate removed)', async () => {
+    // Pre-fix behavior was to silently skip empty-suggestion rows in the DB, which
+    // diverged from the Excel write that includes them. Both surfaces must now agree.
     const suggestion = makeSuggestion('/p');
     const ctx = buildContext({ suggestions: [suggestion] });
 
@@ -1310,8 +1326,12 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
       },
     }, ctx);
 
-    expect(suggestion.setData).to.not.have.been.called;
-    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(suggestion.setData).to.have.been.calledOnce;
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    // HEAD-check pass clears the rationale once the URL list is empty.
+    expect(saved.aiRationale).to.equal('');
+    expect(ctx.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
   });
 
   it('skips brokenLinks where no suggestion matches the URL path', async () => {
@@ -1366,5 +1386,200 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
 
     expect(resp.status).to.equal(200);
     expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('drops HEAD-failed suggestedUrls before persisting and logs the drop count', async () => {
+    // Helper drops /bad, keeps /good.
+    filterReachableUrlsStub.callsFake(async (urls) => urls.filter((u) => !u.endsWith('/bad')));
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/good', 'https://example.com/bad'],
+          aiRationale: 'Some prose',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal(['https://example.com/good']);
+    // Rationale is preserved when at least one URL survives.
+    expect(saved.aiRationale).to.equal('Some prose');
+    expect(ctx.log.info).to.have.been.calledWithMatch(/Dropped 1 suggested URL/);
+  });
+
+  it('clears aiRationale when HEAD-check empties suggestedUrls for a link', async () => {
+    // Helper drops every URL.
+    filterReachableUrlsStub.callsFake(async () => []);
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/bad-1', 'https://example.com/bad-2'],
+          aiRationale: 'Refers to URLs that no longer exist',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('tolerates brokenLinks entries with non-array suggestedUrls (e.g. undefined)', async () => {
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          // no suggestedUrls field at all
+          aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('handles brokenLinks absent from the message (defensive Array.isArray guard)', async () => {
+    const ctx = buildContext({ suggestions: [makeSuggestion('/p')] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      // data has no brokenLinks key
+      data: { opportunityId: 'opp-1' },
+    }, ctx);
+
+    // brokenLinks is normalised to [] by the `Array.isArray(...) ? : []`
+    // guard near the top of the handler. The Excel block then runs against
+    // an empty list — it does NOT throw — and proceeds to write an
+    // unchanged workbook to SharePoint. The DB-write reduce sees [] and
+    // never calls saveMany. The handler returns 200 normally.
+    expect(resp.status).to.equal(200);
+    expect(uploadToSharePointStub).to.have.been.called;
+    expect(publishToAdminHlxStub).to.have.been.called;
+    expect(ctx.log.error).to.not.have.been.calledWithMatch(/Excel guidance update failed/);
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('keeps incoming aiRationale as "" when surviving URLs exist but rationale is undefined (?? "" fallback)', async () => {
+    // HEAD-check is the default passthrough so all suggested URLs survive;
+    // the link.aiRationale field is missing on the incoming payload, so the
+    // `?? ''` fallback in the handler should land an empty string in the DB.
+    const suggestion = makeSuggestion('/p');
+    const ctx = buildContext({ suggestions: [suggestion] });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/keep-1', 'https://example.com/keep-2'],
+          // aiRationale intentionally undefined
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(suggestion.setData).to.have.been.calledOnce;
+    const saved = suggestion.setData.firstCall.args[0];
+    expect(saved.suggestedUrls).to.deep.equal([
+      'https://example.com/keep-1',
+      'https://example.com/keep-2',
+    ]);
+    expect(saved.aiRationale).to.equal('');
+  });
+
+  it('emits head-check-summary log line with siteId / total / kept / dropped counters', async () => {
+    // Drop one URL, keep one — verifies the structured log shape.
+    filterReachableUrlsStub.callsFake(async (urls) => urls.filter((u) => !u.endsWith('/bad')));
+    const ctx = buildContext({ suggestions: [makeSuggestion('/p')] });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [{
+          urlFrom: 'X',
+          urlTo: 'https://example.com/p',
+          suggestedUrls: ['https://example.com/good', 'https://example.com/bad'],
+          aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    const summaryCall = ctx.log.info.getCalls().find(
+      (c) => typeof c.args[0] === 'string' && c.args[0].includes('head-check-summary'),
+    );
+    expect(summaryCall, 'head-check-summary log line missing').to.exist;
+    // Structured counters are passed as the second arg (Coralogix native fields).
+    expect(summaryCall.args[1]).to.deep.equal({
+      siteId: 'site-1', total: 2, kept: 1, dropped: 1,
+    });
+  });
+
+  it('deduplicates a URL shared across broken links into a single HEAD check, then maps it back per-link', async () => {
+    const ctx = buildContext({
+      suggestions: [makeSuggestion('/a'), makeSuggestion('/b')],
+    });
+
+    await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-1',
+        brokenLinks: [
+          {
+            urlFrom: 'X',
+            urlTo: 'https://example.com/a',
+            suggestedUrls: ['https://example.com/shared', 'https://example.com/only-a'],
+            aiRationale: 'ra',
+          },
+          {
+            urlFrom: 'Y',
+            urlTo: 'https://example.com/b',
+            suggestedUrls: ['https://example.com/shared'],
+            aiRationale: 'rb',
+          },
+        ],
+      },
+    }, ctx);
+
+    // The shared URL is HEAD-checked exactly once: the handler dedups into a Set
+    // before probing, so the three suggestions collapse to two unique URLs.
+    expect(filterReachableUrlsStub).to.have.been.calledOnce;
+    const probed = filterReachableUrlsStub.firstCall.args[0];
+    expect(probed).to.have.members(['https://example.com/shared', 'https://example.com/only-a']);
+    expect(probed).to.have.length(2);
   });
 });

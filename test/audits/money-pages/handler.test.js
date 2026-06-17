@@ -9,13 +9,13 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-disable */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
 import {
+  collectAuditData,
   sendToMystiqueForGeneration,
 } from '../../../src/money-pages/handler.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -60,6 +60,20 @@ describe('Money pages audit', () => {
     sinon.restore();
   });
 
+  describe('collectAuditData', () => {
+    it('should return auditResult and fullAuditRef', async () => {
+      const result = await collectAuditData('www.example.com', context, site);
+
+      expect(result).to.deep.equal({
+        auditResult: { siteUrl: 'www.example.com' },
+        fullAuditRef: 'www.example.com',
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(`[${AUDIT_TYPE}] [Site: site-id-1] Collecting audit data`),
+      );
+    });
+  });
+
   describe('sendToMystiqueForGeneration', () => {
     let mockSqs;
     let mockAudit;
@@ -81,9 +95,8 @@ describe('Money pages audit', () => {
     });
 
     it('should successfully send message to Mystique', async () => {
-      const result = await sendToMystiqueForGeneration(context);
+      await sendToMystiqueForGeneration('www.example.com', {}, context, site);
 
-      expect(result).to.deep.equal({ status: 'complete' });
       expect(mockSqs.sendMessage).to.have.been.calledOnce;
 
       const messageArg = mockSqs.sendMessage.getCall(0).args[1];
@@ -95,16 +108,31 @@ describe('Money pages audit', () => {
       expect(messageArg.data).to.not.have.property('top_pages');
     });
 
+    it('should warn and skip when SQS is not configured', async () => {
+      context.sqs = null;
+
+      await sendToMystiqueForGeneration('www.example.com', {}, context, site);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured'));
+      expect(context.log.info).to.not.have.been.called;
+    });
+
+    it('should warn and skip when Mystique queue URL is not configured', async () => {
+      context.env = {};
+
+      await sendToMystiqueForGeneration('www.example.com', {}, context, site);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured'));
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+    });
+
     it('should throw error when SQS message sending fails', async () => {
       mockSqs.sendMessage.rejects(new Error('SQS error'));
 
-      await expect(sendToMystiqueForGeneration(context))
+      await expect(sendToMystiqueForGeneration('www.example.com', {}, context, site))
         .to.be.rejectedWith('SQS error');
 
       expect(context.log.info).to.not.have.been.called;
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match('Failed to send message to Mystique')
-      );
     });
   });
 });

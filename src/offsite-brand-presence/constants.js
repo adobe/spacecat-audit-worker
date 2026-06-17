@@ -24,7 +24,10 @@ export const PROVIDERS = Object.freeze([
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?\.json$/;
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
+
+// Region codes whose brand-presence rows are processed. Limited to English-speaking markets.
+export const ACCEPTED_REGIONS = Object.freeze(new Set(['US', 'GB', 'CA', 'AU', 'IE', 'NZ']));
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
@@ -40,11 +43,11 @@ export const OFFSITE_DOMAINS = Object.freeze({
     auditType: Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
     datasetIds: [SCRAPE_DATASET_IDS.REDDIT_POSTS, SCRAPE_DATASET_IDS.REDDIT_COMMENTS],
   },
-  'wikipedia.org': {
-    auditType: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
-    datasetIds: [SCRAPE_DATASET_IDS.WIKIPEDIA],
-  },
 });
+
+// Recognized only to keep their URLs out of the top-cited bucket; not DRS-scraped here.
+// wikipedia-analysis is handled independently by Mystique (fetches Wikipedia directly).
+export const TOP_CITED_EXCLUDED_DOMAINS = Object.freeze(['wikipedia.org']);
 
 export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
@@ -60,3 +63,20 @@ export const RETRIABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 export const RETRY_DELAY_MS = 500;
 export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;
+
+// DRS job completion polling (offsite-brand-presence-drs-status handler).
+export const DRS_POLL_INTERVAL_SECONDS = 120; // 2 minutes between polls
+export const DRS_POLL_MAX_WAIT_SECONDS = 1800; // 30 minute total budget
+export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
+export const DRS_TERMINAL_STATUSES = new Set([
+  'COMPLETED',
+  'COMPLETED_WITH_ERRORS',
+  'FAILED',
+  'CANCELLED',
+]);
+// Terminal statuses that produced usable scraped data. Used to decide which
+// downstream analysis audits to auto-trigger after DRS scraping completes.
+export const DRS_SUCCESS_STATUSES = new Set([
+  'COMPLETED',
+  'COMPLETED_WITH_ERRORS',
+]);

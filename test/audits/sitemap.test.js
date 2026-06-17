@@ -236,7 +236,7 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
@@ -263,7 +263,7 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
@@ -413,12 +413,12 @@ describe('Sitemap Audit', () => {
       expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
     });
 
-    it('should return FETCH_ERROR when there is a network error', async () => {
+    it('should return CANNOT_READ_SITEMAP when there is a network error', async () => {
       nock(url).get('/sitemap.xml').replyWithError('Network error');
 
       const resp = await checkSitemap();
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
+      expect(resp.reasons).to.include(ERROR_CODES.CANNOT_READ_SITEMAP);
     });
 
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
@@ -428,7 +428,7 @@ describe('Sitemap Audit', () => {
 
       const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_FORMAT);
+      expect(resp.reasons).to.include(ERROR_CODES.INVALID_SITEMAP_FORMAT);
     });
 
     it('checkSitemap returns invalid result for non-existing sitemap', async () => {
@@ -571,7 +571,7 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(false);
       expect(result.reasons).to.deep.equal([
         {
-          error: ERROR_CODES.INVALID_URL,
+          error: ERROR_CODES.GENERAL_ERROR,
           value: 'not a valid url',
         },
       ]);
@@ -1207,7 +1207,7 @@ describe('Sitemap Audit', () => {
           {
             value:
               'Fetch error for https://maidenform.com/robots.txt Status: 403',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         scores: {},
@@ -1222,7 +1222,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/sitemap.xml',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         url: 'https://some-domain.adobe',
@@ -1240,7 +1240,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/robots.txt',
-            error: 'NO SITEMAP FOUND IN ROBOTS',
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
           },
         ],
         details: {
@@ -1485,7 +1485,7 @@ describe('Sitemap Audit', () => {
     });
 
     it('shallow-merges type error without stripping error string', () => {
-      const existing = { type: 'error', error: ERROR_CODES.FETCH_ERROR, extra: 1 };
+      const existing = { type: 'error', error: ERROR_CODES.CANNOT_READ_SITEMAP, extra: 1 };
       const newData = {
         type: 'error',
         error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
@@ -1658,7 +1658,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               value: 'https://some-domain.adobe/sitemap.xml',
-              error: 'NO VALID URLs FOUND IN SITEMAP',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             },
           ],
           url: 'https://some-domain.adobe',
@@ -1680,7 +1680,7 @@ describe('Sitemap Audit', () => {
         suggestions: [
           {
             type: 'error',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
               'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
           },

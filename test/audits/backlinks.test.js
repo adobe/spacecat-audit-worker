@@ -1131,6 +1131,49 @@ describe('Backlinks Tests', function () {
       expect(statusStub).to.have.been.calledOnce;
       expect(statusStub.firstCall.args[1]).to.equal('NEW');
     });
+
+    it('excludes suggestions without getStatus from the NEW count (optional chaining branch)', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+
+      context.site = { ...contextSite };
+
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves([
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'new-1',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              url_from: 'https://from.com/1',
+              url_to: 'https://example.com',
+            }),
+          },
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'no-status-1',
+            getData: () => ({
+              url_from: 'https://from.com/2',
+              url_to: 'https://example.com',
+            }),
+          },
+        ]);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
+
+      await generateSuggestionData(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    });
   });
 
   describe('generateSuggestionData - Bright Data integration', () => {
@@ -1719,6 +1762,79 @@ describe('Backlinks Tests', function () {
       expect(context.log.info).to.have.been.calledWith(
         'All broken links resolved via Bright Data. Forwarding to Mystique.',
       );
+    });
+  });
+
+  describe('generateSuggestionData - PLG alert behavior', () => {
+    let mockedGenerateSuggestionData;
+    let sendLowSuggestionCountAlertStub;
+
+    beforeEach(async () => {
+      sendLowSuggestionCountAlertStub = sinon.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/backlinks/handler.js', {
+        '../../src/support/plg-suggestion-alert.js': {
+          sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+        },
+      });
+      mockedGenerateSuggestionData = mockedHandler.generateSuggestionData;
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+        getHandlers: sandbox.stub().returns({}),
+      });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves(topPages);
+    });
+
+    afterEach(() => sandbox.restore());
+
+    it('calls the alert with the NEW suggestion count', async () => {
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves([{
+          getId: () => 'new-1',
+          getStatus: () => 'NEW',
+          getData: () => ({ url_from: 'https://from.com/1', url_to: 'https://example.com' }),
+        }]);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(auditTypeArg).to.equal('broken-backlinks');
+      expect(countArg).to.equal(1);
+    });
+
+    it('excludes PENDING_VALIDATION suggestions from the count passed to the alert', async () => {
+      context.site = { ...contextSite, requiresValidation: true };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .callsFake((_id, status) => (status === 'PENDING_VALIDATION'
+          ? Promise.resolve([{
+            getId: () => 'pending-1',
+            getStatus: () => 'PENDING_VALIDATION',
+            getData: () => ({ url_from: 'https://from.com/p1', url_to: 'https://example.com/p' }),
+          }])
+          : Promise.resolve([{
+            getId: () => 'new-1',
+            getStatus: () => 'NEW',
+            getData: () => ({ url_from: 'https://from.com/1', url_to: 'https://example.com' }),
+          }])));
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(countArg).to.equal(1);
     });
   });
 

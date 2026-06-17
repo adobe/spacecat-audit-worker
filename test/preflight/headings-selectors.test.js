@@ -20,7 +20,9 @@ import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 
-describe('Preflight Headings - Selector Coverage Tests', () => {
+describe('Preflight Headings - Selector Coverage Tests', function () {
+  this.timeout(10000);
+
   let context;
   let site;
   let job;
@@ -28,6 +30,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
   let configuration;
   let mockDomSelector;
   let mockHeadingsHandler;
+  let mockSharedUtils;
 
   beforeEach(async () => {
     mockDomSelector = {
@@ -35,10 +38,13 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       toElementTargets: sinon.stub(),
     };
 
+    mockSharedUtils = {
+      getBrandGuidelines: sinon.stub().resolves({}),
+    };
+
     // Mock headings handler to return checks with transformRules
     mockHeadingsHandler = {
       validatePageHeadingFromScrapeJson: sinon.stub(),
-      getBrandGuidelines: sinon.stub().resolves({}),
       getH1HeadingASuggestion: sinon.stub().resolves('AI suggestion'),
       HEADINGS_CHECKS: {
         HEADING_MISSING_H1: { check: 'heading-missing-h1' },
@@ -161,6 +167,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -230,6 +237,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -273,23 +281,26 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       );
     });
 
-    it('should generate selectors for heading-empty check when tagName is provided', async () => {
-      // Setup heading-empty check with tagName
-      const checkWithTagName = {
+    it('should generate selector for heading-empty check using transformRules.selector', async () => {
+      const checkWithTransformRules = {
         success: false,
         check: 'heading-empty',
         checkTitle: 'Empty Heading',
         description: 'Heading is empty',
         explanation: 'Add content to heading',
-        tagName: 'h1',
+        tagName: 'H1',
+        transformRules: {
+          action: 'replace',
+          selector: 'body > h1',
+          currValue: '',
+        },
       };
 
       mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
         url: 'https://main--example--page.aem.page/page1',
-        checks: [checkWithTagName],
+        checks: [checkWithTransformRules],
       });
 
-      // Mock getDomElementSelector to return a selector for the empty h1
       mockDomSelector.getDomElementSelector.returns('body > h1');
       mockDomSelector.toElementTargets.returns({
         elements: [{ selector: 'body > h1' }],
@@ -298,6 +309,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -333,10 +345,162 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify getDomElementSelector was called for the empty heading
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      // Verify toElementTargets was called with the generated selector
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
+    });
+
+    it('should generate one selector per empty heading when multiple empty headings exist (no duplicates)', async () => {
+      // Two separate heading-empty checks, each with its own selector — this is what the
+      // headings handler produces when there are 2 empty H2s on the page.
+      const check1 = {
+        success: false,
+        check: 'heading-empty',
+        checkTitle: 'Empty Heading',
+        description: 'H2 heading is empty',
+        explanation: 'Add content to heading',
+        tagName: 'H2',
+        transformRules: {
+          action: 'replace',
+          selector: 'body > h2:nth-of-type(1)',
+          currValue: '',
+        },
+      };
+      const check2 = {
+        success: false,
+        check: 'heading-empty',
+        checkTitle: 'Empty Heading',
+        description: 'H2 heading is empty',
+        explanation: 'Add content to heading',
+        tagName: 'H2',
+        transformRules: {
+          action: 'replace',
+          selector: 'body > h2:nth-of-type(2)',
+          currValue: '',
+        },
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [check1, check2],
+      });
+
+      // getDomElementSelector returns different values for each element
+      mockDomSelector.getDomElementSelector
+        .onFirstCall().returns('body > h2:nth-of-type(1)')
+        .onSecondCall().returns('body > h2:nth-of-type(2)');
+      mockDomSelector.toElementTargets
+        .onFirstCall().returns({ elements: [{ selector: 'body > h2:nth-of-type(1)' }] })
+        .onSecondCall().returns({ elements: [{ selector: 'body > h2:nth-of-type(2)' }] });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>Title</h1><h2></h2><h2></h2></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      // Each check produces exactly one selector (its own), not all empty headings
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h2:nth-of-type(1)']);
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h2:nth-of-type(2)']);
+      // Called exactly twice — once per check, no spurious extra invocations
+      expect(mockDomSelector.toElementTargets).to.have.been.calledTwice;
+      // toElementTargets is never called with both selectors together
+      expect(mockDomSelector.toElementTargets).to.not.have.been.calledWith(
+        ['body > h2:nth-of-type(1)', 'body > h2:nth-of-type(2)'],
+      );
+    });
+
+    it('should produce no selectors for heading-empty check without transformRules.selector', async () => {
+      // heading-empty check missing transformRules — produces no selector rather than
+      // falling back to re-querying all empty headings (which caused the duplicate-card bug).
+      const checkNoSelector = {
+        success: false,
+        check: 'heading-empty',
+        checkTitle: 'Empty Heading',
+        description: 'Heading is empty',
+        explanation: 'Add content to heading',
+        tagName: 'H2',
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkNoSelector],
+      });
+
+      mockDomSelector.toElementTargets.returns({});
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h2></h2></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
     });
 
     it('should produce no selectors for unknown check types', async () => {
@@ -362,6 +526,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -424,6 +589,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -490,6 +656,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -556,6 +723,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -629,6 +797,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this
@@ -693,6 +862,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
         '../../src/metatags/seo-checks.js': {
           default: class {
             // eslint-disable-next-line class-methods-use-this

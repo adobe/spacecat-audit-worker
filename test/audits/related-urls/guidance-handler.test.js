@@ -84,17 +84,25 @@ describe('Related URLs Guidance Handler', function testSuite() {
     sandbox.restore();
   });
 
+  function createSite(overrides = {}) {
+    return {
+      getId: () => 'site-1',
+      getConfig: () => ({ getLlmoDataFolder: () => 'dev/lovesac-com' }),
+      getBaseURL: () => 'https://www.lovesac.com',
+      ...overrides,
+    };
+  }
+
   async function loadHandler({
     fetchResponse,
     fetchReject,
-    site = {
-      getConfig: () => ({ getLlmoDataFolder: () => 'dev/lovesac-com' }),
-      getBaseURL: () => 'https://www.lovesac.com',
-    },
+    site = createSite(),
     workbook,
     readFromSharePointResult = Buffer.from('sheet'),
     readFromSharePointError = null,
     writeBufferError = null,
+    faqsEnabled = true,
+    auditQueue = 'https://sqs.us-east-1.amazonaws.com/123/audit-jobs',
   } = {}) {
     const badRequest = sandbox.stub().callsFake((msg) => ({ status: 'badRequest', msg }));
     const noContent = sandbox.stub().callsFake(() => ({ status: 'noContent' }));
@@ -123,6 +131,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
     const uploadToSharePoint = sandbox.stub().resolves();
     const publishToAdminHlx = sandbox.stub().resolves();
     const createLLMOSharepointClient = sandbox.stub().resolves({ client: true });
+    const isAuditEnabledForSite = sandbox.stub().resolves(faqsEnabled);
 
     const resolvedWorkbook = workbook || {
       worksheets: [],
@@ -153,6 +162,9 @@ describe('Related URLs Guidance Handler', function testSuite() {
         uploadToSharePoint,
         publishToAdminHlx,
       },
+      '../../../src/common/index.js': {
+        isAuditEnabledForSite,
+      },
       exceljs: {
         Workbook: class {
           constructor() {
@@ -162,11 +174,19 @@ describe('Related URLs Guidance Handler', function testSuite() {
       },
     });
 
+    const sqsSendMessage = sandbox.stub().resolves();
+    const configuration = {
+      getQueues: sandbox.stub().returns({ audits: auditQueue }),
+    };
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sqsSendMessage },
       dataAccess: {
         Site: {
           findById: sandbox.stub().resolves(site),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(configuration),
         },
       },
     };
@@ -184,6 +204,9 @@ describe('Related URLs Guidance Handler', function testSuite() {
         uploadToSharePoint,
         publishToAdminHlx,
         createLLMOSharepointClient,
+        isAuditEnabledForSite,
+        sqsSendMessage,
+        configuration,
       },
     };
   }
@@ -236,7 +259,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
       }),
     };
 
-    const { handler, context, stubs } = await loadHandler({ workbook, fetchResponse });
+    const { handler, context, stubs } = await loadHandler({ workbook, fetchResponse, faqsEnabled: false });
     const result = await handler({
       siteId: 'site-1',
       data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
@@ -270,6 +293,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const { handler, context } = await loadHandler({
       workbook,
+      faqsEnabled: false,
       fetchResponse: {
         ok: true,
         json: async () => ({
@@ -589,6 +613,201 @@ describe('Related URLs Guidance Handler', function testSuite() {
     } finally {
       global.URL = originalURL;
     }
+  });
+
+  describe('follow-up faqs audit enqueueing', () => {
+    function makeSuccessPayload() {
+      return {
+        ok: true,
+        json: async () => ({
+          prompts: [{
+            prompt: 'Prompt 1',
+            input_region: 'US',
+            related_urls: [{ url: 'https://example.com/page' }],
+          }],
+        }),
+      };
+    }
+
+    function makeSuccessWorkbook(sandbox) {
+      const rows = [createDataRow('Prompt 1', 'US')];
+      const { worksheet } = createWorksheet(rows);
+      return {
+        workbook: {
+          worksheets: [worksheet],
+          xlsx: {
+            load: sandbox.stub().resolves(),
+            writeBuffer: sandbox.stub().resolves(Buffer.from('xlsx')),
+          },
+        },
+      };
+    }
+
+    it('enqueues faqs audit after successfully writing Related URLs', async () => {
+      const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123/audit-jobs';
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+        auditQueue: queueUrl,
+      });
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(stubs.sqsSendMessage).to.have.been.calledOnce;
+      const [calledQueueUrl, msg] = stubs.sqsSendMessage.firstCall.args;
+      expect(calledQueueUrl).to.equal(queueUrl);
+      expect(msg.type).to.equal('faqs');
+      expect(msg.siteId).to.equal('site-1');
+      expect(msg.auditContext.triggeredBy).to.equal('related-urls');
+    });
+
+    it('does not enqueue faqs audit when faqs is disabled, and warns that suggestions will not be refreshed', async () => {
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: false,
+      });
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(stubs.sqsSendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/Related URLs were written but suggestions will not be refreshed/);
+    });
+
+    it('does not enqueue faqs audit when zero Related URL rows are written', async () => {
+      // Row prompt does not match the payload prompt → updatedCount = 0
+      const rows = [createDataRow('No match prompt', 'US')];
+      const { worksheet } = createWorksheet(rows);
+      const workbook = {
+        worksheets: [worksheet],
+        xlsx: {
+          load: sandbox.stub().resolves(),
+          writeBuffer: sandbox.stub().resolves(Buffer.from('xlsx')),
+        },
+      };
+
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        workbook,
+        faqsEnabled: true,
+      });
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('noContent');
+      expect(stubs.sqsSendMessage).to.not.have.been.called;
+    });
+
+    it('does not enqueue faqs audit when sqs is unavailable but still returns ok', async () => {
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+      });
+
+      // Remove sqs from context to simulate it being unavailable
+      delete context.sqs;
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(stubs.sqsSendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/SQS not available/);
+    });
+
+    it('logs error but still returns ok when faqs enqueue fails', async () => {
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+      });
+
+      stubs.sqsSendMessage.rejects(new Error('SQS timeout'));
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to enqueue follow-up faqs audit/);
+    });
+
+    it('does not enqueue faqs audit when audit queue is missing from configuration', async () => {
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+        auditQueue: null,
+      });
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(stubs.sqsSendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/Audit queue URL not found/);
+    });
+
+    it('logs error but still returns ok when Configuration.findLatest rejects in enqueue', async () => {
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+      });
+
+      context.dataAccess.Configuration.findLatest.rejects(new Error('DB unavailable'));
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      expect(stubs.sqsSendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to enqueue follow-up faqs audit/);
+    });
+
+    it('always enqueues when faqs ran earlier in the same week (before this Related URLs write)', async () => {
+      // This is the core scenario the fix addresses: faqs ran Monday, related-urls
+      // writes the sheet on Wednesday. We must enqueue faqs again so suggestions
+      // are refreshed with the newly written Related URLs.
+      const { handler, context, stubs } = await loadHandler({
+        fetchResponse: makeSuccessPayload(),
+        ...makeSuccessWorkbook(sandbox),
+        faqsEnabled: true,
+        auditQueue: 'https://sqs.us-east-1.amazonaws.com/123/audit-jobs',
+      });
+
+      const result = await handler({
+        siteId: 'site-1',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
+      }, context);
+
+      expect(result.status).to.equal('ok');
+      // faqs ran earlier this week - enqueue must still fire, no dedupe by week boundary
+      expect(stubs.sqsSendMessage).to.have.been.calledOnce;
+      const [, msg] = stubs.sqsSendMessage.firstCall.args;
+      expect(msg.type).to.equal('faqs');
+      expect(msg.auditContext.triggeredBy).to.equal('related-urls');
+    });
   });
 
   it('returns noContent when payload.prompts is not an array', async () => {
