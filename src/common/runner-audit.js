@@ -10,10 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { checkProductCodeEntitlements, parseMessageDataForRunnerAudit } from './audit-utils.js';
+import { parseMessageDataForRunnerAudit } from './audit-utils.js';
 
 /**
  * Builds the audit context for RunnerAudit: `message.auditContext` plus optional `messageData`
@@ -42,21 +40,11 @@ export class RunnerAudit extends BaseAudit {
   }
 
   async run(message, context) {
-    const { log } = context;
     const { type, siteId } = message;
     const auditContext = buildRunnerAuditContext(message);
 
     try {
       const site = await this.siteProvider(siteId, context);
-
-      const { Configuration } = context.dataAccess;
-      const configuration = await Configuration.findLatest();
-      const handler = configuration.getHandlers()?.[type];
-      if (!isNonEmptyArray(handler?.productCodes)
-        || !(await checkProductCodeEntitlements(handler.productCodes, site, context))) {
-        log.info(`Audit ${type} skipped for site ${site.getId()}: missing product codes or site enrollment`);
-        return ok();
-      }
 
       const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site, auditContext);

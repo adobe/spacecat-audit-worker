@@ -13,10 +13,9 @@
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { hasText, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
 import {
-  checkProductCodeEntitlements,
   loadExistingAudit,
   preserveOnDemand,
   preserveSlackContext,
@@ -115,14 +114,6 @@ export class StepAudit extends BaseAudit {
       // Preserve requiresValidation from index.js - siteProvider returns a fresh site
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
-      }
-      const { Configuration } = context.dataAccess;
-      const configuration = await Configuration.findLatest();
-      const handler = configuration.getHandlers()?.[type];
-      if (!isNonEmptyArray(handler?.productCodes)
-        || !(await checkProductCodeEntitlements(handler.productCodes, site, context))) {
-        log.info(`Audit ${type} skipped for site ${site.getId()}: missing product codes or site enrollment`);
-        return ok();
       }
 
       // Check if scrape job was aborted

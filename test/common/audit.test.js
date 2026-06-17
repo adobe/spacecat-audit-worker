@@ -15,7 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { TierClient } from '@adobe/spacecat-shared-tier-client';
+
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   BaseAudit,
@@ -100,12 +100,6 @@ describe('Audit tests', () => {
       disableHandlerForSite: () => true,
       disableHandlerForOrg: () => true,
     };
-
-    // Mock TierClient for entitlement checks
-    const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
-    };
-    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   afterEach('clean', () => {
@@ -220,28 +214,6 @@ describe('Audit tests', () => {
       const finalURL = getUrlWithoutPath(urlWithSchema);
 
       expect(finalURL).to.equal('https://www.spacekitty.cat');
-    });
-
-    it('audit run skips when site is not entitled', async () => {
-      TierClient.createForSite.returns({
-        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: false }),
-      });
-      const queueUrl = 'some-queue-url';
-      context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
-      context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
-      context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
-      context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
-
-      const audit = new AuditBuilder()
-        .withUrlResolver(noopUrlResolver)
-        .withRunner(() => ({ auditResult: {}, fullAuditRef: 's3://test' }))
-        .build();
-
-      const resp = await audit.run(message, context);
-
-      expect(resp.status).to.equal(200);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/skipped for site.*missing product codes or site enrollment/));
-      expect(context.dataAccess.Audit.create).not.to.have.been.called;
     });
 
     it('audit runs as expected with post processors', async () => {

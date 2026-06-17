@@ -15,7 +15,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import { ok } from '@adobe/spacecat-shared-http-utils';
 import { parseMessageDataForRunnerAudit } from '../../src/common/audit-utils.js';
 import { buildRunnerAuditContext } from '../../src/common/runner-audit.js';
 
@@ -39,17 +38,14 @@ describe('buildRunnerAuditContext', () => {
 describe('RunnerAudit', () => {
   let sandbox;
   let RunnerAudit;
-  let checkProductCodeEntitlements;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    checkProductCodeEntitlements = sandbox.stub().resolves(true);
     const mod = await esmock(
       '../../src/common/runner-audit.js',
       import.meta.url,
       {
         '../../src/common/audit-utils.js': {
-          checkProductCodeEntitlements,
           parseMessageDataForRunnerAudit,
         },
       },
@@ -85,21 +81,13 @@ describe('RunnerAudit', () => {
     };
   }
 
-  // Builds a context whose Configuration exposes a handler for the audit type.
-  // Defaults to a handler with product codes so the entitlement gate can pass.
-  function buildContext(handler = { productCodes: ['product-1'] }) {
-    const configuration = {
-      getHandlers: sandbox.stub().returns({ 'reddit-analysis': handler }),
-    };
+  function buildContext() {
     return {
       log: {
         warn: sandbox.stub(),
         error: sandbox.stub(),
         info: sandbox.stub(),
         debug: sandbox.stub(),
-      },
-      dataAccess: {
-        Configuration: { findLatest: sandbox.stub().resolves(configuration) },
       },
       invocation: {},
     };
@@ -164,13 +152,13 @@ describe('RunnerAudit', () => {
     );
   });
 
-  it('runs the audit for an entitled site regardless of the handler enabled-list', async () => {
+  it('runs the audit regardless of the handler enabled-list', async () => {
     const runner = sandbox.stub().resolves({
       auditResult: { success: true },
       fullAuditRef: 'https://example.com',
     });
     const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
-    const { instance, site } = buildInstance(runner, persister);
+    const { instance } = buildInstance(runner, persister);
 
     const context = buildContext();
 
@@ -183,60 +171,7 @@ describe('RunnerAudit', () => {
       context,
     );
 
-    expect(checkProductCodeEntitlements).to.have.been.calledWith(
-      ['product-1'],
-      site,
-      context,
-    );
     expect(runner).to.have.been.called;
-  });
-
-  it('returns ok and skips when the handler has no product codes', async () => {
-    const runner = sandbox.stub();
-    const persister = sandbox.stub();
-    const { instance } = buildInstance(runner, persister);
-
-    const context = buildContext({});
-
-    const result = await instance.run(
-      {
-        type: 'reddit-analysis',
-        siteId: 'site-1',
-        auditContext: {},
-      },
-      context,
-    );
-
-    expect(result.status).to.equal(ok().status);
-    expect(runner).not.to.have.been.called;
-    expect(checkProductCodeEntitlements).not.to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(
-      'Audit reddit-analysis skipped for site site-1: missing product codes or site enrollment',
-    );
-  });
-
-  it('returns ok and skips when the site is not entitled', async () => {
-    checkProductCodeEntitlements.resolves(false);
-    const runner = sandbox.stub();
-    const persister = sandbox.stub();
-    const { instance } = buildInstance(runner, persister);
-
-    const context = buildContext();
-
-    const result = await instance.run(
-      {
-        type: 'reddit-analysis',
-        siteId: 'site-1',
-        auditContext: {},
-      },
-      context,
-    );
-
-    expect(result.status).to.equal(ok().status);
-    expect(runner).not.to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(
-      'Audit reddit-analysis skipped for site site-1: missing product codes or site enrollment',
-    );
   });
 
   it('wraps runner failures with a descriptive error', async () => {

@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
 import {
   sendContinuationMessage,
-  checkProductCodeEntitlements,
   preserveOnDemand,
   preserveSlackContext,
 } from './audit-utils.js';
@@ -89,23 +88,6 @@ export class AsyncJobRunner extends StepAudit {
       }
 
       const site = await this.siteProvider(siteId, context);
-
-      const { Configuration } = context.dataAccess;
-      const configuration = await Configuration.findLatest();
-      const handler = configuration.getHandlers()?.[type];
-      if (!isNonEmptyArray(handler?.productCodes)
-        || !(await checkProductCodeEntitlements(handler.productCodes, site, context))) {
-        log.info(`Audit ${type} skipped for site ${site.getId()}: missing product codes or site enrollment`);
-        job.setStatus(AsyncJob.Status.CANCELLED);
-        job.setMetadata({
-          payload: {
-            siteId,
-            reason: `${type} audit skipped for site ${siteId}: missing product codes or site enrollment`,
-          },
-        });
-        await job.save();
-        return ok();
-      }
 
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
