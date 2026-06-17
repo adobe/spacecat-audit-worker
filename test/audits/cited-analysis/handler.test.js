@@ -789,6 +789,7 @@ describe('Cited Analysis Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls.length).to.be.lessThan(CITED_ANALYSIS_URLS_LIMIT);
+      expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });
 
@@ -817,6 +818,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.length(1);
       expect(sentMessage.data.urls[0].url).to.equal('https://example.com/huge');
       expect(sentMessage.data.urls[0].prompts).to.be.undefined;
+      expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
     });
 
