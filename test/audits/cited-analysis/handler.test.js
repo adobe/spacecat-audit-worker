@@ -792,6 +792,34 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });
 
+    it('should strip prompts from single URL when payload still exceeds budget', async () => {
+      // One URL whose prompts alone push it over the 200 KB budget.
+      const hugePrompt = 'x'.repeat(300 * 1024); // 300 KB in a single prompt entry
+      const singleBigUrl = [{ url: 'https://example.com/huge', prompts: [hugePrompt] }];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: singleBigUrl,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.length(1);
+      expect(sentMessage.data.urls[0].url).to.equal('https://example.com/huge');
+      expect(sentMessage.data.urls[0].prompts).to.be.undefined;
+      expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
+    });
+
     it('should skip sending message when audit failed', async () => {
       const auditData = {
         siteId,

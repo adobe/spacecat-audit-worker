@@ -377,8 +377,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const message = applyBrandScope(baseMessage, brand);
 
     // Safety guard: if the serialised message still exceeds the budget after
-    // per-URL projection and prompt capping, drop URLs from the tail until
-    // it fits rather than letting SQS reject the send entirely.
+    // per-URL projection, drop URLs from the tail until it fits rather than
+    // letting SQS reject the send entirely.
     let sentUrlCount = message.data.urls.length;
     while (sentUrlCount > 1) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
@@ -390,6 +390,23 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       log.warn(
         `${LOG_PREFIX} Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
       );
+    }
+
+    // Last-resort: a single URL with extremely long prompts can still exceed
+    // the budget. Strip its prompts so the URL itself always gets through.
+    if (sentUrlCount === 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes > SQS_MAX_SAFE_BYTES) {
+        log.warn(
+          `${LOG_PREFIX} Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
+        );
+        const [singleUrl] = message.data.urls;
+        message.data.urls = [{
+          url: singleUrl.url,
+          ...(singleUrl.categories?.length > 0 && { categories: singleUrl.categories }),
+          ...(singleUrl.timesCited > 0 && { timesCited: singleUrl.timesCited }),
+        }];
+      }
     }
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
