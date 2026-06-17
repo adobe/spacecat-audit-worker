@@ -23,7 +23,13 @@ export const MYSTIQUE_URLS_LIMIT = 50;
  * editorial content. Cited analysis measures earned brand perception, so these
  * are dropped entirely.
  *
- * Note: `youtube.com` / `reddit.com` are intentionally absent — they are routed
+ * Inclusion criteria: only domains actually observed polluting production
+ * cited-URL lists are listed here, kept deliberately narrow to avoid dropping
+ * legitimately earned content. Other social platforms (tiktok.com,
+ * pinterest.com, linkedin.com) and search engines (bing.com) are intentionally
+ * absent until they show up in real data — add them as observed.
+ *
+ * Note: `youtube.com` / `reddit.com` are also absent because they are routed
  * to their own dedicated analyses via `OFFSITE_DOMAINS` and are therefore
  * already excluded from the top-cited bucket.
  *
@@ -60,6 +66,9 @@ export function computeBrandTokens(siteHostname, brandKeywords = []) {
   if (apexLabel.length >= MIN_BRAND_TOKEN_LENGTH) {
     tokens.add(apexLabel);
   }
+  // The parameter default ([]) covers a missing argument; the `|| []` guard
+  // covers an explicit null/undefined passed by a caller (e.g. an unconfigured
+  // `getBrandKeywords()` returning null). Both are needed.
   for (const keyword of brandKeywords || []) {
     const normalized = String(keyword).toLowerCase().replace(/[^a-z0-9]/g, '');
     if (normalized.length >= MIN_BRAND_TOKEN_LENGTH) {
@@ -70,35 +79,68 @@ export function computeBrandTokens(siteHostname, brandKeywords = []) {
 }
 
 /**
- * Predicate for cited URLs that must NOT enter the URL Store / cited analysis.
+ * Extracts the hostname from a URL or bare host string, stripping the leading
+ * `www.` so apex-to-apex comparison works regardless of how the brand domain is
+ * configured (`bmw.com` vs `https://www.bmw.com/`).
+ *
+ * Returns an empty string for unparseable input — callers then treat the check
+ * as a no-op rather than dropping URLs based on garbage.
+ * @param {string} value
+ * @returns {string}
+ */
+export function toApexHost(value) {
+  if (!value) {
+    return '';
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '';
+  }
+  try {
+    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const host = new URL(withScheme).hostname.toLowerCase();
+    return host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Returns the reason a cited URL host must NOT enter the URL Store / cited
+ * analysis, or `null` when the host is allowed.
  *
  * A host is excluded when it is (or is a subdomain of) a non-earned domain, or
  * when it contains a brand token as a substring (branded-lookalike match).
  * Matching is on the host only — never the path — so a third-party review at
  * `techradar.com/is-lovesac-good` is kept while `lovedbylovesac.com` is dropped.
  *
+ * The reason string is intended for debug logging so operators can see exactly
+ * which domain or brand token dropped a URL (important for short/common-word
+ * brand tokens like `gap` or `art`). A non-null return is truthy, so existing
+ * boolean call sites (`if (isExcludedCitedHost(...))`) keep working.
+ *
  * @param {string} hostname - URL hostname (may include a leading `www.`)
  * @param {Set<string>} [brandTokens] - tokens from {@link computeBrandTokens}
- * @returns {boolean}
+ * @returns {string|null} reason (e.g. `domain:google.com` / `brand-token:lovesac`) or null
  */
 export function isExcludedCitedHost(hostname, brandTokens) {
   if (!hostname) {
-    return false;
+    return null;
   }
   const bare = String(hostname).toLowerCase().replace(/^www\./, '');
   for (const domain of NON_EARNED_EXCLUDED_DOMAINS) {
     if (bare === domain || bare.endsWith(`.${domain}`)) {
-      return true;
+      return `domain:${domain}`;
     }
   }
   if (brandTokens) {
     for (const token of brandTokens) {
       if (bare.includes(token)) {
-        return true;
+        return `brand-token:${token}`;
       }
     }
   }
-  return false;
+  return null;
 }
 
 /**

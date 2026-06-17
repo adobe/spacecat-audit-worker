@@ -159,9 +159,10 @@ function normalizeUrl(parsed, domain) {
  *   matching this hostname or any subdomain of it are excluded
  * @param {Set<string>} [brandTokens] - brand tokens (see `computeBrandTokens`); URLs whose
  *   host is a non-earned/social domain or contains a brand token are excluded
+ * @param {object} log - logger; debug-logs the matched domain/token for each excluded URL
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname, brandTokens) {
+function classifyAndNormalize(rawUrl, siteHostname, brandTokens, log) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -182,7 +183,9 @@ function classifyAndNormalize(rawUrl, siteHostname, brandTokens) {
   // Drop social/search/deal-aggregator domains and brand-owned lookalikes
   // (e.g. lovedbylovesac.com) before they can enter the URL Store. Cited
   // analysis measures earned, non-branded, non-social citations only.
-  if (isExcludedCitedHost(hostname, brandTokens)) {
+  const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
+  if (exclusionReason) {
+    log.debug(`${LOG_PREFIX} Excluding ${rawUrl} (${exclusionReason})`);
     return null;
   }
 
@@ -275,7 +278,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandT
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens);
+      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens, log);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;

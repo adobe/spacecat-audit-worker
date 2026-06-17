@@ -23,6 +23,7 @@ import {
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
+  toApexHost,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
@@ -73,33 +74,6 @@ function getCitedConfig(site) {
 }
 
 /**
- * Extracts the apex hostname from a URL or bare host string, stripping the
- * leading ``www.`` so apex-to-apex comparison works regardless of how the
- * brand domain is configured (``bmw.com`` vs ``https://www.bmw.com/``).
- *
- * Returns an empty string for unparseable input — the caller then treats the
- * ownership check as a no-op rather than dropping URLs based on garbage.
- * @param {string} value
- * @returns {string}
- */
-function toApexHost(value) {
-  if (!value) {
-    return '';
-  }
-  const trimmed = String(value).trim();
-  if (!trimmed) {
-    return '';
-  }
-  try {
-    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    const host = new URL(withScheme).hostname.toLowerCase();
-    return host.replace(/^www\./, '');
-  } catch {
-    return '';
-  }
-}
-
-/**
  * Filters out cited URLs that live on the customer's own domain.
  *
  * Cited URLs are meant to represent 3rd-party EARNED citations. A page on
@@ -146,17 +120,22 @@ function partitionOwnedUrls(urls, brandBaseURL) {
  * that were already stored before that filter existed.
  *
  * Unparseable URLs are kept (a no-op `host`), matching `partitionOwnedUrls`.
+ * Each drop is debug-logged with the matched domain/token so operators can
+ * diagnose over-eager matches for short/common-word brand tokens.
  * @param {Array<{url: string}>} urls
  * @param {Set<string>} brandTokens
+ * @param {Object} log
  * @returns {{ kept: Array<{url: string}>, droppedCount: number }}
  */
-function partitionExcludedUrls(urls, brandTokens) {
+function partitionExcludedUrls(urls, brandTokens, log) {
   const kept = [];
   let droppedCount = 0;
   for (const entry of urls) {
     const host = toApexHost(entry.url);
-    if (host && isExcludedCitedHost(host, brandTokens)) {
+    const reason = host && isExcludedCitedHost(host, brandTokens);
+    if (reason) {
       droppedCount += 1;
+      log.debug(`${LOG_PREFIX} Excluding ${entry.url} (${reason})`);
     } else {
       kept.push(entry);
     }
@@ -204,6 +183,7 @@ async function fetchStoreData(siteId, context, site) {
   const { kept: curatedUrls, droppedCount: nonEarnedDroppedCount } = partitionExcludedUrls(
     earnedUrls,
     brandTokens,
+    log,
   );
   if (nonEarnedDroppedCount > 0) {
     log.info(

@@ -21,6 +21,7 @@ import {
   resolveMystiqueUrlLimit,
   computeBrandTokens,
   isExcludedCitedHost,
+  toApexHost,
 } from '../../src/utils/offsite-audit-utils.js';
 
 use(sinonChai);
@@ -307,34 +308,52 @@ describe('offsite-audit-utils', () => {
   describe('isExcludedCitedHost', () => {
     const tokens = computeBrandTokens('lovesac.com');
 
-    it('excludes non-earned domains and their subdomains', () => {
-      expect(isExcludedCitedHost('google.com')).to.be.true;
-      expect(isExcludedCitedHost('www.facebook.com')).to.be.true;
-      expect(isExcludedCitedHost('m.instagram.com')).to.be.true;
-      expect(isExcludedCitedHost('groupon.com')).to.be.true;
+    it('returns a domain reason for non-earned domains and their subdomains', () => {
+      expect(isExcludedCitedHost('google.com')).to.equal('domain:google.com');
+      expect(isExcludedCitedHost('www.facebook.com')).to.equal('domain:facebook.com');
+      expect(isExcludedCitedHost('m.instagram.com')).to.equal('domain:instagram.com');
+      expect(isExcludedCitedHost('groupon.com')).to.equal('domain:groupon.com');
     });
 
-    it('excludes brand-owned lookalike hosts via brand-token substring', () => {
-      expect(isExcludedCitedHost('lovedbylovesac.com', tokens)).to.be.true;
-      expect(isExcludedCitedHost('www.lovesac.com', tokens)).to.be.true;
+    it('returns a brand-token reason for brand-owned lookalike hosts', () => {
+      expect(isExcludedCitedHost('lovedbylovesac.com', tokens)).to.equal('brand-token:lovesac');
+      expect(isExcludedCitedHost('www.lovesac.com', tokens)).to.equal('brand-token:lovesac');
       // accepted false positive: independent reviewer with brand name in host
-      expect(isExcludedCitedHost('lovesac-reviews.com', tokens)).to.be.true;
+      expect(isExcludedCitedHost('lovesac-reviews.com', tokens)).to.equal('brand-token:lovesac');
     });
 
-    it('keeps neutral third-party hosts (no token, no path matching)', () => {
-      expect(isExcludedCitedHost('techradar.com', tokens)).to.be.false;
-      expect(isExcludedCitedHost('caranddriver.com', tokens)).to.be.false;
+    it('returns null for neutral third-party hosts (no token, no path matching)', () => {
+      expect(isExcludedCitedHost('techradar.com', tokens)).to.be.null;
+      expect(isExcludedCitedHost('caranddriver.com', tokens)).to.be.null;
     });
 
     it('does not match a non-earned domain as a bare substring', () => {
       // "notgoogle.com" is not google.com nor a subdomain of it.
-      expect(isExcludedCitedHost('notgoogle.com')).to.be.false;
+      expect(isExcludedCitedHost('notgoogle.com')).to.be.null;
     });
 
-    it('returns false for empty host and when no brand tokens are supplied', () => {
-      expect(isExcludedCitedHost('')).to.be.false;
-      expect(isExcludedCitedHost(undefined, tokens)).to.be.false;
-      expect(isExcludedCitedHost('lovedbylovesac.com')).to.be.false;
+    it('returns null for empty host and when no brand tokens are supplied', () => {
+      expect(isExcludedCitedHost('')).to.be.null;
+      expect(isExcludedCitedHost(undefined, tokens)).to.be.null;
+      expect(isExcludedCitedHost('lovedbylovesac.com')).to.be.null;
+    });
+  });
+
+  describe('toApexHost', () => {
+    it('strips scheme and leading www from a full URL', () => {
+      expect(toApexHost('https://www.bmw.com/news')).to.equal('bmw.com');
+      expect(toApexHost('http://m.bmw.com/owners')).to.equal('m.bmw.com');
+    });
+
+    it('accepts a bare host string (no scheme) and lowercases it', () => {
+      expect(toApexHost('BMW.com')).to.equal('bmw.com');
+    });
+
+    it('returns empty string for falsy, whitespace-only, or unparseable input', () => {
+      expect(toApexHost('')).to.equal('');
+      expect(toApexHost(undefined)).to.equal('');
+      expect(toApexHost('   ')).to.equal('');
+      expect(toApexHost('http://[bad')).to.equal('');
     });
   });
 });
