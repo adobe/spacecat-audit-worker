@@ -798,6 +798,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   if (allUrls.size === 0) {
     log.info(`${LOG_PREFIX} No offsite URLs found, audit complete`);
+    await postMessageOptional(
+      context,
+      channelId,
+      `:white_check_mark: *offsite-brand-presence* audit complete for *${baseURL}* — no offsite URLs found.`,
+      { threadTs },
+    );
     return {
       auditResult: {
         success: true,
