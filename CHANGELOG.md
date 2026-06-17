@@ -1,3 +1,24 @@
+## [1.478.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.2...v1.478.3) (2026-06-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v1.120.0 ([#2684](https://github.com/adobe/spacecat-audit-worker/issues/2684)) ([6e4c352](https://github.com/adobe/spacecat-audit-worker/commit/6e4c352ab8258a8fbd8cb2b4b88ba675b231e5d3))
+
+## [1.478.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.1...v1.478.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* Sitemap uses kebab-case token for its error codes ([#2674](https://github.com/adobe/spacecat-audit-worker/issues/2674)) ([04d2441](https://github.com/adobe/spacecat-audit-worker/commit/04d2441102bb076b7cbec3e969b799d3f9afb164))
+
+## [1.478.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.0...v1.478.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** sync suggestion rank with traffic_domain on re-audit ([#2673](https://github.com/adobe/spacecat-audit-worker/issues/2673)) ([25f214a](https://github.com/adobe/spacecat-audit-worker/commit/25f214a58eab1341ccf4aa586394f8a5731f9782))
+
 # [1.478.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.477.3...v1.478.0) (2026-06-16)
 
 

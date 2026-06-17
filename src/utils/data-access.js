@@ -519,6 +519,11 @@ export async function syncSuggestions({
 
     warnOnInvalidSuggestionData(mergedData, opportunityType, log);
 
+    const { rank } = mapNewSuggestion(newDataItem);
+    if (rank != null) {
+      existing.setRank?.(rank);
+    }
+
     // Use the merge status function to determine if status should change
     const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
 
