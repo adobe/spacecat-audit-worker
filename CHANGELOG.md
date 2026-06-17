@@ -1,3 +1,10 @@
+# [1.480.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.479.1...v1.480.0) (2026-06-17)
+
+
+### Features
+
+* [OffsiteBrandPresence] Send slack notification when audit ends and no URLs are found ([#2687](https://github.com/adobe/spacecat-audit-worker/issues/2687)) ([69b400e](https://github.com/adobe/spacecat-audit-worker/commit/69b400e31de2eade21d1efc49d0c7ae972fd227c))
+
 ## [1.479.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.479.0...v1.479.1) (2026-06-17)
 
 
