@@ -1,3 +1,10 @@
+# [1.479.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.4...v1.479.0) (2026-06-17)
+
+
+### Features
+
+* **offsite-brand-presence:** granular per-audit DRS scrape + analyze ([#2682](https://github.com/adobe/spacecat-audit-worker/issues/2682)) ([1d21bfa](https://github.com/adobe/spacecat-audit-worker/commit/1d21bfaa819346c4821217f43f2f08e61286528e)), closes [#2663](https://github.com/adobe/spacecat-audit-worker/issues/2663) [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)
+
 ## [1.478.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.3...v1.478.4) (2026-06-17)
 
 
