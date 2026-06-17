@@ -62,15 +62,24 @@ export class DrsNoContentAvailableError extends Error {
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
  * @param {object} [log]
  * @param {string} [logPrefix]
+ * @param {number} [limit] - Max URLs to return; stops collecting once reached
  * @returns {Promise<Array<{url: string}>>} Filtered URL objects
  * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
-export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, logPrefix) {
+export async function filterUrlsByDrsStatus(
+  urls,
+  datasetIds,
+  siteId,
+  drsClient,
+  log,
+  logPrefix,
+  limit,
+) {
   const prefix = logPrefix ?? '';
 
   if (!drsClient || !drsClient.isConfigured()) {
     log?.info(`${prefix} DRS client not configured, skipping availability filter`);
-    return urls;
+    return limit ? urls.slice(0, limit) : urls;
   }
 
   const rawUrls = urls.map((item) => item.url);
@@ -103,7 +112,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
 
   if (!atLeastOneLookupSucceeded) {
     log?.warn(`${prefix} All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`);
-    return urls;
+    return limit ? urls.slice(0, limit) : urls;
   }
 
   if (availableUrls.size === 0) {
@@ -112,7 +121,15 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
     );
   }
 
-  const filtered = urls.filter((item) => availableUrls.has(item.url));
+  const filtered = [];
+  for (const item of urls) {
+    if (availableUrls.has(item.url)) {
+      filtered.push(item);
+      if (limit && filtered.length >= limit) {
+        break;
+      }
+    }
+  }
   const removed = urls.length - filtered.length;
   if (removed > 0) {
     log?.info(`${prefix} DRS availability filter: removed ${removed} URL(s) not yet scraped, ${filtered.length} remaining`);

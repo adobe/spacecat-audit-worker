@@ -127,10 +127,11 @@ function partitionOwnedUrls(urls, brandBaseURL) {
  * Fetches all required data from stores for Cited analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
+ * @param {number} [urlLimit] - Max URLs to keep after DRS filtering
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context, site) {
+async function fetchStoreData(siteId, context, site, urlLimit) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
 
@@ -163,6 +164,7 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     log,
     LOG_PREFIX,
+    urlLimit,
   );
   log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
 
@@ -228,10 +230,10 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       log.warn(`${LOG_PREFIX} No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`);
     }
 
-    const storeData = await fetchStoreData(siteId, context, site);
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
-
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+
+    const storeData = await fetchStoreData(siteId, context, site, urlLimit);
+    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
     const { slackContext } = auditContext;
 
@@ -321,8 +323,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, urlLimit);
+    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
 
     const baseMessage = {
       type: 'guidance:cited-analysis',

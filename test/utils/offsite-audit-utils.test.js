@@ -207,6 +207,60 @@ describe('offsite-audit-utils', () => {
       expect(result[0].url).to.equal('https://example.com/a');
     });
 
+    it('stops collecting after limit is reached', async () => {
+      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const drsClient = {
+        isConfigured: sandbox.stub().returns(true),
+        lookupScrapeResults: sandbox.stub().resolves({
+          results: urls.map((u) => ({ url: u.url, status: 'available' })),
+          summary: { total: 3, available: 3 },
+        }),
+      };
+
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]', 2);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0].url).to.equal('https://example.com/a');
+      expect(result[1].url).to.equal('https://example.com/b');
+    });
+
+    it('applies limit when DRS client is not configured (fallback path)', async () => {
+      const log = { info: sandbox.stub() };
+      const drsClient = { isConfigured: sandbox.stub().returns(false) };
+
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]', 1);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].url).to.equal('https://example.com/a');
+    });
+
+    it('applies limit when all DRS lookups fail (fallback path)', async () => {
+      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const drsClient = {
+        isConfigured: sandbox.stub().returns(true),
+        lookupScrapeResults: sandbox.stub().rejects(new Error('network error')),
+      };
+
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]', 2);
+
+      expect(result).to.have.lengthOf(2);
+    });
+
+    it('returns all results when limit is not provided', async () => {
+      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const drsClient = {
+        isConfigured: sandbox.stub().returns(true),
+        lookupScrapeResults: sandbox.stub().resolves({
+          results: urls.map((u) => ({ url: u.url, status: 'available' })),
+          summary: { total: 3, available: 3 },
+        }),
+      };
+
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+
+      expect(result).to.have.lengthOf(3);
+    });
+
     it('falls back to rawUrls.length in summary log when response.summary is absent', async () => {
       const log = { info: sandbox.stub(), warn: sandbox.stub() };
       const drsClient = {

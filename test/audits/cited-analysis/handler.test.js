@@ -232,6 +232,25 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"messageData":{"urlLimit":"7"}}');
     });
 
+    it('should forward urlLimit to filterUrlsByDrsStatus', async () => {
+      await citedAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: '3' } },
+      );
+
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        sinon.match.array,
+        CITED_ANALYSIS_DRS_CONFIG.datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[Cited]',
+        3,
+      );
+    });
+
     it('should log debug payload for brand-presence topics', async () => {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
@@ -262,6 +281,7 @@ describe('Cited Analysis Handler', () => {
         mockDrsClient,
         sinon.match.object,
         '[Cited]',
+        MYSTIQUE_URLS_LIMIT,
       );
     });
 
@@ -606,7 +626,7 @@ describe('Cited Analysis Handler', () => {
       );
     });
 
-    it('should slice URLs using config.urlLimit', async () => {
+    it('should pass all URLs through without slicing (limiting is done upstream)', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -624,7 +644,7 @@ describe('Cited Analysis Handler', () => {
 
       expect(context.log.info).to.have.been.calledWith('[Cited] urlLimit=1 (URLs sent to Mystique)');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(1);
+      expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
     });
 
     it('should send raw urls when no topics are available', async () => {
@@ -647,7 +667,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.deep.equal(mockUrls);
     });
 
-    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
+    it('should send all URLs when many exist (limiting is done upstream by filterUrlsByDrsStatus)', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
@@ -668,24 +688,20 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(manyUrls.length);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
+        `[Cited] Queued Cited analysis request to Mystique for Test with ${manyUrls.length} URLs`,
       );
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
-        url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
-      }));
-
+    it('should log MYSTIQUE_URLS_LIMIT when urlLimit is absent from config', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           config: { companyName: 'Test' },
           storeData: {
-            urls: manyUrls,
+            urls: mockUrls,
             sentimentConfig: { topics: [], guidelines: [] },
           },
         },
@@ -694,8 +710,6 @@ describe('Cited Analysis Handler', () => {
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
         `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );

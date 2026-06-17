@@ -236,6 +236,25 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"messageData":{"urlLimit":"3"}}');
     });
 
+    it('should forward urlLimit to filterUrlsByDrsStatus', async () => {
+      await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: '5' } },
+      );
+
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        sinon.match.array,
+        OFFSITE_DOMAINS['reddit.com'].datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[Reddit]',
+        5,
+      );
+    });
+
     it('should log debug payload for brand-presence topics', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
@@ -356,6 +375,7 @@ describe('Reddit Analysis Handler', () => {
         mockDrsClient,
         sinon.match.object,
         '[Reddit]',
+        MYSTIQUE_URLS_LIMIT,
       );
     });
 
@@ -494,7 +514,7 @@ describe('Reddit Analysis Handler', () => {
       );
     });
 
-    it('should slice URLs using config.urlLimit', async () => {
+    it('should pass all URLs through without slicing (limiting is done upstream)', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -512,13 +532,10 @@ describe('Reddit Analysis Handler', () => {
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] urlLimit=1 (URLs sent to Mystique)');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(1);
-      expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Queued Reddit analysis request to Mystique for Test with 1 URLs',
-      );
+      expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
     });
 
-    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
+    it('should send all URLs when many exist (limiting is done upstream by filterUrlsByDrsStatus)', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -539,52 +556,20 @@ describe('Reddit Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(manyUrls.length);
       expect(context.log.info).to.have.been.calledWith(
-        `[Reddit] Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
+        `[Reddit] Queued Reddit analysis request to Mystique for Test with ${manyUrls.length} URLs`,
       );
     });
 
-    it('should limit URLs to config.urlLimit when set below cap', async () => {
-      const manyUrls = Array.from({ length: 20 }, (_, i) => ({
-        url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
-      }));
-
-      const auditData = {
-        siteId,
-        auditResult: {
-          success: true,
-          config: { companyName: 'Test', urlLimit: 4 },
-          storeData: {
-            urls: manyUrls,
-            sentimentConfig: { topics: [], guidelines: [] },
-          },
-        },
-      };
-
-      const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
-
-      expect(context.log.info).to.have.been.calledWith('[Reddit] urlLimit=4 (URLs sent to Mystique)');
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(4);
-      expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Queued Reddit analysis request to Mystique for Test with 4 URLs',
-      );
-    });
-
-    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
-        url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
-      }));
-
+    it('should log MYSTIQUE_URLS_LIMIT when urlLimit is absent from config', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           config: { companyName: 'Test' },
           storeData: {
-            urls: manyUrls,
+            urls: mockUrls,
             sentimentConfig: { topics: [], guidelines: [] },
           },
         },
@@ -593,8 +578,6 @@ describe('Reddit Analysis Handler', () => {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
         `[Reddit] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
