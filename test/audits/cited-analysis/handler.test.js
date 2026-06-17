@@ -289,7 +289,7 @@ describe('Cited Analysis Handler', () => {
         mockDrsClient,
         sinon.match.object,
         '[Cited]',
-        MYSTIQUE_URLS_LIMIT,
+        CITED_ANALYSIS_URLS_LIMIT,
       );
     });
 
