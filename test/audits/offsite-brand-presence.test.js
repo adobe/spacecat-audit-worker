@@ -1516,7 +1516,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(msg.auditContext.jobs[0]).to.include({ jobId: 'mock-job' });
       expect(msg.auditContext.deadline).to.be.a('number');
       expect(groupId).to.equal(null);
-      expect(delaySeconds).to.equal(120);
+      expect(delaySeconds).to.equal(300);
     });
 
     it('does not enqueue a poll message without a Slack thread context', async () => {
