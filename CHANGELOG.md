@@ -1,3 +1,24 @@
+# [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
+
+
+### Features
+
+* **cited-analysis:** exclude social/search and brand-owned lookalike URLs ([#2694](https://github.com/adobe/spacecat-audit-worker/issues/2694)) ([e6db7fa](https://github.com/adobe/spacecat-audit-worker/commit/e6db7fa2d9421e128aae7d48431673e7bb20777d))
+
+## [1.480.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.2...v1.480.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.78.0 ([#2695](https://github.com/adobe/spacecat-audit-worker/issues/2695)) ([13e9276](https://github.com/adobe/spacecat-audit-worker/commit/13e92768157479516d964c53a945a56f5c1036a5))
+
+## [1.480.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.1...v1.480.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* Sitemap buildKey function enabled for "error" suggestions ([#2685](https://github.com/adobe/spacecat-audit-worker/issues/2685)) ([047cfcb](https://github.com/adobe/spacecat-audit-worker/commit/047cfcb57e6167190293709990ebeeef8adf2765))
+
 ## [1.480.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.0...v1.480.1) (2026-06-17)
 
 

@@ -519,7 +519,11 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWithMatch(/Excluded 3 owned-domain URLs/);
     });
 
-    it('keeps lookalike domains that are not actually owned', async () => {
+    it('drops owned-domain lookalikes that contain the brand token, keeps neutral hosts', async () => {
+      // The owned-domain filter does not treat these as owned (no `.bmw.com`
+      // suffix), but the branded filter drops any host containing the brand
+      // token "bmw". A neutral third-party host is kept even when its path
+      // mentions the brand.
       mockStoreClient.getUrls.resolves([
         { url: 'https://not-bmw.com/page', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com.attacker.example/x', type: 'cited-analysis', metadata: {} },
@@ -530,11 +534,21 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
-      expect(filtered).to.have.lengthOf(3);
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 2 non-earned\/branded URLs/);
     });
 
-    it('is a no-op when baseURL is whitespace-only', async () => {
+    it('is a no-op when baseURL is whitespace-only and no brand keywords configured', async () => {
       mockSite.getBaseURL.returns('   ');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
       const urls = [
         { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
@@ -563,6 +577,14 @@ describe('Cited Analysis Handler', () => {
 
     it('is a no-op when baseURL is missing (defensive — keeps everything)', async () => {
       mockSite.getBaseURL.returns('');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
       const urls = [
         { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
@@ -574,6 +596,48 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.success).to.be.true;
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('drops social/search/deal-aggregator domains (defense in depth)', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.google.com/search', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.facebook.com/groups/homedesign/posts/1', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.instagram.com/p/abc', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.groupon.com/coupons/bmw', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-3-series-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 4 non-earned\/branded URLs/);
+    });
+
+    it('drops brand-owned lookalike domains via configured brand keywords', async () => {
+      // lovedbylovesac.com is owned by the brand but is not a subdomain of the
+      // apex; the configured brand keyword catches it.
+      mockSite.getBaseURL.returns('https://lovesac.com');
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('Lovesac'),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns('US'),
+        getIndustry: sandbox.stub().returns('Furniture'),
+        getBrandKeywords: sandbox.stub().returns(['Loved By Lovesac']),
+      });
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.lovedbylovesac.com/pages/faqs', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.goodhousekeeping.com/lovesac-sactional-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner('https://lovesac.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['www.goodhousekeeping.com']);
     });
   });
 
