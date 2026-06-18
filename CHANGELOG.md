@@ -1,3 +1,10 @@
+# [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
+
+
+### Features
+
+* **cited-analysis:** exclude social/search and brand-owned lookalike URLs ([#2694](https://github.com/adobe/spacecat-audit-worker/issues/2694)) ([e6db7fa](https://github.com/adobe/spacecat-audit-worker/commit/e6db7fa2d9421e128aae7d48431673e7bb20777d))
+
 ## [1.480.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.2...v1.480.3) (2026-06-18)
 
 
