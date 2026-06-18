@@ -21,6 +21,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  requestOffsiteScrape,
 } from '../utils/offsite-audit-utils.js';
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
@@ -175,12 +176,17 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     }
 
     if (error instanceof DrsNoContentAvailableError) {
-      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      if (auditContext.drsScrapeRequested) {
+        log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        return {
+          auditResult: { success: false, error: error.message },
+          fullAuditRef: url,
+        };
+      }
+      log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for reddit.com`);
+      await requestOffsiteScrape(context, siteId, 'reddit.com', auditContext.slackContext);
       return {
-        auditResult: {
-          success: false,
-          error: error.message,
-        },
+        auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }
