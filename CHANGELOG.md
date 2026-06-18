@@ -1,3 +1,10 @@
+## [1.482.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.0...v1.482.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **preflight:** throttle link-probe concurrency to prevent timeout false positives (SITES-46696) ([#2701](https://github.com/adobe/spacecat-audit-worker/issues/2701)) ([4450a08](https://github.com/adobe/spacecat-audit-worker/commit/4450a083b290676ebb8837bf009c92d1dec29c11))
+
 # [1.482.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.1...v1.482.0) (2026-06-18)
 
 
