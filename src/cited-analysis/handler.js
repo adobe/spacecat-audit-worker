@@ -37,11 +37,11 @@ const LOG_PREFIX = '[Cited]';
 // safety budget so worst-case serialisation doesn't hit the hard reject.
 const SQS_MAX_SAFE_BYTES = 200 * 1024;
 
-// Cited-analysis-specific URL cap. Lower than the global MYSTIQUE_URLS_LIMIT
-// (50) because: (a) each URL requires a full DRS scrape — 50 URLs can take
-// 30-40 min; (b) 40 URLs with full prompts fits within the SQS budget after
-// field projection, removing the need for a per-URL prompts cap.
-const CITED_ANALYSIS_URLS_LIMIT = 40;
+// Cited-analysis-specific URL cap, aligned with the global MYSTIQUE_URLS_LIMIT
+// (25) because: (a) each URL requires a full DRS scrape, so a lower cap keeps
+// audit runtime bounded; (b) 25 URLs with full prompts fits within the SQS
+// budget after field projection, removing the need for a per-URL prompts cap.
+const CITED_ANALYSIS_URLS_LIMIT = 25;
 
 /**
  * Cited Analysis Audit Handler
@@ -365,7 +365,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Project only the fields Mystique reads (url, categories, prompts,
     // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
     // is not needed downstream and contributes significant per-URL bloat.
-    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=40 keeps the payload
+    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=25 keeps the payload
     // within the SQS budget without capping per-URL prompts.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit)
@@ -408,7 +408,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // per-URL projection, drop URLs from the tail until it fits rather than
     // letting SQS reject the send entirely. This re-serialises the message once
     // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
-    // stays small (40); switch to a binary search / byte-per-URL estimate if the
+    // stays small (25); switch to a binary search / byte-per-URL estimate if the
     // cap ever grows large enough for the linear passes to matter.
     let sentUrlCount = message.data.urls.length;
     while (sentUrlCount > 1) {

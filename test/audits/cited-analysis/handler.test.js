@@ -25,7 +25,7 @@ import {
 } from '../../../src/utils/offsite-audit-utils.js';
 
 // Mirrors the handler-private constant — update both if the limit changes.
-const CITED_ANALYSIS_URLS_LIMIT = 40;
+const CITED_ANALYSIS_URLS_LIMIT = 25;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
@@ -827,7 +827,8 @@ describe('Cited Analysis Handler', () => {
     });
 
     it('should reduce URL count when serialised message exceeds size budget', async () => {
-      // 40 URLs × 60 prompts × 200 bytes each = ~480 KB, well over the 200 KB budget.
+      // 40 URLs generated (above the cap, sliced to 25) × 60 prompts × 200 bytes
+      // each = ~300 KB, well over the 200 KB budget.
       // Prompts are no longer capped per URL — the size guard is the safety net.
       const largePrompt = 'x'.repeat(200);
       const bigUrls = Array.from({ length: 40 }, (_, i) => ({
