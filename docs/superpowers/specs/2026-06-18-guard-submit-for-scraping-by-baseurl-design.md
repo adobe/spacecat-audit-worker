@@ -78,7 +78,7 @@ const rebasedTopPagesUrls = topPagesUrls
   .map((url) => rebaseUrl(url, preferredBase, log))
   .filter((url) => isUnderBaseUrl(url, preferredBase));
 
-const rebasedIncludedURLs = (site.getConfig()?.getIncludedURLs(AUDIT_TYPE) ?? [])
+const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
   .map((url) => rebaseUrl(url, preferredBase, log))
   .filter((url) => isUnderBaseUrl(url, preferredBase));
 ```
