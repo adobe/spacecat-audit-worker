@@ -147,9 +147,7 @@ describe('LLMO Referral Traffic Handler', () => {
         { path: '/de/page2', trf_type: 'earned' },
       ];
 
-      const mockPageIntents = [
-        { getUrl: () => 'https://example.com/us/page1', getPageIntent: () => 'purchase' },
-      ];
+      const mockPageIntents = [{ getUrl: () => 'https://example.com/us/page1', getPageIntent: () => 'purchase' }];
 
       site.getPageIntents.resolves(mockPageIntents);
       mockAthenaClient.query.resolves(mockTrafficData);
@@ -161,15 +159,50 @@ describe('LLMO Referral Traffic Handler', () => {
     });
 
     it('should extract the country from bare country/language paths', async () => {
-      const mockTrafficData = [
-        { path: 'cz/cs/page1', trf_type: 'earned' },
-      ];
+      const mockTrafficData = [{ path: 'cz/cs/page1', trf_type: 'earned' }];
 
       mockAthenaClient.query.resolves(mockTrafficData);
 
       await handlerModule.referralTrafficRunner(context);
 
       expect(mockTrafficData[0].region).to.equal('CZ');
+    });
+
+    it('should filter results by subpath when baseURL has a subpath', async () => {
+      site.getBaseURL.returns('https://example.com/uk');
+
+      const mockTrafficData = [
+        { path: '/uk/page1', trf_type: 'earned' },
+        { path: '/uk/page2', trf_type: 'earned' },
+        { path: '/us/page3', trf_type: 'earned' },
+        { path: '/de/page4', trf_type: 'earned' },
+      ];
+
+      mockAthenaClient.query.resolves(mockTrafficData);
+
+      const result = await handlerModule.referralTrafficRunner(context);
+
+      // Only /uk/ paths should remain after filtering
+      expect(result.auditResult.rowCount).to.equal(2);
+      expect(saveExcelReportStub).to.have.been.calledOnce;
+    });
+
+    it('should pass through all results when baseURL has no subpath', async () => {
+      site.getBaseURL.returns('https://example.com');
+
+      const mockTrafficData = [
+        { path: '/us/page1', trf_type: 'earned' },
+        { path: '/de/page2', trf_type: 'earned' },
+        { path: '/page3', trf_type: 'earned' },
+      ];
+
+      mockAthenaClient.query.resolves(mockTrafficData);
+
+      const result = await handlerModule.referralTrafficRunner(context);
+
+      // All results should pass through when no subpath
+      expect(result.auditResult.rowCount).to.equal(3);
+      expect(saveExcelReportStub).to.have.been.calledOnce;
     });
   });
 });
