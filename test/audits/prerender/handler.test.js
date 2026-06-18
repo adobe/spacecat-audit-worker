@@ -10289,7 +10289,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('URL filtering in getTopOrganicUrlsFromSeo', () => {
-      it('should only include URLs under the site subpath when baseURL is a subpath', async () => {
+      it('should include all top pages regardless of subpath when baseURL is a subpath', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -10328,8 +10328,8 @@ describe('Prerender Audit', () => {
 
         expect(urls).to.include('https://nba.com/kings/roster');
         expect(urls).to.include('https://nba.com/kings/schedule');
-        expect(urls).to.not.include('https://nba.com/lakers/page');
-        expect(urls).to.not.include('https://nba.com/about');
+        expect(urls).to.include('https://nba.com/lakers/page');
+        expect(urls).to.include('https://nba.com/about');
       });
 
       it('should include all URLs when baseURL is a root domain', async () => {
