@@ -1,3 +1,10 @@
+## [1.481.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.0...v1.481.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **common:** honor auditContext.onDemand to bypass handler enabled-list gate ([#2599](https://github.com/adobe/spacecat-audit-worker/issues/2599)) ([1d973c1](https://github.com/adobe/spacecat-audit-worker/commit/1d973c1eb279d882a810023b5554989abceec64d))
+
 # [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
 
 
