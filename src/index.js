@@ -73,7 +73,6 @@ import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
-import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import readabilityOpportunities from './readability/opportunities/handler.js';
 import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
@@ -186,7 +185,6 @@ const HANDLERS = {
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:form-details': detectFormDetails,
-  'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   'llmo-referral-traffic-daily': llmoReferralTrafficDaily,
   'llm-error-pages': llmErrorPages,
