@@ -1,3 +1,45 @@
+## [1.480.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.1...v1.480.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* Sitemap buildKey function enabled for "error" suggestions ([#2685](https://github.com/adobe/spacecat-audit-worker/issues/2685)) ([047cfcb](https://github.com/adobe/spacecat-audit-worker/commit/047cfcb57e6167190293709990ebeeef8adf2765))
+
+## [1.480.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.0...v1.480.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* **cited-analysis:** prevent SQS 256 KB message size limit failures ([#2691](https://github.com/adobe/spacecat-audit-worker/issues/2691)) ([08d887b](https://github.com/adobe/spacecat-audit-worker/commit/08d887b0f7c88263dfde07e164e42631182899d8))
+
+# [1.480.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.479.1...v1.480.0) (2026-06-17)
+
+
+### Features
+
+* [OffsiteBrandPresence] Send slack notification when audit ends and no URLs are found ([#2687](https://github.com/adobe/spacecat-audit-worker/issues/2687)) ([69b400e](https://github.com/adobe/spacecat-audit-worker/commit/69b400e31de2eade21d1efc49d0c7ae972fd227c))
+
+## [1.479.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.479.0...v1.479.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** raise DRS poll budget to 60 minutes ([#2686](https://github.com/adobe/spacecat-audit-worker/issues/2686)) ([65c4eb0](https://github.com/adobe/spacecat-audit-worker/commit/65c4eb025b7d120ce4a5e555d0b98ef0c2f528d7))
+
+# [1.479.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.4...v1.479.0) (2026-06-17)
+
+
+### Features
+
+* **offsite-brand-presence:** granular per-audit DRS scrape + analyze ([#2682](https://github.com/adobe/spacecat-audit-worker/issues/2682)) ([1d21bfa](https://github.com/adobe/spacecat-audit-worker/commit/1d21bfaa819346c4821217f43f2f08e61286528e)), closes [#2663](https://github.com/adobe/spacecat-audit-worker/issues/2663) [#2667](https://github.com/adobe/spacecat-audit-worker/issues/2667)
+
+## [1.478.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.3...v1.478.4) (2026-06-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.77.0 ([#2688](https://github.com/adobe/spacecat-audit-worker/issues/2688)) ([fcafbec](https://github.com/adobe/spacecat-audit-worker/commit/fcafbec05511494d04df205989c7c9f615ba5074))
+
 ## [1.478.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.478.2...v1.478.3) (2026-06-17)
 
 

@@ -77,7 +77,9 @@ async function triggerAnalysisAudits(statuses, siteId, slackContext, context) {
     await sqs.sendMessage(queueUrl, {
       type,
       siteId,
-      auditContext: { slackContext },
+      // DRS scraping is already done, so the analysis audit must analyze the available
+      // data rather than request another scrape (prevents a scrape→analyze loop).
+      auditContext: { slackContext, drsScrapeRequested: true },
     });
     log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
   }

@@ -144,13 +144,13 @@ describe('offsite-brand-presence DRS status handler', () => {
     // genuinely bounds total polling time regardless of SQS delivery jitter.
     expect(sentMessage.auditContext.deadline).to.equal(originalDeadline);
     expect(groupId).to.equal(null);
-    expect(delaySeconds).to.equal(120);
+    expect(delaySeconds).to.equal(300);
   });
 
   it('caps the re-enqueue delay at the seconds remaining until the deadline', async () => {
     mockGetJob.resolves({ status: 'RUNNING' });
 
-    // 30s left before deadline → delay should be 30, not the 120s interval.
+    // 30s left before deadline → delay should be 30, not the 300s interval.
     await handler.default(buildMessage({ deadline: Date.now() + 30000 }), context);
 
     const delaySeconds = context.sqs.sendMessage.firstCall.args[3];
@@ -228,7 +228,10 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(reddit.args[1]).to.deep.equal({
         type: 'reddit-analysis',
         siteId: SITE_ID,
-        auditContext: { slackContext: { channelId: 'C123', threadTs: '111.222' } },
+        auditContext: {
+          slackContext: { channelId: 'C123', threadTs: '111.222' },
+          drsScrapeRequested: true,
+        },
       });
     });
 

@@ -51,6 +51,8 @@ export const SLOW_PAGE_URL_BATCH_SIZE = 4; // must stay under 1000 per SpaceCat 
 export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay between batches
 
 // ----- internal constants ----------------------------------------------------
+
+// Warning: Keep any updates or changes in sync with the corresponding BackOffice UI list.
 export const ERROR_CODES = Object.freeze({
   // ... codes applicable for a specific sitemap.xml URL ...
   SITEMAP_NOT_FOUND: 'sitemap-not-found', // was 'NO SITEMAP FOUND'
@@ -1014,7 +1016,9 @@ export async function checkRobotsForSitemap(protocol, domain) {
   //       sitemap URLs, such as the root-level sitemap.xml file.
   return {
     paths: sitemapPaths,
-    reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
+    reasons: sitemapPaths.length
+      ? []
+      : [{ value: robotsUrl, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
   };
 }
 
@@ -1042,7 +1046,7 @@ export async function checkSitemap(sitemapUrl, log) {
     if (!isValidFormat) {
       return {
         existsAndIsValid: false,
-        reasons: [ERROR_CODES.INVALID_SITEMAP_FORMAT],
+        reasons: [{ value: sitemapUrl, error: ERROR_CODES.INVALID_SITEMAP_FORMAT }],
       };
     }
 
@@ -1055,9 +1059,10 @@ export async function checkSitemap(sitemapUrl, log) {
     /* c8 ignore next */
     log?.error(`Sitemap: Error fetching sitemap URL ${sitemapUrl}: ${error.message}`);
     const isNotFound = error.message.includes('404');
+    const errorCode = isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.CANNOT_READ_SITEMAP;
     return {
       existsAndIsValid: false,
-      reasons: [isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.CANNOT_READ_SITEMAP],
+      reasons: [{ value: sitemapUrl, error: errorCode }],
     };
   }
 }
@@ -1136,7 +1141,7 @@ export async function getSitemapUrls(inputUrl, log) {
     log?.error(`Sitemap: Invalid URL provided: ${inputUrl}`);
     return {
       success: false,
-      reasons: [{ value: inputUrl, error: ERROR_CODES.GENERAL_ERROR }],
+      reasons: [{ value: `Invalid URL provided: ${inputUrl}`, error: ERROR_CODES.GENERAL_ERROR }],
     };
   }
 
