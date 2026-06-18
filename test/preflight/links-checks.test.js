@@ -931,3 +931,133 @@ describe('preflight/links-checks - runLinksChecks', () => {
     });
   });
 });
+
+describe('preflight/links-checks - probe concurrency (SITES-46696)', () => {
+  let sandbox;
+  let fetchStub;
+  let runLinksChecks;
+  let createConcurrencyLimiter;
+  let DEFAULT_LINK_CHECK_CONCURRENCY;
+  let context;
+  const pageUrl = 'https://www.example.com/page';
+
+  const makeScrapedObjects = (html, finalUrl = pageUrl) => [{
+    data: { finalUrl, scrapeResult: { rawBody: html } },
+  }];
+
+  const makeResponse = (status) => ({
+    status,
+    statusText: String(status),
+    headers: { get: () => null },
+  });
+
+  const manyExternalLinks = (n) => {
+    let html = '';
+    for (let i = 0; i < n; i += 1) {
+      html += `<a href="https://other-${i}.com/x">l</a>`;
+    }
+    return html;
+  };
+
+  // Tracks the peak number of concurrently in-flight fetches.
+  const makeTracker = () => {
+    let active = 0;
+    let max = 0;
+    const fetchImpl = () => new Promise((resolve) => {
+      active += 1;
+      if (active > max) {
+        max = active;
+      }
+      setTimeout(() => {
+        active -= 1;
+        resolve(makeResponse(200));
+      }, 5);
+    });
+    return { fetchImpl, getMax: () => max };
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    fetchStub = sandbox.stub();
+    ({
+      runLinksChecks,
+      createConcurrencyLimiter,
+      DEFAULT_LINK_CHECK_CONCURRENCY,
+    } = await esmock('../../src/preflight/links-checks.js', {
+      '@adobe/spacecat-shared-utils': {
+        stripTrailingSlash: (url) => url.replace(/\/$/, ''),
+        tracingFetch: fetchStub,
+      },
+    }));
+    context = {
+      log: {
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+      },
+    };
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('createConcurrencyLimiter runs all tasks and returns their results', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const results = await Promise.all(
+      [1, 2, 3].map((nVal) => limit(() => Promise.resolve(nVal * 2))),
+    );
+    expect(results).to.deep.equal([2, 4, 6]);
+  });
+
+  it('createConcurrencyLimiter never exceeds the limit', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 6 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('createConcurrencyLimiter propagates task rejection', async () => {
+    const limit = createConcurrencyLimiter(1);
+    let err;
+    try {
+      await limit(() => Promise.reject(new Error('boom')));
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an('error').with.property('message', 'boom');
+  });
+
+  it('createConcurrencyLimiter falls back to serial for invalid max', async () => {
+    const limit = createConcurrencyLimiter(0);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 3 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(1);
+  });
+
+  it('bounds concurrent probes to options.linkCheckConcurrency', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(manyExternalLinks(10)),
+      context,
+      { pageAuthToken: null, linkCheckConcurrency: 3 },
+    );
+    expect(tracker.getMax()).to.equal(3);
+  });
+
+  it('reads concurrency from env when the option is absent', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    context.env = { PREFLIGHT_LINK_CHECK_CONCURRENCY: '2' };
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(8)), context);
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('defaults to DEFAULT_LINK_CHECK_CONCURRENCY when no option or env is set', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(12)), context);
+    expect(tracker.getMax()).to.equal(DEFAULT_LINK_CHECK_CONCURRENCY);
+  });
+});
