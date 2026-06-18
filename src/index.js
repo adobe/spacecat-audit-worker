@@ -298,7 +298,7 @@ async function run(message, context) {
 
   const { promiseToken: _, ...logMsg } = message;
   log.info(
-    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
+    `Audit worker received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
     logMsg,
   );
 

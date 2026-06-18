@@ -92,6 +92,20 @@ describe('Index Tests', () => {
     expect(resp.status).to.equal(200);
   });
 
+  it('does not log promiseToken in audit request log', async () => {
+    const infoSpy = sandbox.spy(console, 'info');
+    messageBodyJson.promiseToken = { promise_token: 'secret-token' };
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    await main(request, context);
+
+    const receivedLogCall = infoSpy.args.find(
+      (args) => typeof args[0] === 'string' && args[0].includes('Audit worker received'),
+    );
+    expect(receivedLogCall).to.exist;
+    expect(receivedLogCall[1]).to.not.have.property('promiseToken');
+  });
+
   it('logs abort information when message contains abort property (covers line 227)', async () => {
     const infoSpy = sandbox.spy(console, 'info');
     messageBodyJson.abort = {
