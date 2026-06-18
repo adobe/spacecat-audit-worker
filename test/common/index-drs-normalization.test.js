@@ -110,7 +110,7 @@ describe('Index DRS message normalization', () => {
 
     expect(resp.status).to.equal(200);
     expect(context.log.info).to.have.been.calledWith(
-      sinon.match('Received drs:prompt_generation_base_url audit request'),
+      sinon.match('Audit worker received drs:prompt_generation_base_url audit request'),
       sinon.match({
         auditContext: sinon.match({
           brandPresenceBatchId: 'bp-onboarding-drs-job-bp',
