@@ -1,3 +1,10 @@
+# [1.482.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.1...v1.482.0) (2026-06-18)
+
+
+### Features
+
+* reduce URLs being sent to DRS to 50 ([#2698](https://github.com/adobe/spacecat-audit-worker/issues/2698)) ([325aaf8](https://github.com/adobe/spacecat-audit-worker/commit/325aaf804a4ed5a9b19d332a481c5a1a5cdc342f))
+
 ## [1.481.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.0...v1.481.1) (2026-06-18)
 
 
