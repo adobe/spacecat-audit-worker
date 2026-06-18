@@ -171,6 +171,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const internalLinks = new Map();
         const externalLinks = new Map();
 
+        log.info(`[preflight-audit] Total links found on page: ${anchors.length}`);
         log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((i, a) => $(a).attr('href')).get());
 
         anchors.each((i, a) => {
@@ -199,8 +200,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
           }
         });
 
-        log.debug('[preflight-audit] Found internal links:', internalLinks);
-        log.debug('[preflight-audit] Found external links:', externalLinks);
+        log.info(`[preflight-audit] Found ${internalLinks.size} internal links and ${externalLinks.size} external links`);
 
         // Check internal links
         const internalResults = await Promise.all(
@@ -245,8 +245,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
       }),
   );
 
-  log.debug(`[preflight-audit] Broken internal links found: ${JSON.stringify(brokenInternalLinks)}`);
-  log.debug(`[preflight-audit] Broken external links found: ${JSON.stringify(brokenExternalLinks)}`);
+  log.info(`[preflight-audit] Broken internal links found ${brokenInternalLinks.length} and broken external links found ${brokenExternalLinks.length}.`);
 
   return {
     auditResult: {

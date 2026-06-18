@@ -397,6 +397,69 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(fetchStub.secondCall.args[1].headers.Authorization).to.be.undefined;
   });
 
+  // ── Empty / no-broken-links states ────────────────────────────────────────
+
+  it('does not throw and logs 0 when page has no anchor elements', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<p>No links here</p>'),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(0);
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Total links found on page: 0');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Found 0 internal links and 0 external links');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Broken internal links found 0 and broken external links found 0.');
+  });
+
+  it('logs correct count and returns no broken internal links when all internal links resolve', async () => {
+    fetchStub.resolves(makeResponse(200));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${pageUrl}/about">about</a><a href="${pageUrl}/contact">contact</a>`),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Total links found on page: 2');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Found 2 internal links and 0 external links');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Broken internal links found 0 and broken external links found 0.');
+  });
+
+  it('logs correct count and returns no broken external links when all external links resolve', async () => {
+    fetchStub.resolves(makeResponse(200));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://external.com/a">a</a><a href="https://external.com/b">b</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Total links found on page: 2');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Found 0 internal links and 2 external links');
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Broken internal links found 0 and broken external links found 0.');
+  });
+
+  it('logs broken link counts when broken internal and external links are found', async () => {
+    fetchStub.resolves(makeResponse(404));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${pageUrl}/missing">internal</a><a href="https://external.com/gone">external</a>`),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(context.log.info).to.have.been.calledWith('[preflight-audit] Broken internal links found 1 and broken external links found 1.');
+  });
+
   // ── OK responses ───────────────────────────────────────────────────────────
 
   it('returns no broken links when all links return 200', async () => {
