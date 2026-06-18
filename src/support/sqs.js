@@ -11,7 +11,6 @@
  */
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { getImsOrgId } from '../utils/data-access.js';
 
 /**
  * @class SQS utility to send messages to SQS
@@ -20,9 +19,9 @@ import { getImsOrgId } from '../utils/data-access.js';
  * @param {object} context - context object for trace ID propagation
  */
 class SQS {
-  // Per-invocation cache of resolved IMS org IDs, keyed by siteId, so a handler
+  // Per-invocation cache of resolved organization IDs, keyed by siteId, so a handler
   // that emits many Mystique messages for the same site only pays the DB lookup once.
-  #imsOrgIdCache = new Map();
+  #organizationIdCache = new Map();
 
   constructor(region, log, context) {
     this.sqsClient = new SQSClient({ region });
@@ -35,30 +34,28 @@ class SQS {
   }
 
   /**
-   * Resolves the IMS org ID for a site, caching the result (including null) per siteId.
+   * Resolves the organization ID for a site, caching the result (including null) per siteId.
    * Never throws — a failed lookup must not block the message send.
    *
    * @param {string} siteId - The site ID carried on the message.
-   * @returns {Promise<string|null>} The IMS org ID, or null if it can't be resolved.
+   * @returns {Promise<string|null>} The organization ID, or null if it can't be resolved.
    */
-  async #resolveImsOrgId(siteId) {
-    if (this.#imsOrgIdCache.has(siteId)) {
-      return this.#imsOrgIdCache.get(siteId);
+  async #resolveOrganizationId(siteId) {
+    if (this.#organizationIdCache.has(siteId)) {
+      return this.#organizationIdCache.get(siteId);
     }
 
-    let imsOrgId = null;
+    let organizationId = null;
     try {
       const { Site } = this.context?.dataAccess ?? {};
       const site = await Site?.findById(siteId);
-      if (site) {
-        imsOrgId = await getImsOrgId(site, this.context.dataAccess, this.log);
-      }
+      organizationId = site?.getOrganizationId?.() ?? null;
     } catch (e) {
-      this.log.warn(`Failed to resolve imsOrgId for Mystique message (siteId: ${siteId}): ${e.message}`);
+      this.log.warn(`Failed to resolve organizationId for Mystique message (siteId: ${siteId}): ${e.message}`);
     }
 
-    this.#imsOrgIdCache.set(siteId, imsOrgId);
-    return imsOrgId;
+    this.#organizationIdCache.set(siteId, organizationId);
+    return organizationId;
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0, msgDedupId = undefined) {
@@ -73,19 +70,19 @@ class SQS {
       body.traceId = this.context.traceId;
     }
 
-    // Auto-add the IMS org ID to Mystique-bound messages so org identity propagates
+    // Auto-add the organization ID to Mystique-bound messages so org identity propagates
     // across the SpaceCat → Mystique boundary (mirrors the traceId propagation above).
     // Scoped to the Mystique queue only and skipped when already set on the message.
     const mystiqueQueueUrl = this.context?.env?.QUEUE_SPACECAT_TO_MYSTIQUE;
     if (
       hasText(mystiqueQueueUrl)
       && queueUrl === mystiqueQueueUrl
-      && !('imsOrgId' in body)
+      && !('organizationId' in body)
       && hasText(body.siteId)
     ) {
-      const imsOrgId = await this.#resolveImsOrgId(body.siteId);
-      if (imsOrgId) {
-        body.imsOrgId = imsOrgId;
+      const organizationId = await this.#resolveOrganizationId(body.siteId);
+      if (organizationId) {
+        body.organizationId = organizationId;
       }
     }
 
