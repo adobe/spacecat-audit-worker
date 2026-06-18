@@ -617,4 +617,317 @@ describe('preflight/links-checks - runLinksChecks', () => {
     ]);
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(3);
   });
+
+  // ── excludedElementClasses ─────────────────────────────────────────────────
+
+  describe('excludedElementClasses', () => {
+    it('skips anchors inside an element with an excluded class', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="cmp-feature-apps">
+          <a href="https://corp-only.example.com/a">intranet a</a>
+          <a href="https://corp-only.example.com/b">intranet b</a>
+        </div>
+        <a href="https://public.example.com/article">public</a>
+      `;
+
+      const result = await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['cmp-feature-apps'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))];
+      expect(fetchedUrls).to.deep.equal(['https://public.example.com/article']);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo)
+        .to.equal('https://public.example.com/article');
+    });
+
+    it('skips anchors nested deep under an excluded ancestor', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <section class="no-audit">
+          <div><ul><li><a href="https://deep.example.com/x">deep</a></li></ul></div>
+        </section>
+        <a href="https://public.example.com/y">public</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['no-audit'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.not.include('https://deep.example.com/x');
+      expect(fetchedUrls).to.include('https://public.example.com/y');
+    });
+
+    it('handles nested excluded wrappers safely (deepest-first removal)', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      // Outer + inner both match. Inner is removed first; outer removal must not throw.
+      const html = `
+        <div class="excluded">
+          <div class="excluded">
+            <a href="https://inner.example.com/a">inner</a>
+          </div>
+          <a href="https://outer.example.com/b">outer</a>
+        </div>
+        <a href="https://keep.example.com/c">keep</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['excluded'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.deep.equal(['https://keep.example.com/c', 'https://keep.example.com/c']);
+    });
+
+    it('matches a token among multi-class elements', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="container  cmp-feature-apps  bg-light">
+          <a href="https://skip.example.com/a">skip</a>
+        </div>
+        <a href="https://keep.example.com/b">keep</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['cmp-feature-apps'] },
+      );
+
+      const fetchedUrls = fetchStub.getCalls().map((c) => c.args[0]);
+      expect(fetchedUrls).to.not.include('https://skip.example.com/a');
+      expect(fetchedUrls).to.include('https://keep.example.com/b');
+    });
+
+    it('is a no-op when no classes are configured', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      const html = `
+        <div class="cmp-feature-apps"><a href="https://a.example.com/x">a</a></div>
+        <a href="https://b.example.com/y">b</a>
+      `;
+
+      // No excludedElementClasses option at all
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      const fetchedUrls1 = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls1).to.deep.equal(['https://a.example.com/x', 'https://b.example.com/y']);
+
+      fetchStub.resetHistory();
+
+      // Explicit empty array
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: [] },
+      );
+      const fetchedUrls2 = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls2).to.deep.equal(['https://a.example.com/x', 'https://b.example.com/y']);
+    });
+
+    it('ignores elements whose class attribute is empty or whitespace', async () => {
+      fetchStub.resolves(makeResponse(404));
+
+      // Both forms are valid HTML. The defensive `if (!classAttr)` branch covers
+      // the empty-string case; the no-match branch covers whitespace-only.
+      const html = `
+        <div class=""><a href="https://a.example.com/x">empty-class</a></div>
+        <div class=" "><a href="https://b.example.com/y">whitespace-class</a></div>
+        <a href="https://c.example.com/z">plain</a>
+      `;
+
+      await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['anything'] },
+      );
+
+      const fetchedUrls = [...new Set(fetchStub.getCalls().map((c) => c.args[0]))].sort();
+      expect(fetchedUrls).to.deep.equal([
+        'https://a.example.com/x',
+        'https://b.example.com/y',
+        'https://c.example.com/z',
+      ]);
+    });
+  });
+
+  // ── cq-LinkChecker broken link detection ──────────────────────────────────
+  describe('cq-LinkChecker broken link detection', () => {
+    it('reports a same-origin cq-LinkChecker--invalid image as a broken internal link without probing', async () => {
+      const html = `
+        <p>
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/missing.html">
+          Missing page
+          <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+        </p>
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(result.auditResult.brokenInternalLinks[0].status).to.equal(404);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    });
+
+    it('reports a cross-origin cq-LinkChecker--invalid image as a broken external link', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: https://external.example.com/gone">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/gone');
+      expect(result.auditResult.brokenExternalLinks[0].status).to.equal(404);
+    });
+
+    it('resolves a bare relative href correctly against pageUrl', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: microt.com">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/microt.com');
+    });
+
+    it('resolves an absolute content path against pageUrl origin', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/this-page-does-not-exist.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/this-page-does-not-exist.html');
+    });
+
+    it('reports both a probed broken link and a cq-LinkChecker broken link on the same page', async () => {
+      fetchStub.resolves(makeResponse(404));
+      const html = `
+        <a href="https://external.example.com/probe-me">probe this</a>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/aem-broken.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/probe-me');
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/aem-broken.html');
+    });
+
+    it('ignores cq-LinkChecker--prefix image that does not have cq-LinkChecker--invalid class', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('ignores cq-LinkChecker--invalid image whose alt does not match the expected pattern', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="some other text">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('does not report a cq-LinkChecker--invalid image inside an excludedElementClasses subtree', async () => {
+      const html = `
+        <div class="skip-me">
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/excluded.html">
+        </div>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/included.html">
+      `;
+      const result = await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['skip-me'] },
+      );
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/included.html');
+    });
+
+    it('makes no fetch calls for cq-LinkChecker-sourced broken links', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/a.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/b.html">
+      `;
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('silently skips a cq-LinkChecker--invalid image whose alt contains an unparseable URL', async () => {
+      // http://[invalid triggers a URL parse error (malformed IPv6 literal)
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: http://[invalid">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/valid.html');
+    });
+
+    it('skips non-HTTP schemes (mailto:, tel:) to match the checkLinkStatus protocol guard', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: mailto:noreply@example.com">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: tel:+15550001234">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/real-broken.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/real-broken.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('deduplicates multiple cq-LinkChecker images pointing to the same URL', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+  });
 });

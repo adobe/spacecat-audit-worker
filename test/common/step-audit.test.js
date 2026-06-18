@@ -12,7 +12,7 @@
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
-import { TierClient } from '@adobe/spacecat-shared-tier-client';
+
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -64,12 +64,6 @@ describe('Step-based Audit Tests', () => {
 
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
-
-    // Mock TierClient for entitlement checks
-    const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
-    };
-    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
@@ -150,19 +144,6 @@ describe('Step-based Audit Tests', () => {
           findings: ['test'],
         }))
         .build();
-    });
-
-    it('skips execution when audit is disabled for site', async () => {
-      // Configure audit to be disabled
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      const result = await audit.run(message, context);
-
-      // Verify audit was skipped
-      expect(result.status).to.equal(200);
-      expect(context.dataAccess.Audit.create).not.to.have.been.called;
-      expect(context.sqs.sendMessage).not.to.have.been.called;
-      expect(context.log.debug).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     });
 
     it('executes first step and creates audit record', async () => {

@@ -10,192 +10,100 @@
  * governing permissions and limitations under the License.
  */
 
-import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import DrsClient, {
+  SCRAPE_DATASET_IDS,
+  REDDIT_COMMENTS_SORT_BY_VALUES,
+} from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { computeBrandTokens, isExcludedCitedHost } from '../utils/offsite-audit-utils.js';
 import {
-  BRAND_PRESENCE_REGEX,
   DRS_URLS_LIMIT,
-  FETCH_PAGE_SIZE,
-  FETCH_TIMEOUT_MS,
-  INCLUDE_COLUMNS,
-  REDDIT_COMMENTS_DAYS_BACK,
+  RETRIABLE_STATUSES,
+  RETRY_DELAY_MS,
+  ACCEPTED_REGIONS,
   OFFSITE_DOMAINS,
-  PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
-  USER_AGENT,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
+  TOP_CITED_EXCLUDED_DOMAINS,
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_POLL_MAX_WAIT_SECONDS,
+  DRS_STATUS_AUDIT_TYPE,
 } from './constants.js';
 
+/**
+ * Extracts reddit_comments scrape parameters from Slack/API `messageData`.
+ * Slack delivers keyword values as strings, so this normalizes them:
+ *  - `redditCommentLimit` / `redditDaysBack` → positive integer (or undefined)
+ *  - `redditSortBy` → allowlisted enum value; `'QA'` is normalized to `'Q&A'`
+ *    so Slack users can avoid Slack mangling the ampersand. Unknown values
+ *    are dropped.
+ *  - `redditLoadAllReplies` → strict boolean (only the strings 'true'/'false'
+ *    or real booleans are accepted; anything else is dropped)
+ *
+ * Invalid values are dropped rather than thrown — the DRS client validates and
+ * surfaces a clear error.
+ *
+ * @param {object} [messageData]
+ * @returns {{
+ *   commentLimit?: number,
+ *   sortBy?: string,
+ *   daysBack?: number,
+ *   loadAllReplies?: boolean,
+ * }}
+ */
+function resolveRedditCommentsParams(messageData) {
+  const md = messageData || {};
+  const params = {};
+
+  const parseInteger = (raw) => {
+    if (raw === undefined || raw === null || raw === '') {
+      return undefined;
+    }
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+
+  const commentLimit = parseInteger(md.redditCommentLimit);
+  if (commentLimit !== undefined) {
+    params.commentLimit = commentLimit;
+  }
+
+  const daysBack = parseInteger(md.redditDaysBack);
+  if (daysBack !== undefined) {
+    params.daysBack = daysBack;
+  }
+
+  if (md.redditSortBy !== undefined && md.redditSortBy !== null && md.redditSortBy !== '') {
+    const sortBy = md.redditSortBy === 'QA' ? 'Q&A' : md.redditSortBy;
+    if (REDDIT_COMMENTS_SORT_BY_VALUES.has(sortBy)) {
+      params.sortBy = sortBy;
+    }
+  }
+
+  const rawLoadAll = md.redditLoadAllReplies;
+  if (rawLoadAll === true || rawLoadAll === 'true') {
+    params.loadAllReplies = true;
+  } else if (rawLoadAll === false || rawLoadAll === 'false') {
+    params.loadAllReplies = false;
+  }
+
+  return params;
+}
+
 const LOG_PREFIX = '[OffsiteBrandPresence]';
+
+// The top-cited bucket key (mirrors addUrlsToUrlStore) — also a valid granular scope.
+const TOP_CITED_BUCKET = 'top-cited';
+// Valid values for messageData.domainScope on granular single-audit runs.
+const VALID_DOMAIN_SCOPES = new Set([...Object.keys(OFFSITE_DOMAINS), TOP_CITED_BUCKET]);
 
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
-
-/**
- * Gets the ISO week number and year for the previous two weeks.
- * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
- */
-function getPreviousWeeks() {
-  return [1, 2].map((i) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - (7 * i));
-    return isoCalendarWeek(d);
-  });
-}
-
-/**
- * Fetches query-index.json for a site via the Spacecat API.
- *
- * @param {string} siteId - The site ID
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
- */
-async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
-
-  log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
-
-  try {
-    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      log.warn(`${LOG_PREFIX} Failed to fetch query-index: ${response.status}`);
-      return null;
-    }
-
-    return response.json();
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Error fetching query-index: ${error.message}`);
-    return null;
-  }
-}
-
-/**
- * Fetches brand presence JSON data for a specific file via the Spacecat API.
- * Uses pagination (limit/offset) to handle large files that would otherwise
- * exceed the API's response size limit (HTTP 413).
- *
- * @param {string} siteId - The site ID
- * @param {string} fileName - The brand presence file path relative to the llmo data directory
- *                            (e.g. 'brand-presence/w7/brandpresence-copilot-w7-2026-010126.json')
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if not found
- */
-async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
-
-  let allRows = [];
-  let offset = 0;
-  let hasMore = true;
-
-  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${baseUrl}`);
-  while (hasMore) {
-    const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
-
-    // eslint-disable-next-line no-await-in-loop
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      // eslint-disable-next-line no-await-in-loop
-      const errorBody = await response.text().catch(() => '(unable to read body)');
-      log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`, {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        responseBody: errorBody,
-      });
-      if (allRows.length === 0) {
-        return null;
-      }
-      break;
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    const data = await response.json();
-    const rows = data?.data || [];
-    allRows = allRows.concat(rows);
-
-    if (rows.length < FETCH_PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      offset += FETCH_PAGE_SIZE;
-    }
-  }
-  return { data: allRows };
-}
-
-/**
- * Attempts to extract a matching brand presence file path from a query-index entry.
- * Returns the relative file path if it matches the target week and a known provider,
- * or null otherwise.
- *
- * @param {object} entry - A single query-index entry
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string|null} The matched file path, or null
- */
-function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) {
-    return null;
-  }
-
-  const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) {
-    return null;
-  }
-
-  const filePath = entry.path.substring(bpIdx);
-  const match = filePath.match(BRAND_PRESENCE_REGEX);
-  if (!match) {
-    return null;
-  }
-
-  const [, providerId, weekStr, yearStr] = match;
-  const fileWeek = Number.parseInt(weekStr, 10);
-  const fileYear = Number.parseInt(yearStr, 10);
-  const yearMatches = fileYear === targetYear;
-
-  if (fileWeek === targetWeek && yearMatches && PROVIDERS_SET.has(providerId)) {
-    return filePath;
-  }
-  return null;
-}
-
-/**
- * Filters brand presence file paths from the query-index response.
- * Only returns files matching the pattern brandpresence-{provider}-w{week}-{year}-*.json
- * where the provider is in PROVIDERS and both week and year match the targets.
- *
- * @param {object} queryIndex - The parsed query-index response
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string[]} Matched file paths relative to the llmo data directory
- */
-export function filterBrandPresenceFiles(queryIndex, targetWeek, targetYear) {
-  const entries = queryIndex?.data || [];
-  const matched = [];
-
-  for (const entry of entries) {
-    const filePath = matchBrandPresenceEntry(entry, targetWeek, targetYear);
-    if (filePath) {
-      matched.push(filePath);
-    }
-  }
-  return matched;
-}
 
 /**
  * Normalizes a YouTube URL to keep only essential identifiers.
@@ -249,9 +157,12 @@ function normalizeUrl(parsed, domain) {
  * @param {string} rawUrl - The raw URL string to classify and normalize
  * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
  *   matching this hostname or any subdomain of it are excluded
+ * @param {Set<string>} [brandTokens] - brand tokens (see `computeBrandTokens`); URLs whose
+ *   host is a non-earned/social domain or contains a brand token are excluded
+ * @param {object} log - logger; debug-logs the matched domain/token for each excluded URL
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname) {
+function classifyAndNormalize(rawUrl, siteHostname, brandTokens, log) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -268,6 +179,16 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       return null;
     }
   }
+
+  // Drop social/search/deal-aggregator domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) before they can enter the URL Store. Cited
+  // analysis measures earned, non-branded, non-social citations only.
+  const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
+  if (exclusionReason) {
+    log.debug(`${LOG_PREFIX} Excluding ${rawUrl} (${exclusionReason})`);
+    return null;
+  }
+
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
@@ -276,6 +197,13 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
         return null;
       }
+      return { url: normalizeUrl(parsed, domain), domain };
+    }
+  }
+
+  // Tag (but don't scrape) these so selectTopUrls keeps them out of top-cited.
+  for (const domain of TOP_CITED_EXCLUDED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -319,19 +247,20 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
  * Populates both the global URL map (for URL store) and the topic map (for guideline store).
- * Only processes rows with Region=US.
+ * Only processes rows whose Region is in ACCEPTED_REGIONS.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
  * @param {string} [siteHostname] - Client site hostname to exclude
+ * @param {Set<string>} [brandTokens] - brand tokens used to exclude non-earned/branded hosts
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandTokens) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (!sources || row.Region !== 'US') {
+    if (!sources || !ACCEPTED_REGIONS.has(row.Region)) {
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -349,7 +278,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed, siteHostname);
+      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens, log);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -541,22 +470,124 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 /* c8 ignore stop */
 
 /**
+ * Determines whether an error is worth retrying.
+ * Retries on network-level failures (TypeError from fetch) and specific HTTP
+ * status codes that indicate transient server problems.
+ *
+ * @param {Error} err
+ * @returns {boolean}
+ */
+function isRetriable(err) {
+  if (err instanceof TypeError) {
+    return true;
+  }
+  return typeof err.status === 'number' && RETRIABLE_STATUSES.has(err.status);
+}
+
+/**
+ * Submits a single DRS job with one selective retry.
+ * Only retries on network errors (TypeError) and retriable HTTP status codes
+ * (408, 429, 500, 502, 503, 504). Non-retriable errors (4xx) fail immediately.
+ *
+ * NOTE: POST /jobs is not idempotent and DRS does not support an idempotency
+ * key. A request that times out client-side but lands server-side may produce
+ * a duplicate job. The retry is limited to one attempt to minimise this risk.
+ *
+ * @param {{ domain: string, datasetId: string, params: object }} job
+ * @param {Function} submitFn - Async function that submits the job
+ * @param {object} log - Logger
+ * @returns {Promise<object>} Job result with status
+ */
+async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const start = Date.now();
+      // eslint-disable-next-line no-await-in-loop
+      const result = await submitFn(params);
+      log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
+      return {
+        domain, datasetId, status: 'success', response: result,
+      };
+    } catch (err) {
+      if (attempt === 0 && isRetriable(err)) {
+        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms: ${err.message}`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, RETRY_DELAY_MS);
+        });
+      } else {
+        const label = attempt === 0 ? '' : ' after retry';
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}${label}: ${err.message}`);
+        return {
+          domain, datasetId, status: 'error', error: err.message,
+        };
+      }
+    }
+  }
+  /* c8 ignore next 4 */
+  return {
+    domain, datasetId, status: 'error', error: 'unexpected',
+  };
+}
+
+/**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
  * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
+ * When spacecatOrgId is provided, it is passed through to
+ * drsClient.submitScrapeJob and included as spacecat_org_id in the DRS request.
+ *
+ * DRS auto-resolves the customer's imsOrgId (and brand) from site_id by reading
+ * the SpaceCat organization, and rejects the job with HTTP 400 when that
+ * resolution fails (i.e. the organization has no imsOrgId). Because the caller
+ * reads imsOrgId from the same organization, an absent imsOrgId reliably
+ * predicts that DRS resolution would fail, so we skip submission rather than
+ * fire jobs that are guaranteed to 400.
+ *
+ * Reddit-comments params (`commentLimit`, `sortBy`, `daysBack`,
+ * `loadAllReplies`) are only attached to the `reddit_comments` dataset. When
+ * they are omitted, the DRS client applies its defaults (`commentLimit=150`,
+ * `sortBy='Best'`, no `daysBack`, no `loadAllReplies`).
+ *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
- * @returns {Promise<Array>} Results of DRS job creation
+ * @param {string} [spacecatOrgId] - Optional SpaceCat org ID
+ * @param {string} [imsOrgId] - IMS org ID resolved from the site's organization.
+ *   When falsy, DRS scraping is skipped (see above).
+ * @param {object} [redditCommentsParams] - Per-run reddit_comments scrape params
+ *   (see {@link resolveRedditCommentsParams})
+ * @returns {Promise<{skipped: (string|null), results: Array}>} `skipped` is a
+ *   human-readable reason when scraping was skipped (and `results` is empty),
+ *   otherwise `null` with the DRS job creation results.
  */
-async function triggerDrsScraping(urlsByDomain, siteId, context) {
+async function triggerDrsScraping(
+  urlsByDomain,
+  siteId,
+  context,
+  spacecatOrgId,
+  imsOrgId,
+  redditCommentsParams = {},
+) {
   const { log } = context;
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
-    return [];
+    return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
+  }
+
+  // DRS rejects scrape jobs (HTTP 400) unless it can resolve the customer's
+  // imsOrgId from the site_id, which requires the SpaceCat organization to have
+  // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
+  // missing we skip rather than fire jobs that are guaranteed to fail.
+  if (!imsOrgId) {
+    log.warn(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
+    return {
+      skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
+      results: [],
+    };
   }
 
   const jobs = [];
@@ -574,66 +605,31 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
       const scrapeUrls = datasetId === SCRAPE_DATASET_IDS.TOP_CITED
         ? urlList.map((url) => ({ url }))
         : urlList;
-      const params = { datasetId, siteId, urls: scrapeUrls };
+      // imsOrgId is guaranteed truthy here (the guard above returns early when
+      // it is absent). DRS attaches it as parameters.metadata.imsOrgId to scope
+      // the job's S2S token instead of relying on site_id auto-resolution.
+      const params = {
+        datasetId, siteId, urls: scrapeUrls, imsOrgId,
+      };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
-        params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
+        Object.assign(params, redditCommentsParams);
+      }
+      if (spacecatOrgId) {
+        params.spacecatOrgId = spacecatOrgId;
       }
       jobs.push({ domain, datasetId, params });
     }
   }
 
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs`);
+  const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
+  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
 
-  return Promise.all(
-    jobs.map(async ({ domain, datasetId, params }) => {
-      try {
-        const result = await drsClient.submitScrapeJob(params);
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
-        return {
-          domain, datasetId, status: 'success', response: result,
-        };
-      } catch (err) {
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${err.message}`);
-        return {
-          domain, datasetId, status: 'error', error: err.message,
-        };
-      }
-    }),
-  );
-}
-
-/**
- * Fetches matched brand presence files sequentially and aggregates
- * all source URLs and topic associations across files.
- *
- * @param {string} siteId - The site ID
- * @param {string[]} matchedFiles - File paths to fetch
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @param {string} [siteHostname] - Client site hostname to exclude
- * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
- */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname) {
-  const allUrls = new Map();
-  const topicMap = new Map();
-
-  for (const filePath of matchedFiles) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const data = await fetchBrandPresenceData(siteId, filePath, env, log);
-      if (!data) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname);
-    } catch (err) {
-      log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
-    }
+  const results = [];
+  for (const job of jobs) {
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), log));
   }
-
-  log.info(`${LOG_PREFIX} Extracted ${topicMap.size} unique topics`);
-  return { allUrls, topicMap };
+  return { skipped: null, results };
 }
 
 /**
@@ -669,6 +665,113 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Restricts the selected buckets to a single scope for granular single-audit runs.
+ * Non-scoped per-domain buckets are emptied (kept as keys so addUrlsToUrlStore stays
+ * happy); `'top-cited'` keeps only the top-cited bucket, any other value keeps only
+ * that offsite-domain bucket.
+ *
+ * @param {Object<string, string[]>} topByDomain
+ * @param {string[]} topCited
+ * @param {string} domainScope - An OFFSITE_DOMAINS key or 'top-cited'
+ * @returns {{ topByDomain: Object<string, string[]>, topCited: string[] }}
+ */
+function scopeBucketsToDomain(topByDomain, topCited, domainScope) {
+  const scoped = {};
+  for (const domain of Object.keys(topByDomain)) {
+    scoped[domain] = domain === domainScope ? topByDomain[domain] : [];
+  }
+  return { topByDomain: scoped, topCited: domainScope === TOP_CITED_BUCKET ? topCited : [] };
+}
+
+/**
+ * Sends a Slack notification when DRS scraping was skipped before any jobs were
+ * triggered (e.g. DRS not configured, or the organization has no imsOrgId).
+ * Posts only when a Slack thread context is available (manual runs);
+ * postMessageOptional no-ops on scheduled runs.
+ *
+ * @param {string} reason - Human-readable reason scraping was skipped
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsSkipped(reason, baseURL, context, channelId, threadTs) {
+  const text = `:warning: *offsite-brand-presence* DRS scraping *skipped* for *${baseURL}* — ${reason}.`;
+  await postMessageOptional(context, channelId, text, { threadTs });
+}
+
+/**
+ * Sends a Slack notification summarizing DRS job results.
+ *
+ * @param {Array} drsResults - Array of DRS job result objects
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsResults(drsResults, baseURL, context, channelId, threadTs) {
+  if (drsResults.length === 0) {
+    return;
+  }
+
+  const succeeded = drsResults.filter((r) => r.status === 'success');
+  const failed = drsResults.filter((r) => r.status === 'error');
+  const lines = [
+    `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response?.job_id}\``),
+    ...(failed.length > 0 ? [
+      `:x: *Failed (${failed.length}):*`,
+      ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
+    ] : []),
+  ];
+  await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+}
+
+/**
+ * Schedules a delayed DRS status poll for the jobs that were submitted successfully.
+ * Only runs for manual Slack runs (channelId + threadTs present) with at least one
+ * job_id to track; scheduled runs and submission-only failures are skipped. The poll
+ * message carries the job list, Slack context, and an absolute deadline so each poll
+ * invocation is self-describing.
+ *
+ * @param {Array} drsResults - DRS job results from triggerDrsScraping
+ * @param {string} baseURL - The site's base URL
+ * @param {string} siteId - The site ID
+ * @param {object} context - The execution context (sqs, dataAccess, log)
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs) {
+  const { sqs, dataAccess, log } = context;
+
+  if (!channelId || !threadTs) {
+    return;
+  }
+
+  const jobs = drsResults
+    .filter((r) => r.status === 'success' && r.response?.job_id)
+    .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
+
+  if (jobs.length === 0) {
+    return;
+  }
+
+  const configuration = await dataAccess.Configuration.findLatest();
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: DRS_STATUS_AUDIT_TYPE,
+    siteId,
+    auditContext: {
+      baseURL,
+      slackContext: { channelId, threadTs },
+      jobs,
+      deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
+    },
+  }, null, DRS_POLL_INTERVAL_SECONDS);
+
+  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs)`);
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -686,11 +789,36 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
  * @returns {Promise<object>} Audit result
  */
 export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditContext) {
-  const { dataAccess, env, log } = context;
-  const { slackContext } = auditContext || {};
+  const { dataAccess, log } = context;
+  const { slackContext, messageData } = auditContext || {};
+  const spacecatOrgId = messageData?.spacecatOrgId;
+  // Granular single-audit runs (triggered by an analysis audit that found no scraped
+  // content) scope collection + scraping to one bucket so only that audit re-triggers.
+  const domainScope = messageData?.domainScope;
+  const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+
+  // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
+  // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
+  if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
+    log.error(`${LOG_PREFIX} Unknown domainScope '${domainScope}', aborting run`);
+    return {
+      auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
+      fullAuditRef: finalUrl,
+    };
+  }
+
+  const organization = await site.getOrganization();
+  const imsOrgId = organization?.getImsOrgId();
+  const previousWeeks = getPreviousWeeks();
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
+
+  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
+
   let siteHostname;
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
@@ -698,40 +826,21 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
   }
 
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
+  // Brand tokens drop social/search domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) from the cited URLs before they are stored.
+  const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
 
-  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return {
-      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
-      fullAuditRef: finalUrl,
-    };
+  const brandPresenceData = await loadBrandPresenceData({
+    siteId, site, previousWeeks, context,
+  });
+
+  const allUrls = new Map();
+  if (brandPresenceData) {
+    const topicMap = new Map();
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
   }
 
-  // Fetch query-index.json
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.error(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return {
-      auditResult: { success: false, error: 'Failed to fetch query-index' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
-  const previousWeeks = getPreviousWeeks();
-  const weekLabels = previousWeeks
-    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
-    .join(', ');
-
-  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
-
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
-
-  // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname);
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result
@@ -747,6 +856,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   if (allUrls.size === 0) {
     log.info(`${LOG_PREFIX} No offsite URLs found, audit complete`);
+    await postMessageOptional(
+      context,
+      channelId,
+      `:white_check_mark: *offsite-brand-presence* audit complete for *${baseURL}* — no offsite URLs found.`,
+      { threadTs },
+    );
     return {
       auditResult: {
         success: true,
@@ -758,26 +873,36 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   // Sort once, partition into per-domain + top-cited buckets
-  const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
-  const {
-    topByDomain, topCited,
-  } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+  const excludedFromTopCited = [...Object.keys(OFFSITE_DOMAINS), ...TOP_CITED_EXCLUDED_DOMAINS];
+  let { topByDomain, topCited } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+
+  if (domainScope) {
+    ({ topByDomain, topCited } = scopeBucketsToDomain(topByDomain, topCited, domainScope));
+    log.info(`${LOG_PREFIX} Scoped run to '${domainScope}'`);
+  }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
-  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
+  const { skipped, results: drsResults } = await triggerDrsScraping(
+    storedByDomain,
+    siteId,
+    context,
+    spacecatOrgId,
+    imsOrgId,
+    redditCommentsParams,
+  );
 
-  if (drsResults.length > 0) {
-    const succeeded = drsResults.filter((r) => r.status === 'success');
-    const failed = drsResults.filter((r) => r.status === 'error');
-    const lines = [
-      `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-      ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
-      ...(failed.length > 0 ? [
-        `:x: *Failed (${failed.length}):*`,
-        ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
-      ] : []),
-    ];
-    await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+  if (skipped) {
+    await notifyDrsSkipped(skipped, baseURL, context, channelId, threadTs);
+  } else {
+    await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
+    // Best-effort follow-up: a failure here (e.g. transient Configuration/SQS error)
+    // must not fail the run, which already submitted the DRS jobs (POST /jobs is not
+    // idempotent) and posted the initial notification. Re-running would duplicate both.
+    try {
+      await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+    } catch (err) {
+      log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
+    }
   }
 
   // TODO: temporarily disabled

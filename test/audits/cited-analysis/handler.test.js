@@ -23,6 +23,9 @@ import {
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
+
+// Mirrors the handler-private constant — update both if the limit changes.
+const CITED_ANALYSIS_URLS_LIMIT = 40;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
@@ -39,6 +42,7 @@ describe('Cited Analysis Handler', () => {
   let mockComputeTopicsFromBrandPresence;
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
+  let mockPostMessageOptional;
   let citedAnalysisHandler;
   let StoreEmptyError;
 
@@ -46,9 +50,13 @@ describe('Cited Analysis Handler', () => {
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
 
+  // Cited URLs represent 3rd-party EARNED citations — pages from blogs,
+  // press, etc. that LLMs reference when answering questions about the
+  // brand. They must NOT be on the brand's own domain (see the
+  // ``runCitedAnalysisAudit owned-domain filter`` describe block below).
   const mockUrls = [
-    { url: 'https://techblog.example.com/review-of-example', type: 'cited-analysis', metadata: {} },
-    { url: 'https://news.example.com/example-corp-article', type: 'cited-analysis', metadata: {} },
+    { url: 'https://techreview.io/review-of-example', type: 'cited-analysis', metadata: {} },
+    { url: 'https://industry-news.org/example-corp-article', type: 'cited-analysis', metadata: {} },
   ];
 
   const mockComputedTopics = [
@@ -56,7 +64,7 @@ describe('Cited Analysis Handler', () => {
       name: 'Brand Perception',
       urls: [
         {
-          url: 'https://techblog.example.com/review-of-example',
+          url: 'https://techreview.io/review-of-example',
           timesCited: 1,
           category: 'general',
           subPrompts: ['brand mentions', 'sentiment'],
@@ -90,6 +98,7 @@ describe('Cited Analysis Handler', () => {
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
     mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
 
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
@@ -125,8 +134,11 @@ describe('Cited Analysis Handler', () => {
       '../../../src/offsite-brand-presence/constants.js': {
         CITED_ANALYSIS_DRS_CONFIG,
       },
-      '../../../src/utils/brand-presence-enrichment.js': {
+      '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
+      },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     });
 
@@ -167,7 +179,11 @@ describe('Cited Analysis Handler', () => {
             findById: sandbox.stub().resolves(mockSite),
           },
           Configuration: {
-            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
+            findLatest: sandbox.stub().resolves({
+              isHandlerEnabledForSite: sandbox.stub().returns(true),
+              getHandlers: sandbox.stub().returns({}),
+              getQueues: sandbox.stub().returns({ audits: 'audits-queue-url' }),
+            }),
           },
         },
       })
@@ -205,7 +221,7 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
-      expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(result.auditResult.config.urlLimit).to.equal(CITED_ANALYSIS_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
@@ -266,14 +282,35 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[Cited] Retrieved 0 guidelines');
     });
 
-    it('should return error when DRS has no available content', async () => {
+    it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
       mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
 
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence');
+      expect(msg.siteId).to.equal(siteId);
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited' });
+    });
+
+    it('returns error without re-scraping when scrape was already requested', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await citedAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { drsScrapeRequested: true },
+      );
+
+      expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('no content');
-      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available after scraping/);
     });
 
     it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {
@@ -345,8 +382,9 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com',
+        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -357,9 +395,21 @@ describe('Cited Analysis Handler', () => {
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com',
+        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com, competitors=0',
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
+    });
+
+    it('should NOT warn when competitors are configured', async () => {
+      // mockSite default config has two competitors configured.
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Config: companyName=Example Corp, website=${baseURL}, competitors=2`,
+      );
     });
 
     it('should handle general errors during execution', async () => {
@@ -390,6 +440,184 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+    });
+  });
+
+  // Cited URLs are meant to represent 3rd-party EARNED citations. URLs on
+  // the customer's own domain must be filtered out before we waste a DRS
+  // lookup on them or ship them to Mystique. The mystique flow has the
+  // same filter for defense in depth, but doing it here avoids the
+  // round-trip cost.
+  describe('runCitedAnalysisAudit owned-domain filter', () => {
+    const ownedBaseURL = 'https://bmw.com';
+
+    beforeEach(() => {
+      mockSite.getBaseURL.returns(ownedBaseURL);
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi', 'Mercedes']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns(['bmw']),
+      });
+    });
+
+    it('handles bare-host brand domain (no scheme)', async () => {
+      // ``site.getBaseURL()`` is normalized to include a scheme in
+      // production, but some site configs historically stored bare hosts
+      // (``bmw.com`` rather than ``https://bmw.com``). The filter must
+      // still produce the same apex match.
+      mockSite.getBaseURL.returns('bmw.com');
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner('bmw.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(1);
+      expect(filtered[0].url).to.equal('https://caranddriver.com/bmw-review');
+    });
+
+    it('drops apex / www / subdomain URLs on the brand domain before DRS lookup', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://bmw.com/news/owned-article', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.bmw.com/configurator', type: 'cited-analysis', metadata: {} },
+        { url: 'https://m.bmw.com/owners', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-3-series-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://motortrend.com/bmw-x5-test', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname).sort();
+      expect(hosts).to.deep.equal(['caranddriver.com', 'motortrend.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 3 owned-domain URLs/);
+    });
+
+    it('drops owned-domain lookalikes that contain the brand token, keeps neutral hosts', async () => {
+      // The owned-domain filter does not treat these as owned (no `.bmw.com`
+      // suffix), but the branded filter drops any host containing the brand
+      // token "bmw". A neutral third-party host is kept even when its path
+      // mentions the brand.
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://not-bmw.com/page', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com.attacker.example/x', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 2 non-earned\/branded URLs/);
+    });
+
+    it('is a no-op when baseURL is whitespace-only and no brand keywords configured', async () => {
+      mockSite.getBaseURL.returns('   ');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
+      const urls = [
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+      ];
+      mockStoreClient.getUrls.resolves(urls);
+
+      const result = await citedAnalysisHandler.default.runner('   ', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('keeps URLs whose host string cannot be parsed (defensive)', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'http://[bad', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('is a no-op when baseURL is missing (defensive — keeps everything)', async () => {
+      mockSite.getBaseURL.returns('');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
+      const urls = [
+        { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
+        { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
+      ];
+      mockStoreClient.getUrls.resolves(urls);
+
+      const result = await citedAnalysisHandler.default.runner('', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('drops social/search/deal-aggregator domains (defense in depth)', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.google.com/search', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.facebook.com/groups/homedesign/posts/1', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.instagram.com/p/abc', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.groupon.com/coupons/bmw', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-3-series-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 4 non-earned\/branded URLs/);
+    });
+
+    it('drops brand-owned lookalike domains via configured brand keywords', async () => {
+      // lovedbylovesac.com is owned by the brand but is not a subdomain of the
+      // apex; the configured brand keyword catches it.
+      mockSite.getBaseURL.returns('https://lovesac.com');
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('Lovesac'),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns('US'),
+        getIndustry: sandbox.stub().returns('Furniture'),
+        getBrandKeywords: sandbox.stub().returns(['Loved By Lovesac']),
+      });
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.lovedbylovesac.com/pages/faqs', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.goodhousekeeping.com/lovesac-sactional-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner('https://lovesac.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['www.goodhousekeeping.com']);
     });
   });
 
@@ -443,7 +671,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[Cited] Queued Cited analysis request to Mystique for Example Corp with 2 URLs',
@@ -471,7 +699,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
 
-    it('should send raw urls when no topics are available', async () => {
+    it('should send projected urls when no topics are available', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -488,11 +716,14 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.deep.equal(mockUrls);
+      // URL Store metadata (type, metadata, siteId, etc.) is stripped; only
+      // url/categories/timesCited/prompts are projected for the SQS payload.
+      const expectedUrls = mockUrls.map(({ url }) => ({ url }));
+      expect(sentMessage.data.urls).to.deep.equal(expectedUrls);
     });
 
-    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
-      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
+    it('should limit URLs to CITED_ANALYSIS_URLS_LIMIT when many URLs exist', async () => {
+      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 20 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -512,14 +743,14 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
+        `[Cited] Queued Cited analysis request to Mystique for Test with ${CITED_ANALYSIS_URLS_LIMIT} URLs`,
       );
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
+    it('should fall back to CITED_ANALYSIS_URLS_LIMIT when urlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -539,10 +770,128 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
       );
+    });
+
+    it('should strip URL Store metadata and keep only url/categories/timesCited/prompts', async () => {
+      const urlsWithMetadata = [
+        {
+          url: 'https://techreview.io/review-of-example',
+          siteId: 'some-site-id',
+          byCustomer: false,
+          audits: ['cited-analysis'],
+          createdAt: '2026-06-16T10:00:00.000Z',
+          updatedAt: '2026-06-16T10:00:00.000Z',
+          createdBy: 'system',
+          updatedBy: 'system',
+        },
+      ];
+
+      const topicsWithData = [
+        {
+          name: 'Test Topic',
+          urls: [{
+            url: 'https://techreview.io/review-of-example',
+            timesCited: 5,
+            category: 'review',
+            subPrompts: ['prompt one'],
+          }],
+        },
+      ];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: urlsWithMetadata,
+            sentimentConfig: { topics: topicsWithData, guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      const sentUrl = sentMessage.data.urls[0];
+      expect(sentUrl).to.have.property('url', 'https://techreview.io/review-of-example');
+      expect(sentUrl).to.have.property('categories');
+      expect(sentUrl).to.have.property('timesCited', 5);
+      expect(sentUrl).to.have.property('prompts');
+      expect(sentUrl).to.not.have.any.keys('siteId', 'byCustomer', 'audits', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy');
+    });
+
+    it('should reduce URL count when serialised message exceeds size budget', async () => {
+      // 40 URLs × 60 prompts × 200 bytes each = ~480 KB, well over the 200 KB budget.
+      // Prompts are no longer capped per URL — the size guard is the safety net.
+      const largePrompt = 'x'.repeat(200);
+      const bigUrls = Array.from({ length: 40 }, (_, i) => ({
+        url: `https://example.com/page-${i}`,
+        prompts: Array.from({ length: 60 }, () => largePrompt),
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: bigUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls.length).to.be.lessThan(CITED_ANALYSIS_URLS_LIMIT);
+      expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
+      expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
+    });
+
+    it('should strip prompts from single URL when payload still exceeds budget', async () => {
+      // One URL whose prompts alone push it over the 200 KB budget.
+      const hugePrompt = 'x'.repeat(300 * 1024); // 300 KB in a single prompt entry
+      const singleBigUrl = [{
+        url: 'https://example.com/huge',
+        categories: ['Tech'],
+        timesCited: 7,
+        prompts: [hugePrompt],
+      }];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: singleBigUrl,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.length(1);
+      expect(sentMessage.data.urls[0].url).to.equal('https://example.com/huge');
+      expect(sentMessage.data.urls[0].prompts).to.be.undefined;
+      // Lightweight metadata is preserved even when prompts are stripped.
+      expect(sentMessage.data.urls[0].categories).to.deep.equal(['Tech']);
+      expect(sentMessage.data.urls[0].timesCited).to.equal(7);
+      expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
+      expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -634,6 +983,67 @@ describe('Cited Analysis Handler', () => {
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
+    });
+
+    it('should post a Slack failure message when SQS send fails and slackContext is present', async () => {
+      context.sqs.sendMessage.rejects(new Error('Message must be shorter than 262144 bytes'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test', companyWebsite: baseURL },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+          slackContext: { channelId: 'C12345', threadTs: '1234567890.000100' },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('Message must be shorter than 262144 bytes');
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [, channelId, text, opts] = mockPostMessageOptional.firstCall.args;
+      expect(channelId).to.equal('C12345');
+      expect(text).to.include(':x:');
+      expect(text).to.include(baseURL);
+      expect(text).to.include('Message must be shorter than 262144 bytes');
+      expect(opts.threadTs).to.equal('1234567890.000100');
+    });
+
+    it('should fall back to siteId in the Slack message when companyWebsite is absent', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+          slackContext: { channelId: 'C12345', threadTs: '1234567890.000100' },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [, , text] = mockPostMessageOptional.firstCall.args;
+      expect(text).to.include(siteId);
+    });
+
+    it('should not post to Slack when SQS send fails without slackContext', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(mockPostMessageOptional).to.not.have.been.called;
     });
 
     // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)

@@ -86,7 +86,6 @@ import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
-import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
 import rumConfigRefresh from './rum-config-refresh/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
@@ -123,6 +122,7 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import offsiteBrandPresenceDrsStatus from './offsite-brand-presence/drs-status-handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
@@ -192,7 +192,6 @@ const HANDLERS = {
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
-  'llmo-config-db-sync': llmoConfigDbSync,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
@@ -230,6 +229,10 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  // Utility handler (not an AuditBuilder audit): polls DRS job status and posts a
+  // Slack summary. It produces no audit result, so it intentionally skips the audit
+  // framework, like the drs:prompt_generation_base_url handler above.
+  'offsite-brand-presence-drs-status': offsiteBrandPresenceDrsStatus,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   'rum-config-refresh': rumConfigRefresh,

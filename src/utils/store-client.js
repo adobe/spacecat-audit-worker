@@ -13,22 +13,26 @@
 /* eslint-disable max-classes-per-file */
 
 /**
- * Store Client - Utility for fetching data from URL Store and Guidelines Store
+ * Store Client - Utility for fetching data from the URL Store and Guidelines Store.
  *
- * API Endpoints (from spacecat-api-service):
- * - URL Store: GET /sites/{siteId}/url-store/by-audit/{auditType}
- * - Sentiment Config: GET /sites/{siteId}/sentiment/config?audit={auditType}
+ * Reads directly from the shared data-access layer (`context.dataAccess`) rather than
+ * calling spacecat-api-service over HTTP. This mirrors how every other audit reads its
+ * data and removes the dependency on the legacy `x-api-key` auth, which was retired on
+ * 2026-06-01 for these routes (see RouteScopedLegacyApiKeyHandler in spacecat-api-service).
  *
- * Note: Content Store is called directly by Mystique (not from audit worker)
- * because content can exceed SQS message size limits (256KB).
+ * Backing models (same ones the API controllers use):
+ * - URL Store:            dataAccess.AuditUrl.allBySiteIdAndAuditType
+ * - Sentiment topics:     dataAccess.SentimentTopic.allBySiteIdEnabled
+ * - Sentiment guidelines: dataAccess.SentimentGuideline.allBySiteIdAndAuditType
  *
- * The stores provide:
- * - urlStore: URLs discovered during brand presence analysis (Wikipedia, Reddit, YouTube, etc.)
- * - guidelinesStore: Analysis guidelines and topics for different audit types
+ * Note: the Content Store is fetched directly by Mystique (not here) because content can
+ * exceed SQS message size limits (256KB).
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+
+// Page size for cursor-based pagination over the url-store and sentiment collections.
+const STORE_PAGE_SIZE = 500;
 
 /**
  * Error thrown when a store returns empty results
@@ -45,7 +49,7 @@ export class StoreEmptyError extends Error {
 
 /**
  * Audit types for URL Store queries (maps to audit types in url-store)
- * Used as {auditType} path parameter in /sites/{siteId}/url-store/by-audit/{auditType}
+ * Matched against the `audits` set on each AuditUrl record.
  */
 export const URL_TYPES = {
   WIKIPEDIA: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
@@ -55,8 +59,8 @@ export const URL_TYPES = {
 };
 
 /**
- * Audit types for guidelines queries
- * These are used as the ?audit= query parameter in /sites/{siteId}/sentiment/config
+ * Audit types for guidelines queries.
+ * Matched against the `audits` set on each SentimentGuideline record.
  */
 export const GUIDELINE_TYPES = {
   WIKIPEDIA_ANALYSIS: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
@@ -66,170 +70,190 @@ export const GUIDELINE_TYPES = {
 };
 
 /**
- * Store Client class for accessing URL, Content, and Guidelines stores
- * Uses spacecat-api-service endpoints
+ * Maps an AuditUrl model instance to a plain object, matching the shape the
+ * spacecat-api-service AuditUrlDto previously returned over HTTP.
+ * @param {object} auditUrl - AuditUrl model instance
+ * @returns {object}
+ */
+function toAuditUrlJson(auditUrl) {
+  return {
+    siteId: auditUrl.getSiteId(),
+    url: auditUrl.getUrl(),
+    byCustomer: auditUrl.getByCustomer(),
+    audits: auditUrl.getAudits(),
+    createdAt: auditUrl.getCreatedAt(),
+    updatedAt: auditUrl.getUpdatedAt(),
+    createdBy: auditUrl.getCreatedBy(),
+    updatedBy: auditUrl.getUpdatedBy(),
+  };
+}
+
+/**
+ * Maps a SentimentTopic model instance to a plain object (matches SentimentTopicDto).
+ * @param {object} topic - SentimentTopic model instance
+ * @returns {object}
+ */
+function toSentimentTopicJson(topic) {
+  return {
+    siteId: topic.getSiteId(),
+    topicId: topic.getTopicId(),
+    name: topic.getName(),
+    description: topic.getDescription(),
+    enabled: topic.getEnabled(),
+    createdAt: topic.getCreatedAt(),
+    updatedAt: topic.getUpdatedAt(),
+    createdBy: topic.getCreatedBy(),
+    updatedBy: topic.getUpdatedBy(),
+  };
+}
+
+/**
+ * Maps a SentimentGuideline model instance to a plain object (matches SentimentGuidelineDto).
+ * @param {object} guideline - SentimentGuideline model instance
+ * @returns {object}
+ */
+function toSentimentGuidelineJson(guideline) {
+  return {
+    siteId: guideline.getSiteId(),
+    guidelineId: guideline.getGuidelineId(),
+    name: guideline.getName(),
+    instruction: guideline.getInstruction(),
+    audits: guideline.getAudits() || [],
+    enabled: guideline.getEnabled(),
+    createdAt: guideline.getCreatedAt(),
+    updatedAt: guideline.getUpdatedAt(),
+    createdBy: guideline.getCreatedBy(),
+    updatedBy: guideline.getUpdatedBy(),
+  };
+}
+
+/**
+ * Store Client class for accessing the URL and Guidelines stores via the
+ * shared data-access layer.
  */
 export default class StoreClient {
   /**
-   * Creates a StoreClient from the Lambda context
+   * Creates a StoreClient from the Lambda context.
    * @param {Object} context - The Lambda context
-   * @param {Object} context.env - Environment variables
+   * @param {Object} context.dataAccess - The shared data-access layer
    * @param {Object} context.log - Logger instance
    * @returns {StoreClient} - StoreClient instance
    */
   static createFrom(context) {
-    const {
-      SPACECAT_API_BASE_URL: apiBaseUrl,
-      SPACECAT_API_KEY: apiKey,
-    } = context.env || {};
-
-    return new StoreClient({ apiBaseUrl, apiKey }, fetch, context.log);
+    const { dataAccess, log } = context || {};
+    return new StoreClient({ dataAccess }, log);
   }
 
   /**
    * @param {Object} config - Configuration object
-   * @param {string} config.apiBaseUrl - Base URL for spacecat-api-service
-   * @param {string} [config.apiKey] - API key for authentication
-   * @param {Function} fetchAPI - Fetch function
+   * @param {Object} config.dataAccess - The shared data-access layer
    * @param {Object} log - Logger instance
    */
-  constructor(config, fetchAPI, log = console) {
-    const { apiBaseUrl, apiKey } = config;
-
-    this.apiBaseUrl = apiBaseUrl;
-    this.apiKey = apiKey;
-    this.fetchAPI = fetchAPI;
+  constructor(config, log = console) {
+    const { dataAccess } = config || {};
+    this.dataAccess = dataAccess;
     this.log = log;
   }
 
-  #ensureConfigured() {
-    const missing = [];
-    if (!this.apiBaseUrl) {
-      missing.push('SPACECAT_API_BASE_URL');
-    }
-    if (!this.apiKey) {
-      missing.push('SPACECAT_API_KEY');
-    }
+  /**
+   * Validates that the given dataAccess collections are available.
+   * @param {string[]} required - Collection names this operation needs
+   * @throws {Error} If any required collection is missing
+   */
+  #ensureConfigured(required) {
+    const dataAccess = this.dataAccess || {};
+    const missing = required.filter((name) => !dataAccess[name]);
     if (missing.length > 0) {
-      throw new Error(`StoreClient is not configured: missing ${missing.join(', ')}`);
+      throw new Error(`StoreClient is not configured: missing dataAccess collections ${missing.join(', ')}`);
     }
   }
 
   /**
-   * Builds headers for API requests
-   * @returns {Object} Headers object
-   * @private
+   * Drains a cursor-paginated collection query into a single array.
+   * @param {(cursor: string|null) => Promise<{data?: Array, cursor?: string|null}>} queryFn
+   *   Invoked once per page with the current cursor
+   * @returns {Promise<Array>} All items across every page
    */
-  #buildHeaders() {
-    return {
-      'Content-Type': 'application/json',
-      'x-api-key': this.apiKey,
-    };
-  }
-
-  /**
-   * Sends a GET request to the store API
-   * @param {string} endpoint - API endpoint
-   * @param {Object} queryParams - Query parameters
-   * @returns {Promise<Object>} Response data
-   * @private
-   */
-  async #sendRequest(endpoint, queryParams = {}) {
-    this.#ensureConfigured();
-
-    const queryString = Object.entries(queryParams)
-      .filter(([, value]) => value !== undefined && value !== null)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-      .join('&');
-
-    const url = `${this.apiBaseUrl}${endpoint}${queryString ? `?${queryString}` : ''}`;
-
-    this.log.debug(`[StoreClient] Requesting: ${url}`);
-
-    const response = await this.fetchAPI(url, {
-      method: 'GET',
-      headers: this.#buildHeaders(),
-    });
-
-    if (!response.ok) {
-      const errorMessage = `Store API request failed: ${response.status} ${response.statusText}`;
-      this.log.error(`[StoreClient] ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Fetches all pages of a paginated endpoint
-   * @param {string} endpoint - API endpoint
-   * @param {Object} queryParams - Query parameters
-   * @returns {Promise<Array>} All items from all pages
-   * @private
-   */
-  async #fetchAllPages(endpoint, queryParams = {}) {
-    const allItems = [];
+  // eslint-disable-next-line class-methods-use-this
+  async #fetchAllPages(queryFn) {
+    const items = [];
     let cursor = null;
-
     do {
-      const params = { ...queryParams, limit: 500 };
-      if (cursor) {
-        params.cursor = cursor;
-      }
-
       // eslint-disable-next-line no-await-in-loop
-      const result = await this.#sendRequest(endpoint, params);
-      const items = result?.items || [];
-      allItems.push(...items);
-
-      cursor = result?.pagination?.cursor || null;
+      const result = await queryFn(cursor);
+      items.push(...(result?.data ?? []));
+      cursor = result?.cursor ?? null;
     } while (cursor);
-
-    return allItems;
+    return items;
   }
 
   /**
-   * Fetches URLs from the URL Store for a given site and audit type
-   * Uses: GET /sites/{siteId}/url-store/by-audit/{auditType}
+   * Fetches URLs from the URL Store for a given site and audit type.
+   * Reads dataAccess.AuditUrl.allBySiteIdAndAuditType, paginating until exhausted.
    *
    * @param {string} siteId - The site ID
    * @param {string} auditType - The audit type (e.g., 'wikipedia-analysis', 'reddit-analysis')
-   * @param {Object} [queryParams={}] - Additional query parameters forwarded to every page request
-   *   (e.g. `{ sortBy: 'createdAt', sortOrder: 'desc' }`)
+   * @param {Object} [queryParams={}] - Optional `{ sortBy, sortOrder }` forwarded to the query
+   *   (defaults: `sortBy='createdAt'`, `sortOrder='desc'`)
    * @returns {Promise<Array<Object>>} Array of URL objects
    * @throws {StoreEmptyError} If no URLs are found
    */
   async getUrls(siteId, auditType, queryParams = {}) {
+    this.#ensureConfigured(['AuditUrl']);
+    const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
+    const { AuditUrl } = this.dataAccess;
+
     this.log.info(`[StoreClient] Fetching ${auditType} URLs for siteId: ${siteId}`);
 
-    const urls = await this.#fetchAllPages(
-      `/sites/${siteId}/url-store/by-audit/${auditType}`,
-      queryParams,
-    );
+    const items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
+      siteId,
+      auditType,
+      {
+        limit: STORE_PAGE_SIZE,
+        cursor,
+        sortBy,
+        sortOrder,
+      },
+    ));
 
-    if (urls.length === 0) {
+    if (items.length === 0) {
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
     }
 
+    const urls = items.map(toAuditUrlJson);
     this.log.info(`[StoreClient] Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`);
     return urls;
   }
 
   /**
-   * Fetches sentiment config (topics and guidelines) for a site and audit type
-   * Uses: GET /sites/{siteId}/sentiment/config?audit={auditType}
+   * Fetches sentiment config (topics and guidelines) for a site and audit type.
+   * Reads dataAccess.SentimentTopic (enabled topics) and dataAccess.SentimentGuideline
+   * (guidelines for the audit type, or all enabled guidelines when no audit type given).
    *
    * @param {string} siteId - The site ID
-   * @param {string} auditType - The audit type to filter guidelines (e.g., 'wikipedia-analysis')
+   * @param {string} [auditType] - The audit type to filter guidelines (e.g., 'wikipedia-analysis')
    * @returns {Promise<Object>} Config object with topics and guidelines arrays
    * @throws {StoreEmptyError} If no guidelines are found
    */
   async getGuidelines(siteId, auditType) {
+    this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
+    const { SentimentTopic, SentimentGuideline } = this.dataAccess;
+
     this.log.info(`[StoreClient] Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`);
 
-    const result = await this.#sendRequest(`/sites/${siteId}/sentiment/config`, { audit: auditType });
+    const topicItems = await this.#fetchAllPages(
+      (cursor) => SentimentTopic.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor }),
+    );
+    const guidelineItems = await this.#fetchAllPages((cursor) => (auditType
+      ? SentimentGuideline.allBySiteIdAndAuditType(
+        siteId,
+        auditType,
+        { limit: STORE_PAGE_SIZE, cursor },
+      )
+      : SentimentGuideline.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor })));
 
-    const { topics = [], guidelines = [] } = result || {};
+    const topics = topicItems.map(toSentimentTopicJson);
+    const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);

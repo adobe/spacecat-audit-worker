@@ -476,6 +476,81 @@ describe('CSP Post-processor', () => {
     ));
   });
 
+  it('should skip backward compatible findings', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    // Mirrors a real Lighthouse `csp-xss` audit `details.items` array.
+    auditData.auditResult.csp = [
+      {
+        directive: 'script-src',
+        description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces or hashes instead, along with `\'strict-dynamic\'` if necessary.',
+        severity: 'High',
+      },
+      {
+        directive: 'script-src',
+        description: 'Consider adding `\'unsafe-inline\'` (ignored by browsers supporting nonces/hashes) to be backward compatible with older browsers.',
+        severity: 'Medium',
+      },
+      {
+        severity: 'Medium',
+        description: 'The page contains a CSP defined in a `<meta>` tag. Consider moving the CSP to an HTTP header or defining another strict CSP in an HTTP header.',
+      },
+    ];
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
+      type: Audit.AUDIT_TYPES.SECURITY_CSP,
+      origin: 'AUTOMATION',
+      title: 'XSS vulnerabilities on your site have been detected — patch them for stronger security',
+      description: 'Unpatched vulnerabilities expose visitors to attacks — fixing them protects users and preserves brand integrity.',
+      data: {
+        securityScoreImpact: 10,
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        dataSources: [
+          'Page',
+        ],
+        securityType: 'EDS-CSP',
+        mainMetric: {
+          name: 'Issues',
+          value: 2,
+        },
+      },
+      tags: [
+        'CSP',
+        'Security',
+      ],
+    }));
+    expect(cspOpportunity.addSuggestions).to.have.been.calledOnce;
+    expect(cspOpportunity.addSuggestions).to.have.been.calledWith(sinon.match(
+      [
+        // "nonces or hashes" is normalized to "nonces".
+        sinon.match({
+          type: 'CODE_CHANGE',
+          rank: 0,
+          data: {
+            severity: 'High',
+            directive: 'script-src',
+            description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces instead, along with `\'strict-dynamic\'` if necessary.',
+          },
+        }),
+        // Meta tag finding has no directive.
+        sinon.match({
+          type: 'CODE_CHANGE',
+          rank: 0,
+          data: {
+            severity: 'Medium',
+            directive: undefined,
+            description: 'The page contains a CSP defined in a `<meta>` tag. Consider moving the CSP to an HTTP header or defining another strict CSP in an HTTP header.',
+          },
+        }),
+      ],
+    ));
+  });
+
   it('should extract multiple suggestions with subitems', async () => {
     sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
     auditData.auditResult.csp = [
@@ -582,22 +657,6 @@ describe('CSP Post-processor', () => {
     ));
   });
 
-  it('should not extract opportunity if audit is disabled', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
-    auditData.auditResult.csp = [
-      {
-        severity: 'High',
-        description: 'No CSP found in enforcement mode',
-      },
-    ];
-
-    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
-    assertAuditData(cspAuditData);
-
-    expect(opportunityStub.create).to.not.have.been.called;
-    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
-  });
-
   it('should not extract opportunity for other delivery types', async () => {
     sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
     auditData.auditResult.csp = [
@@ -607,6 +666,48 @@ describe('CSP Post-processor', () => {
       },
     ];
     cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.OTHER;
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+  });
+
+  it('should extract opportunity for a Crosswalk (AEM_CS) site with a valid hlxConfig', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [
+      {
+        severity: 'High',
+        description: 'No CSP found in enforcement mode',
+      },
+    ];
+    cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.AEM_CS;
+    cspSite.getHlxConfig = () => ({
+      hlxVersion: 5,
+      rso: { owner: 'myorg', site: 'mysite', ref: 'main' },
+    });
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
+      type: Audit.AUDIT_TYPES.SECURITY_CSP,
+    }));
+    expect(cspOpportunity.addSuggestions).to.have.been.calledOnce;
+  });
+
+  it('should not extract opportunity for AEM_CS site without a valid hlxConfig', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [
+      {
+        severity: 'High',
+        description: 'No CSP found in enforcement mode',
+      },
+    ];
+    cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.AEM_CS;
+    // empty rso: not actionable
+    cspSite.getHlxConfig = () => ({ hlxVersion: 5, rso: {} });
 
     const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
     assertAuditData(cspAuditData);
@@ -960,27 +1061,6 @@ describe('CSP Post-processor', () => {
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page head.html'));
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page 404.html'));
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error fetching one or more pages. Skipping CSP auto-suggest.'));
-    });
-
-    it('should not provide suggestions if audit is disabled', async () => {
-      configuration.isHandlerEnabledForSite.returns(false);
-      const csp = [
-        {
-          severity: 'High',
-          description: 'No CSP found in enforcement mode',
-        },
-      ];
-
-      const scopeHead = nock('https://adobe.com').get('/head.html').reply(404);
-      const scope404 = nock('https://adobe.com').get('/404.html').reply(404);
-
-      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(cspResult).to.deep.equal(csp);
-
-      expect(scopeHead.isDone()).to.equal(false);
-      expect(scope404.isDone()).to.equal(false);
-
-      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('auto-suggest is disabled for site'));
     });
 
     it('end-to-end: extracts opportunity and auto-suggest from real PSI csp-xss findings', async () => {

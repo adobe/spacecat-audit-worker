@@ -87,6 +87,21 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     clusterResults = [],
     portfolioMetrics = {},
   } = guidanceBody;
+  /**
+   * Page-level context fields emitted by mystique (additive, both optional).
+   *
+   * Distinct from per-cluster
+   * `gapAnalysis.{keywordToPageGap,adToPageGap}.relevantExtractedTopics`,
+   * which are LLM-filtered subsets of `pageTopics` filtered for cluster-
+   * specific intent relevance. `pageTopics` here is the full page-level set.
+   *
+   * Use `??` (nullish coalescing) instead of ES destructure defaults so that
+   * a future regression emitting `pageTopics: null` (instead of omitting the
+   * key) still results in an empty array on the consumer side. ES destructure
+   * defaults only fire for `undefined`, not `null`.
+   */
+  const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
+  const pageTopics = guidanceBody.pageTopics ?? [];
   const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
@@ -132,6 +147,8 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       totalClusters,
       misalignedClusters,
       totalMisalignedSpend,
+      resolvedPageHeading,
+      pageTopics,
     },
     status: 'NEW',
     tags: [
@@ -164,6 +181,7 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
     gapAnalysis,
     overallAlignmentScore,
     keywordAnalysis,
+    adAnalysis,
     recommendation,
     rank,
   } = cluster;
@@ -197,6 +215,12 @@ export function mapClusterToSuggestion(context, opportunityId, cluster) {
         gapAnalysis: gapAnalysis || {},
         overallAlignmentScore: overallAlignmentScore || null,
         keywordAnalysis: keywordAnalysis || [],
+        // `?? null` (not `|| {}`): mystique emits an explicit `null` when the
+        // cluster lacks sufficient ad-copy signal, and the UI hides the
+        // "What the ad promises" block on that signal. Coercing null to {}
+        // would silently break the hide-when-missing branch. See spec
+        // products/aso/ad-intent-cluster-ad-analysis.md (B.1 + Decision #3).
+        adAnalysis: adAnalysis ?? null,
       },
       ...(recommendationType && { recommendationType }),
       ...(cleanedRecommendation && { recommendation: cleanedRecommendation }),

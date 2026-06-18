@@ -18,10 +18,23 @@ import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js
 
 const LOG_PREFIX = '[Wikipedia]';
 
-const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
+// Long, unambiguous market suffixes. These are safe to strip even when fused
+// directly to the brand word (e.g. "landroverusa" -> "landrover",
+// "toyotaglobal" -> "toyota") because they almost never occur inside a real
+// brand name.
+const MARKET_SUFFIXES_RE = /(?:usa|global|international|worldwide)$/i;
+
+// Two-letter country/region codes. These are ONLY stripped when they appear as a
+// clearly delimited token (e.g. "walmart-uk" -> "walmart"). Stripping them when
+// they are fused to the brand word corrupts legitimate names — "adobe" -> "ado",
+// "garmin" -> "garm", "mercedes" -> "merced", "fiat" -> "fi", "linkedin" ->
+// "linked" — so we require a separator immediately before the code. `name` is a
+// single hostname segment (already split on '.'), so only -, _ can occur here.
+const COUNTRY_CODE_SUFFIX_RE = /[-_](?:us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za)$/i;
 
 const MULTI_PART_TLD_PREFIXES = new Set([
   'co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'mil',
+  'bank', 'firm', 'gen', 'ind', 'res', 'nic',
 ]);
 
 /**
@@ -152,6 +165,12 @@ function resolveWikipediaUrlOverride(auditContext, log) {
  * Handles subdomain URLs (e.g. corporate.walmart.com → walmart) by
  * extracting the second-level domain rather than the first hostname segment.
  *
+ * Region stripping is deliberately conservative: long market suffixes
+ * (usa/global/international/worldwide) are removed even when fused to the brand,
+ * but short two-letter country codes are only removed when separated by a
+ * delimiter (e.g. "walmart-uk" → "walmart"). This avoids mangling brands whose
+ * names happen to end in a country code (e.g. "adobe" must NOT become "ado").
+ *
  * @param {string} baseURL - The site's base URL or domain
  * @returns {string} Cleaned brand name
  */
@@ -172,7 +191,12 @@ function extractBrandFromUrl(baseURL) {
     const brandIndex = parts.length - tldLength - 1;
     const name = brandIndex >= 0 ? parts[brandIndex] : parts[0];
 
-    return name.replace(REGION_SUFFIXES_RE, '') || name;
+    const stripped = name
+      .replace(MARKET_SUFFIXES_RE, '')
+      .replace(COUNTRY_CODE_SUFFIX_RE, '')
+      .replace(/[-_]$/, ''); // tidy a delimiter left dangling by suffix removal (e.g. "brand-usa" -> "brand")
+
+    return stripped || name;
   } catch {
     return baseURL;
   }

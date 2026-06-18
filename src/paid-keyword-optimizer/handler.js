@@ -23,8 +23,8 @@ import { getLowPerformingPaidPagesTemplate } from './queries.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 // Configurable thresholds
-const CUT_OFF_BOUNCE_RATE = 0.5;
-const PREDOMINANT_TRAFFIC_PCT = 80;
+const CUT_OFF_BOUNCE_RATE = 0.4;
+const PREDOMINANT_TRAFFIC_PCT = 70;
 const PAGE_VIEW_THRESHOLD = 5000;
 const AD_INTENT_MAX_PAGES = 10;
 

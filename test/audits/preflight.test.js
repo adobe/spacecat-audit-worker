@@ -23,6 +23,7 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
+  PREFLIGHT_META_TAGS_WAIT_MS,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
@@ -536,6 +537,7 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication: true,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
     });
@@ -568,8 +570,26 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
+    });
+
+    it('sets waitTimeoutForMetaTags so slow-rendering SPA pages are captured after hydration', async () => {
+      const context = {
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: PREFLIGHT_STEP_IDENTIFY,
+              urls: ['https://main--example--page.aem.page'],
+            },
+          }),
+        },
+      };
+      const result = await scrapePages(context);
+      expect(result.options.waitTimeoutForMetaTags).to.equal(PREFLIGHT_META_TAGS_WAIT_MS);
+      expect(PREFLIGHT_META_TAGS_WAIT_MS).to.equal(5000);
     });
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {
@@ -668,10 +688,14 @@ describe('Preflight Audit', () => {
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
       retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
-      // Mock the accessibility handler to prevent timeouts
+      // Accessibility + form-accessibility mocked (timeouts / SQS). Alt-text stays real — needs
+      // `alt-text-preflight` in getHandlers below so entitlement + fixtures stay aligned.
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
-          default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+          default: sinon.stub().resolves(),
+        },
+        '../../src/preflight/form-accessibility.js': {
+          default: sinon.stub().resolves(),
         },
         '@adobe/spacecat-shared-ims-client': {
           retrievePageAuthentication: retrievePageAuthenticationStub,
@@ -711,6 +735,8 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
@@ -1440,7 +1466,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1459,9 +1485,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
+      // (total of 9 calls: 1 metadata update + 7 intermediate saves (incl. alt-text) + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(9);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -4774,6 +4800,8 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
 
@@ -4786,9 +4814,11 @@ describe('Preflight Audit', () => {
       }
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
-      // Import preflight with accessibility mocked to no-op
       const { preflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(),
+        },
+        '../../src/preflight/form-accessibility.js': {
           default: sinon.stub().resolves(),
         },
       });

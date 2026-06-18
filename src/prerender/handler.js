@@ -21,10 +21,17 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, toPathname } from './utils/utils.js';
+import {
+  buildSuggestionKey,
+  isPaidLLMOCustomer,
+  mergeAndGetUniqueHtmlUrls,
+  normalizePathnameWithQuery,
+  toPathname,
+} from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
+  DOMAIN_WIDE_SUGGESTION_KEY,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
@@ -49,8 +56,6 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
-
-const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
 /**
  * Reads and parses the site's status.json from S3.
@@ -313,6 +318,15 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
   }
 }
 
+function normalizePathname(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Returns pathnames from PageCitability records updated within the configured recent window.
  * @param {Object} context
@@ -333,13 +347,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
     );
     return new Set(
       records
-        .map((r) => {
-          try {
-            return new URL(r.getUrl()).pathname;
-          } catch {
-            return null;
-          }
-        })
+        .map((r) => normalizePathnameWithQuery(r.getUrl()))
         .filter(Boolean),
     );
   } catch (e) {
@@ -379,20 +387,7 @@ function getEdgeDeployedPathnames(status) {
  * @returns {boolean}
  */
 function isNotRecentUrl(url, recentPathnames) {
-  try {
-    return !recentPathnames.has(new URL(url).pathname);
-  } catch {
-    return true;
-  }
-}
-
-function normalizePathname(url) {
-  try {
-    const { pathname } = new URL(url);
-    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  } catch {
-    return url;
-  }
+  return !recentPathnames.has(normalizePathnameWithQuery(url));
 }
 
 /**
@@ -403,7 +398,7 @@ function normalizePathname(url) {
 function sanitizeImportPath(importPath) {
   return importPath
     .replace(/^\/+|\/+$/g, '')
-    .replace(/[/._]/g, '-')
+    .replace(/[/._?=&]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
@@ -418,8 +413,8 @@ function sanitizeImportPath(importPath) {
 * @returns {string} The S3 path to the file
 */
 function getS3Path(url, id, fileName) {
-  const rawImportPath = new URL(url).pathname;
-  const sanitizedImportPath = sanitizeImportPath(rawImportPath);
+  const { pathname, search } = new URL(url);
+  const sanitizedImportPath = sanitizeImportPath(pathname + search);
   const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
   return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
 }
@@ -490,9 +485,24 @@ async function compareHtmlContent(url, context) {
 
   const { serverSideHtml, clientSideHtml, metadata } = scrapedData;
 
-  // Track if scrape.json exists and if it indicates 403
-  const hasScrapeMetadata = metadata !== null;
-  const scrapeForbidden = metadata?.error?.statusCode === 403;
+  // Fields derived from scrape.json, shared across all return paths
+  const scrapeContext = {
+    url,
+    hasScrapeMetadata: metadata !== null,
+    scrapeForbidden: metadata?.error?.statusCode === 403,
+    isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+    usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
+    /* c8 ignore next */
+    scrapeError: metadata?.error,
+  };
+
+  // error: true keeps URL out of scrapedUrlsSet so syncSuggestions won't resolve its suggestions.
+  if (metadata?.isErrorPage) {
+    log.info(`${LOG_PREFIX} Error/maintenance page detected for ${url} — skipping HTML comparison`);
+    return {
+      ...scrapeContext, error: true, needsPrerender: false, isErrorPage: true,
+    };
+  }
 
   try {
     // Validate HTML data availability
@@ -508,28 +518,11 @@ async function compareHtmlContent(url, context) {
 
     log.debug(`${LOG_PREFIX} Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
-    return {
-      url,
-      ...analysis,
-      hasScrapeMetadata, // Track if scrape.json exists on S3
-      scrapeForbidden, // Track if original scrape was forbidden (403)
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml, // From scrape.json
-      /* c8 ignore next */
-      scrapeError: metadata?.error, // Include error details from scrape.json
-    };
+    // analysis fields intentionally override scrapeContext on key collision
+    return { ...scrapeContext, ...analysis };
   } catch (error) {
     log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
-    return {
-      url,
-      error: true,
-      needsPrerender: false,
-      hasScrapeMetadata,
-      scrapeForbidden,
-      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
-      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
-      scrapeError: metadata?.error,
-    };
+    return { ...scrapeContext, error: true, needsPrerender: false };
   }
 }
 
@@ -579,10 +572,18 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
  *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
+ * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
-// eslint-disable-next-line max-len
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, preBuiltCandidates) {
+async function sendPrerenderGuidanceRequestToMystique(
+  auditUrl,
+  auditData,
+  opportunity,
+  context,
+  preBuiltCandidates,
+  generatePrompts = false,
+  urlScope = null,
+) {
   const {
     log, sqs, env, site,
   } = context;
@@ -672,10 +673,17 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
           url: data.url,
           originalHtmlMarkdownKey: getS3Path(data.url, effectiveScrapeJobId, 'server-side-html.md'),
           markdownDiffKey: getS3Path(data.url, effectiveScrapeJobId, 'markdown-diff.md'),
+          // Signal whether this suggestion already has prompts so Mystique can skip re-generation
+          hasPrompts: Array.isArray(data.prompts) && data.prompts.length > 0,
         });
       });
 
       suggestionsPayload = candidates;
+    }
+
+    // When a URL scope is provided (CSV batch), filter to only matching URLs
+    if (urlScope && suggestionsPayload.length > 0) {
+      suggestionsPayload = suggestionsPayload.filter((s) => urlScope.has(s.url));
     }
 
     if (suggestionsPayload.length === 0) {
@@ -703,6 +711,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         suggestions: firstBatch,
         batchIndex: 0,
         totalBatches: 1,
+        generatePrompts,
+        siteRegion: site.getRegion() ?? '',
       },
     });
 
@@ -726,26 +736,30 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
  */
 export async function handleAiOnlyMode(context) {
   const {
-    site, log, dataAccess, data,
+    site, log, dataAccess, data, auditContext,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
   const baseUrl = site.getBaseURL();
 
-  // Parse optional params from data field (opportunityId, scrapeJobId)
+  // Parse optional params from data field (opportunityId, scrapeJobId, generatePrompts)
   let opportunityId = null;
   let scrapeJobId = null;
-  if (data) {
-    try {
-      const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+  let generatePrompts = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    if (parsedData) {
       opportunityId = parsedData.opportunityId;
       scrapeJobId = parsedData.scrapeJobId;
-    } catch (e) {
-      // Ignore parse errors - graceful degradation for malformed JSON
+      generatePrompts = !!parsedData.generatePrompts;
     }
+  } catch (e) {
+    // Ignore parse errors
+    // Non-JSON data — graceful degradation, values stay at defaults
+    log.warn(`${LOG_PREFIX} Failed to parse context.data for opportunityId, scrapeJobId, generatePrompts, defaulting to null, null, false: ${e.message}`);
   }
 
-  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
+  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}, generatePrompts=${generatePrompts}`);
 
   // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
@@ -809,6 +823,14 @@ export async function handleAiOnlyMode(context) {
     };
   }
 
+  // When explicit URLs are provided (CSV batch), scope suggestions to that set.
+  const urlScope = Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+    ? new Set(auditContext.urls)
+    : null;
+  if (urlScope) {
+    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+
   // Send to Mystique using the existing function
   const auditData = {
     siteId,
@@ -822,6 +844,9 @@ export async function handleAiOnlyMode(context) {
     auditData,
     opportunity,
     context,
+    null, // preBuiltCandidates — build from DB suggestions in ai-only mode
+    generatePrompts,
+    urlScope,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
@@ -855,19 +880,29 @@ export async function importTopPages(context) {
     return handleAiOnlyMode(context);
   }
 
+  // Extract generatePrompts so it can be forwarded to downstream steps via auditContext.
+  // context.data is only populated on the SQS message that triggers Step 1 (the original
+  // Slack command payload) — it is NOT automatically forwarded to Steps 2 and 3.
+  let generatePromptsFlag = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePromptsFlag = !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+  }
+
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
     type: 'top-pages',
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
-    ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
-      ? {
-        auditContext: {
-          urls: auditContext.urls,
-        },
-      }
-      : {}),
+    auditContext: {
+      ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+        ? { urls: auditContext.urls }
+        : {}),
+      generatePrompts: generatePromptsFlag,
+    },
   };
 }
 
@@ -897,7 +932,10 @@ export async function submitForScraping(context) {
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedCsvUrls);
+    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+      rebasedCsvUrls,
+      { includeQueryParams: true },
+    );
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -919,6 +957,7 @@ export async function submitForScraping(context) {
         pageLoadTimeout: 20000,
         storagePrefix: AUDIT_TYPE,
       },
+      auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
     };
   }
 
@@ -954,12 +993,23 @@ export async function submitForScraping(context) {
   let edgeDeployedPathnames = new Set();
 
   if (isSlackTriggered) {
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
-      ...rebasedTopPagesUrls,
-      ...rebasedIncludedURLs,
-    ]));
-    currentOrganic = rebasedTopPagesUrls.length;
-    currentIncludedUrls = rebasedIncludedURLs.length;
+    // Dedup each source independently: organic uses pathname-only dedup (tracking params stay
+    // collapsed), included uses pathname+search so CSV query-param variants are preserved.
+    const {
+      urls: organicSlackDeduped, filteredCount: organicSlackFiltered,
+    } = mergeAndGetUniqueHtmlUrls(rebasedTopPagesUrls);
+    const {
+      urls: includedSlackDeduped,
+      filteredCount: includedSlackFiltered,
+    } = mergeAndGetUniqueHtmlUrls(rebasedIncludedURLs, { includeQueryParams: true });
+    const { urls: crossSlackDeduped } = mergeAndGetUniqueHtmlUrls(
+      [...organicSlackDeduped, ...includedSlackDeduped],
+      { includeQueryParams: true },
+    );
+    finalUrls = crossSlackDeduped;
+    filteredCount = organicSlackFiltered + includedSlackFiltered;
+    currentOrganic = organicSlackDeduped.length;
+    currentIncludedUrls = includedSlackDeduped.length;
     isFirstRunOfCycle = true;
   } else {
     // getTopAgenticUrls internally handles errors and returns [] on failure
@@ -984,22 +1034,35 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
-    const orderedCandidateUrls = [
-      ...filteredOrganicUrls,
-      ...filteredIncludedURLs,
-      ...filteredAgenticUrls,
-    ];
-    const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+    // Dedup each source independently before merging: organic/agentic use pathname-only
+    // dedup (tracking params get collapsed), included uses pathname+search so CSV
+    // query-param variants (e.g. /page?filter=a vs /page?filter=b) are preserved.
+    const {
+      urls: organicDeduped, filteredCount: organicFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredOrganicUrls);
+    const {
+      urls: includedDeduped, filteredCount: includedFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredIncludedURLs, { includeQueryParams: true });
+    const {
+      urls: agenticDeduped, filteredCount: agenticFiltered,
+    } = mergeAndGetUniqueHtmlUrls(filteredAgenticUrls);
+    filteredCount = organicFiltered + includedFiltered + agenticFiltered;
 
-    const organicUrlSet = new Set(filteredOrganicUrls);
-    const includedUrlSet = new Set(filteredIncludedURLs);
+    const { urls: crossDeduped } = mergeAndGetUniqueHtmlUrls(
+      [...organicDeduped, ...includedDeduped, ...agenticDeduped],
+      { includeQueryParams: true },
+    );
+    const batchedUrls = crossDeduped.slice(0, DAILY_BATCH_SIZE);
+
+    const organicUrlSet = new Set(organicDeduped);
+    const includedUrlSet = new Set(includedDeduped);
     currentOrganic = batchedUrls.filter((url) => organicUrlSet.has(url)).length;
     currentIncludedUrls = batchedUrls.filter((url) => includedUrlSet.has(url)).length;
     currentAgentic = batchedUrls.filter(
       (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
     ).length;
 
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls));
+    finalUrls = batchedUrls;
   }
 
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -1026,6 +1089,7 @@ export async function submitForScraping(context) {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
     },
+    auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   };
 }
 
@@ -1148,16 +1212,15 @@ export async function processOpportunityAndSuggestions(
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
 
-  // Normalize scrapedUrlsSet to match by pathname so that domain shifts
-  // (e.g. www.example.com → example.com) don't prevent existing suggestions
-  // from being correctly marked as outdated. The set uses pathname-based
-  // lookups: both stored values and .has() arguments are normalized to pathnames.
+  // Normalize scrapedUrlsSet to pathname+search so query-param variants are treated
+  // as distinct pages. Domain shifts only affect hostname so migration tolerance
+  // (e.g. www.example.com → example.com) is preserved.
   const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
-    const pathnames = new Set(
-      [...rawScrapedUrlsSet].map(toPathname),
+    const keys = new Set(
+      [...rawScrapedUrlsSet].map(normalizePathnameWithQuery),
     );
     return {
-      has: (url) => pathnames.has(toPathname(url)),
+      has: (url) => keys.has(normalizePathnameWithQuery(url)),
     };
   })() : null;
 
@@ -1200,18 +1263,6 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
-  // Build key function that handles both individual and domain-wide suggestions
-  const buildKey = (data) => {
-    // Domain-wide suggestion has a special key field
-    if (data.key) {
-      return data.key;
-    }
-    // Key on pathname only so that domain shifts (e.g. after page-citability migration
-    // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
-    // suggestions for the same page path.
-    return toPathname(data.url);
-  };
-
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
     url: suggestion.url,
@@ -1244,7 +1295,7 @@ export async function processOpportunityAndSuggestions(
     opportunity,
     newData: allSuggestions,
     context,
-    buildKey,
+    buildKey: buildSuggestionKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
@@ -1320,7 +1371,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
 
   const existingRecords = await PageCitability.allBySiteId(siteId);
   const existingRecordsMap = new Map(
-    existingRecords.map((r) => [normalizePathname(r.getUrl()), r]),
+    existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
   );
 
   const successful = comparisonResults.filter((r) => !r.error);
@@ -1337,7 +1388,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
       isDeployedAtEdge,
     } = result;
     try {
-      const existing = existingRecordsMap.get(normalizePathname(url));
+      const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
       if (existing) {
         existing.setCitabilityScore(citabilityScore ?? null);
         existing.setContentRatio(contentGainRatio ?? null);
@@ -1410,7 +1461,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const existingStatus = await readSiteStatusJson(siteId, context);
     const existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
 
-    const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
+    const existingPageMap = new Map(
+      existingPages.map((p) => [normalizePathnameWithQuery(p.url), p]),
+    );
 
     const currentPages = (auditResult.results ?? []).map((result) => {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
@@ -1428,7 +1481,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapedAt,
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
-          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+          : (existingPageMap.get(normalizePathnameWithQuery(result.url))?.scrapeJobId ?? null),
+        ...(result.isErrorPage && { isErrorPage: true }),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
       };
     });
@@ -1444,10 +1498,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       );
     }
 
-    const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
+    const currentUrlSet = new Set(currentPages.map((p) => normalizePathnameWithQuery(p.url)));
     const mergedPages = [
       ...currentPages,
-      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathname(p.url))),
+      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathnameWithQuery(p.url))),
     ];
 
     // Derive aggregate metrics from the full merged page set and latest audit metadata.
@@ -1610,8 +1664,9 @@ export async function processContentAndGenerateOpportunities(context) {
 
   const siteId = site.getId();
   const startTime = process.hrtime();
-  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
   const isDomainBlocked = auditContext?.domainBlocked === true;
+
+  const generatePrompts = !!auditContext?.generatePrompts;
 
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
@@ -1628,58 +1683,20 @@ export async function processContentAndGenerateOpportunities(context) {
 
   try {
     let urlsToCheck = [];
-    /* c8 ignore next */
-    let agenticUrls = [];
 
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
-      // Try to get URLs from the audit context first
       if (scrapeResultPaths?.size > 0) {
         urlsToCheck = Array.from(context.scrapeResultPaths.keys());
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
-        /* c8 ignore start */
-        // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
-        if (!isSlackTriggered) {
-          try {
-            agenticUrls = await getTopAgenticUrls(site, context);
-          } catch (e) {
-            log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
-          }
-        }
-
-        // Load top organic pages cache for fallback merging
-        const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-        const preferredBase = getPreferredBaseUrl(site, context);
-        const rebasedFallbackOrganicUrls = topPagesUrls
-          .map((url) => rebaseUrl(url, preferredBase, log));
-        const fallbackIncludedURLs = (
-          await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)
-        ) || [];
-        const rebasedFallbackIncludedURLs = fallbackIncludedURLs
-          .map((url) => rebaseUrl(url, preferredBase, log));
-        // Use the same normalization and filtering logic for consistency
-        const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-          rebasedFallbackOrganicUrls,
-          agenticUrls,
-          rebasedFallbackIncludedURLs,
-        );
-        const statusData = await readSiteStatusJson(siteId, context);
-        const edgeDeployedPathnames = getEdgeDeployedPathnames(statusData);
-        urlsToCheck = edgeDeployedPathnames.size > 0
-          ? filteredUrls.filter((u) => !edgeDeployedPathnames.has(normalizePathname(u)))
-          : filteredUrls;
-
-        /* c8 ignore stop */
-        const edgeDeployedFilteredCount = filteredUrls.length - urlsToCheck.length;
-        const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
-          + `Using agenticURLs=${agenticUrls.length}, `
-          + `topPages=${rebasedFallbackOrganicUrls.length}, `
-          + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
-          + `filteredOutUrls=${filteredCount}, `
-          + `edgeDeployedFiltered=${edgeDeployedFilteredCount}, `
-          + `total=${urlsToCheck.length}`;
-        log.info(`${LOG_PREFIX} ${msg}`);
+        // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.
+        // getScrapeJobStats reads the ScrapeUrl DB and populates missingPages so status.json
+        // records the correct failed URLs. Running a top-page fallback here would write phantom
+        // 'error' entries for URLs that were never submitted to this scrape job.
+        log.warn(`${LOG_PREFIX} No COMPLETE scrape results for baseUrl=${site.getBaseURL()}, `
+          + `siteId=${siteId}, scrapeJobId=${auditContext?.scrapeJobId ?? 'unknown'}. `
+          + 'Skipping comparison; failed URLs recorded via ScrapeUrl DB.');
       }
     }
 
@@ -1788,6 +1805,7 @@ export async function processContentAndGenerateOpportunities(context) {
         opportunity,
         context,
         auditRunCandidates,
+        generatePrompts,
       );
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
@@ -1807,19 +1825,20 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Normalize scraped URLs to pathnames so domain shifts don't prevent
-        // outdating existing suggestions.
-        const scrapedPathnames = new Set(
-          [...scrapedUrlsSet].map(toPathname),
+        // Normalize scraped URLs to pathname+search so query-param variants are treated
+        // as distinct pages. Domain shifts only affect hostname so migration tolerance is
+        // preserved.
+        const scrapedKeys = new Set(
+          [...scrapedUrlsSet].map(normalizePathnameWithQuery),
         );
         const scrapedUrlsForNoOppty = {
-          has: (url) => scrapedPathnames.has(toPathname(url)),
+          has: (url) => scrapedKeys.has(normalizePathnameWithQuery(url)),
         };
         await syncSuggestions({
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => toPathname(suggestionData.url),
+          buildKey: (suggestionData) => normalizePathnameWithQuery(suggestionData.url),
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });

@@ -35,6 +35,7 @@ export const suggestions = [
   {
     opportunityId: 'test-opportunity-id',
     getId: () => 'test-suggestion-1',
+    getStatus: () => 'NEW',
     type: 'REDIRECT_UPDATE',
     rank: 550000,
     getData: () => auditDataSuggestionsMock.auditResult.brokenBacklinks[0],

@@ -618,7 +618,7 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   log.info(`[PRODUCT-METATAGS] Extracted tags from ${extractedTagsCount} pages`);
 
   if (extractedTagsCount === 0) {
-    log.error(`[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+    log.warn(`[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
   }
 
   // Perform SEO checks with product filtering
@@ -744,14 +744,20 @@ export async function runAuditAndGenerateSuggestions(context) {
     projectedTrafficValue,
   });
 
-  // Generate AI suggestions for detected tags if auto-suggest enabled for site
+  // Call Genvar for AI suggestions whenever this audit path runs
+  // (enablement is handled at onboarding)
   log.info('[PRODUCT-METATAGS] Starting AI auto-suggest');
   const allTags = {
     detectedTags,
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
-  const updatedDetectedTags = await productMetatagsAutoSuggest(allTags, context, site);
+  const updatedDetectedTags = await productMetatagsAutoSuggest(
+    allTags,
+    context,
+    site,
+    { forceAutoSuggest: true },
+  );
   log.info(`[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: ${Object.keys(updatedDetectedTags || {}).length}`);
 
   const auditResult = buildProductMetatagsAuditResult(

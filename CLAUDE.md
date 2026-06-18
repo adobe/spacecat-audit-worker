@@ -96,8 +96,8 @@ Each audit lives in `src/[audit-name]/` and typically contains:
 Audits persist structured findings as `Opportunity` + `Suggestion` records in the DB:
 
 1. **`convertToOpportunity`** (`src/common/opportunity.js`) — finds or creates an `Opportunity` record for the site/audit type, checks for Google connection, updates data sources.
-2. **`syncSuggestions`** (`src/utils/data-access.js`) — diffs current audit findings against stored suggestions; adds new ones, removes resolved ones.
-3. **`syncSuggestionsWithPublishDetection`** — extends `syncSuggestions` with fix-regression detection: detects when a previously fixed suggestion has regressed.
+2. **`syncSuggestions`** (`src/utils/data-access.js`) — diffs current audit findings against stored suggestions; adds new ones, removes resolved ones. Uses deep equality check to skip saving suggestions when neither data nor status changed, preventing spurious `updatedAt` bumps.
+3. **`syncSuggestionsWithPublishDetection`** — extends `syncSuggestions` with automated publish detection: marks disappeared suggestions as FIXED when verified externally, promotes deployed fixes to published when detected on production.
 
 ### Support Clients (`src/support/`)
 
@@ -108,6 +108,7 @@ Audits persist structured findings as `Opportunity` + `Suggestion` records in th
 | `athena-client.js` | Athena query execution |
 | `bright-data-client.js` | Bright Data web scraping |
 | `psi-client.js` | Google PageSpeed Insights API |
+| `plg-suggestion-alert.js` | Slack alert when a PLG audit surfaces fewer than threshold new suggestions |
 
 ---
 

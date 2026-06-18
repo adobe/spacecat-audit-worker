@@ -15,7 +15,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import { ok } from '@adobe/spacecat-shared-http-utils';
 import { parseMessageDataForRunnerAudit } from '../../src/common/audit-utils.js';
 import { buildRunnerAuditContext } from '../../src/common/runner-audit.js';
 
@@ -39,17 +38,18 @@ describe('buildRunnerAuditContext', () => {
 describe('RunnerAudit', () => {
   let sandbox;
   let RunnerAudit;
-  let isAuditEnabledForSite;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    isAuditEnabledForSite = sandbox.stub().resolves(true);
-    const mod = await esmock('../../src/common/runner-audit.js', {
-      '../../src/common/audit-utils.js': {
-        isAuditEnabledForSite,
-        parseMessageDataForRunnerAudit,
+    const mod = await esmock(
+      '../../src/common/runner-audit.js',
+      import.meta.url,
+      {
+        '../../src/common/audit-utils.js': {
+          parseMessageDataForRunnerAudit,
+        },
       },
-    });
+    );
     RunnerAudit = mod.RunnerAudit;
   });
 
@@ -81,6 +81,18 @@ describe('RunnerAudit', () => {
     };
   }
 
+  function buildContext() {
+    return {
+      log: {
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      invocation: {},
+    };
+  }
+
   it('attaches parsed message.data as auditContext.messageData before invoking the runner', async () => {
     const runner = sandbox.stub().resolves({
       auditResult: { success: true },
@@ -90,16 +102,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub().resolves(auditRecord);
     const { instance, site } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     const message = {
       type: 'reddit-analysis',
@@ -129,16 +132,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
     const { instance, site } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     await instance.run(
       {
@@ -158,24 +152,17 @@ describe('RunnerAudit', () => {
     );
   });
 
-  it('returns ok when the audit is disabled for the site', async () => {
-    isAuditEnabledForSite.resolves(false);
-    const runner = sandbox.stub();
-    const persister = sandbox.stub();
+  it('runs the audit regardless of the handler enabled-list', async () => {
+    const runner = sandbox.stub().resolves({
+      auditResult: { success: true },
+      fullAuditRef: 'https://example.com',
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
     const { instance } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
-    const result = await instance.run(
+    await instance.run(
       {
         type: 'reddit-analysis',
         siteId: 'site-1',
@@ -184,11 +171,7 @@ describe('RunnerAudit', () => {
       context,
     );
 
-    expect(result.status).to.equal(ok().status);
-    expect(runner).not.to.have.been.called;
-    expect(context.log.debug).to.have.been.calledWith(
-      'reddit-analysis audits disabled for site site-1, skipping...',
-    );
+    expect(runner).to.have.been.called;
   });
 
   it('wraps runner failures with a descriptive error', async () => {
@@ -196,16 +179,7 @@ describe('RunnerAudit', () => {
     const persister = sandbox.stub();
     const { instance } = buildInstance(runner, persister);
 
-    const context = {
-      log: {
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
-      dataAccess: {},
-      invocation: {},
-    };
+    const context = buildContext();
 
     await expect(
       instance.run(

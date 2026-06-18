@@ -126,7 +126,7 @@ describe('YouTube Analysis Handler', () => {
       '../../../src/offsite-brand-presence/constants.js': {
         OFFSITE_DOMAINS,
       },
-      '../../../src/utils/brand-presence-enrichment.js': {
+      '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
       },
     });
@@ -168,7 +168,11 @@ describe('YouTube Analysis Handler', () => {
             findById: sandbox.stub().resolves(mockSite),
           },
           Configuration: {
-            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
+            findLatest: sandbox.stub().resolves({
+              isHandlerEnabledForSite: sandbox.stub().returns(true),
+              getHandlers: sandbox.stub().returns({}),
+              getQueues: sandbox.stub().returns({ audits: 'audits-queue-url' }),
+            }),
           },
         },
       })
@@ -249,14 +253,35 @@ describe('YouTube Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[YouTube] Retrieved 0 guidelines');
     });
 
-    it('should return error when DRS has no available content', async () => {
+    it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
       mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
 
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence');
+      expect(msg.siteId).to.equal(siteId);
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com' });
+    });
+
+    it('returns error without re-scraping when scrape was already requested', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await youtubeAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { drsScrapeRequested: true },
+      );
+
+      expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('no content');
-      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available after scraping/);
     });
 
     it('should return error when urlStore returns empty', async () => {

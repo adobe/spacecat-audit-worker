@@ -1171,14 +1171,14 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(sentMsg.url).to.equal('https://example.com/products/widget');
     });
 
-    it('should filter pages below bounce rate threshold (0.5)', async () => {
+    it('should filter pages below bounce rate threshold (0.4)', async () => {
       context.athenaClient.query.resolves([
         {
           path: '/page-high-bounce',
           trf_type: 'paid',
           trf_channel: 'search',
           pageviews: '1000',
-          bounce_rate: '0.7', // above 0.5
+          bounce_rate: '0.7', // above 0.4
           traffic_loss: '700',
           engaged_scroll_rate: '0.15',
         },
@@ -1187,7 +1187,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           trf_type: 'paid',
           trf_channel: 'search',
           pageviews: '1000',
-          bounce_rate: '0.3', // below 0.5
+          bounce_rate: '0.3', // below 0.4
           traffic_loss: '300',
           engaged_scroll_rate: '0.15',
         },

@@ -377,6 +377,216 @@ describe('Backlinks Tests', function () {
       .equal(auditDataMock.auditResult.brokenBacklinks.concat(brokenBacklinkWithTimeout));
   });
 
+  describe('subdomain filtering', () => {
+    it('should exclude backlinks whose url_to is on a different subdomain', async () => {
+      const backlinks = [
+        {
+          title: 'same domain',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/some-page',
+          traffic_domain: 50,
+        },
+        {
+          title: 'www variant – should not be filtered',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://www.foo.com/some-page',
+          traffic_domain: 40,
+        },
+        {
+          title: 'different subdomain – should be excluded',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://careers.foo.com/jobs',
+          traffic_domain: 30,
+        },
+        {
+          title: 'another subdomain – should be excluded',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://blog.foo.com/post',
+          traffic_domain: 20,
+        },
+      ];
+
+      nock('https://foo.com')
+        .get('/some-page')
+        .reply(404);
+
+      nock('https://www.foo.com')
+        .get('/some-page')
+        .reply(404);
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+
+      expect(resultUrls).to.include('https://foo.com/some-page');
+      expect(resultUrls).to.include('https://www.foo.com/some-page');
+      expect(resultUrls).to.not.include('https://careers.foo.com/jobs');
+      expect(resultUrls).to.not.include('https://blog.foo.com/post');
+    });
+
+    it('should keep all backlinks when site uses www and url_to uses bare domain', async () => {
+      const backlinks = [
+        {
+          title: 'bare domain – must not be filtered',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://example.com/page',
+          traffic_domain: 50,
+        },
+      ];
+
+      nock('https://example.com')
+        .get('/page')
+        .reply(404);
+
+      const wwwSite = {
+        getId: () => 'www-site',
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({ getExcludedURLs: () => [] }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, wwwSite);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+      expect(result.auditResult.brokenBacklinks[0].url_to).to.equal('https://example.com/page');
+    });
+  });
+
+  describe('soft-404 detection', () => {
+    it('should keep backlink when 200 response has X-Robots-Tag: noindex', async () => {
+      nock('https://foo.com')
+        .get('/soft-404-robots-header')
+        .reply(200, '<html><body>Custom 404</body></html>', {
+          'content-type': 'text/html',
+          'x-robots-tag': 'noindex',
+        });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via X-Robots-Tag',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-robots-header',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+      expect(result.auditResult.brokenBacklinks[0].url_to)
+        .to.equal('https://foo.com/soft-404-robots-header');
+    });
+
+    it('should keep backlink when 200 response has <meta robots noindex>', async () => {
+      const html = '<html><head><meta name="robots" content="noindex, nofollow"></head><body>Oops</body></html>';
+      nock('https://foo.com')
+        .get('/soft-404-meta')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via meta noindex',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-meta',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+
+    it('should keep backlink when 200 response title contains "404 Not Found"', async () => {
+      const html = '<html><head><title>404 Not Found</title></head><body>The page you requested was not found.</body></html>';
+      nock('https://foo.com')
+        .get('/soft-404-title')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via title',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-title',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+
+    it('should drop backlink when 200 response is a real page (no soft-404 signals)', async () => {
+      const html = '<html><head><title>Welcome to Foo</title></head><body>Content here.</body></html>';
+      nock('https://foo.com')
+        .get('/real-page')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'real page returning 200',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/real-page',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(0);
+    });
+
+    it('should keep backlink when 200 non-HTML response has noindex in x-robots-tag', async () => {
+      nock('https://foo.com')
+        .get('/soft-404-non-html')
+        .reply(200, 'some plain text', {
+          'content-type': 'text/plain',
+          'x-robots-tag': 'noindex',
+        });
+
+      const backlinks = [
+        {
+          title: 'soft 404 non-HTML noindex header',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-non-html',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+  });
+
   it('should handle audit api errors gracefully', async () => {
     mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed with status: 500'));
 
@@ -455,6 +665,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: [],
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -468,6 +679,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: null,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -479,10 +691,115 @@ describe('Backlinks Tests', function () {
       context.audit.getAuditResult.returns({
         success: true,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('resolves existing NEW opportunity and marks suggestions OUTDATED when no broken backlinks found', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const mockSuggestions = [
+        { getId: () => 'suggestion-1', getStatus: () => 'NEW' },
+        { getId: () => 'suggestion-2', getStatus: () => 'PENDING_VALIDATION' },
+      ];
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves(mockSuggestions),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(mockOpportunity.setStatus).to.have.been.calledOnce;
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+      expect(mockOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should not call bulkUpdateStatus when all suggestions are in preserved states', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({ success: true, brokenBacklinks: [] });
+
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        // null covers the (suggestions || []) fallback branch
+        getSuggestions: sinon.stub().resolves(null),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      await generateSuggestionData(context);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({ success: true, brokenBacklinks: [] });
+
+      const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
+      const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
+      const fixedSuggestion = { getId: () => 's-fixed', getStatus: () => 'FIXED' };
+      const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
+      const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
+
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves([
+          newSuggestion, pendingSuggestion, fixedSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      await generateSuggestionData(context);
+
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
+    });
+
+    it('logs error and still returns complete when opportunity lookup fails on no-backlinks path', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to resolve broken-backlinks opportunity.*DB error/),
+      );
     });
 
     it('processes suggestions for broken backlinks and send message to mystique', async () => {
@@ -813,6 +1130,49 @@ describe('Backlinks Tests', function () {
 
       expect(statusStub).to.have.been.calledOnce;
       expect(statusStub.firstCall.args[1]).to.equal('NEW');
+    });
+
+    it('excludes suggestions without getStatus from the NEW count (optional chaining branch)', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+
+      context.site = { ...contextSite };
+
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves([
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'new-1',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              url_from: 'https://from.com/1',
+              url_to: 'https://example.com',
+            }),
+          },
+          {
+            opportunityId: 'opportunity-id',
+            getId: () => 'no-status-1',
+            getData: () => ({
+              url_from: 'https://from.com/2',
+              url_to: 'https://example.com',
+            }),
+          },
+        ]);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
+
+      await generateSuggestionData(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 
@@ -1402,6 +1762,79 @@ describe('Backlinks Tests', function () {
       expect(context.log.info).to.have.been.calledWith(
         'All broken links resolved via Bright Data. Forwarding to Mystique.',
       );
+    });
+  });
+
+  describe('generateSuggestionData - PLG alert behavior', () => {
+    let mockedGenerateSuggestionData;
+    let sendLowSuggestionCountAlertStub;
+
+    beforeEach(async () => {
+      sendLowSuggestionCountAlertStub = sinon.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/backlinks/handler.js', {
+        '../../src/support/plg-suggestion-alert.js': {
+          sendLowSuggestionCountAlert: sendLowSuggestionCountAlertStub,
+        },
+      });
+      mockedGenerateSuggestionData = mockedHandler.generateSuggestionData;
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+        getHandlers: sandbox.stub().returns({}),
+      });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves(topPages);
+    });
+
+    afterEach(() => sandbox.restore());
+
+    it('calls the alert with the NEW suggestion count', async () => {
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves([{
+          getId: () => 'new-1',
+          getStatus: () => 'NEW',
+          getData: () => ({ url_from: 'https://from.com/1', url_to: 'https://example.com' }),
+        }]);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, auditTypeArg, countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(auditTypeArg).to.equal('broken-backlinks');
+      expect(countArg).to.equal(1);
+    });
+
+    it('excludes PENDING_VALIDATION suggestions from the count passed to the alert', async () => {
+      context.site = { ...contextSite, requiresValidation: true };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .callsFake((_id, status) => (status === 'PENDING_VALIDATION'
+          ? Promise.resolve([{
+            getId: () => 'pending-1',
+            getStatus: () => 'PENDING_VALIDATION',
+            getData: () => ({ url_from: 'https://from.com/p1', url_to: 'https://example.com/p' }),
+          }])
+          : Promise.resolve([{
+            getId: () => 'new-1',
+            getStatus: () => 'NEW',
+            getData: () => ({ url_from: 'https://from.com/1', url_to: 'https://example.com' }),
+          }])));
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(sendLowSuggestionCountAlertStub).to.have.been.calledOnce;
+      const [, , countArg] = sendLowSuggestionCountAlertStub.firstCall.args;
+      expect(countArg).to.equal(1);
     });
   });
 
