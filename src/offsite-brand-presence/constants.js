@@ -54,7 +54,7 @@ export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });
 
-export const DRS_URLS_LIMIT = 50;
+export const DRS_URLS_LIMIT = 70;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const USER_AGENT = 'Offsite Audits - Spacecat/1.0';
