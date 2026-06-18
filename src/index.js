@@ -296,9 +296,10 @@ async function run(message, context) {
     type, siteId, jobId,
   } = message;
 
+  const { promiseToken: _, ...logMsg } = message;
   log.info(
     `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
-    message,
+    logMsg,
   );
 
   const handler = HANDLERS[type];
