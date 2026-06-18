@@ -367,13 +367,30 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
-    it('should not filter URLs from domains that merely contain the site hostname as a substring', async () => {
+    it('drops brand-owned lookalike domains containing the brand token, keeps neutral hosts', async () => {
+      // Site is example.com ⇒ brand token "example". A host containing the token
+      // (notexample.com) is treated as a branded lookalike and dropped; a neutral
+      // third-party host is kept.
       stubBrandPresenceData(['https://notexample.com/page;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      expect(createCalls).to.have.lengthOf(2);
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('drops social/search/deal-aggregator domains before storing', async () => {
+      stubBrandPresenceData([
+        'https://www.google.com/search;https://www.facebook.com/groups/x/posts/1;'
+        + 'https://www.instagram.com/p/abc;https://www.groupon.com/coupons/foo;https://other.com/ok',
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
     it('should skip filtering and log a warning when baseURL is malformed', async () => {
@@ -393,6 +410,21 @@ describe('Offsite Brand Presence Handler', () => {
     it('should handle www baseURL by filtering both www and bare hostname', async () => {
       site.getBaseURL.returns('https://www.example.com');
       stubBrandPresenceData(['https://example.com/page;https://www.example.com/page2;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should drop lookalike domains matched by a configured brand keyword', async () => {
+      // A configured brand keyword (not derivable from the apex label) catches a
+      // brand-owned lookalike domain before it is stored.
+      site.getConfig = sandbox.stub().returns({
+        getBrandKeywords: sandbox.stub().returns(['Acme Loyalty']),
+      });
+      stubBrandPresenceData(['https://acmeloyalty.com/rewards;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -720,7 +752,8 @@ describe('Offsite Brand Presence Handler', () => {
       const urls = [];
       const totalUrls = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
-        urls.push(`https://example${i}.com/page`);
+        // Neutral third-party hosts (no "example" brand token, not social/search).
+        urls.push(`https://thirdparty${i}.com/page`);
       }
       stubBrandPresenceData([urls.join(';')]);
 
@@ -1516,7 +1549,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(msg.auditContext.jobs[0]).to.include({ jobId: 'mock-job' });
       expect(msg.auditContext.deadline).to.be.a('number');
       expect(groupId).to.equal(null);
-      expect(delaySeconds).to.equal(120);
+      expect(delaySeconds).to.equal(300);
     });
 
     it('does not enqueue a poll message without a Slack thread context', async () => {
@@ -1544,6 +1577,48 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+    });
+  });
+
+  describe('Domain-scoped runs (granular single-audit triggers)', () => {
+    const MULTI = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://thirdparty.com/page';
+
+    it('scrapes only the scoped offsite domain', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'reddit.com' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.have.members([
+        SCRAPE_DATASET_IDS.REDDIT_POSTS,
+        SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      ]);
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+    });
+
+    it('scrapes only top-cited when scoped to top-cited', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'top-cited' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.deep.equal([SCRAPE_DATASET_IDS.TOP_CITED]);
+    });
+
+    it('aborts with an explicit error for an unrecognized domainScope', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'bogus.com' },
+      });
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.match(/Unknown domainScope: bogus\.com/);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
   });
 

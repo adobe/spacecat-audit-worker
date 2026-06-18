@@ -54,7 +54,7 @@ export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });
 
-export const DRS_URLS_LIMIT = 100;
+export const DRS_URLS_LIMIT = 70;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const USER_AGENT = 'Offsite Audits - Spacecat/1.0';
@@ -65,8 +65,8 @@ export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;
 
 // DRS job completion polling (offsite-brand-presence-drs-status handler).
-export const DRS_POLL_INTERVAL_SECONDS = 120; // 2 minutes between polls
-export const DRS_POLL_MAX_WAIT_SECONDS = 1800; // 30 minute total budget
+export const DRS_POLL_INTERVAL_SECONDS = 300; // 5 minutes between polls
+export const DRS_POLL_MAX_WAIT_SECONDS = 3600; // 60 minute total budget
 export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
 export const DRS_TERMINAL_STATUSES = new Set([
   'COMPLETED',
