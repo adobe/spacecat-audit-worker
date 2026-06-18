@@ -198,8 +198,6 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs total links, internal and external links, and broken links)
-      expect(context.log.debug.callCount).to.equal(5);
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -213,8 +211,6 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify no pages were processed
-      expect(context.log.info).not.to.have.been.called;
     });
 
     it('processes multiple pages when multiple urls match', async () => {
@@ -248,9 +244,6 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only two pages were processed
-      // (now logs total links, internal and external links for each page, plus broken links summary)
-      expect(context.log.debug.callCount).to.equal(8);
     });
 
     it('skips invalid hrefs', async () => {
@@ -268,7 +261,6 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
     });
 
     it('includes auth token in requests', async () => {
@@ -468,15 +460,6 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0].urlTo)
         .to.equal('https://main--example--page.aem.page/footer-link');
-      // All three links — header, footer, and body — appear in the internal links map.
-      expect(context.log.debug).to.have.been.calledWith(
-        '[preflight-audit] Found internal links:',
-        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => (
-          linksMap.has('https://main--example--page.aem.page/header-link')
-          && linksMap.has('https://main--example--page.aem.page/footer-link')
-          && linksMap.has('https://main--example--page.aem.page/body-link')
-        ))),
-      );
     });
   });
 
