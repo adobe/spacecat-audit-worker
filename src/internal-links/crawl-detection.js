@@ -728,6 +728,9 @@ async function validateLinksWithCache(
         };
       }
       if (validation.inconclusive) {
+        // TEMP LOG - branch: broken-internal-inconclusive-url-cache
+        /* c8 ignore next */
+        log.info(`[TEMP] inconclusive URL cached as working: ${link.url}`);
         workingUrlsCache.add(cacheKey);
         return { type: 'api-inconclusive' };
       }
@@ -842,6 +845,9 @@ export async function detectBrokenLinksFromCrawlBatch({
   const batchEndIndex = Math.min(batchStartIndex + batchSize, totalPages);
   const batchPaths = allPaths.slice(batchStartIndex, batchEndIndex);
 
+  // TEMP LOG - branch: broken-internal-inconclusive-url-cache
+  /* c8 ignore next */
+  log.info('[TEMP] broken-internal-inconclusive-url-cache branch is active');
   log.info(`${formatElapsed()} ====== BATCH PROCESSING START ======`);
   log.info(`${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
   log.info(`${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
