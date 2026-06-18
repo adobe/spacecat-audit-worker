@@ -615,6 +615,38 @@ describe('sqs', () => {
       );
     });
 
+    it('does not cache a transient resolution failure (retries on the next send)', async () => {
+      setupMystiqueContext();
+      // First lookup throws (transient throttle/timeout); the default stub
+      // resolves the site on the second call.
+      siteFindByIdStub.onFirstCall().rejects(new Error('throttled'));
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      const seen = [];
+      nock('https://sqs.us-east-1.amazonaws.com')
+        .post('/')
+        .times(2)
+        .reply(200, (_, body) => {
+          const { MessageBody } = JSON.parse(body);
+          seen.push(JSON.parse(MessageBody).organizationId);
+          return {
+            MessageId: 'message-id',
+            MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+          };
+        });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+      }).with(sqsWrapper)({}, context);
+
+      // Transient failure → no org id and NOT cached, so the second send retries
+      // the lookup and resolves it (cache wasn't poisoned with a permanent null).
+      expect(seen[0]).to.be.undefined;
+      expect(seen[1]).to.equal('4854e75e-894b-4a74-92bf-d674abad1423');
+      expect(siteFindByIdStub).to.have.been.calledTwice;
+    });
+
     it('sends without organizationId when dataAccess is unavailable on context', async () => {
       setupMystiqueContext({ withDataAccess: false });
       const message = { type: 'guidance:metatags', siteId: 'site-1' };

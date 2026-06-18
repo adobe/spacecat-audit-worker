@@ -34,8 +34,10 @@ class SQS {
   }
 
   /**
-   * Resolves the organization ID for a site, caching the result (including null) per siteId.
-   * Never throws — a failed lookup must not block the message send.
+   * Resolves the organization ID for a site, caching only successful resolutions
+   * (including a genuine null) per siteId. Never throws — a failed lookup must not
+   * block the message send, and a transient failure is left uncached so later
+   * sends for the same site can retry.
    *
    * @param {string} siteId - The site ID carried on the message.
    * @returns {Promise<string|null>} The organization ID, or null if it can't be resolved.
@@ -45,17 +47,19 @@ class SQS {
       return this.#organizationIdCache.get(siteId);
     }
 
-    let organizationId = null;
     try {
       const { Site } = this.context?.dataAccess ?? {};
       const site = await Site?.findById(siteId);
-      organizationId = site?.getOrganizationId?.() ?? null;
+      const organizationId = site?.getOrganizationId?.() ?? null;
+      // Cache only on success. A transient Site.findById failure (timeout/throttle)
+      // must NOT be cached as a permanent null — that would suppress the org ID for
+      // every subsequent message for this site within the invocation.
+      this.#organizationIdCache.set(siteId, organizationId);
+      return organizationId;
     } catch (e) {
       this.log.warn(`Failed to resolve organizationId for Mystique message (siteId: ${siteId}): ${e.message}`);
+      return null;
     }
-
-    this.#organizationIdCache.set(siteId, organizationId);
-    return organizationId;
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0, msgDedupId = undefined) {
