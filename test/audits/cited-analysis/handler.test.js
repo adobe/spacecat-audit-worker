@@ -24,8 +24,7 @@ import {
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
 
-// Mirrors the handler-private constants — update both if the limits change.
-const CITED_ANALYSIS_URLS_LIMIT = 50;
+// Mirrors the handler-private constant — update both if the limit changes.
 const MAX_PROMPTS_PER_URL = 5;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
@@ -222,7 +221,7 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
-      expect(result.auditResult.config.urlLimit).to.equal(CITED_ANALYSIS_URLS_LIMIT);
+      expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
@@ -672,7 +671,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[Cited] Queued Cited analysis request to Mystique for Example Corp with 2 URLs',
@@ -723,8 +722,8 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.deep.equal(expectedUrls);
     });
 
-    it('should limit URLs to CITED_ANALYSIS_URLS_LIMIT when many URLs exist', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 20 }, (_, i) => ({
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 20 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -744,14 +743,14 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] Queued Cited analysis request to Mystique for Test with ${CITED_ANALYSIS_URLS_LIMIT} URLs`,
+        `[Cited] Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
       );
     });
 
-    it('should fall back to CITED_ANALYSIS_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 5 }, (_, i) => ({
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -771,9 +770,9 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
     });
 
@@ -883,7 +882,7 @@ describe('Cited Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls.length).to.be.lessThan(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls.length).to.be.lessThan(MYSTIQUE_URLS_LIMIT);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });

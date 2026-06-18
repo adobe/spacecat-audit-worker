@@ -18,6 +18,7 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   DrsNoContentAvailableError,
+  MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
@@ -36,9 +37,6 @@ const LOG_PREFIX = '[Cited]';
 // SQS standard-queue maximum payload is 256 KB (262144 bytes). Stay under a
 // safety budget so worst-case serialisation doesn't hit the hard reject.
 const SQS_MAX_SAFE_BYTES = 200 * 1024;
-
-// Cited-analysis URL cap, aligned with the global MYSTIQUE_URLS_LIMIT (50).
-const CITED_ANALYSIS_URLS_LIMIT = 50;
 
 // Max prompts kept per URL in the Mystique payload. The stored prompts array
 // can hold 100+ entries per URL; un-capped, 50 URLs of full prompts blow past
@@ -272,10 +270,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
-    const urlLimit = Math.min(
-      resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX),
-      CITED_ANALYSIS_URLS_LIMIT,
-    );
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     const { slackContext } = auditContext;
 
@@ -361,7 +356,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? CITED_ANALYSIS_URLS_LIMIT;
+    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
@@ -413,7 +408,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Safety guard: if the serialised message still exceeds the budget after
     // per-URL projection, drop URLs from the tail until it fits rather than
     // letting SQS reject the send entirely. This re-serialises the message once
-    // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
+    // per dropped URL (O(n)), which is fine while MYSTIQUE_URLS_LIMIT
     // stays small (50) and prompts are capped per URL; switch to a binary
     // search / byte-per-URL estimate if the cap ever grows large enough for the
     // linear passes to matter.
