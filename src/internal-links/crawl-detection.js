@@ -728,6 +728,7 @@ async function validateLinksWithCache(
         };
       }
       if (validation.inconclusive) {
+        workingUrlsCache.add(cacheKey);
         return { type: 'api-inconclusive' };
       }
       workingUrlsCache.add(cacheKey);

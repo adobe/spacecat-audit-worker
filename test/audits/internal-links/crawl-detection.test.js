@@ -332,7 +332,7 @@ describe('Crawl Detection Module', () => {
       expect(result.workingUrlsCache).to.include('https://example.com/working1');
     });
 
-    it('should not report or cache inconclusive transport errors as working', async () => {
+    it('should cache inconclusive transport errors as working to avoid redundant re-checks', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],
       ]);
@@ -364,7 +364,7 @@ describe('Crawl Detection Module', () => {
       }, mockContext);
 
       expect(result.results).to.deep.equal([]);
-      expect(result.workingUrlsCache).to.not.include('https://example.com/timeout-link');
+      expect(result.workingUrlsCache).to.include('https://example.com/timeout-link');
       expect(result.brokenUrlsCache.map((entry) => entry.url)).to.not.include('https://example.com/timeout-link');
       expect(result.stats.linksCheckedViaAPI).to.equal(1);
     });
