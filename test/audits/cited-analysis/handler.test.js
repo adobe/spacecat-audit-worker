@@ -24,8 +24,9 @@ import {
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
 
-// Mirrors the handler-private constant — update both if the limit changes.
-const CITED_ANALYSIS_URLS_LIMIT = 25;
+// Mirrors the handler-private constants — update both if the limits change.
+const CITED_ANALYSIS_URLS_LIMIT = 50;
+const MAX_PROMPTS_PER_URL = 5;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
@@ -826,14 +827,43 @@ describe('Cited Analysis Handler', () => {
       expect(sentUrl).to.not.have.any.keys('siteId', 'byCustomer', 'audits', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy');
     });
 
+    it('should cap prompts to MAX_PROMPTS_PER_URL, keeping stored order', async () => {
+      const manyPrompts = Array.from({ length: MAX_PROMPTS_PER_URL + 10 }, (_, i) => `prompt ${i}`);
+      const urlsWithManyPrompts = [{
+        url: 'https://techreview.io/review-of-example',
+        prompts: manyPrompts,
+      }];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: urlsWithManyPrompts,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls[0].prompts).to.have.lengthOf(MAX_PROMPTS_PER_URL);
+      expect(sentMessage.data.urls[0].prompts).to.deep.equal(
+        manyPrompts.slice(0, MAX_PROMPTS_PER_URL),
+      );
+    });
+
     it('should reduce URL count when serialised message exceeds size budget', async () => {
-      // 40 URLs generated (above the cap, sliced to 25) × 60 prompts × 200 bytes
-      // each = ~300 KB, well over the 200 KB budget.
-      // Prompts are no longer capped per URL — the size guard is the safety net.
-      const largePrompt = 'x'.repeat(200);
+      // 40 URLs × (capped to 5 prompts) × 2 KB each = ~400 KB even after the
+      // per-URL prompt cap, well over the 200 KB budget — the size guard is the
+      // last-resort safety net for pathologically long prompt strings.
+      const largePrompt = 'x'.repeat(2 * 1024);
       const bigUrls = Array.from({ length: 40 }, (_, i) => ({
         url: `https://example.com/page-${i}`,
-        prompts: Array.from({ length: 60 }, () => largePrompt),
+        prompts: Array.from({ length: 10 }, () => largePrompt),
       }));
 
       const auditData = {

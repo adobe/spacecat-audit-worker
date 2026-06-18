@@ -37,11 +37,14 @@ const LOG_PREFIX = '[Cited]';
 // safety budget so worst-case serialisation doesn't hit the hard reject.
 const SQS_MAX_SAFE_BYTES = 200 * 1024;
 
-// Cited-analysis-specific URL cap, aligned with the global MYSTIQUE_URLS_LIMIT
-// (25) because: (a) each URL requires a full DRS scrape, so a lower cap keeps
-// audit runtime bounded; (b) 25 URLs with full prompts fits within the SQS
-// budget after field projection, removing the need for a per-URL prompts cap.
-const CITED_ANALYSIS_URLS_LIMIT = 25;
+// Cited-analysis URL cap, aligned with the global MYSTIQUE_URLS_LIMIT (50).
+const CITED_ANALYSIS_URLS_LIMIT = 50;
+
+// Max prompts kept per URL in the Mystique payload. The stored prompts array
+// can hold 100+ entries per URL; un-capped, 50 URLs of full prompts blow past
+// the SQS budget. Keeping the top 5 (stored order) keeps every URL in the
+// payload while staying far under budget (50 URLs x 5 prompts ~= 18 KB).
+const MAX_PROMPTS_PER_URL = 5;
 
 /**
  * Cited Analysis Audit Handler
@@ -365,18 +368,21 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Project only the fields Mystique reads (url, categories, prompts,
     // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
     // is not needed downstream and contributes significant per-URL bloat.
-    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=25 keeps the payload
-    // within the SQS budget without capping per-URL prompts.
+    // Prompts are capped at MAX_PROMPTS_PER_URL (stored order) — the array can
+    // hold 100+ entries per URL, which would blow the SQS budget at 50 URLs.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit)
       .map(({
         url: urlStr, categories, timesCited, prompts,
-      }) => ({
-        url: urlStr,
-        ...(categories?.length > 0 && { categories }),
-        ...(timesCited > 0 && { timesCited }),
-        ...(prompts?.length > 0 && { prompts }),
-      }));
+      }) => {
+        const cappedPrompts = prompts?.slice(0, MAX_PROMPTS_PER_URL);
+        return {
+          url: urlStr,
+          ...(categories?.length > 0 && { categories }),
+          ...(timesCited > 0 && { timesCited }),
+          ...(cappedPrompts?.length > 0 && { prompts: cappedPrompts }),
+        };
+      });
 
     const baseMessage = {
       type: 'guidance:cited-analysis',
@@ -408,8 +414,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // per-URL projection, drop URLs from the tail until it fits rather than
     // letting SQS reject the send entirely. This re-serialises the message once
     // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
-    // stays small (25); switch to a binary search / byte-per-URL estimate if the
-    // cap ever grows large enough for the linear passes to matter.
+    // stays small (50) and prompts are capped per URL; switch to a binary
+    // search / byte-per-URL estimate if the cap ever grows large enough for the
+    // linear passes to matter.
     let sentUrlCount = message.data.urls.length;
     while (sentUrlCount > 1) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');

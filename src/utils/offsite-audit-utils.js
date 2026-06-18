@@ -16,7 +16,7 @@
  * and DRS availability filtering to ensure only already-scraped URLs are sent for analysis.
  */
 
-export const MYSTIQUE_URLS_LIMIT = 25;
+export const MYSTIQUE_URLS_LIMIT = 50;
 
 /**
  * Social, search, and deal-aggregator domains that are NOT earned third-party
