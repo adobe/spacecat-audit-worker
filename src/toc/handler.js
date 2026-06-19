@@ -340,7 +340,7 @@ export async function submitForScraping(context) {
       check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
     await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
   }
 
   if (topPages.length === 0) {
@@ -349,13 +349,20 @@ export async function submitForScraping(context) {
       check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
     await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
   }
 
-  log.info(`[TOC] Submitting ${topPages.length} URLs for scraping`);
+  // TODO(LLMO-4880): remove hardcoded URLs before full rollout
+  const urlsToScrape = [
+    'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html',
+    'https://careinsurance.com/health-insurance/health-insurance-in-solapur',
+    'https://careinsurance.com/health-insurance/health-insurance-in-vijayawada',
+  ];
+  log.info(`[TOC] Submitting ${urlsToScrape.length} URLs for scraping (processingType=prerender)`);
   return {
-    urls: topPages.map((url) => ({ url })),
+    urls: urlsToScrape.map((url) => ({ url })),
     siteId: site.getId(),
+    processingType: 'prerender',
     maxScrapeAge: 24,
   };
 }
