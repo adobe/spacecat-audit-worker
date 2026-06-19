@@ -1,3 +1,10 @@
+## [1.482.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.4...v1.482.5) (2026-06-19)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate suggestion keys in guidance saveMany ([#2703](https://github.com/adobe/spacecat-audit-worker/issues/2703)) ([db45e45](https://github.com/adobe/spacecat-audit-worker/commit/db45e45311540629ce7cf3dce491c1c6a7182887))
+
 ## [1.482.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.3...v1.482.4) (2026-06-19)
 
 
