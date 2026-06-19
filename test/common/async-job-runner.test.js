@@ -332,6 +332,35 @@ describe('Job-based Step-Audit Tests', () => {
     expect(payload.auditContext).to.deep.include({ slackContext });
   });
 
+  it('includes siteId in CONTENT_SCRAPER payload', async () => {
+    const siteId = site.getId();
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('scrape', async () => ({
+        urls: [{ url: `${baseURL}/page` }],
+        siteId,
+        type: 'content-audit',
+        allowCache: false,
+        options: {},
+      }), AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+      .addStep('analyze', async () => ({ ok: true }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId },
+    });
+
+    const message = { type: 'content-audit', jobId: 'job-123' };
+
+    await runner.run(message, context);
+
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, payload] = context.sqs.sendMessage.firstCall.args;
+    expect(payload.siteId).to.equal(siteId);
+    expect(payload.jobId).to.equal(siteId);
+  });
+
   it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {
     site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_CS;
     const runner = new AuditBuilder()

@@ -58,6 +58,11 @@ export class AsyncJobRunner extends StepAudit {
 
     const queueUrl = destination.getQueueUrl(context);
     const payload = destination.formatPayload(stepResult, auditContext, context);
+    // formatPayload stores siteId as jobId for the content scraper's storage path, but the
+    // completion message back to the audit worker needs siteId as a top-level field.
+    if (stepResult.siteId && !payload.siteId) {
+      payload.siteId = stepResult.siteId;
+    }
     await sendContinuationMessage({ queueUrl, payload }, context);
 
     log.debug(`Step ${step.name} completed for job ${job.getId()} of type ${type}, message sent to ${step.destination}`);
