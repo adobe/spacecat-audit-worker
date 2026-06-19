@@ -2069,7 +2069,7 @@ describe('Crawl Detection Module', () => {
       ]);
     });
 
-    it('should stop early and return earlyExit=true when Lambda timeout is approaching before a page', async () => {
+    it('should stop early and return earlyExit=true when Lambda timeout is approaching after a link batch', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],
         ['https://example.com/page2', 'scrapes/page2.json'],
@@ -2082,7 +2082,7 @@ describe('Crawl Detection Module', () => {
       });
       isLinkInaccessibleStub.resolves({ isBroken: false, httpStatus: 200, statusBucket: null, contentType: 'text/html' });
 
-      // Timeout approaching immediately — triggers before the first page
+      // Timeout approaching — triggers after the first link batch of the first page
       getTimeoutStatusStub.returns({ isApproachingTimeout: true });
 
       const result = await detectBrokenLinksFromCrawlBatch({
@@ -2095,8 +2095,8 @@ describe('Crawl Detection Module', () => {
       }, mockContext);
 
       expect(result.earlyExit).to.equal(true);
-      expect(result.pagesProcessed).to.equal(0);
-      expect(result.nextBatchStartIndex).to.equal(0);
+      expect(result.pagesProcessed).to.equal(1);
+      expect(result.nextBatchStartIndex).to.equal(1);
       expect(result.hasMorePages).to.equal(true);
     });
 

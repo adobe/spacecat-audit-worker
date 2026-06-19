@@ -870,14 +870,9 @@ export async function detectBrokenLinksFromCrawlBatch({
   const validationStats = createValidationStats();
   let pagesProcessed = 0;
   let pagesSkipped = 0;
+  let timeoutExit = false;
 
   for (const [url, s3Key] of batchPaths) {
-    if (lambdaStartTime && getTimeoutStatus(lambdaStartTime, context).isApproachingTimeout) {
-      const nextPageIndex = batchStartIndex + pagesProcessed;
-      log.info(`${formatElapsed()} Approaching Lambda timeout before page ${nextPageIndex + 1}, stopping batch early`);
-      break;
-    }
-
     try {
       pagesProcessed += 1;
       const globalPageNum = batchStartIndex + pagesProcessed;
@@ -938,10 +933,23 @@ export async function detectBrokenLinksFromCrawlBatch({
         Object.assign(validationStats, updateValidationStats(validationStats, batchResults));
         validations.push(...batchResults);
 
+        // Check Lambda timeout after each link batch; finer granularity than per-page
+        // so a single slow page with many links cannot exhaust the remaining Lambda time.
+        if (lambdaStartTime && getTimeoutStatus(lambdaStartTime, context).isApproachingTimeout) {
+          const linkBatchNum = Math.floor(i / linkCheckBatchSize) + 1;
+          log.info(`${formatElapsed()} Approaching Lambda timeout after link batch ${linkBatchNum}, stopping early`);
+          timeoutExit = true;
+          break;
+        }
+
         if (i + linkCheckBatchSize < allLinks.length) {
           // eslint-disable-next-line no-await-in-loop
           await sleep(linkCheckDelayMs);
         }
+      }
+
+      if (timeoutExit) {
+        break;
       }
 
       const brokenLinks = validations.filter(
