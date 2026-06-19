@@ -11,7 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
+import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
@@ -130,7 +130,7 @@ export default async function handler(message, context) {
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();
       if (dataObj?.url) {
-        suggestionsByPathname.set(toPathname(dataObj.url), s);
+        suggestionsByPathname.set(normalizePathnameWithQuery(dataObj.url), s);
       }
     });
 
@@ -156,7 +156,7 @@ export default async function handler(message, context) {
         return;
       }
 
-      const existing = suggestionsByPathname.get(toPathname(url));
+      const existing = suggestionsByPathname.get(normalizePathnameWithQuery(url));
       if (!existing) {
         log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;
@@ -196,10 +196,23 @@ export default async function handler(message, context) {
       suggestionsToSave.push(existing);
     });
 
+    // Deduplicate by suggestion ID to prevent ON CONFLICT errors when the same
+    // suggestion object was matched more than once (e.g. incoming URLs that
+    // normalise to the same key).
+    const seenIds = new Set();
+    const uniqueSuggestionsToSave = suggestionsToSave.filter((s) => {
+      const id = s.getId();
+      if (seenIds.has(id)) {
+        return false;
+      }
+      seenIds.add(id);
+      return true;
+    });
+
     // 9. Batch save all suggestions using DynamoDB batch write
-    if (suggestionsToSave.length > 0) {
+    if (uniqueSuggestionsToSave.length > 0) {
       try {
-        await Suggestion.saveMany(suggestionsToSave);
+        await Suggestion.saveMany(uniqueSuggestionsToSave);
 
         // Check if this is a paid LLMO customer for quality tracking
         const isPaid = await isPaidLLMOCustomer(context);
@@ -210,7 +223,7 @@ export default async function handler(message, context) {
           baseUrl=${site.getBaseURL()},
           opportunityId=${opportunityId},
           isPaidLLMOCustomer=${isPaid},
-          totalSuggestions=${suggestionsToSave.length},
+          totalSuggestions=${uniqueSuggestionsToSave.length},
           valuableSuggestions=${valuableCount},
           validAiSummaryCount=${validAiSummaryCount},
           suggestionsWithPrompts=${suggestionsWithPrompts},
