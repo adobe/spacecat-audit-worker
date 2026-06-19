@@ -1,3 +1,59 @@
+## [1.482.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.4...v1.482.5) (2026-06-19)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate suggestion keys in guidance saveMany ([#2703](https://github.com/adobe/spacecat-audit-worker/issues/2703)) ([db45e45](https://github.com/adobe/spacecat-audit-worker/commit/db45e45311540629ce7cf3dce491c1c6a7182887))
+
+## [1.482.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.3...v1.482.4) (2026-06-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.79.0 ([#2702](https://github.com/adobe/spacecat-audit-worker/issues/2702)) ([deb132c](https://github.com/adobe/spacecat-audit-worker/commit/deb132c8fe6b57850a1c03a5f82e88a3ab5f3f8c))
+
+## [1.482.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.2...v1.482.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **cited-analysis:** cap prompts at 5 per URL to bound SQS payload ([#2697](https://github.com/adobe/spacecat-audit-worker/issues/2697)) ([9ff7c24](https://github.com/adobe/spacecat-audit-worker/commit/9ff7c24f4b0a96ed170ff7ecac4ff24c64b21d56))
+
+## [1.482.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.1...v1.482.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2700](https://github.com/adobe/spacecat-audit-worker/issues/2700)) ([8feb95f](https://github.com/adobe/spacecat-audit-worker/commit/8feb95f72d08177b56f15f1fe4cd2133809195f9))
+
+## [1.482.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.0...v1.482.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **preflight:** throttle link-probe concurrency to prevent timeout false positives (SITES-46696) ([#2701](https://github.com/adobe/spacecat-audit-worker/issues/2701)) ([4450a08](https://github.com/adobe/spacecat-audit-worker/commit/4450a083b290676ebb8837bf009c92d1dec29c11))
+
+# [1.482.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.1...v1.482.0) (2026-06-18)
+
+
+### Features
+
+* reduce URLs being sent to DRS to 50 ([#2698](https://github.com/adobe/spacecat-audit-worker/issues/2698)) ([325aaf8](https://github.com/adobe/spacecat-audit-worker/commit/325aaf804a4ed5a9b19d332a481c5a1a5cdc342f))
+
+## [1.481.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.0...v1.481.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **common:** honor auditContext.onDemand to bypass handler enabled-list gate ([#2599](https://github.com/adobe/spacecat-audit-worker/issues/2599)) ([1d973c1](https://github.com/adobe/spacecat-audit-worker/commit/1d973c1eb279d882a810023b5554989abceec64d))
+
+# [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
+
+
+### Features
+
+* **cited-analysis:** exclude social/search and brand-owned lookalike URLs ([#2694](https://github.com/adobe/spacecat-audit-worker/issues/2694)) ([e6db7fa](https://github.com/adobe/spacecat-audit-worker/commit/e6db7fa2d9421e128aae7d48431673e7bb20777d))
+
 ## [1.480.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.2...v1.480.3) (2026-06-18)
 
 

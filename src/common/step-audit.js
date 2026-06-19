@@ -16,7 +16,6 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
 import {
-  isAuditDisabledForSite,
   loadExistingAudit,
   preserveOnDemand,
   preserveSlackContext,
@@ -124,10 +123,6 @@ export class StepAudit extends BaseAudit {
       // Preserve requiresValidation from index.js - siteProvider returns a fresh site
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
-      }
-      if (await isAuditDisabledForSite(type, site, context)) {
-        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
-        return ok();
       }
 
       // Check if scrape job was aborted

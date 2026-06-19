@@ -367,13 +367,30 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
-    it('should not filter URLs from domains that merely contain the site hostname as a substring', async () => {
+    it('drops brand-owned lookalike domains containing the brand token, keeps neutral hosts', async () => {
+      // Site is example.com ⇒ brand token "example". A host containing the token
+      // (notexample.com) is treated as a branded lookalike and dropped; a neutral
+      // third-party host is kept.
       stubBrandPresenceData(['https://notexample.com/page;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      expect(createCalls).to.have.lengthOf(2);
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('drops social/search/deal-aggregator domains before storing', async () => {
+      stubBrandPresenceData([
+        'https://www.google.com/search;https://www.facebook.com/groups/x/posts/1;'
+        + 'https://www.instagram.com/p/abc;https://www.groupon.com/coupons/foo;https://other.com/ok',
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
     it('should skip filtering and log a warning when baseURL is malformed', async () => {
@@ -393,6 +410,21 @@ describe('Offsite Brand Presence Handler', () => {
     it('should handle www baseURL by filtering both www and bare hostname', async () => {
       site.getBaseURL.returns('https://www.example.com');
       stubBrandPresenceData(['https://example.com/page;https://www.example.com/page2;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should drop lookalike domains matched by a configured brand keyword', async () => {
+      // A configured brand keyword (not derivable from the apex label) catches a
+      // brand-owned lookalike domain before it is stored.
+      site.getConfig = sandbox.stub().returns({
+        getBrandKeywords: sandbox.stub().returns(['Acme Loyalty']),
+      });
+      stubBrandPresenceData(['https://acmeloyalty.com/rewards;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -720,7 +752,8 @@ describe('Offsite Brand Presence Handler', () => {
       const urls = [];
       const totalUrls = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
-        urls.push(`https://example${i}.com/page`);
+        // Neutral third-party hosts (no "example" brand token, not social/search).
+        urls.push(`https://thirdparty${i}.com/page`);
       }
       stubBrandPresenceData([urls.join(';')]);
 
