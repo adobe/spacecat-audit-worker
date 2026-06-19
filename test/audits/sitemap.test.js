@@ -23,6 +23,10 @@ import {
   getPagesWithIssues,
   getSitemapsWithIssues,
   mergeSitemapSuggestionData,
+  buildSitemapSuggestionKey,
+  buildSitemapErrorSuggestionKey,
+  buildErrorSuggestionFromReason,
+  normalizeString,
 } from '../../src/sitemap/handler.js';
 import {
   ERROR_CODES,
@@ -331,7 +335,10 @@ describe('Sitemap Audit', () => {
 
       const { paths, reasons } = await checkRobotsForSitemap(protocol, domain);
       expect(paths).to.eql([]);
-      expect(reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
+      expect(reasons).to.deep.equal([{
+        value: `${protocol}://${domain}/robots.txt`,
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+      }]);
     });
 
     it('should return error when unable to fetch robots.txt', async () => {
@@ -408,17 +415,24 @@ describe('Sitemap Audit', () => {
     it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url).get('/sitemap.xml').reply(404);
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
 
     it('should return CANNOT_READ_SITEMAP when there is a network error', async () => {
       nock(url).get('/sitemap.xml').replyWithError('Network error');
 
-      const resp = await checkSitemap();
+      const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.CANNOT_READ_SITEMAP);
+      expect(resp.reasons).to.deep.equal([{
+        value: `${url}/sitemap.xml`,
+        error: ERROR_CODES.CANNOT_READ_SITEMAP,
+      }]);
     });
 
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
@@ -426,17 +440,25 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.INVALID_SITEMAP_FORMAT);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.INVALID_SITEMAP_FORMAT,
+      }]);
     });
 
     it('checkSitemap returns invalid result for non-existing sitemap', async () => {
       nock(url).get('/non-existent-sitemap.xml').reply(404);
 
-      const result = await checkSitemap(`${url}/non-existent-sitemap.xml`);
+      const sitemapUrl = `${url}/non-existent-sitemap.xml`;
+      const result = await checkSitemap(sitemapUrl);
       expect(result.existsAndIsValid).to.equal(false);
-      expect(result.reasons).to.deep.equal([ERROR_CODES.SITEMAP_NOT_FOUND]);
+      expect(result.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
   });
 
@@ -572,7 +594,7 @@ describe('Sitemap Audit', () => {
       expect(result.reasons).to.deep.equal([
         {
           error: ERROR_CODES.GENERAL_ERROR,
-          value: 'not a valid url',
+          value: 'Invalid URL provided: not a valid url',
         },
       ]);
     });
@@ -1207,7 +1229,7 @@ describe('Sitemap Audit', () => {
           {
             value:
               'Fetch error for https://maidenform.com/robots.txt Status: 403',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         scores: {},
@@ -1222,7 +1244,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/sitemap.xml',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         url: 'https://some-domain.adobe',
@@ -1240,7 +1262,7 @@ describe('Sitemap Audit', () => {
         reasons: [
           {
             value: 'https://some-domain.adobe/robots.txt',
-            error: 'NO SITEMAP FOUND IN ROBOTS',
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
           },
         ],
         details: {
@@ -1307,8 +1329,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+            recommendedAction: '',
           },
         ],
       });
@@ -1331,8 +1353,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
@@ -1351,8 +1373,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
@@ -1427,6 +1449,123 @@ describe('Sitemap Audit', () => {
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
         recommendedAction: 'use this URL instead: https://example.com/new-page',
+      });
+    });
+  });
+
+  describe('buildSitemapSuggestionKey', () => {
+    it('builds url-type keys from sitemapUrl and pageUrl', () => {
+      expect(buildSitemapSuggestionKey({
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+      })).to.equal('https://example.com/sitemap.xml|https://example.com/page');
+    });
+
+    it('builds error-type keys with three normalized segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      })).to.equal(`${ERROR_CODES.SITEMAP_NOT_FOUND}|https://example.com/sitemap.xml|`);
+    });
+
+    it('normalizes missing optional error fields to empty strings', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: null,
+        recommendedAction: undefined,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+    });
+
+    it('normalizeString ignores non-string values and trims strings', () => {
+      expect(normalizeString(null)).to.equal('');
+      expect(normalizeString(undefined)).to.equal('');
+      expect(normalizeString(0)).to.equal('');
+      expect(normalizeString(`  ${ERROR_CODES.CANNOT_READ_ROBOTS}  `)).to.equal(ERROR_CODES.CANNOT_READ_ROBOTS);
+      expect(normalizeString('  https://example.com/sitemap.xml  ')).to.equal('https://example.com/sitemap.xml');
+    });
+
+    it('buildSitemapErrorSuggestionKey trims all segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: `  ${ERROR_CODES.GENERAL_ERROR}  `,
+        sitemapUrl: '  https://example.com/sitemap.xml  ',
+        recommendedAction: '  details  ',
+      })).to.equal(`${ERROR_CODES.GENERAL_ERROR}|https://example.com/sitemap.xml|details`);
+    });
+  });
+
+  describe('buildErrorSuggestionFromReason', () => {
+    it('maps robots-only error codes to empty detail fields', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        value: 'network failure',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        value: 'https://example.com/robots.txt',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+    });
+
+    it('maps general-error to trimmed recommendedAction from reason value', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.GENERAL_ERROR,
+        value: '  not-a-valid-url  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.GENERAL_ERROR,
+        sitemapUrl: '',
+        recommendedAction: 'not-a-valid-url',
+      });
+    });
+
+    it('maps sitemap URL error codes when value is an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '  https://example.com/sitemap.xml  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      });
+    });
+
+    it('leaves sitemapUrl empty when reason value is not an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: 'Fetch error for https://example.com/robots.txt Status: 403',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '   ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
       });
     });
   });
@@ -1658,7 +1797,7 @@ describe('Sitemap Audit', () => {
           reasons: [
             {
               value: 'https://some-domain.adobe/sitemap.xml',
-              error: 'NO VALID URLs FOUND IN SITEMAP',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             },
           ],
           url: 'https://some-domain.adobe',
@@ -1680,7 +1819,7 @@ describe('Sitemap Audit', () => {
         suggestions: [
           {
             type: 'error',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
               'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
           },

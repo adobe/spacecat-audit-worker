@@ -120,6 +120,10 @@ describe('Offsite Brand Presence Handler', () => {
     };
 
     context = { dataAccess, env, log };
+    context.sqs = context.sqs || { sendMessage: sandbox.stub().resolves() };
+    context.dataAccess.Configuration = context.dataAccess.Configuration || {
+      findLatest: sandbox.stub().resolves({ getQueues: () => ({ audits: 'audits-queue-url' }) }),
+    };
   });
 
   afterEach(() => {
@@ -255,26 +259,22 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
-    it('should only extract URLs with Region=US', async () => {
+    it('extracts rows from accepted regions and skips others', async () => {
       mockLoadBrandPresenceData.resolves({
         data: [
-          {
-            Sources: 'https://youtube.com/v1', Region: 'EU',
-          },
-          {
-            Sources: 'https://youtube.com/v2', Region: 'US',
-          },
-          {
-            Sources: 'https://youtube.com/ok', Region: 'US',
-          },
-          {
-            Sources: 'https://reddit.com/r/ok/', Region: 'US',
-          },
+          // Not in ACCEPTED_REGIONS -> skipped.
+          { Sources: 'https://youtube.com/v1', Region: 'EU' },
+          // Accepted region.
+          { Sources: 'https://youtube.com/v2', Region: 'US' },
+          // Accepted non-US region.
+          { Sources: 'https://youtube.com/ok', Region: 'GB' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'US' },
         ],
       });
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
+      // US + GB YouTube URLs counted; the EU row is excluded.
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
@@ -367,13 +367,30 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
-    it('should not filter URLs from domains that merely contain the site hostname as a substring', async () => {
+    it('drops brand-owned lookalike domains containing the brand token, keeps neutral hosts', async () => {
+      // Site is example.com ⇒ brand token "example". A host containing the token
+      // (notexample.com) is treated as a branded lookalike and dropped; a neutral
+      // third-party host is kept.
       stubBrandPresenceData(['https://notexample.com/page;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      expect(createCalls).to.have.lengthOf(2);
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('drops social/search/deal-aggregator domains before storing', async () => {
+      stubBrandPresenceData([
+        'https://www.google.com/search;https://www.facebook.com/groups/x/posts/1;'
+        + 'https://www.instagram.com/p/abc;https://www.groupon.com/coupons/foo;https://other.com/ok',
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
     });
 
     it('should skip filtering and log a warning when baseURL is malformed', async () => {
@@ -393,6 +410,21 @@ describe('Offsite Brand Presence Handler', () => {
     it('should handle www baseURL by filtering both www and bare hostname', async () => {
       site.getBaseURL.returns('https://www.example.com');
       stubBrandPresenceData(['https://example.com/page;https://www.example.com/page2;https://other.com/ok']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should drop lookalike domains matched by a configured brand keyword', async () => {
+      // A configured brand keyword (not derivable from the apex label) catches a
+      // brand-owned lookalike domain before it is stored.
+      site.getConfig = sandbox.stub().returns({
+        getBrandKeywords: sandbox.stub().returns(['Acme Loyalty']),
+      });
+      stubBrandPresenceData(['https://acmeloyalty.com/rewards;https://other.com/ok']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -464,7 +496,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
-      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(0);
+      // wikipedia is no longer a scraped offsite domain, so it is not counted.
+      expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
       expect(result.fullAuditRef).to.equal(FINAL_URL);
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No offsite URLs found/),
@@ -599,15 +632,23 @@ describe('Offsite Brand Presence Handler', () => {
       expect(auditTypes).to.include('reddit-analysis');
     });
 
-    it('should add wikipedia URLs to URL store with wikipedia-analysis audit type', async () => {
+    it('does not store or scrape wikipedia URLs (analyzed independently by Mystique)', async () => {
       stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const createCalls = dataAccess.AuditUrl.create.getCalls();
-      const wikiCalls = createCalls.filter((c) => c.args[0].audits[0] === 'wikipedia-analysis');
-      expect(wikiCalls).to.have.lengthOf(1);
-      expect(wikiCalls[0].args[0].url).to.include('wikipedia.org');
+      // Recognized for exclusion only: not bucketed, persisted, or scraped.
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+    });
+
+    it('excludes a bare wikipedia.org host (exact match, no subdomain)', async () => {
+      stubBrandPresenceData(['https://wikipedia.org/wiki/Adobe']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
   });
 
@@ -711,7 +752,8 @@ describe('Offsite Brand Presence Handler', () => {
       const urls = [];
       const totalUrls = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
-        urls.push(`https://example${i}.com/page`);
+        // Neutral third-party hosts (no "example" brand token, not social/search).
+        urls.push(`https://thirdparty${i}.com/page`);
       }
       stubBrandPresenceData([urls.join(';')]);
 
@@ -1200,17 +1242,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(commentsCall.args[0]).to.not.have.property('sortBy');
     });
 
-    it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {
+    it('does not submit a DRS scrape job for wikipedia URLs', async () => {
       stubBrandPresenceData(['https://en.wikipedia.org/wiki/Adobe']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(mockSubmitScrapeJob).to.have.been.calledOnce;
-      expect(mockSubmitScrapeJob.firstCall.args[0]).to.deep.include({
-        datasetId: SCRAPE_DATASET_IDS.WIKIPEDIA,
-        siteId: SITE_ID,
-      });
-      expect(mockSubmitScrapeJob.firstCall.args[0].urls[0]).to.include('wikipedia.org');
+      // Not scraped and excluded from top-cited, so no job for a wikipedia-only run.
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
     });
 
     it('should handle DRS API returning error response', async () => {
@@ -1295,7 +1333,8 @@ describe('Offsite Brand Presence Handler', () => {
       const auditContext = { messageData: { spacecatOrgId: 'org-multi' } };
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
-      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      // youtube (2) + reddit (2) + top-cited (1); wikipedia is excluded, not scraped.
+      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
       for (const call of mockSubmitScrapeJob.getCalls()) {
         expect(call.args[0].spacecatOrgId).to.equal('org-multi');
       }
@@ -1494,6 +1533,95 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('DRS status poll scheduling', () => {
+    it('enqueues a poll message when a Slack thread and a successful job exist', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg, groupId, delaySeconds] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
+      expect(msg.siteId).to.equal(SITE_ID);
+      expect(msg.auditContext.slackContext).to.deep.equal({ channelId: 'C123', threadTs: '111.222' });
+      expect(msg.auditContext.jobs[0]).to.include({ jobId: 'mock-job' });
+      expect(msg.auditContext.deadline).to.be.a('number');
+      expect(groupId).to.equal(null);
+      expect(delaySeconds).to.equal(300);
+    });
+
+    it('does not enqueue a poll message without a Slack thread context', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not enqueue a poll message when all DRS jobs failed (no successful job_id)', async () => {
+      mockSubmitScrapeJob.rejects(new Error('DRS error'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('does not fail the run when scheduling the poll throws', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS unavailable'));
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+    });
+  });
+
+  describe('Domain-scoped runs (granular single-audit triggers)', () => {
+    const MULTI = 'https://youtube.com/shorts/v1;https://reddit.com/r/adobe/;https://thirdparty.com/page';
+
+    it('scrapes only the scoped offsite domain', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'reddit.com' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.have.members([
+        SCRAPE_DATASET_IDS.REDDIT_POSTS,
+        SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
+      ]);
+      expect(result.auditResult.drsJobs).to.have.lengthOf(2);
+    });
+
+    it('scrapes only top-cited when scoped to top-cited', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'top-cited' },
+      });
+
+      const datasets = mockSubmitScrapeJob.getCalls().map((c) => c.args[0].datasetId);
+      expect(datasets).to.deep.equal([SCRAPE_DATASET_IDS.TOP_CITED]);
+    });
+
+    it('aborts with an explicit error for an unrecognized domainScope', async () => {
+      stubBrandPresenceData([MULTI]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, {
+        messageData: { domainScope: 'bogus.com' },
+      });
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.match(/Unknown domainScope: bogus\.com/);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+    });
+  });
+
   describe('Full Integration Flow', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
@@ -1507,8 +1635,10 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(1);
-      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
+      // wikipedia is not scraped/counted and stays out of top-cited (cited-analysis).
+      expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
+      // youtube (2) + reddit (2) + top-cited (1) = 5 jobs, no wikipedia.
+      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
       expect(result.fullAuditRef).to.equal(FINAL_URL);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();

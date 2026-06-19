@@ -54,6 +54,10 @@ export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
 
   // Quote/premium calculator form widgets — step labels use <h2> for UI navigation
   '.form-step',
+
+  // Interactive button elements — headings inside buttons are UI labels, not page content
+  'button',
+  '[role="button"]',
 ];
 
 /**
@@ -314,6 +318,9 @@ export function extractTocData($, getHeadingSelectorFn) {
     .filter((h) => {
       const text = $(h).text().trim();
       if (!text) {
+        return false;
+      }
+      if (/^\{[^}]+\}$/.test(text)) {
         return false;
       }
       if (isHeadingInExcludedContainer(h, $)) {

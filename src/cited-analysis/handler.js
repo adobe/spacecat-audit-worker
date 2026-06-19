@@ -21,13 +21,28 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  requestOffsiteScrape,
+  computeBrandTokens,
+  isExcludedCitedHost,
+  toApexHost,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const LOG_PREFIX = '[Cited]';
+
+// SQS standard-queue maximum payload is 256 KB (262144 bytes). Stay under a
+// safety budget so worst-case serialisation doesn't hit the hard reject.
+const SQS_MAX_SAFE_BYTES = 200 * 1024;
+
+// Max prompts kept per URL in the Mystique payload. The stored prompts array
+// can hold 100+ entries per URL; un-capped, 50 URLs of full prompts blow past
+// the SQS budget. Keeping the top 5 (stored order) keeps every URL in the
+// payload while staying far under budget (50 URLs x 5 prompts ~= 18 KB).
+const MAX_PROMPTS_PER_URL = 5;
 
 /**
  * Cited Analysis Audit Handler
@@ -57,33 +72,6 @@ function getCitedConfig(site) {
     industry: config?.getIndustry?.() || null,
     brandKeywords: config?.getBrandKeywords?.() || [],
   };
-}
-
-/**
- * Extracts the apex hostname from a URL or bare host string, stripping the
- * leading ``www.`` so apex-to-apex comparison works regardless of how the
- * brand domain is configured (``bmw.com`` vs ``https://www.bmw.com/``).
- *
- * Returns an empty string for unparseable input — the caller then treats the
- * ownership check as a no-op rather than dropping URLs based on garbage.
- * @param {string} value
- * @returns {string}
- */
-function toApexHost(value) {
-  if (!value) {
-    return '';
-  }
-  const trimmed = String(value).trim();
-  if (!trimmed) {
-    return '';
-  }
-  try {
-    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    const host = new URL(withScheme).hostname.toLowerCase();
-    return host.replace(/^www\./, '');
-  } catch {
-    return '';
-  }
 }
 
 /**
@@ -123,6 +111,40 @@ function partitionOwnedUrls(urls, brandBaseURL) {
 }
 
 /**
+ * Drops cited URLs that are not earned third-party editorial content:
+ * social/search/deal-aggregator domains (google, facebook, instagram, groupon)
+ * and brand-owned lookalike domains whose host contains a brand token
+ * (e.g. ``lovedbylovesac.com`` for the Lovesac customer).
+ *
+ * This is read-time defense in depth — the write path (offsite-brand-presence)
+ * applies the same exclusion before storing — and additionally filters URLs
+ * that were already stored before that filter existed.
+ *
+ * Unparseable URLs are kept (a no-op `host`), matching `partitionOwnedUrls`.
+ * Each drop is debug-logged with the matched domain/token so operators can
+ * diagnose over-eager matches for short/common-word brand tokens.
+ * @param {Array<{url: string}>} urls
+ * @param {Set<string>} brandTokens
+ * @param {Object} log
+ * @returns {{ kept: Array<{url: string}>, droppedCount: number }}
+ */
+function partitionExcludedUrls(urls, brandTokens, log) {
+  const kept = [];
+  let droppedCount = 0;
+  for (const entry of urls) {
+    const host = toApexHost(entry.url);
+    const reason = host && isExcludedCitedHost(host, brandTokens);
+    if (reason) {
+      droppedCount += 1;
+      log.debug(`${LOG_PREFIX} Excluding ${entry.url} (${reason})`);
+    } else {
+      kept.push(entry);
+    }
+  }
+  return { kept, droppedCount };
+}
+
+/**
  * Fetches all required data from stores for Cited analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
@@ -142,9 +164,10 @@ async function fetchStoreData(siteId, context, site) {
   // EARNED citations — pages on ``bmw.com`` for the BMW customer would
   // skew earned-media reporting. The mystique flow re-applies the same
   // filter for defense in depth.
+  const baseURL = site?.getBaseURL?.();
   const { kept: earnedUrls, droppedCount: ownedDroppedCount } = partitionOwnedUrls(
     rawUrls,
-    site?.getBaseURL?.(),
+    baseURL,
   );
   if (ownedDroppedCount > 0) {
     log.info(
@@ -153,10 +176,27 @@ async function fetchStoreData(siteId, context, site) {
     );
   }
 
+  // Drop social/search/deal-aggregator domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com). Defense in depth for the write-path filter, and
+  // catches URLs stored before that filter existed.
+  const brandKeywords = site?.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(toApexHost(baseURL), brandKeywords);
+  const { kept: curatedUrls, droppedCount: nonEarnedDroppedCount } = partitionExcludedUrls(
+    earnedUrls,
+    brandTokens,
+    log,
+  );
+  if (nonEarnedDroppedCount > 0) {
+    log.info(
+      `${LOG_PREFIX} Excluded ${nonEarnedDroppedCount} non-earned/branded URLs `
+      + '(social, search, deal-aggregator, or brand-owned lookalike)',
+    );
+  }
+
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
   const urls = await filterUrlsByDrsStatus(
-    earnedUrls,
+    curatedUrls,
     datasetIds,
     siteId,
     drsClient,
@@ -258,12 +298,17 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     }
 
     if (error instanceof DrsNoContentAvailableError) {
-      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      if (auditContext.drsScrapeRequested) {
+        log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        return {
+          auditResult: { success: false, error: error.message },
+          fullAuditRef: url,
+        };
+      }
+      log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for top-cited`);
+      await requestOffsiteScrape(context, siteId, 'top-cited', auditContext.slackContext);
       return {
-        auditResult: {
-          success: false,
-          error: error.message,
-        },
+        auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }
@@ -315,8 +360,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
+    // Project only the fields Mystique reads (url, categories, prompts,
+    // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
+    // is not needed downstream and contributes significant per-URL bloat.
+    // Prompts are capped at MAX_PROMPTS_PER_URL (stored order) — the array can
+    // hold 100+ entries per URL, which would blow the SQS budget at 50 URLs.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, urlLimit);
+      .slice(0, urlLimit)
+      .map(({
+        url: urlStr, categories, timesCited, prompts,
+      }) => {
+        const cappedPrompts = prompts?.slice(0, MAX_PROMPTS_PER_URL);
+        return {
+          url: urlStr,
+          ...(categories?.length > 0 && { categories }),
+          ...(timesCited > 0 && { timesCited }),
+          ...(cappedPrompts?.length > 0 && { prompts: cappedPrompts }),
+        };
+      });
 
     const baseMessage = {
       type: 'guidance:cited-analysis',
@@ -344,6 +405,43 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
     const message = applyBrandScope(baseMessage, brand);
 
+    // Safety guard: if the serialised message still exceeds the budget after
+    // per-URL projection, drop URLs from the tail until it fits rather than
+    // letting SQS reject the send entirely. This re-serialises the message once
+    // per dropped URL (O(n)), which is fine while MYSTIQUE_URLS_LIMIT
+    // stays small (50) and prompts are capped per URL; switch to a binary
+    // search / byte-per-URL estimate if the cap ever grows large enough for the
+    // linear passes to matter.
+    let sentUrlCount = message.data.urls.length;
+    while (sentUrlCount > 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes <= SQS_MAX_SAFE_BYTES) {
+        break;
+      }
+      sentUrlCount -= 1;
+      message.data.urls = enrichedUrls.slice(0, sentUrlCount);
+      log.warn(
+        `${LOG_PREFIX} Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
+      );
+    }
+
+    // Last-resort: a single URL with extremely long prompts can still exceed
+    // the budget. Strip its prompts so the URL itself always gets through.
+    if (sentUrlCount === 1) {
+      const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
+      if (bytes > SQS_MAX_SAFE_BYTES) {
+        log.warn(
+          `${LOG_PREFIX} Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
+        );
+        const [singleUrl] = message.data.urls;
+        message.data.urls = [{
+          url: singleUrl.url,
+          ...(singleUrl.categories?.length > 0 && { categories: singleUrl.categories }),
+          ...(singleUrl.timesCited > 0 && { timesCited: singleUrl.timesCited }),
+        }];
+      }
+    }
+
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
@@ -351,11 +449,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
+        + `with ${message.data.urls.length} URLs${scopeForLog}`,
     );
     return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    // Notify the Slack thread that triggered this audit so the operator knows
+    // Mystique was never reached and doesn't wait for results that won't come.
+    const slackContext = auditResult?.slackContext;
+    if (slackContext) {
+      const { channelId, threadTs } = slackContext;
+      const siteLabel = auditResult.config?.companyWebsite || siteId;
+      await postMessageOptional(
+        context,
+        channelId,
+        `:x: *cited-analysis* failed to queue for *${siteLabel}*\n• Reason: ${error.message}`,
+        { threadTs },
+      );
+    }
     throw error;
   }
 }
