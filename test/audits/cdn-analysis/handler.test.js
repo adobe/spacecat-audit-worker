@@ -61,6 +61,15 @@ function createS3MockForCdnType(cdnType, options = {}) {
       keyPath: `${orgId}/raw/byocdn-imperva/somefile.log`,
       prefix: `${orgId}/raw/byocdn-imperva/`,
     },
+    f5: {
+      logSample: '{"req_path": "/test", "req_params": "utm_source=ai", "domain": "example.com", "user_agent": "ChatGPT-User", "rsp_code": "200", "time_to_first_downstream_tx_byte": "0.123"}',
+      keyPath: isLegacy
+        ? `raw/${year}/${month}/${day}/${hour}/file1.log`
+        : `${orgId}/raw/byocdn-f5/${year}/${month}/${day}/${hour}/file1.log`,
+      prefix: isLegacy
+        ? 'raw/'
+        : `${orgId}/raw/byocdn-f5/`,
+    },
   };
 
   const config = cdnConfigs[cdnType];
@@ -109,6 +118,7 @@ function createS3MockForServiceProviders(serviceProviders, options = {}) {
     'byocdn-akamai': `${year}/${month}/${day}/${hour}/`,
     'byocdn-cloudflare': `${year}${month}${day}/`,
     'byocdn-other': `${year}/${month}/${day}/`,
+    'byocdn-f5': `${year}/${month}/${day}/${hour}/`,
   };
 
   return (command) => {
@@ -288,6 +298,79 @@ describe('CDN Analysis Handler', () => {
       // At hour 22: should skip (daily-only provider)
       const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
+    });
+
+    it('handles F5 processing with documented access log fields', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-f5');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['byocdn-f5']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'byocdn-f5',
+        cdnType: 'f5',
+      });
+      expect(result.auditResult.providers[0].rawDataPath)
+        .to.include('/raw/byocdn-f5/2025/06/15/10/');
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data for byocdn-f5'));
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data for byocdn-f5'));
+
+      expect(aggregatedCall.args[0]).to.include('req_path');
+      expect(aggregatedCall.args[0]).to.include('req_params');
+      expect(aggregatedCall.args[0]).to.include('time_to_first_downstream_tx_byte');
+      expect(aggregatedCall.args[0]).to.include("COALESCE(try_cast(NULLIF(trim(rsp_code), '') AS INTEGER), 0)");
+      expect(referralCall.args[0]).to.include('referer AS referer_raw');
+      expect(referralCall.args[0]).to.include("url_extract_parameter(url, 'utm_source')");
+    });
+
+    it('detects F5 legacy logs from req_path', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-f5');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForCdnType('f5', {
+          isLegacy: true,
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '10',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'f5',
+        cdnType: 'f5',
+      });
     });
 
     it('filters discovered service providers to the configured cdnProvider', async () => {
