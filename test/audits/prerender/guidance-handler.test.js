@@ -1243,6 +1243,267 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     });
   });
 
+  describe('Query-param-aware keying and dedup guard', () => {
+    it('should treat URLs with same pathname but different query params as distinct suggestions (casio.com scenario)', async () => {
+      // Two filter/faceted URLs that share the same pathname but differ in query params.
+      // Before the fix, toPathname() stripped query params causing these to collide.
+      const casioSuggestions = [
+        {
+          getId: sinon.stub().returns('casio-metals'),
+          getData: sinon.stub().returns({
+            url: 'https://casio.com/us/watches/casio/standard.filter.metals-K84vKnGqtM1LLU8tLlFLSsxLsdXPTS1JzNEtBgA=/',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('casio-in-stock'),
+          getData: sinon.stub().returns({
+            url: 'https://casio.com/us/watches/casio.filter.IN_STOCK-MTP-K84vKnGqtM1LLU8tLlHTKi7JT84OLkksKS229fSLDw7xd@ZWKyjKTylNLvFLzE119Q0JAAA=/',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(casioSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://casio.com/us/watches/casio/standard.filter.metals-K84vKnGqtM1LLU8tLlFLSsxLsdXPTS1JzNEtBgA=/',
+            aiSummary: 'Summary for metals filter',
+            valuable: true,
+          },
+          {
+            url: 'https://casio.com/us/watches/casio.filter.IN_STOCK-MTP-K84vKnGqtM1LLU8tLlHTKi7JT84OLkksKS229fSLDw7xd@ZWKyjKTylNLvFLzE119Q0JAAA=/',
+            aiSummary: 'Summary for in-stock filter',
+            valuable: true,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // Both suggestions should be updated independently
+      expect(casioSuggestions[0].setData).to.have.been.calledOnce;
+      expect(casioSuggestions[1].setData).to.have.been.calledOnce;
+
+      // Verify each got the correct summary (no collision)
+      expect(casioSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Summary for metals filter');
+      expect(casioSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('Summary for in-stock filter');
+
+      // saveMany should be called with both suggestions — no duplicates dropped
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(2);
+    });
+
+    it('should treat URLs with query params as different from the same pathname without query params', async () => {
+      const mixedSuggestions = [
+        {
+          getId: sinon.stub().returns('plain'),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/watches/casio',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('with-query'),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/watches/casio?filter=in_stock',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(mixedSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/watches/casio', aiSummary: 'Plain page', valuable: true },
+          { url: 'https://example.com/watches/casio?filter=in_stock', aiSummary: 'Filtered page', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mixedSuggestions[0].setData).to.have.been.calledOnce;
+      expect(mixedSuggestions[1].setData).to.have.been.calledOnce;
+      expect(mixedSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Plain page');
+      expect(mixedSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('Filtered page');
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany.firstCall.args[0]).to.have.lengthOf(2);
+    });
+
+    it('should handle www vs non-www domain variants with locale paths (aia.com.hk scenario)', async () => {
+      // aia.com.hk had both www.aia.com.hk and aia.com.hk variants with locale paths.
+      // normalizePathnameWithQuery strips the domain, so both resolve by pathname+query.
+      const aiaSuggestions = [
+        {
+          getId: sinon.stub().returns('aia-www-zh'),
+          getData: sinon.stub().returns({
+            url: 'https://www.aia.com.hk/zh-hk/about-us',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('aia-en'),
+          getData: sinon.stub().returns({
+            url: 'https://aia.com.hk/en/about-us',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(aiaSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          // Mystique may send with or without www — pathname matching handles it
+          { url: 'https://aia.com.hk/zh-hk/about-us', aiSummary: 'Chinese version summary', valuable: true },
+          { url: 'https://www.aia.com.hk/en/about-us', aiSummary: 'English version summary', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(aiaSuggestions[0].setData).to.have.been.calledOnce;
+      expect(aiaSuggestions[1].setData).to.have.been.calledOnce;
+      expect(aiaSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Chinese version summary');
+      expect(aiaSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('English version summary');
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany.firstCall.args[0]).to.have.lengthOf(2);
+    });
+
+    it('should dedup by suggestion ID when multiple incoming URLs resolve to the same existing suggestion', async () => {
+      // Simulate a scenario where two incoming URLs both normalize to the same key
+      // (e.g. trailing-slash difference) and hit the same existing suggestion.
+      // The dedup guard should prevent ON CONFLICT errors from duplicate IDs in saveMany.
+      const singleSuggestion = {
+        getId: sinon.stub().returns('shared-id'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([singleSuggestion]);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/page', aiSummary: 'First match', valuable: true },
+          { url: 'https://example.com/page/', aiSummary: 'Second match (trailing slash)', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // setData is called twice (once per incoming URL), but saveMany should
+      // only receive ONE suggestion because the dedup guard drops the duplicate ID.
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(1);
+      expect(saved[0].getId()).to.equal('shared-id');
+    });
+
+    it('should send no duplicates to saveMany even with a large batch of filter URLs (320 suggestions scenario)', async () => {
+      // Simulate the casio.com 320-suggestion scenario: many filter URLs that
+      // share a pathname prefix but have different filter suffixes.
+      const count = 50; // Representative subset
+      const existingSuggestions = [];
+      const incomingSuggestions = [];
+
+      for (let i = 0; i < count; i += 1) {
+        const filterUrl = `https://casio.com/us/watches/casio.filter.param${i}-value${i}=/`;
+        existingSuggestions.push({
+          getId: sinon.stub().returns(`sugg-${i}`),
+          getData: sinon.stub().returns({ url: filterUrl }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        });
+        incomingSuggestions.push({
+          url: filterUrl,
+          aiSummary: `Summary for filter ${i}`,
+          valuable: true,
+        });
+      }
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: incomingSuggestions,
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(count);
+
+      // Verify no duplicate IDs in the saved array
+      const ids = saved.map((s) => s.getId());
+      expect(new Set(ids).size).to.equal(ids.length);
+    });
+  });
+
   describe('Logging (Presigned URL)', () => {
     it('should log the incoming message with presigned URL indicator', async () => {
       mockFetchSuccess({
