@@ -1,3 +1,31 @@
+## [1.482.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.1...v1.482.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2700](https://github.com/adobe/spacecat-audit-worker/issues/2700)) ([8feb95f](https://github.com/adobe/spacecat-audit-worker/commit/8feb95f72d08177b56f15f1fe4cd2133809195f9))
+
+## [1.482.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.0...v1.482.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **preflight:** throttle link-probe concurrency to prevent timeout false positives (SITES-46696) ([#2701](https://github.com/adobe/spacecat-audit-worker/issues/2701)) ([4450a08](https://github.com/adobe/spacecat-audit-worker/commit/4450a083b290676ebb8837bf009c92d1dec29c11))
+
+# [1.482.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.1...v1.482.0) (2026-06-18)
+
+
+### Features
+
+* reduce URLs being sent to DRS to 50 ([#2698](https://github.com/adobe/spacecat-audit-worker/issues/2698)) ([325aaf8](https://github.com/adobe/spacecat-audit-worker/commit/325aaf804a4ed5a9b19d332a481c5a1a5cdc342f))
+
+## [1.481.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.0...v1.481.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **common:** honor auditContext.onDemand to bypass handler enabled-list gate ([#2599](https://github.com/adobe/spacecat-audit-worker/issues/2599)) ([1d973c1](https://github.com/adobe/spacecat-audit-worker/commit/1d973c1eb279d882a810023b5554989abceec64d))
+
 # [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
 
 
