@@ -1,3 +1,10 @@
+# [1.483.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.5...v1.483.0) (2026-06-19)
+
+
+### Features
+
+* **cdn-analysis:** count self-referer agentic hits for byocdn-other logs ([#2705](https://github.com/adobe/spacecat-audit-worker/issues/2705)) ([7113607](https://github.com/adobe/spacecat-audit-worker/commit/71136073055eab617bdef42a1fe6d7f46c555d9c))
+
 ## [1.482.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.4...v1.482.5) (2026-06-19)
 
 
