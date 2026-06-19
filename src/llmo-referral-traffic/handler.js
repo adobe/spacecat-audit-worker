@@ -11,7 +11,6 @@
  */
 
 /* eslint-disable no-param-reassign */
-/* c8 ignore start */
 
 import {
   getStaticContent, getWeekInfo, isoCalendarWeek,
@@ -23,8 +22,20 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
+import { createClassifier } from '../common/agentic-url-classification.js';
+import { sanitizeSpreadsheetValue } from '../common/spreadsheet-safe.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+// Explicit weekly column order. topic/category always present (empty when not
+// classifying) so the Excel schema is stable regardless of rule availability.
+// Headers are NOT inferred from the data so layout cannot drift when the SQL
+// projection or enrichment changes.
+const WEEKLY_COLUMNS = [
+  'path', 'trf_type', 'trf_channel', 'trf_platform', 'device', 'date',
+  'pageviews', 'consent', 'bounced', 'page_intent', 'region', 'topic', 'category',
+];
 
 const COMPILED_COUNTRY_PATTERNS = DEFAULT_COUNTRY_PATTERNS.map(({ name, regex }) => {
   let flags = '';
@@ -51,20 +62,21 @@ async function createWorkbook(results) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Sheet1');
 
-  if (results.length === 0) {
-    return workbook;
-  }
-
-  // set headers from first object
-  const headers = Object.keys(results[0]);
-  worksheet.columns = headers.map((header) => ({
+  // explicit headers (I6): never inferred from the data, so topic/category are
+  // always present and the column order is stable
+  worksheet.columns = WEEKLY_COLUMNS.map((header) => ({
     header,
     key: header,
     width: 20,
   }));
 
   for (const item of results) {
-    worksheet.addRow(item);
+    const row = {};
+    for (const col of WEEKLY_COLUMNS) {
+      // sanitize against spreadsheet formula injection on visitor-influenced cells
+      row[col] = sanitizeSpreadsheetValue(item[col] ?? '');
+    }
+    worksheet.addRow(row);
   }
 
   return workbook;
@@ -118,7 +130,7 @@ export async function referralTrafficRunner(context) {
   const auditResult = audit.getAuditResult();
   const { week, year } = auditResult;
   const { temporalCondition } = getWeekInfo(week, year);
-  const siteId = site.getSiteId();
+  const siteId = site.getId();
   const baseURL = site.getBaseURL();
 
   log.info(
@@ -163,10 +175,33 @@ export async function referralTrafficRunner(context) {
     return acc;
   }, {});
 
-  // enrich with extra fields
+  // fetch agentic URL classification rules (topic + category); gate enrichment
+  // on rules being present so rows are not blanket-tagged as 'Other'.
+  // Timed: the Postgres fetch latency adds to Lambda runtime and is the first
+  // thing to check during latency investigations.
+  const rulesFetchStart = Date.now();
+  const classificationRules = await fetchAgenticUrlClassificationRules(site, context);
+  log.info(`[llmo-referral-traffic] Fetched agentic classification rules in ${Date.now() - rulesFetchStart}ms`);
+  const classifier = createClassifier(classificationRules, { log });
+  // M5: distinguish a failed fetch from a site that simply has no rules. The
+  // classifier is null in both cases, so the fetch error shape disambiguates.
+  if (classifier) {
+    log.info('[llmo-referral-traffic] Agentic classification rules found; enriching with topic and category');
+  } else if (classificationRules?.error) {
+    log.warn('[llmo-referral-traffic] Failed to fetch agentic classification rules; leaving topic/category empty');
+  } else {
+    log.info('[llmo-referral-traffic] No agentic classification rules for site; skipping topic/category enrichment');
+  }
+
+  // enrich with extra fields. topic/category default to '' when not classifying.
   results.forEach((result) => {
     result.page_intent = pageIntentMap[result.path] || '';
     result.region = extractCountryCode(result.path);
+    const { topic, category } = classifier
+      ? classifier.classify(result.path)
+      : { topic: '', category: '' };
+    result.topic = topic;
+    result.category = category;
   });
   log.info(`[llmo-referral-traffic] Data enrichment completed for ${results.length} rows`);
 
@@ -208,4 +243,3 @@ export default new AuditBuilder()
     referralTrafficRunner,
   )
   .build();
-/* c8 ignore end */
