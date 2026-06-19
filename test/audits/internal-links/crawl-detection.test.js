@@ -29,6 +29,7 @@ describe('Crawl Detection Module', () => {
   let isLinkInaccessibleStub;
   let isWithinAuditScopeStub;
   let isSharedInternalResourceStub;
+  let getTimeoutStatusStub;
 
   const mockSite = {
     getBaseURL: () => 'https://example.com',
@@ -54,6 +55,7 @@ describe('Crawl Detection Module', () => {
     isLinkInaccessibleStub = sandbox.stub();
     isWithinAuditScopeStub = sandbox.stub().returns(true);
     isSharedInternalResourceStub = sandbox.stub().returns(false);
+    getTimeoutStatusStub = sandbox.stub().returns({ isApproachingTimeout: false });
 
     const module = await esmock('../../../src/internal-links/crawl-detection.js', {
       '../../../src/utils/s3-utils.js': {
@@ -67,6 +69,9 @@ describe('Crawl Detection Module', () => {
       },
       '../../../src/internal-links/scope-utils.js': {
         isSharedInternalResource: isSharedInternalResourceStub,
+      },
+      '../../../src/internal-links/batch-state.js': {
+        getTimeoutStatus: getTimeoutStatusStub,
       },
     });
 
@@ -2062,6 +2067,62 @@ describe('Crawl Detection Module', () => {
         'https://example.com/styles/hero-bg.jpg',
         'https://example.com/inline/cta-bg.png',
       ]);
+    });
+
+    it('should stop early and return earlyExit=true when Lambda timeout is approaching before a page', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+        ['https://example.com/page2', 'scrapes/page2.json'],
+        ['https://example.com/page3', 'scrapes/page3.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: '<html><body><a href="/link1">Link</a></body></html>' },
+        finalUrl: 'https://example.com/page1',
+      });
+      isLinkInaccessibleStub.resolves({ isBroken: false, httpStatus: 200, statusBucket: null, contentType: 'text/html' });
+
+      // Timeout approaching immediately — triggers before the first page
+      getTimeoutStatusStub.returns({ isApproachingTimeout: true });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 3,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+        lambdaStartTime: Date.now(),
+      }, mockContext);
+
+      expect(result.earlyExit).to.equal(true);
+      expect(result.pagesProcessed).to.equal(0);
+      expect(result.nextBatchStartIndex).to.equal(0);
+      expect(result.hasMorePages).to.equal(true);
+    });
+
+    it('should not check timeout when lambdaStartTime is not provided', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: '<html><body><a href="/link1">Link</a></body></html>' },
+        finalUrl: 'https://example.com/page1',
+      });
+      isLinkInaccessibleStub.resolves({ isBroken: false, httpStatus: 200, statusBucket: null, contentType: 'text/html' });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 3,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+        // lambdaStartTime intentionally omitted
+      }, mockContext);
+
+      expect(result.earlyExit).to.equal(false);
+      expect(result.pagesProcessed).to.equal(1);
+      expect(getTimeoutStatusStub).to.not.have.been.called;
     });
   });
 
