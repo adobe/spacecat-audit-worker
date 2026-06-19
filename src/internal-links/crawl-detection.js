@@ -729,9 +729,7 @@ async function validateLinksWithCache(
         };
       }
       if (validation.inconclusive) {
-        // TEMP LOG - branch: broken-internal-inconclusive-url-cache
-        /* c8 ignore next */
-        log.info(`[TEMP] inconclusive URL cached as working: ${link.url}`);
+        log.info(`Inconclusive URL cached as working: ${link.url}`);
         workingUrlsCache.add(cacheKey);
         return { type: 'api-inconclusive' };
       }
