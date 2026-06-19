@@ -37,6 +37,7 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
+  PRERENDER_PROCESSING_ERROR_TAG,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -188,7 +189,7 @@ async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
 }
 
 /**
- * Sets coveredByDomainWide on NEW suggestions whose URLs are confirmed deployed at edge,
+ * Sets coveredByDomainWide on NEW suggestions whose URLs are confirmed deployed at the CDN edge,
  * instead of moving them to SKIPPED. This allows rollback to naturally restore them to
  * the Current tab when the backend clears coveredByDomainWide on domain-wide rollback.
  * @param {Object} opportunity - The opportunity object
@@ -722,7 +723,7 @@ async function sendPrerenderGuidanceRequestToMystique(
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
       + `baseUrl=${auditUrl}, siteId=${siteId}: ${error.message}`, error);
     return 0;
   }
@@ -768,7 +769,7 @@ export async function handleAiOnlyMode(context) {
 
     if (!scrapeJobId) {
       const error = 'scrapeJobId not found. Either provide it in data or ensure a prerender audit has run recently.';
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
       return {
         error,
         status: 'failed',
@@ -784,7 +785,7 @@ export async function handleAiOnlyMode(context) {
     opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
       const error = `Opportunity not found: ${opportunityId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
       return {
         error,
         status: 'failed',
@@ -799,7 +800,7 @@ export async function handleAiOnlyMode(context) {
 
     if (!opportunity) {
       const error = `No NEW prerender opportunity found for site: ${siteId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
       return {
         error,
         status: 'failed',
@@ -814,7 +815,7 @@ export async function handleAiOnlyMode(context) {
   // Verify opportunity belongs to the site
   if (opportunity.getSiteId() !== siteId) {
     const error = `Opportunity ${opportunity.getId()} does not belong to site ${siteId}`;
-    log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
     return {
       error,
       status: 'failed',
@@ -1542,7 +1543,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
     log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
   }
 }
@@ -1878,7 +1879,7 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult,
     };
   } catch (error) {
-    log.error(`${LOG_PREFIX} Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
 
     const errorAuditResult = {
       error: AUDIT_ERROR_MESSAGE,
