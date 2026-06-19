@@ -1,3 +1,10 @@
+## [1.482.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.2...v1.482.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **cited-analysis:** cap prompts at 5 per URL to bound SQS payload ([#2697](https://github.com/adobe/spacecat-audit-worker/issues/2697)) ([9ff7c24](https://github.com/adobe/spacecat-audit-worker/commit/9ff7c24f4b0a96ed170ff7ecac4ff24c64b21d56))
+
 ## [1.482.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.1...v1.482.2) (2026-06-18)
 
 
