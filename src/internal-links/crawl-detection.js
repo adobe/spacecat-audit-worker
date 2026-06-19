@@ -847,8 +847,8 @@ export async function detectBrokenLinksFromCrawlBatch({
 
   // TEMP LOG - branch: broken-internal-inconclusive-url-cache
   /* c8 ignore next */
-  log.info('[TEMP] broken-internal-test');
-  log.info(`${formatElapsed()} ====== BATCH PROCESSING START ======`);
+  log.info('[TEMP] broken-internal-test-log');
+  log.info(`${formatElapsed()} ====== BATCH PROCESSING STARTT ======`);
   log.info(`${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
   log.info(`${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
 
