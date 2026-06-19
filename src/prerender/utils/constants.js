@@ -21,3 +21,5 @@ export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
 export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
 export const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+// Splunk alert tag for error log monitoring (migrated from Coralogix)
+export const PRERENDER_PROCESSING_ERROR_TAG = 'PreRenderProcessingError';

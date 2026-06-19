@@ -14,6 +14,7 @@ import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, toPathname } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import { PRERENDER_PROCESSING_ERROR_TAG } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -35,7 +36,7 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
 
   if (!data || !data.suggestions) {
     const errorMsg = 'Downloaded data is missing required suggestions array';
-    log.error(`${LOG_PREFIX} ${errorMsg}`);
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] ${errorMsg}`);
     throw new Error(errorMsg);
   }
 
@@ -57,7 +58,7 @@ export default async function handler(message, context) {
 
   // Validate message structure early - fail fast
   if (!data) {
-    const msg = `${LOG_PREFIX} Missing data in Mystique response for siteId=${siteId}`;
+    const msg = `${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Missing data in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }
@@ -67,13 +68,13 @@ export default async function handler(message, context) {
 
   // Validate required fields
   if (!presignedUrl) {
-    const msg = `${LOG_PREFIX} Missing presignedUrl in Mystique response for siteId=${siteId}`;
+    const msg = `${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Missing presignedUrl in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }
 
   if (!opportunityId) {
-    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}`;
+    const msg = `${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Missing opportunityId in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }
@@ -90,14 +91,14 @@ export default async function handler(message, context) {
     // Validate site exists
     const site = await Site.findById(siteId);
     if (!site) {
-      log.error(`${LOG_PREFIX} Site not found for siteId: ${siteId}`);
+      log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Site not found for siteId: ${siteId}`);
       return notFound('Site not found');
     }
 
     // Look up the existing prerender opportunity by ID
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
-      const msg = `${LOG_PREFIX} Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
+      const msg = `${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
       log.error(msg);
       return notFound('Opportunity not found');
     }
@@ -216,7 +217,7 @@ export default async function handler(message, context) {
           suggestionsWithPrompts=${suggestionsWithPrompts},
           totalPromptCount=${totalPromptCount},`);
       } catch (error) {
-        log.error(`${LOG_PREFIX} Error batch saving suggestions: ${error.message}`);
+        log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Error batch saving suggestions: ${error.message}`);
         throw error;
       }
     } else {
@@ -225,7 +226,7 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    log.error(`${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
+    log.error(`${LOG_PREFIX} [${PRERENDER_PROCESSING_ERROR_TAG}] Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
     return badRequest(`Failed to process guidance: ${error.message}`);
   }
 }
