@@ -1,3 +1,31 @@
+# [1.483.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.5...v1.483.0) (2026-06-19)
+
+
+### Features
+
+* **cdn-analysis:** count self-referer agentic hits for byocdn-other logs ([#2705](https://github.com/adobe/spacecat-audit-worker/issues/2705)) ([7113607](https://github.com/adobe/spacecat-audit-worker/commit/71136073055eab617bdef42a1fe6d7f46c555d9c))
+
+## [1.482.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.4...v1.482.5) (2026-06-19)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate suggestion keys in guidance saveMany ([#2703](https://github.com/adobe/spacecat-audit-worker/issues/2703)) ([db45e45](https://github.com/adobe/spacecat-audit-worker/commit/db45e45311540629ce7cf3dce491c1c6a7182887))
+
+## [1.482.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.3...v1.482.4) (2026-06-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.79.0 ([#2702](https://github.com/adobe/spacecat-audit-worker/issues/2702)) ([deb132c](https://github.com/adobe/spacecat-audit-worker/commit/deb132c8fe6b57850a1c03a5f82e88a3ab5f3f8c))
+
+## [1.482.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.2...v1.482.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **cited-analysis:** cap prompts at 5 per URL to bound SQS payload ([#2697](https://github.com/adobe/spacecat-audit-worker/issues/2697)) ([9ff7c24](https://github.com/adobe/spacecat-audit-worker/commit/9ff7c24f4b0a96ed170ff7ecac4ff24c64b21d56))
+
 ## [1.482.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.1...v1.482.2) (2026-06-18)
 
 
