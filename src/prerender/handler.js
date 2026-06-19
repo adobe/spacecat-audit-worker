@@ -681,9 +681,12 @@ async function sendPrerenderGuidanceRequestToMystique(
       suggestionsPayload = candidates;
     }
 
-    // When a URL scope is provided (CSV batch), filter to only matching URLs
+    // When a URL scope is provided (CSV batch), filter to only matching URLs.
+    // Compare by pathname+query so hostname variants don't cause mismatches.
     if (urlScope && suggestionsPayload.length > 0) {
-      suggestionsPayload = suggestionsPayload.filter((s) => urlScope.has(s.url));
+      suggestionsPayload = suggestionsPayload.filter(
+        (s) => urlScope.has(normalizePathnameWithQuery(s.url)),
+      );
     }
 
     if (suggestionsPayload.length === 0) {
@@ -824,8 +827,9 @@ export async function handleAiOnlyMode(context) {
   }
 
   // When explicit URLs are provided (CSV batch), scope suggestions to that set.
+  // Normalise to pathname+query so hostname variants (casio.com vs www.casio.com) match.
   const urlScope = Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
-    ? new Set(auditContext.urls)
+    ? new Set(auditContext.urls.map((u) => normalizePathnameWithQuery(u)))
     : null;
   if (urlScope) {
     log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
