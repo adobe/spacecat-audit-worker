@@ -72,6 +72,21 @@ const ERROR_CODES_WITHOUT_DETAIL = Object.freeze([
 ]);
 
 /**
+ * Removes the internal discovery `success` flag before persisting auditResult.
+ *
+ * @param {Object} result
+ * @param {string} [inputUrl]
+ * @returns {Object}
+ */
+function toPersistedAuditResult(result, inputUrl) {
+  const { success: _, ...rest } = result;
+  if (inputUrl != null && rest.url == null) {
+    return { ...rest, url: inputUrl };
+  }
+  return rest;
+}
+
+/**
  * Normalizes a string for error-type suggestion fields and buildKey segments.
  * Missing, null, and non-string values become an empty string; strings are trimmed.
  *
@@ -198,7 +213,7 @@ export async function findSitemap(inputUrl, log) {
       log?.error(`  reason ${i + 1}: error=${r.error ?? '(none)'}, value=${r.value ?? '(none)'}`);
     });
     /* c8 ignore end */
-    return siteMapUrlsResult;
+    return toPersistedAuditResult(siteMapUrlsResult, inputUrl);
   }
   // The real purpose of this audit is to find any 'notOk' page URLs referenced in sitemap.xml files
   const notOkPagesFromSitemap = {};
@@ -206,6 +221,7 @@ export async function findSitemap(inputUrl, log) {
   const extractedPathsRaw = siteMapUrlsResult.details?.extractedPaths || {};
   const extractedPaths = applyPageUrlProbeSampling(extractedPathsRaw, log); // "fast"
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
+  const sitemapErrors = siteMapUrlsResult.details?.sitemapErrors ?? [];
   // Only needed when necessary, prepare for "slow probing"
   let useSlowPageUrlProbing = false;
   let slowProbeUrlsTotal = 0; // of all the page URLs probed slowly ...
@@ -320,26 +336,21 @@ export async function findSitemap(inputUrl, log) {
     }
   }
 
-  // Return final result:
-  //   success if we have any sitemaps with valid URLs,
-  //   failure otherwise (with details on issues found)
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
-    return {
-      success: true,
+    return toPersistedAuditResult({
       reasons: [{ value: 'Sitemaps found and checked.' }],
       url: inputUrl,
-      details: { issues: notOkPagesFromSitemap },
-    };
+      details: { issues: notOkPagesFromSitemap, sitemapErrors },
+    });
   }
-  return {
-    success: false,
+  return toPersistedAuditResult({
     reasons: [{
       value: filteredSitemapUrls[0], // a sitemap URL ... granted, the 1st if there is a list
       error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
     }],
     url: inputUrl,
-    details: { issues: notOkPagesFromSitemap },
-  };
+    details: { issues: notOkPagesFromSitemap, sitemapErrors },
+  });
 }
 
 /**
@@ -394,22 +405,42 @@ export function getPagesWithIssues(auditData) {
 }
 
 /**
+ * Builds error-type suggestions from audit reason entries and dedupes by sync key.
+ *
+ * @param {Array<{ error?: string, value?: string }>} reasonEntries
+ * @returns {Array<{ type: 'error', error: string, sitemapUrl: string, recommendedAction: string }>}
+ */
+export function buildErrorSuggestionsFromReasons(reasonEntries) {
+  const seenKeys = new Set();
+  return (reasonEntries ?? [])
+    .filter((reason) => reason?.error)
+    .map((reason) => buildErrorSuggestionFromReason(reason))
+    .filter((suggestion) => {
+      const key = buildSitemapErrorSuggestionKey(suggestion);
+      if (seenKeys.has(key)) {
+        return false;
+      }
+      seenKeys.add(key);
+      return true;
+    });
+}
+
+/**
  * Generates suggestions based on audit results
  */
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  const { success, reasons } = auditData.auditResult;
+  const { reasons, details } = auditData.auditResult;
 
-  const response = success
-    ? []
-    : reasons
-      .filter((reason) => reason?.error)
-      .map((reason) => buildErrorSuggestionFromReason(reason));
+  const errorSuggestions = buildErrorSuggestionsFromReasons([
+    ...(reasons ?? []),
+    ...(details?.sitemapErrors ?? []),
+  ]);
 
   const pagesWithIssues = getPagesWithIssues(auditData);
   /* c8 ignore next */
   log.info(`Sitemap: Found ${pagesWithIssues.length} pages with issues in sitemaps for ${auditUrl}`);
-  const suggestions = [...response, ...pagesWithIssues]
+  const suggestions = [...errorSuggestions, ...pagesWithIssues]
     .filter(Boolean)
     .map((issue) => {
       if (issue.type === 'error') {
@@ -452,18 +483,6 @@ export function mergeSitemapSuggestionData(existingData, newData) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-
-  if (auditData.auditResult.success === false) {
-    log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
-    /* c8 ignore start */
-    const wouldCreate = auditData.suggestions ?? [];
-    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestions would have been created for ${auditUrl}`);
-    wouldCreate.forEach((s, i) => {
-      log.info(`.... Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
-    });
-    /* c8 ignore end */
-    return { ...auditData };
-  }
 
   if (!auditData.suggestions?.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
