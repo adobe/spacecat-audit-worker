@@ -316,14 +316,15 @@ export function formatBotProtectionPartialBlockMessage({
 /**
  * Formats an audit-completion message.
  *
- * @param {string} auditType - Audit type (e.g. 'cwv')
- * @param {string} siteUrl - The site URL
+ * The original Slack trigger message at the top of the thread already carries
+ * the audit type and site URL, so the completion line is intentionally minimal.
+ *
  * @returns {string}
  */
-export function formatAuditCompletionMessage(auditType, siteUrl) {
-  return ':white_check_mark: *Audit Completed*\n\n'
-    + `*Audit Type:* \`${auditType}\`\n`
-    + `*Site:* ${siteUrl}`;
+export function formatAuditCompletionMessage() {
+  // The original trigger message at the top of the thread already carries
+  // auditType + siteUrl; repeating them on the completion line adds noise.
+  return ':white_check_mark: *Audit Completed*';
 }
 
 /**
@@ -360,14 +361,35 @@ export function humanizeStepName(stepName) {
 /**
  * Formats a per-step completion message.
  *
- * @param {string} auditType - Audit type (e.g. 'cwv')
- * @param {string} siteUrl - The site URL
+ * The original Slack trigger message at the top of the thread already carries
+ * the audit type and site URL, so each step line is intentionally minimal.
+ *
  * @param {string} stepName - The step identifier (auto-humanized for display)
  * @returns {string}
  */
-export function formatStepCompletionMessage(auditType, siteUrl, stepName) {
-  return `:arrows_counterclockwise: *${humanizeStepName(stepName)} — done*\n`
-    + `*Audit Type:* \`${auditType}\`  ·  *Site:* ${siteUrl}`;
+export function formatStepCompletionMessage(stepName) {
+  // The original trigger message at the top of the thread already carries
+  // auditType + siteUrl; repeating them on every step done line adds noise.
+  return `:arrows_counterclockwise: *${humanizeStepName(stepName)} — done*`;
+}
+
+/**
+ * Formats a "handed off to downstream service" message.
+ *
+ * Use this when the audit-worker has dispatched work to an async downstream
+ * (Mystique, content-scraper, autofix-worker, etc.) and there will be a gap
+ * before any further visible progress. Without this signal the Slack thread
+ * looks frozen between "step done" and "audit completed" even though work is
+ * happening elsewhere.
+ *
+ * @param {string} target - Downstream service label (e.g. 'Mystique', 'Autofix Worker')
+ * @param {string} [detail] - Optional one-line detail (e.g. '12 suggestions for AI guidance')
+ * @returns {string}
+ */
+export function formatDownstreamDispatchMessage(target, detail) {
+  const head = `:outbox_tray: *Sent to ${target}*`;
+  const trimmed = hasText(detail) ? detail.trim() : '';
+  return trimmed ? `${head} — ${trimmed}` : head;
 }
 
 /**

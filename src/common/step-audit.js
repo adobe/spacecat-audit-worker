@@ -241,14 +241,14 @@ export class StepAudit extends BaseAudit {
         await say(
           context,
           auditContext?.slackContext,
-          formatStepCompletionMessage(type, siteUrl, stepName),
+          formatStepCompletionMessage(stepName),
         );
       } else {
         // Last step done — overall audit pipeline completed end-to-end.
         await say(
           context,
           auditContext?.slackContext,
-          formatAuditCompletionMessage(type, siteUrl),
+          formatAuditCompletionMessage(),
         );
       }
 

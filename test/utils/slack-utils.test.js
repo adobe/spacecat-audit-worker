@@ -19,6 +19,7 @@ import {
   formatAuditFailureMessage,
   formatBotProtectionPartialBlockMessage,
   formatBotProtectionSlackMessage,
+  formatDownstreamDispatchMessage,
   formatStepCompletionMessage,
   humanizeStepName,
   postMessage,
@@ -614,11 +615,13 @@ describe('Slack Utils', () => {
   });
 
   describe('formatAuditCompletionMessage', () => {
-    it('renders type and site URL with a completion icon', () => {
-      const msg = formatAuditCompletionMessage('cwv', 'https://example.com');
+    it('renders a minimal completion line (type + site are in the trigger message)', () => {
+      const msg = formatAuditCompletionMessage();
       expect(msg).to.include('Audit Completed');
-      expect(msg).to.include('cwv');
-      expect(msg).to.include('https://example.com');
+      // Intentionally no audit type / site URL — those are already in the
+      // original :adobe-run: trigger message at the top of the Slack thread.
+      expect(msg).to.not.include('Audit Type');
+      expect(msg).to.not.include('Site:');
     });
   });
 
@@ -651,16 +654,37 @@ describe('Slack Utils', () => {
   });
 
   describe('formatStepCompletionMessage', () => {
-    it('renders the humanized step name with type and site', () => {
-      const msg = formatStepCompletionMessage(
-        'cwv',
-        'https://example.com',
-        'collectCWVDataAndImportCode',
-      );
+    it('renders the humanized step name (type + site are in the trigger message)', () => {
+      const msg = formatStepCompletionMessage('collectCWVDataAndImportCode');
       expect(msg).to.include('Collect CWV Data And Import Code');
       expect(msg).to.include('done');
-      expect(msg).to.include('cwv');
-      expect(msg).to.include('https://example.com');
+      // Intentionally no audit type / site URL — those are already in the
+      // original :adobe-run: trigger message at the top of the Slack thread.
+      expect(msg).to.not.include('Audit Type');
+      expect(msg).to.not.include('Site:');
+    });
+  });
+
+  describe('formatDownstreamDispatchMessage', () => {
+    it('renders target only when no detail is provided', () => {
+      const msg = formatDownstreamDispatchMessage('Mystique');
+      expect(msg).to.equal(':outbox_tray: *Sent to Mystique*');
+    });
+
+    it('appends detail when provided', () => {
+      const msg = formatDownstreamDispatchMessage(
+        'Mystique',
+        '12 CWV suggestion(s) queued for AI guidance',
+      );
+      expect(msg).to.equal(
+        ':outbox_tray: *Sent to Mystique* — 12 CWV suggestion(s) queued for AI guidance',
+      );
+    });
+
+    it('omits the detail separator for empty / whitespace-only detail', () => {
+      expect(formatDownstreamDispatchMessage('Mystique', '')).to.equal(':outbox_tray: *Sent to Mystique*');
+      expect(formatDownstreamDispatchMessage('Mystique', '   ')).to.equal(':outbox_tray: *Sent to Mystique*');
+      expect(formatDownstreamDispatchMessage('Mystique', undefined)).to.equal(':outbox_tray: *Sent to Mystique*');
     });
   });
 

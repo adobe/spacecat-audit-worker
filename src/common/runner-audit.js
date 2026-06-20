@@ -76,7 +76,7 @@ export class RunnerAudit extends BaseAudit {
       await say(
         context,
         auditContext?.slackContext,
-        formatAuditCompletionMessage(type, siteUrl),
+        formatAuditCompletionMessage(),
       );
 
       return response;
