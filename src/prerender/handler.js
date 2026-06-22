@@ -850,7 +850,7 @@ export async function handleAiOnlyMode(context) {
   // Build candidates from the already-fetched suggestions so the downstream
   // function receives them as preBuiltCandidates and skips its own filter.
   const candidates = [];
-  for (const s of (allSuggestions || [])) {
+  for (const s of allSuggestions) {
     const d = s.getData();
     if (!d?.url || d.isDomainWide || !urlScope.has(d.url)) {
       // eslint-disable-next-line no-continue
