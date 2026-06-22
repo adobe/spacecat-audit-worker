@@ -54,16 +54,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
-const getDomainWidePathPattern = (baseUrl) => {
-  const pathname = toPathname(baseUrl);
-  return pathname.length > 1 ? `${pathname}/*` : '/*';
-};
-
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
-const getDomainWideSuggestionUrl = (baseUrl) => {
-  const label = getDomainWidePathPattern(baseUrl) === '/*' ? 'All Domain URLs' : 'All Subpath URLs';
-  return `${baseUrl}/* (${label})`;
-};
+const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
 /**
  * Reads and parses the site's status.json from S3.
@@ -1165,11 +1157,10 @@ async function prepareDomainWideAggregateSuggestion(
   );
 
   // Create domain-wide path pattern(s) for allowList
-  // The allowList in metaconfig expects glob patterns (e.g., "/*" or "/kings/*")
-  const pathPattern = getDomainWidePathPattern(baseUrl);
-  const allowedRegexPatterns = [pathPattern];
+  // The allowList in metaconfig expects glob patterns (e.g., "/*")
+  const allowedRegexPatterns = ['/*'];
 
-  // This applies to ALL URLs under sites base url
+  // This applies to ALL URLs in the domain
   // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
     url: getDomainWideSuggestionUrl(baseUrl),
@@ -1180,7 +1171,7 @@ async function prepareDomainWideAggregateSuggestion(
     // Domain-wide configuration metadata
     isDomainWide: true,
     allowedRegexPatterns,
-    pathPattern,
+    pathPattern: '/*',
   };
 
   log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);

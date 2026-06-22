@@ -9419,65 +9419,6 @@ describe('Prerender Audit', () => {
 
   describe('Subpath URL scoping (LLMO-5145)', () => {
     describe('getDomainWideSuggestionUrl label', () => {
-      it('should use "All Subpath URLs" label when auditUrl has a subpath', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://nba.com/kings/page1',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://nba.com/kings' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://nba.com/kings', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.data.url).to.include('All Subpath URLs');
-        expect(domainWideSuggestion.data.url).to.not.include('All Domain URLs');
-      });
-
       it('should use "All Domain URLs" label when auditUrl is a root domain', async () => {
         const mockOpportunity = {
           getId: () => 'test-opp-id',
@@ -9538,65 +9479,6 @@ describe('Prerender Audit', () => {
     });
 
     describe('pathPattern scoping in domain-wide suggestion', () => {
-      it('should use /kings/* pathPattern and allowedRegexPatterns for nba.com/kings', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [
-              {
-                url: 'https://nba.com/kings/roster',
-                needsPrerender: true,
-                contentGainRatio: 2.0,
-                wordCountBefore: 100,
-                wordCountAfter: 200,
-              },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
-              },
-            },
-          },
-          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://nba.com/kings' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://nba.com/kings', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.data.pathPattern).to.equal('/kings/*');
-        expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/kings/*']);
-      });
-
       it('should use /* pathPattern for a root domain site', async () => {
         const mockOpportunity = {
           getId: () => 'test-opp-id',
