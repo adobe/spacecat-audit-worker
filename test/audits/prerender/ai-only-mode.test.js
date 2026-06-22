@@ -1046,6 +1046,20 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
 
+    it('should not save mystiqueSession when slackContext has channelId but no threadTs', async () => {
+      context.auditContext = {
+        slackContext: { channelId: 'C999' },
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+
+      // No mystiqueSession saved — threadTs is missing so notification would no-op
+      expect(mockOpportunity.setData).to.not.have.been.called;
+      expect(mockOpportunity.save).to.not.have.been.called;
+    });
+
     it('should handle opportunity.getData() returning null in multi-batch scenario', async () => {
       const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
       mockOpportunity.getSuggestions.resolves(manySuggestions);

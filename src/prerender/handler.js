@@ -744,7 +744,7 @@ async function sendPrerenderGuidanceRequestToMystique(
 
       log.info(`${LOG_PREFIX} Multi-batch Mystique run: stored ${totalBatches} batches to S3 key=${batchesKey}, `
         + `sending batch 1/${totalBatches}. baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId}`);
-    } else if (slackCtx?.channelId) {
+    } else if (slackCtx?.channelId && slackCtx?.threadTs) {
       // Single-batch: save only Slack context so guidance-handler can notify on completion.
       opportunity.setData({
         ...(opportunity.getData() ?? {}),
