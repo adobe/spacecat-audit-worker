@@ -1072,12 +1072,12 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should filter out URLs where needsPrerender is false but scrapingStatus is success', async () => {
+        it('should exclude URL from batch when scrapingStatus is success regardless of needsPrerender value', async () => {
           const agenticUrls = [
             'https://example.com/agentic-success',
             'https://example.com/agentic-other',
           ];
-          // Page was scraped successfully but didn't need prerender — still counts as recently processed
+          // scrapingStatus=success counts as recently processed even when needsPrerender=false
           const recentPage = {
             url: 'https://example.com/agentic-success',
             scrapedAt: new Date().toISOString(),
@@ -1091,6 +1091,28 @@ describe('Prerender Audit', () => {
           const resultUrls = result.urls.map((u) => u.url);
 
           expect(resultUrls).to.not.include('https://example.com/agentic-success');
+          expect(resultUrls).to.include('https://example.com/agentic-other');
+        });
+
+        it('should include URL in batch when needsPrerender is false and scrapingStatus is not success', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-failed',
+            'https://example.com/agentic-other',
+          ];
+          // needsPrerender=false + failed scrape → not recently processed → must be re-queued
+          const failedPage = {
+            url: 'https://example.com/agentic-failed',
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: false,
+            scrapingStatus: 'error',
+          };
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([failedPage]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.include('https://example.com/agentic-failed');
           expect(resultUrls).to.include('https://example.com/agentic-other');
         });
 

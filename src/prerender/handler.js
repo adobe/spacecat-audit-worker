@@ -349,7 +349,7 @@ function getRecentlyProcessedPathnames(status) {
   const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
   const pathnames = new Set();
   for (const p of pages) {
-    const coveredByPrerender = p.needsPrerender === true || (p.needsPrerender === false && p.scrapingStatus === 'success');
+    const coveredByPrerender = p.needsPrerender || p.scrapingStatus === 'success';
     if (p.scrapedAt && new Date(p.scrapedAt) >= recentWindowStart && p.url && coveredByPrerender) {
       const pathname = normalizePathnameWithQuery(p.url);
       if (pathname) {
