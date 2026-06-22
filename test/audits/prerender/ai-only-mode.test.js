@@ -393,7 +393,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-domain-wide
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
@@ -423,7 +423,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-SKIPPED
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
@@ -493,7 +493,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       const suggestion = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
       expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
@@ -515,7 +515,7 @@ describe('Prerender AI-Only Mode', () => {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/derived from originalHtmlKey/),
       );
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       const suggestion = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
       expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${derivedJobId}`);
@@ -536,7 +536,7 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
       );
       // suggestion-1 is skipped; only suggestion-2 (which has scrapeJobId) is sent
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
@@ -556,7 +556,7 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
       );
       // suggestion-1 is skipped; only suggestion-2 is sent
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
@@ -583,7 +583,7 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.status).to.equal('complete');
       // All 3 suggestions (2 from current run + 1 stale) must be sent
       expect(result.auditResult.suggestionCount).to.equal(3);
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       const sentUrls = uploadedSuggestions.map((s) => s.url);
       expect(sentUrls).to.include('https://example.com/page1');
       expect(sentUrls).to.include('https://example.com/page2');
@@ -750,7 +750,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page1');
     });
@@ -763,7 +763,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       expect(uploadedSuggestions).to.have.lengthOf(1);
       expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
@@ -833,7 +833,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       uploadedSuggestions.forEach((s) => {
         expect(s.hasPrompts).to.equal(false);
       });
@@ -854,7 +854,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       const s1 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       const s2 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page2');
       expect(s1.hasPrompts).to.equal(true);
@@ -872,7 +872,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const uploadedSuggestions = mockSqs.sendMessage.firstCall.args[1].data.suggestions;
       const s1 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(s1.hasPrompts).to.equal(false);
     });
@@ -909,17 +909,17 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
-  describe('suggestionsS3Key and suggestionsS3Bucket in SQS payload', () => {
-    it('should include suggestionsS3Key and suggestionsS3Bucket instead of inline suggestions', async () => {
+  describe('inline suggestions in SQS payload', () => {
+    it('should include inline suggestions with batchIndex and totalBatches', async () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestionsS3Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
-      expect(message.data.suggestionsS3Bucket).to.equal('test-bucket');
-      expect(message.data).to.not.have.property('suggestions');
-      expect(message.data).to.not.have.property('batchIndex');
-      expect(message.data).to.not.have.property('totalBatches');
+      expect(message.data.suggestions).to.be.an('array');
+      expect(message.data.batchIndex).to.equal(0);
+      expect(message.data.totalBatches).to.equal(1);
+      expect(message.data).to.not.have.property('suggestionsS3Key');
+      expect(message.data).to.not.have.property('suggestionsS3Bucket');
     });
   });
 
@@ -939,24 +939,20 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
-  describe('S3 upload and mystiqueSession behavior', () => {
-    it('should always upload suggestions to S3 at the correct key', async () => {
+  describe('inline suggestions batch behavior', () => {
+    it('should send inline suggestions in SQS message', async () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
 
-      // S3 PutObjectCommand is always called for the suggestions upload
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const s3Call = mockS3Client.send.firstCall.args[0];
-      expect(s3Call.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
-      expect(s3Call.input.Bucket).to.equal('test-bucket');
-      expect(s3Call.input.ContentType).to.equal('application/json');
+      // No S3 upload for suggestions — they go inline
+      expect(mockS3Client.send).to.not.have.been.called;
 
-      const uploadedSuggestions = JSON.parse(s3Call.input.Body);
-      expect(uploadedSuggestions).to.have.lengthOf(2);
+      const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
+      expect(sqsMsg.data.suggestions).to.be.an('array').with.lengthOf(2);
     });
 
-    it('should upload all suggestions to S3 for large suggestion counts', async () => {
+    it('should cap inline suggestions at 320 for large suggestion counts', async () => {
       const manySuggestions = Array.from({ length: 400 }, (_, i) => ({
         getId: sandbox.stub().returns(`suggestion-${i}`),
         getData: sandbox.stub().returns({
@@ -971,19 +967,15 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      expect(result.auditResult.suggestionCount).to.equal(400);
+      expect(result.auditResult.suggestionCount).to.equal(320);
 
-      // S3 upload contains all 400 suggestions in a single call
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
-      expect(uploadedSuggestions).to.have.lengthOf(400);
-
-      // Single SQS message with S3 key reference (no inline suggestions)
+      // Single SQS message with inline suggestions capped at 320
       expect(mockSqs.sendMessage).to.have.been.calledOnce;
       const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
-      expect(sqsMsg.data.suggestionsS3Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
-      expect(sqsMsg.data.suggestionsS3Bucket).to.equal('test-bucket');
-      expect(sqsMsg.data).to.not.have.property('suggestions');
+      expect(sqsMsg.data.suggestions).to.be.an('array').with.lengthOf(320);
+      expect(sqsMsg.data.batchIndex).to.equal(0);
+      expect(sqsMsg.data.totalBatches).to.equal(1);
+      expect(sqsMsg.data).to.not.have.property('suggestionsS3Key');
     });
 
   });
