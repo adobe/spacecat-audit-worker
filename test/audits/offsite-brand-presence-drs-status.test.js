@@ -71,8 +71,8 @@ describe('offsite-brand-presence DRS status handler', () => {
         Configuration: {
           findLatest: sandbox.stub().resolves({ getQueues: () => ({ audits: 'audits-queue-url' }) }),
         },
-        Audit: {
-          allBySiteIdAndAuditType: sandbox.stub().resolves({ data: [], cursor: null }),
+        LatestAudit: {
+          findBySiteIdAndAuditType: sandbox.stub().resolves(null),
         },
       },
     };
@@ -306,8 +306,8 @@ describe('offsite-brand-presence DRS status handler', () => {
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
 
       const recentAudit = { getAuditedAt: () => new Date(Date.now() - AUDIT_TRIGGER_COOLDOWN_MS / 2).toISOString() };
-      context.dataAccess.Audit.allBySiteIdAndAuditType
-        .withArgs(SITE_ID, 'reddit-analysis').resolves({ data: [recentAudit], cursor: null });
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType
+        .withArgs(SITE_ID, 'reddit-analysis').resolves(recentAudit);
 
       await handler.default(buildMessage(), context);
 
@@ -322,8 +322,8 @@ describe('offsite-brand-presence DRS status handler', () => {
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
 
       const oldAudit = { getAuditedAt: () => new Date(Date.now() - AUDIT_TRIGGER_COOLDOWN_MS * 2).toISOString() };
-      context.dataAccess.Audit.allBySiteIdAndAuditType
-        .withArgs(SITE_ID, 'reddit-analysis').resolves({ data: [oldAudit], cursor: null });
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType
+        .withArgs(SITE_ID, 'reddit-analysis').resolves(oldAudit);
 
       await handler.default(buildMessage(), context);
 
@@ -336,7 +336,7 @@ describe('offsite-brand-presence DRS status handler', () => {
       mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
 
-      context.dataAccess.Audit.allBySiteIdAndAuditType.rejects(new Error('DB timeout'));
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.rejects(new Error('DB timeout'));
 
       await handler.default(buildMessage(), context);
 

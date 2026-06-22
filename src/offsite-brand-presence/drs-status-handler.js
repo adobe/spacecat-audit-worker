@@ -56,16 +56,12 @@ function resolveAnalysisAuditType(domain) {
  */
 async function hasRecentAudit(siteId, auditType, dataAccess, log) {
   try {
-    const { Audit } = dataAccess;
-    const { data: audits } = await Audit.allBySiteIdAndAuditType(
-      siteId,
-      auditType,
-      { limit: 1, order: 'desc', returnCursor: true },
-    );
-    if (audits.length === 0) {
+    const { LatestAudit } = dataAccess;
+    const latest = await LatestAudit.findBySiteIdAndAuditType(siteId, auditType);
+    if (!latest) {
       return false;
     }
-    const auditedAt = new Date(audits[0].getAuditedAt()).getTime();
+    const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
     log.warn(`${LOG_PREFIX} Failed to check recent ${auditType} audit for site ${siteId}: ${err.message}`);
