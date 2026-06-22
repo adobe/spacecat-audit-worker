@@ -204,7 +204,7 @@ export async function filterUrlsByDrsStatus(
 
   if (!drsClient || !drsClient.isConfigured()) {
     log?.info(`${prefix} DRS client not configured, skipping availability filter`);
-    return limit ? urls.slice(0, limit) : urls;
+    return limit > 0 ? urls.slice(0, limit) : urls;
   }
 
   const rawUrls = urls.map((item) => item.url);
@@ -237,7 +237,7 @@ export async function filterUrlsByDrsStatus(
 
   if (!atLeastOneLookupSucceeded) {
     log?.warn(`${prefix} All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`);
-    return limit ? urls.slice(0, limit) : urls;
+    return limit > 0 ? urls.slice(0, limit) : urls;
   }
 
   if (availableUrls.size === 0) {
@@ -251,7 +251,7 @@ export async function filterUrlsByDrsStatus(
   for (const item of urls) {
     if (availableUrls.has(item.url)) {
       filtered.push(item);
-      if (limit && filtered.length >= limit) {
+      if (limit > 0 && filtered.length >= limit) {
         break;
       }
     } else {
@@ -261,7 +261,7 @@ export async function filterUrlsByDrsStatus(
   if (drsRejected > 0) {
     log?.info(`${prefix} DRS availability filter: removed ${drsRejected} URL(s) not yet scraped, ${filtered.length} remaining`);
   }
-  if (limit && filtered.length === limit) {
+  if (limit > 0 && filtered.length === limit) {
     log?.info(`${prefix} URL limit reached (${limit}), additional available URLs not collected`);
   }
   return filtered;

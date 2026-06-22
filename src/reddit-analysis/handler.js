@@ -18,7 +18,6 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   DrsNoContentAvailableError,
-  MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
@@ -243,11 +242,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
-
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
+    log.info(`${LOG_PREFIX} Sending ${enrichedUrls.length} enriched URLs to Mystique`);
 
     const baseMessage = {
       type: 'guidance:reddit-analysis',

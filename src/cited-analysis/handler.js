@@ -360,15 +360,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? CITED_ANALYSIS_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
-
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
     // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
     // is not needed downstream and contributes significant per-URL bloat.
-    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=40 keeps the payload
-    // within the SQS budget without capping per-URL prompts.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .map(({
         url: urlStr, categories, timesCited, prompts,
@@ -378,6 +373,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         ...(timesCited > 0 && { timesCited }),
         ...(prompts?.length > 0 && { prompts }),
       }));
+    log.info(`${LOG_PREFIX} Sending ${enrichedUrls.length} enriched URLs to Mystique`);
 
     const baseMessage = {
       type: 'guidance:cited-analysis',

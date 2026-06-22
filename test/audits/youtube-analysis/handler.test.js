@@ -489,7 +489,7 @@ describe('YouTube Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        '[YouTube] Sending 2 enriched URLs to Mystique',
       );
       expect(context.log.info).to.have.been.calledWith(
         '[YouTube] Queued YouTube analysis request to Mystique for Example Corp with 2 URLs',
@@ -512,7 +512,7 @@ describe('YouTube Analysis Handler', () => {
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('[YouTube] urlLimit=1 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith('[YouTube] Sending 2 enriched URLs to Mystique');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
     });
@@ -544,7 +544,7 @@ describe('YouTube Analysis Handler', () => {
       );
     });
 
-    it('should log MYSTIQUE_URLS_LIMIT when urlLimit is absent from config', async () => {
+    it('should log enriched URL count sent to Mystique', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -561,7 +561,7 @@ describe('YouTube Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        '[YouTube] Sending 2 enriched URLs to Mystique',
       );
     });
 
