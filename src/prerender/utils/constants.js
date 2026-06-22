@@ -21,9 +21,3 @@ export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
 export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
 export const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-/**
- * Maximum age (in minutes) for a mystiqueSession before it is considered stale.
- * If Mystique has not responded within this window the session is expired,
- * the S3 batch file is cleaned up, and the chain is abandoned.
- */
-export const MYSTIQUE_SESSION_TTL_MINUTES = 30;

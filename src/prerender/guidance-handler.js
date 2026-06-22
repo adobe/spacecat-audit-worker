@@ -13,7 +13,6 @@
 import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
-import { MYSTIQUE_SESSION_TTL_MINUTES } from './utils/constants.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
@@ -117,31 +116,9 @@ async function chainNextMystiqueBatch(
     batchesS3Key,
     slackChannelId,
     slackThreadTs,
-    startedAt,
     generatePrompts,
     siteRegion,
   } = session;
-
-  // TTL guard: abandon the chain if the session is older than the configured limit.
-  if (startedAt) {
-    const ageMinutes = (Date.now() - new Date(startedAt).getTime()) / 60_000;
-    if (ageMinutes > MYSTIQUE_SESSION_TTL_MINUTES) {
-      log.warn(`${LOG_PREFIX} Mystique batch session expired after ${Math.round(ageMinutes)}m `
-        + `(TTL=${MYSTIQUE_SESSION_TTL_MINUTES}m). Cleaning up. opportunityId=${opportunity.getId()}, siteId=${siteId}`);
-
-      await deleteBatchesFromS3(s3Client, env.S3_SCRAPER_BUCKET_NAME, batchesS3Key, log);
-      opportunity.setData({ ...oppData, mystiqueSession: undefined });
-      await opportunity.save();
-
-      await postMessageOptional(
-        context,
-        slackChannelId,
-        `:warning: Mystique batch session expired after ${Math.round(ageMinutes)}m — abandoned at batch ${currentBatchIndex + 1}/${totalBatches}`,
-        { threadTs: slackThreadTs },
-      );
-      return;
-    }
-  }
 
   const completedBatch = currentBatchIndex + 1;
 
@@ -193,7 +170,6 @@ async function chainNextMystiqueBatch(
       mystiqueSession: {
         ...session,
         currentBatchIndex: nextIndex,
-        startedAt: new Date().toISOString(),
       },
     });
     await opportunity.save();
