@@ -19,4 +19,7 @@ export const TOP_ORGANIC_URLS_LIMIT = 200;
  */
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
+export const MODE_AI_ONLY_CURRENT = 'ai-only-current';
+export const MODE_AI_ONLY_MISSING = 'ai-only-missing';
 export const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+export const MYSTIQUE_SUGGESTIONS_S3_PREFIX = 'prerender/mystique-suggestions';
