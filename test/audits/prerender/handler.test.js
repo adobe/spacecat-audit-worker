@@ -1072,12 +1072,12 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should exclude URL from batch when scrapingStatus is success regardless of needsPrerender value', async () => {
+        it('should exclude recently scraped URL regardless of needsPrerender or scrapingStatus value', async () => {
           const agenticUrls = [
             'https://example.com/agentic-success',
             'https://example.com/agentic-other',
           ];
-          // scrapingStatus=success counts as recently processed even when needsPrerender=false
+          // Any URL with a recent scrapedAt is excluded, regardless of needsPrerender/scrapingStatus
           const recentPage = {
             url: 'https://example.com/agentic-success',
             scrapedAt: new Date().toISOString(),
@@ -1094,12 +1094,12 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-other');
         });
 
-        it('should include URL in batch when needsPrerender is false and scrapingStatus is not success', async () => {
+        it('should exclude recently scraped URL even when scrapingStatus is error', async () => {
           const agenticUrls = [
             'https://example.com/agentic-failed',
             'https://example.com/agentic-other',
           ];
-          // needsPrerender=false + failed scrape → not recently processed → must be re-queued
+          // Any URL with a recent scrapedAt is excluded, regardless of scrapingStatus
           const failedPage = {
             url: 'https://example.com/agentic-failed',
             scrapedAt: new Date().toISOString(),
@@ -1112,7 +1112,7 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          expect(resultUrls).to.include('https://example.com/agentic-failed');
+          expect(resultUrls).to.not.include('https://example.com/agentic-failed');
           expect(resultUrls).to.include('https://example.com/agentic-other');
         });
 
@@ -1257,6 +1257,21 @@ describe('Prerender Audit', () => {
           // Should not throw; agentic-0 is not blocked by the invalid record
           const result = await mockHandler.submitForScraping(context);
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+        });
+
+        it('should log a warning and return empty set when pages iteration throws', async () => {
+          // Page with a url getter that throws — exercises the try/catch in getRecentlyProcessedPathnames
+          const throwingPage = {
+            scrapedAt: new Date().toISOString(),
+            get url() { throw new Error('url access error'); },
+          };
+          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
+          const context = makeContext([throwingPage]);
+
+          // Should not propagate; agentic-0 is included and a warning is logged
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+          expect(context.log.warn).to.have.been.called;
         });
 
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
