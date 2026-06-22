@@ -1576,8 +1576,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         sinon.match({ threadTs: '1234567890.123456' }),
       );
 
-      // Should delete S3 suggestions file
+      // Should delete S3 suggestions file with correct Bucket/Key
       expect(mockS3Client.send).to.have.been.calledOnce;
+      const deleteCall = mockS3Client.send.firstCall.args[0];
+      expect(deleteCall.input.Bucket).to.equal('test-bucket');
+      expect(deleteCall.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
 
       // Should clear session
       expect(mockOpportunity.setData).to.have.been.calledWith(

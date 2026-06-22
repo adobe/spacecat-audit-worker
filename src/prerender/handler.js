@@ -704,20 +704,19 @@ async function sendPrerenderGuidanceRequestToMystique(
       ContentType: 'application/json',
     }));
 
-    // Persist Slack context on the Opportunity so guidance-handler can post
-    // a completion notification when Mystique responds.
+    // Persist session on the Opportunity so guidance-handler can clean up
+    // the S3 file and optionally post a Slack notification when Mystique responds.
     const slackCtx = context.auditContext?.slackContext;
+    const sessionData = { suggestionsS3Key };
     if (slackCtx?.channelId && slackCtx?.threadTs) {
-      opportunity.setData({
-        ...(opportunity.getData() ?? {}),
-        mystiqueSession: {
-          slackChannelId: slackCtx.channelId,
-          slackThreadTs: slackCtx.threadTs,
-          suggestionsS3Key,
-        },
-      });
-      await opportunity.save();
+      sessionData.slackChannelId = slackCtx.channelId;
+      sessionData.slackThreadTs = slackCtx.threadTs;
     }
+    opportunity.setData({
+      ...(opportunity.getData() ?? {}),
+      mystiqueSession: sessionData,
+    });
+    await opportunity.save();
 
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;

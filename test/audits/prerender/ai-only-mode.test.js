@@ -987,15 +987,24 @@ describe('Prerender AI-Only Mode', () => {
       expect(sqsMsg.data).to.not.have.property('suggestions');
     });
 
-    it('should not save mystiqueSession when there is no Slack context', async () => {
+    it('should save mystiqueSession with only suggestionsS3Key when there is no Slack context', async () => {
       // Default context has no auditContext.slackContext
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
 
-      // mystiqueSession is NOT saved when there is no Slack context
-      expect(mockOpportunity.setData).to.not.have.been.called;
-      expect(mockOpportunity.save).to.not.have.been.called;
+      // mystiqueSession saved with S3 key only (for cleanup), no Slack fields
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+          }),
+        }),
+      );
+      const sessionArg = mockOpportunity.setData.firstCall.args[0].mystiqueSession;
+      expect(sessionArg).to.not.have.property('slackChannelId');
+      expect(sessionArg).to.not.have.property('slackThreadTs');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
     });
 
     it('should save mystiqueSession with slackChannelId, slackThreadTs, and suggestionsS3Key when Slack context is present', async () => {
@@ -1043,7 +1052,7 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
 
-    it('should not save mystiqueSession when slackContext has channelId but no threadTs', async () => {
+    it('should save mystiqueSession without Slack fields when slackContext has channelId but no threadTs', async () => {
       context.auditContext = {
         slackContext: { channelId: 'C999' },
       };
@@ -1052,15 +1061,24 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.status).to.equal('complete');
 
-      // S3 upload still happens even without Slack context
+      // S3 upload still happens
       expect(mockS3Client.send).to.have.been.calledOnce;
 
-      // No mystiqueSession saved — threadTs is missing so notification would no-op
-      expect(mockOpportunity.setData).to.not.have.been.called;
-      expect(mockOpportunity.save).to.not.have.been.called;
+      // mystiqueSession saved with S3 key only — incomplete Slack context omitted
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+          }),
+        }),
+      );
+      const sessionArg = mockOpportunity.setData.firstCall.args[0].mystiqueSession;
+      expect(sessionArg).to.not.have.property('slackChannelId');
+      expect(sessionArg).to.not.have.property('slackThreadTs');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
     });
 
-    it('should not save mystiqueSession when slackContext has threadTs but no channelId', async () => {
+    it('should save mystiqueSession without Slack fields when slackContext has threadTs but no channelId', async () => {
       context.auditContext = {
         slackContext: { threadTs: '9999.999' },
       };
@@ -1069,9 +1087,18 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.status).to.equal('complete');
 
-      // No mystiqueSession saved — channelId is missing
-      expect(mockOpportunity.setData).to.not.have.been.called;
-      expect(mockOpportunity.save).to.not.have.been.called;
+      // mystiqueSession saved with S3 key only — incomplete Slack context omitted
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+          }),
+        }),
+      );
+      const sessionArg = mockOpportunity.setData.firstCall.args[0].mystiqueSession;
+      expect(sessionArg).to.not.have.property('slackChannelId');
+      expect(sessionArg).to.not.have.property('slackThreadTs');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
     });
 
     it('should include suggestionsS3Key in mystiqueSession for Slack-triggered large suggestion count', async () => {
