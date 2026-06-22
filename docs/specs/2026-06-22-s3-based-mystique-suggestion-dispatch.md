@@ -5,13 +5,13 @@
 | **Status** | Accepted |
 | **Author** | Sahil Silare |
 | **Created** | 2026-06-22 |
-| **PR** | [#2709](https://github.com/adobe/spacecat-audit-worker/pull/2709) |
+| **PR** | [#2709](https://github.com/adobe/spacecat-audit-worker/pull/2709), [#2713](https://github.com/adobe/spacecat-audit-worker/pull/2713) |
 
 ---
 
 ## Summary
 
-Prerender suggestions are now uploaded to S3 and Mystique receives only the S3 key via SQS. This removes the 256 KB SQS message size limit that previously capped batches at 320 suggestions, eliminating the need for multi-batch chaining entirely.
+Prerender suggestions are uploaded to S3 and Mystique receives only the S3 key via SQS. This removes the 256 KB SQS message size limit that previously capped batches at 320 suggestions. The S3 key is derived deterministically from the opportunityId (`prerender/mystique-suggestions/{opportunityId}.json`), so both producer and consumer can compute it independently.
 
 ---
 
@@ -25,9 +25,8 @@ SQS has a 256 KB message size limit. The previous implementation sent suggestion
 
 1. All eligible suggestions reach Mystique in a single dispatch, regardless of count
 2. No artificial batch size limit imposed by SQS message size constraints
-3. Slack notifications report completion when triggered from Slack
-4. S3 suggestions file is cleaned up after Mystique completes
-5. Simpler architecture with no batch chaining or session cursors
+3. S3 suggestions file is cleaned up after Mystique completes
+4. Simpler architecture with no batch chaining or session cursors
 
 ---
 
@@ -35,10 +34,7 @@ SQS has a 256 KB message size limit. The previous implementation sent suggestion
 
 ### State Storage
 
-- **S3** — all suggestions are stored at `prerender/mystique-suggestions/{opportunityId}.json`. Deleted after Mystique completes.
-- **Opportunity data** — a `mystiqueSession` object is saved on the Opportunity's data field (only when Slack context is present) with:
-  - `slackChannelId`, `slackThreadTs` — Slack thread context for completion notification
-  - `suggestionsS3Key` — S3 key for cleanup
+- **S3** — all suggestions are stored at `prerender/mystique-suggestions/{opportunityId}.json`. Deleted after Mystique completes via deterministic key derivation (no session state needed).
 
 ### Flow
 
@@ -50,18 +46,25 @@ flowchart TD
 
     D --> E[Mystique downloads from S3 and processes]
     E --> F[guidance-handler: save AI summaries]
-    F --> G{mystiqueSession?}
-
-    G -- No --> H[Done]
-    G -- Yes --> I[Slack: AI summaries complete]
-    I --> J[Delete S3 suggestions file]
-    J --> K[Clear mystiqueSession]
-    K --> H
+    F --> G[Delete S3 suggestions file]
+    G --> H[Done]
 ```
+
+### Mode-Based Suggestion Selection
+
+When triggered from the Slack command with a mode, `handleAiOnlyMode` uses `mode-selector.js` to filter suggestions:
+
+| Mode | Filter |
+|------|--------|
+| `ai-only` | Not OUTDATED, SKIPPED, FIXED, or edgeDeployed |
+| `ai-only-current` | NEW, not coveredByDomainWide / edgeDeployed / coveredByPattern |
+| `ai-only-missing` | NEW or FIXED, no aiSummary |
+
+Candidates are built directly in `handleAiOnlyMode` and passed as `preBuiltCandidates` to bypass the downstream filter in `sendPrerenderGuidanceRequestToMystique`.
 
 ### SQS Message Format
 
-The SQS message to Mystique now contains S3 coordinates instead of inline suggestions:
+The SQS message to Mystique contains S3 coordinates instead of inline suggestions:
 
 ```json
 {
@@ -83,14 +86,13 @@ The SQS message to Mystique now contains S3 coordinates instead of inline sugges
 
 ### Error Handling
 
-- **Cleanup errors are isolated** — `completeMystiqueRun` runs in its own try/catch inside guidance-handler. If S3 delete or `opportunity.save()` fails during cleanup, the current run's saved suggestions are not invalidated (returns `ok()`, not `badRequest()`).
+- **Cleanup errors are isolated** — `cleanupSuggestionsFile` runs in its own try/catch inside guidance-handler. If S3 delete fails during cleanup, the saved suggestions are not invalidated (returns `ok()`, not `badRequest()`).
 - **S3 delete failures are non-fatal** — logged as a warning; the suggestions file may linger but does not affect correctness.
-- **Non-Slack triggers** — `postMessageOptional` no-ops when `slackChannelId` or `slackThreadTs` is null. Only log lines are emitted.
 
 ### Trigger Compatibility
 
 `sendPrerenderGuidanceRequestToMystique` is the single function used by all entry points:
-- **ai-only mode** — `handleAiOnlyMode()` in step 1
+- **ai-only modes** — `handleAiOnlyMode()` in step 1 (with preBuiltCandidates)
 - **Full prerender** — `processContentAndGenerateOpportunities()` in step 3
 
 The S3 upload logic is trigger-agnostic.
@@ -103,7 +105,7 @@ The S3 upload logic is trigger-agnostic.
 |-------------|-------------|
 | **Send suggestions inline in SQS** | SQS has a 256 KB limit, capping batches at ~320 suggestions |
 | **Multi-batch sequential chaining** | Complex state management (cursors, S3 manifests, session tracking) for a problem solved by S3 indirection |
-| **Store session in a separate DB table** | Over-engineered; Opportunity data field is sufficient and auto-cleaned |
+| **Store session in Opportunity data** | Couples transient Slack interaction to persistent data; deterministic S3 key derivation is simpler |
 
 ---
 
@@ -111,7 +113,6 @@ The S3 upload logic is trigger-agnostic.
 
 - [x] Sites with any number of suggestions receive AI summaries for all suggestions
 - [x] No artificial batch size limit from SQS message size constraints
-- [x] Slack notifications on completion when triggered from Slack
 - [x] S3 suggestions file cleaned up after Mystique completes
-- [x] Simpler codebase with no multi-batch chaining
+- [x] Simpler codebase with no multi-batch chaining or session state
 - [x] 100% test coverage on changed files
