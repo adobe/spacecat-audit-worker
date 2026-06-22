@@ -329,26 +329,20 @@ function normalizePathname(url) {
 
 /**
  * Returns pathnames from siteStatus pages processed within the configured recent window.
- * @param {Object} context - Audit context with log
- * @param {Object} status - siteStatus object with a pages array
+ * @param {Object} siteStatus - siteStatus object with a pages array
  * @returns {Set<string>}
  */
-function getRecentlyProcessedPathnames(context, status) {
-  const { log } = context;
-  const pages = Array.isArray(status?.pages) ? status.pages : [];
+function getRecentlyProcessedPathnames(siteStatus) {
+  const pages = Array.isArray(siteStatus?.pages) ? siteStatus.pages : [];
   const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
   const pathnames = new Set();
-  try {
-    for (const p of pages) {
-      if (p.scrapedAt && new Date(p.scrapedAt) >= recentWindowStart && p.url) {
-        const pathname = normalizePathnameWithQuery(p.url);
-        if (pathname) {
-          pathnames.add(pathname);
-        }
+  for (const p of pages) {
+    if (p.scrapedAt && new Date(p.scrapedAt) >= recentWindowStart && p.url) {
+      const pathname = normalizePathnameWithQuery(p.url);
+      if (pathname) {
+        pathnames.add(pathname);
       }
     }
-  } catch (error) {
-    log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${error.message}`);
   }
   return pathnames;
 }
@@ -1014,7 +1008,7 @@ export async function submitForScraping(context) {
     agenticUrlsCount = agenticUrls.length;
 
     // Daily batching: filter URLs recently processed within the rolling recent window
-    const recentPathnames = getRecentlyProcessedPathnames(context, siteStatus);
+    const recentPathnames = getRecentlyProcessedPathnames(siteStatus);
     edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
 
     const filteredOrganicUrls = rebasedTopPagesUrls

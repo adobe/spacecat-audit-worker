@@ -31,6 +31,7 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
+  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
 } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
@@ -1259,19 +1260,24 @@ describe('Prerender Audit', () => {
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
-        it('should log a warning and return empty set when pages iteration throws', async () => {
-          // Page with a url getter that throws — exercises the try/catch in getRecentlyProcessedPathnames
-          const throwingPage = {
-            scrapedAt: new Date().toISOString(),
-            get url() { throw new Error('url access error'); },
+        it('should exclude pages whose scrapedAt is older than the recent window', async () => {
+          const agenticUrls = ['https://example.com/stale', 'https://example.com/fresh'];
+          const stalePage = {
+            url: 'https://example.com/stale',
+            scrapedAt: new Date(Date.now() - (PRERENDER_RECENT_PROCESSING_TIME_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString(),
+            needsPrerender: true,
           };
-          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext([throwingPage]);
+          const freshPage = makeRecentPage('/fresh');
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([stalePage, freshPage]);
 
-          // Should not propagate; agentic-0 is included and a warning is logged
           const result = await mockHandler.submitForScraping(context);
-          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
-          expect(context.log.warn).to.have.been.called;
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // stale page is outside the recent window → should be included in the batch (not filtered out)
+          expect(resultUrls).to.include('https://example.com/stale');
+          // fresh page is within the recent window → should be filtered out
+          expect(resultUrls).to.not.include('https://example.com/fresh');
         });
 
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
@@ -9580,7 +9586,6 @@ describe('Prerender Audit', () => {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sinon.stub().resolves(allPages),
             },
-            PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
             LatestAudit: { updateByKeys: sinon.stub().resolves() },
           },
@@ -9622,7 +9627,6 @@ describe('Prerender Audit', () => {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sinon.stub().resolves(allPages),
             },
-            PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
             LatestAudit: { updateByKeys: sinon.stub().resolves() },
           },
