@@ -29,6 +29,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let fetchStub;
   let handler;
   let mockIsPaidLLMOCustomer;
+  let mockPostMessageOptional;
+  let mockS3Client;
+  let mockSqs;
 
   // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
@@ -52,6 +55,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getDeliveryType: sinon.stub().returns('aem_edge'),
     };
 
     mockSuggestions = [
@@ -89,6 +93,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
       getType: () => 'prerender',
+      getData: sinon.stub().returns({}), // no mystiqueSession by default
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     Site = {
@@ -113,13 +120,17 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
+    mockS3Client = { send: sinon.stub().resolves() };
+    mockSqs = { sendMessage: sinon.stub().resolves() };
+
     // Stub the shared analysis-fetch helper directly (no need to fake a Response).
     fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
+    mockPostMessageOptional = sinon.stub().resolves({ success: true });
 
-    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
+    // Import handler with mocked helpers
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
@@ -127,11 +138,20 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchStub,
       },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
+      },
     });
 
     context = {
       log,
       site: mockSite,
+      s3Client: mockS3Client,
+      sqs: mockSqs,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-mystique-queue',
+      },
       dataAccess: {
         Site,
         Opportunity,
@@ -928,6 +948,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
         getType: () => 'prerender',
+        getData: sinon.stub().returns({}),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',
@@ -1501,6 +1524,183 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // Verify no duplicate IDs in the saved array
       const ids = saved.map((s) => s.getId());
       expect(new Set(ids).size).to.equal(ids.length);
+    });
+  });
+
+  describe('Completion and cleanup', () => {
+    const baseMessage = {
+      siteId: 'site-123',
+      auditId: 'audit-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+        opportunityId: 'opportunity-123',
+      },
+    };
+
+    const successPayload = {
+      opportunityId: 'opportunity-123',
+      suggestions: [
+        { url: 'https://example.com/page1', aiSummary: 'Summary 1', valuable: true },
+      ],
+    };
+
+    it('should not post Slack or clean up when no mystiqueSession on opportunity', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns({});
+
+      await handler.default(baseMessage, context);
+
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should post completion Slack, delete S3, and clear session', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // Should post completion message
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/AI summaries complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // Should delete S3 suggestions file with correct Bucket/Key
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const deleteCall = mockS3Client.send.firstCall.args[0];
+      expect(deleteCall.input.Bucket).to.equal('test-bucket');
+      expect(deleteCall.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+
+      // Should clear session
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should handle opportunity.getData() returning null without crashing', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns(null); // covers ?? {} fallback
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should skip S3 delete when suggestionsS3Key is absent in session', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          // no suggestionsS3Key
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // Slack notification posted
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/AI summaries complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // No S3 delete (no key to delete)
+      expect(mockS3Client.send).to.not.have.been.called;
+
+      // Session still cleared
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should pass null channel/thread to postMessageOptional when absent', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // postMessageOptional is still called but with null channel/thread — it no-ops internally
+      const calls = mockPostMessageOptional.getCalls();
+      calls.forEach((c) => {
+        expect(c.args[1]).to.be.null;
+      });
+
+      // S3 delete still called
+      expect(mockS3Client.send).to.have.been.calledOnce;
+
+      // Session cleared
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should warn but not throw when S3 suggestions file delete fails', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockS3Client.send.rejects(new Error('S3 delete failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to delete S3 object/));
+
+      // Session still cleared despite S3 failure
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should return ok() even when completeMystiqueRun throws', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      // Force completeMystiqueRun to throw by making save() reject
+      mockOpportunity.save.rejects(new Error('DB save failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      // Suggestions were saved successfully — should return ok, not badRequest
+      expect(result.status).to.equal(200);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to complete Mystique run/),
+        sinon.match.instanceOf(Error),
+      );
     });
   });
 
