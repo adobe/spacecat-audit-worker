@@ -44,9 +44,6 @@ WHERE year  = '{{year}}'
     )
   )
 
-  -- agentic and LLM-attributed traffic never has self-referer 
-  AND NOT REGEXP_LIKE(COALESCE(request_referer, ''), '{{host}}')
-
 GROUP BY
   url_extract_path(url),
   request_user_agent,

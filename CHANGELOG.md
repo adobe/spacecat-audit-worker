@@ -1,3 +1,80 @@
+## [1.484.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.0...v1.484.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2712](https://github.com/adobe/spacecat-audit-worker/issues/2712)) ([e3891f1](https://github.com/adobe/spacecat-audit-worker/commit/e3891f1f712ef5c2217b90a65417191210ae62e0))
+
+# [1.484.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.1...v1.484.0) (2026-06-22)
+
+
+### Features
+
+* **prerender:** upload suggestions to S3 and send S3 link to Mystique ([#2709](https://github.com/adobe/spacecat-audit-worker/issues/2709)) ([2f4748a](https://github.com/adobe/spacecat-audit-worker/commit/2f4748acd9bb2d4d2683a4289e05400bdbf9db26))
+
+## [1.483.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.0...v1.483.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2707](https://github.com/adobe/spacecat-audit-worker/issues/2707)) ([0cb9e76](https://github.com/adobe/spacecat-audit-worker/commit/0cb9e763c18e57546b3a11dac3bc2204e122a4f1))
+
+# [1.483.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.5...v1.483.0) (2026-06-19)
+
+
+### Features
+
+* **cdn-analysis:** count self-referer agentic hits for byocdn-other logs ([#2705](https://github.com/adobe/spacecat-audit-worker/issues/2705)) ([7113607](https://github.com/adobe/spacecat-audit-worker/commit/71136073055eab617bdef42a1fe6d7f46c555d9c))
+
+## [1.482.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.4...v1.482.5) (2026-06-19)
+
+
+### Bug Fixes
+
+* **prerender:** prevent duplicate suggestion keys in guidance saveMany ([#2703](https://github.com/adobe/spacecat-audit-worker/issues/2703)) ([db45e45](https://github.com/adobe/spacecat-audit-worker/commit/db45e45311540629ce7cf3dce491c1c6a7182887))
+
+## [1.482.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.3...v1.482.4) (2026-06-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes to v3.79.0 ([#2702](https://github.com/adobe/spacecat-audit-worker/issues/2702)) ([deb132c](https://github.com/adobe/spacecat-audit-worker/commit/deb132c8fe6b57850a1c03a5f82e88a3ab5f3f8c))
+
+## [1.482.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.2...v1.482.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* **cited-analysis:** cap prompts at 5 per URL to bound SQS payload ([#2697](https://github.com/adobe/spacecat-audit-worker/issues/2697)) ([9ff7c24](https://github.com/adobe/spacecat-audit-worker/commit/9ff7c24f4b0a96ed170ff7ecac4ff24c64b21d56))
+
+## [1.482.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.1...v1.482.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2700](https://github.com/adobe/spacecat-audit-worker/issues/2700)) ([8feb95f](https://github.com/adobe/spacecat-audit-worker/commit/8feb95f72d08177b56f15f1fe4cd2133809195f9))
+
+## [1.482.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.0...v1.482.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **preflight:** throttle link-probe concurrency to prevent timeout false positives (SITES-46696) ([#2701](https://github.com/adobe/spacecat-audit-worker/issues/2701)) ([4450a08](https://github.com/adobe/spacecat-audit-worker/commit/4450a083b290676ebb8837bf009c92d1dec29c11))
+
+# [1.482.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.1...v1.482.0) (2026-06-18)
+
+
+### Features
+
+* reduce URLs being sent to DRS to 50 ([#2698](https://github.com/adobe/spacecat-audit-worker/issues/2698)) ([325aaf8](https://github.com/adobe/spacecat-audit-worker/commit/325aaf804a4ed5a9b19d332a481c5a1a5cdc342f))
+
+## [1.481.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.481.0...v1.481.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **common:** honor auditContext.onDemand to bypass handler enabled-list gate ([#2599](https://github.com/adobe/spacecat-audit-worker/issues/2599)) ([1d973c1](https://github.com/adobe/spacecat-audit-worker/commit/1d973c1eb279d882a810023b5554989abceec64d))
+
 # [1.481.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.480.3...v1.481.0) (2026-06-18)
 
 

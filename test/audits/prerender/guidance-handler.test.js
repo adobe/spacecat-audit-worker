@@ -29,6 +29,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let fetchStub;
   let handler;
   let mockIsPaidLLMOCustomer;
+  let mockPostMessageOptional;
+  let mockS3Client;
+  let mockSqs;
 
   // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
@@ -52,6 +55,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getDeliveryType: sinon.stub().returns('aem_edge'),
     };
 
     mockSuggestions = [
@@ -89,6 +93,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
       getType: () => 'prerender',
+      getData: sinon.stub().returns({}), // no mystiqueSession by default
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     Site = {
@@ -113,13 +120,17 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
+    mockS3Client = { send: sinon.stub().resolves() };
+    mockSqs = { sendMessage: sinon.stub().resolves() };
+
     // Stub the shared analysis-fetch helper directly (no need to fake a Response).
     fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
+    mockPostMessageOptional = sinon.stub().resolves({ success: true });
 
-    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
+    // Import handler with mocked helpers
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
@@ -127,11 +138,20 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchStub,
       },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
+      },
     });
 
     context = {
       log,
       site: mockSite,
+      s3Client: mockS3Client,
+      sqs: mockSqs,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-mystique-queue',
+      },
       dataAccess: {
         Site,
         Opportunity,
@@ -928,6 +948,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
         getType: () => 'prerender',
+        getData: sinon.stub().returns({}),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',
@@ -1239,6 +1262,444 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         sinon.match(/prerender_ai_summary_metrics/)
           .and(sinon.match(/suggestionsWithPrompts=0/))
           .and(sinon.match(/totalPromptCount=0/)),
+      );
+    });
+  });
+
+  describe('Query-param-aware keying and dedup guard', () => {
+    it('should treat URLs with same pathname but different query params as distinct suggestions (casio.com scenario)', async () => {
+      // Two filter/faceted URLs that share the same pathname but differ in query params.
+      // Before the fix, toPathname() stripped query params causing these to collide.
+      const casioSuggestions = [
+        {
+          getId: sinon.stub().returns('casio-metals'),
+          getData: sinon.stub().returns({
+            url: 'https://casio.com/us/watches/casio/standard.filter.metals-K84vKnGqtM1LLU8tLlFLSsxLsdXPTS1JzNEtBgA=/',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('casio-in-stock'),
+          getData: sinon.stub().returns({
+            url: 'https://casio.com/us/watches/casio.filter.IN_STOCK-MTP-K84vKnGqtM1LLU8tLlHTKi7JT84OLkksKS229fSLDw7xd@ZWKyjKTylNLvFLzE119Q0JAAA=/',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(casioSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://casio.com/us/watches/casio/standard.filter.metals-K84vKnGqtM1LLU8tLlFLSsxLsdXPTS1JzNEtBgA=/',
+            aiSummary: 'Summary for metals filter',
+            valuable: true,
+          },
+          {
+            url: 'https://casio.com/us/watches/casio.filter.IN_STOCK-MTP-K84vKnGqtM1LLU8tLlHTKi7JT84OLkksKS229fSLDw7xd@ZWKyjKTylNLvFLzE119Q0JAAA=/',
+            aiSummary: 'Summary for in-stock filter',
+            valuable: true,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // Both suggestions should be updated independently
+      expect(casioSuggestions[0].setData).to.have.been.calledOnce;
+      expect(casioSuggestions[1].setData).to.have.been.calledOnce;
+
+      // Verify each got the correct summary (no collision)
+      expect(casioSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Summary for metals filter');
+      expect(casioSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('Summary for in-stock filter');
+
+      // saveMany should be called with both suggestions — no duplicates dropped
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(2);
+    });
+
+    it('should treat URLs with query params as different from the same pathname without query params', async () => {
+      const mixedSuggestions = [
+        {
+          getId: sinon.stub().returns('plain'),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/watches/casio',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('with-query'),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/watches/casio?filter=in_stock',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(mixedSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/watches/casio', aiSummary: 'Plain page', valuable: true },
+          { url: 'https://example.com/watches/casio?filter=in_stock', aiSummary: 'Filtered page', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mixedSuggestions[0].setData).to.have.been.calledOnce;
+      expect(mixedSuggestions[1].setData).to.have.been.calledOnce;
+      expect(mixedSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Plain page');
+      expect(mixedSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('Filtered page');
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany.firstCall.args[0]).to.have.lengthOf(2);
+    });
+
+    it('should handle www vs non-www domain variants with locale paths (aia.com.hk scenario)', async () => {
+      // aia.com.hk had both www.aia.com.hk and aia.com.hk variants with locale paths.
+      // normalizePathnameWithQuery strips the domain, so both resolve by pathname+query.
+      const aiaSuggestions = [
+        {
+          getId: sinon.stub().returns('aia-www-zh'),
+          getData: sinon.stub().returns({
+            url: 'https://www.aia.com.hk/zh-hk/about-us',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+        {
+          getId: sinon.stub().returns('aia-en'),
+          getData: sinon.stub().returns({
+            url: 'https://aia.com.hk/en/about-us',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(aiaSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          // Mystique may send with or without www — pathname matching handles it
+          { url: 'https://aia.com.hk/zh-hk/about-us', aiSummary: 'Chinese version summary', valuable: true },
+          { url: 'https://www.aia.com.hk/en/about-us', aiSummary: 'English version summary', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(aiaSuggestions[0].setData).to.have.been.calledOnce;
+      expect(aiaSuggestions[1].setData).to.have.been.calledOnce;
+      expect(aiaSuggestions[0].setData.firstCall.args[0].aiSummary).to.equal('Chinese version summary');
+      expect(aiaSuggestions[1].setData.firstCall.args[0].aiSummary).to.equal('English version summary');
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany.firstCall.args[0]).to.have.lengthOf(2);
+    });
+
+    it('should dedup by suggestion ID when multiple incoming URLs resolve to the same existing suggestion', async () => {
+      // Simulate a scenario where two incoming URLs both normalize to the same key
+      // (e.g. trailing-slash difference) and hit the same existing suggestion.
+      // The dedup guard should prevent ON CONFLICT errors from duplicate IDs in saveMany.
+      const singleSuggestion = {
+        getId: sinon.stub().returns('shared-id'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([singleSuggestion]);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/page', aiSummary: 'First match', valuable: true },
+          { url: 'https://example.com/page/', aiSummary: 'Second match (trailing slash)', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // setData is called twice (once per incoming URL), but saveMany should
+      // only receive ONE suggestion because the dedup guard drops the duplicate ID.
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(1);
+      expect(saved[0].getId()).to.equal('shared-id');
+    });
+
+    it('should send no duplicates to saveMany even with a large batch of filter URLs (320 suggestions scenario)', async () => {
+      // Simulate the casio.com 320-suggestion scenario: many filter URLs that
+      // share a pathname prefix but have different filter suffixes.
+      const count = 50; // Representative subset
+      const existingSuggestions = [];
+      const incomingSuggestions = [];
+
+      for (let i = 0; i < count; i += 1) {
+        const filterUrl = `https://casio.com/us/watches/casio.filter.param${i}-value${i}=/`;
+        existingSuggestions.push({
+          getId: sinon.stub().returns(`sugg-${i}`),
+          getData: sinon.stub().returns({ url: filterUrl }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+        });
+        incomingSuggestions.push({
+          url: filterUrl,
+          aiSummary: `Summary for filter ${i}`,
+          valuable: true,
+        });
+      }
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: incomingSuggestions,
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.have.lengthOf(count);
+
+      // Verify no duplicate IDs in the saved array
+      const ids = saved.map((s) => s.getId());
+      expect(new Set(ids).size).to.equal(ids.length);
+    });
+  });
+
+  describe('Completion and cleanup', () => {
+    const baseMessage = {
+      siteId: 'site-123',
+      auditId: 'audit-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+        opportunityId: 'opportunity-123',
+      },
+    };
+
+    const successPayload = {
+      opportunityId: 'opportunity-123',
+      suggestions: [
+        { url: 'https://example.com/page1', aiSummary: 'Summary 1', valuable: true },
+      ],
+    };
+
+    it('should not post Slack or clean up when no mystiqueSession on opportunity', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns({});
+
+      await handler.default(baseMessage, context);
+
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should post completion Slack, delete S3, and clear session', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // Should post completion message
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/AI summaries complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // Should delete S3 suggestions file with correct Bucket/Key
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const deleteCall = mockS3Client.send.firstCall.args[0];
+      expect(deleteCall.input.Bucket).to.equal('test-bucket');
+      expect(deleteCall.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+
+      // Should clear session
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should handle opportunity.getData() returning null without crashing', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns(null); // covers ?? {} fallback
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should skip S3 delete when suggestionsS3Key is absent in session', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          // no suggestionsS3Key
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // Slack notification posted
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/AI summaries complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // No S3 delete (no key to delete)
+      expect(mockS3Client.send).to.not.have.been.called;
+
+      // Session still cleared
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should pass null channel/thread to postMessageOptional when absent', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // postMessageOptional is still called but with null channel/thread — it no-ops internally
+      const calls = mockPostMessageOptional.getCalls();
+      calls.forEach((c) => {
+        expect(c.args[1]).to.be.null;
+      });
+
+      // S3 delete still called
+      expect(mockS3Client.send).to.have.been.calledOnce;
+
+      // Session cleared
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should warn but not throw when S3 suggestions file delete fails', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      mockS3Client.send.rejects(new Error('S3 delete failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to delete S3 object/));
+
+      // Session still cleared despite S3 failure
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should return ok() even when completeMystiqueRun throws', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          slackChannelId: null,
+          slackThreadTs: null,
+          suggestionsS3Key: 'prerender/mystique-suggestions/opportunity-123.json',
+        },
+      });
+
+      // Force completeMystiqueRun to throw by making save() reject
+      mockOpportunity.save.rejects(new Error('DB save failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      // Suggestions were saved successfully — should return ok, not badRequest
+      expect(result.status).to.equal(200);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to complete Mystique run/),
+        sinon.match.instanceOf(Error),
       );
     });
   });
