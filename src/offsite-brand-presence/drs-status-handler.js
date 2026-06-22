@@ -19,6 +19,7 @@ import {
   DRS_SUCCESS_STATUSES,
   OFFSITE_DOMAINS,
   CITED_ANALYSIS_DRS_CONFIG,
+  AUDIT_TRIGGER_COOLDOWN_MS,
 } from './constants.js';
 
 const LOG_PREFIX = '[offsite-brand-presence][drs-status]';
@@ -42,11 +43,42 @@ function resolveAnalysisAuditType(domain) {
 }
 
 /**
+ * Returns true when a recent audit of the given type already exists for the site,
+ * meaning a new trigger should be suppressed. "Recent" is defined by
+ * AUDIT_TRIGGER_COOLDOWN_MS. Swallows lookup errors so a transient DB failure
+ * never blocks a legitimate trigger.
+ *
+ * @param {string} siteId
+ * @param {string} auditType
+ * @param {object} dataAccess
+ * @param {object} log
+ * @returns {Promise<boolean>}
+ */
+async function hasRecentAudit(siteId, auditType, dataAccess, log) {
+  try {
+    const { LatestAudit } = dataAccess;
+    const latest = await LatestAudit.findBySiteIdAndAuditType(siteId, auditType);
+    if (!latest) {
+      return false;
+    }
+    const auditedAt = new Date(latest.getAuditedAt()).getTime();
+    return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
+  } catch (err) {
+    log.warn(`${LOG_PREFIX} Failed to check recent ${auditType} audit for site ${siteId}: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Triggers the downstream analysis audits for every domain whose scrape jobs produced
  * usable data (a DRS_SUCCESS_STATUSES terminal status). Each audit type is triggered at
  * most once. The originating Slack context is forwarded so each analysis audit posts its
  * results to the same thread. Domains that failed, were cancelled, or are still running
  * at the deadline are skipped — there is no fresh data to analyze.
+ *
+ * An audit type is also skipped when a recent audit of the same type already exists for
+ * the site (within AUDIT_TRIGGER_COOLDOWN_MS). This prevents duplicate analysis runs
+ * caused by SQS at-least-once redelivery of the poll completion message.
  *
  * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
  * @param {string} siteId - The site ID
@@ -73,6 +105,12 @@ async function triggerAnalysisAudits(statuses, siteId, slackContext, context) {
   const configuration = await dataAccess.Configuration.findLatest();
   const queueUrl = configuration.getQueues().audits;
   for (const type of auditTypes) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await hasRecentAudit(siteId, type, dataAccess, log)) {
+      log.info(`${LOG_PREFIX} Skipping ${type} for site ${siteId} — recent audit exists`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(queueUrl, {
       type,
