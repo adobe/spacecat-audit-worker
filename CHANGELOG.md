@@ -1,3 +1,10 @@
+# [1.486.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.1...v1.486.0) (2026-06-22)
+
+
+### Features
+
+* **offsite:** notify Slack when DRS scrape is skipped ([#2717](https://github.com/adobe/spacecat-audit-worker/issues/2717)) ([c4dcd36](https://github.com/adobe/spacecat-audit-worker/commit/c4dcd363c2cb6f78ecabae0bedbc345a53d16176))
+
 ## [1.485.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.0...v1.485.1) (2026-06-22)
 
 
