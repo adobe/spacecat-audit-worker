@@ -500,6 +500,45 @@ describe('Prerender behaviour — Mystique outbound (ai-only filtering)', () => 
     expect(suggestionUrls).to.not.include(wildcardUrl);
     expect(suggestionUrls).to.include(newUrl);
   });
+
+  it('ai-only-missing: FIXED suggestion without aiSummary IS included in the payload', async () => {
+    // Per-mode eligibility lives in buildUrlScopeForMode: ai-only-missing intentionally includes
+    // NEW *and* FIXED suggestions that lack an aiSummary. The candidate builder must not re-exclude
+    // FIXED (it trusts urlScope) — otherwise FIXED-without-summary pages would never get a summary.
+    const siteId = 'site-ai-missing-fixed';
+    const oppId = 'opp-ai-missing-fixed';
+    const scrapeJobId = 'job-ai-missing-fixed';
+    const fixedNoSummary = 'https://example.com/fixed-no-summary';
+    const newWithSummary = 'https://example.com/new-with-summary';
+
+    const fixed = buildSuggestion(sandbox, {
+      id: 'sug-fixed-missing',
+      status: 'FIXED',
+      data: { url: fixedNoSummary, scrapeJobId }, // no aiSummary → eligible for ai-only-missing
+    });
+    const hasSummary = buildSuggestion(sandbox, {
+      id: 'sug-has-summary',
+      status: 'NEW',
+      data: { url: newWithSummary, scrapeJobId, aiSummary: 'already summarised' },
+    });
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId, siteId, suggestions: [fixed, hasSummary],
+    });
+    const dataAccess = buildDataAccess(sandbox, { opportunities: [opportunity] });
+    dataAccess.Opportunity.findById = sandbox.stub().resolves(opportunity);
+
+    const ctx = buildContext(sandbox, {
+      site: buildSite({ id: siteId }),
+      dataAccess,
+      data: { mode: 'ai-only-missing', opportunityId: oppId, scrapeJobId },
+    });
+
+    await handleAiOnlyMode(ctx);
+
+    const suggestionUrls = uploadedSuggestions(ctx).map((s) => s.url);
+    expect(suggestionUrls).to.include(fixedNoSummary); // FIXED-without-summary IS sent
+    expect(suggestionUrls).to.not.include(newWithSummary); // already summarised → excluded
+  });
 });
 
 // ─── INBOUND ──────────────────────────────────────────────────────────────────
