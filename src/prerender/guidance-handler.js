@@ -15,7 +15,7 @@ import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
-import { postMessageOptional } from '../utils/slack-utils.js';
+import { MYSTIQUE_SUGGESTIONS_S3_PREFIX } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -62,44 +62,17 @@ async function deleteS3Object(s3Client, bucketName, key, log) {
 }
 
 /**
- * Posts a Slack completion notification and cleans up the mystiqueSession
- * on the Opportunity after Mystique finishes processing.
+ * Deletes the suggestions S3 file uploaded before the Mystique request.
+ * The key is derived from the opportunityId — the format is always
+ * `prerender/mystique-suggestions/${opportunityId}.json`.
  *
- * @param {Object} opportunity - The Opportunity model instance
- * @param {string} siteId - Site ID
- * @param {string} baseUrl - Site base URL
+ * @param {string} opportunityId - The opportunity ID
  * @param {Object} context - Lambda context with s3Client, env, log
  */
-async function completeMystiqueRun(opportunity, siteId, baseUrl, context) {
+async function cleanupSuggestionsFile(opportunityId, context) {
   const { s3Client, env, log } = context;
-
-  const oppData = opportunity.getData() ?? {};
-  const session = oppData.mystiqueSession;
-
-  if (!session) {
-    return; // No session — nothing to clean up
-  }
-
-  const { slackChannelId, slackThreadTs, suggestionsS3Key } = session;
-
-  await postMessageOptional(
-    context,
-    slackChannelId,
-    `:white_check_mark: AI summaries complete for *${baseUrl}*`,
-    { threadTs: slackThreadTs },
-  );
-
-  // Clean up the suggestions file from S3
-  if (suggestionsS3Key) {
-    await deleteS3Object(s3Client, env.S3_SCRAPER_BUCKET_NAME, suggestionsS3Key, log);
-  }
-
-  // Clear session from opportunity
-  opportunity.setData({ ...oppData, mystiqueSession: undefined });
-  await opportunity.save();
-
-  log.info(`${LOG_PREFIX} Mystique run complete for `
-    + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
+  const suggestionsS3Key = `${MYSTIQUE_SUGGESTIONS_S3_PREFIX}/${opportunityId}.json`;
+  await deleteS3Object(s3Client, env.S3_SCRAPER_BUCKET_NAME, suggestionsS3Key, log);
 }
 
 export default async function handler(message, context) {
@@ -295,17 +268,13 @@ export default async function handler(message, context) {
       log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
 
-    // Post completion notification and clean up session/S3.
+    // Clean up the suggestions S3 file.
     // Wrapped in its own try/catch so a cleanup failure does not invalidate the
     // current run (Suggestion.saveMany already succeeded — returning badRequest
     // would trigger an SQS retry and duplicate processing).
     try {
-      await completeMystiqueRun(
-        opportunity,
-        siteId,
-        site.getBaseURL(),
-        context,
-      );
+      await cleanupSuggestionsFile(opportunityId, context);
+    /* c8 ignore next 3 - deleteS3Object swallows errors internally, so this catch is defensive */
     } catch (cleanupError) {
       log.error(`${LOG_PREFIX} Failed to complete Mystique run for opportunityId=${opportunityId}, siteId=${siteId}: ${cleanupError.message}`, cleanupError);
     }
