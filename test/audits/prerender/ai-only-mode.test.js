@@ -1021,6 +1021,21 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
 
+    it('should default siteRegion to empty string when site.getRegion returns null in multi-batch', async () => {
+      const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
+      mockOpportunity.getSuggestions.resolves(manySuggestions);
+      mockS3Client.send.resolves();
+      context.site.getRegion = sandbox.stub().returns(null);
+
+      await importTopPages(context);
+
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({ siteRegion: '' }),
+        }),
+      );
+    });
+
     it('should include slackContext in mystiqueSession when triggered from Slack', async () => {
       const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
       mockOpportunity.getSuggestions.resolves(manySuggestions);

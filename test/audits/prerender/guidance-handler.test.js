@@ -1761,6 +1761,26 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       );
     });
 
+    it('should default deliveryType to unknown when site.getDeliveryType is absent', async () => {
+      mockSite.getDeliveryType = undefined; // no method on site
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 1,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      // Should still complete — deliveryType defaults to 'unknown'
+      expect(result.status).to.equal(200);
+    });
+
     it('should forward generatePrompts and siteRegion in chained SQS messages', async () => {
       const nextBatch = [{ suggestionId: 's-2', url: 'https://example.com/page2' }];
       const allBatches = [
