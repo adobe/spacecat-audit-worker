@@ -19,6 +19,7 @@ import {
   processContentAndGenerateOpportunities,
   handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { MYSTIQUE_BATCH_SIZE } from '../../../src/prerender/utils/constants.js';
 
 use(sinonChai);
 
@@ -914,6 +915,46 @@ describe('Prerender AI-Only Mode', () => {
       const message = mockSqs.sendMessage.getCall(0).args[1];
       expect(message.data.batchIndex).to.equal(0);
       expect(message.data.totalBatches).to.equal(1);
+    });
+
+    it('should send all suggestions across multiple batches when they exceed MYSTIQUE_BATCH_SIZE', async () => {
+      // One more than a single batch forces exactly two batches.
+      const total = MYSTIQUE_BATCH_SIZE + 1;
+      mockSuggestions.length = 0;
+      for (let i = 0; i < total; i += 1) {
+        mockSuggestions.push({
+          getId: sandbox.stub().returns(`suggestion-${i}`),
+          getData: sandbox.stub().returns({
+            url: `https://example.com/page${i}`,
+            isDomainWide: false,
+            scrapeJobId: 'test-scrape-job',
+          }),
+          getStatus: sandbox.stub().returns('NEW'),
+        });
+      }
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(total);
+      // Two SQS messages — no suggestion is dropped (LLMO-5446).
+      expect(mockSqs.sendMessage.callCount).to.equal(2);
+
+      const firstBatch = mockSqs.sendMessage.getCall(0).args[1].data;
+      const secondBatch = mockSqs.sendMessage.getCall(1).args[1].data;
+      expect(firstBatch.batchIndex).to.equal(0);
+      expect(firstBatch.totalBatches).to.equal(2);
+      expect(firstBatch.suggestions).to.have.length(MYSTIQUE_BATCH_SIZE);
+      expect(secondBatch.batchIndex).to.equal(1);
+      expect(secondBatch.totalBatches).to.equal(2);
+      expect(secondBatch.suggestions).to.have.length(1);
+
+      // Every suggestion is accounted for exactly once across the batches.
+      const sentUrls = [
+        ...firstBatch.suggestions.map((s) => s.url),
+        ...secondBatch.suggestions.map((s) => s.url),
+      ];
+      expect(new Set(sentUrls).size).to.equal(total);
     });
   });
 
