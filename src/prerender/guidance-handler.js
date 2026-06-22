@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
@@ -45,178 +45,61 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
 }
 
 /**
- * Reads the full batch list from S3 for a multi-batch Mystique run.
- *
- * @param {Object} s3Client - AWS S3 client
- * @param {string} bucketName - S3 bucket name
- * @param {string} key - S3 object key for the batch file
- * @param {Object} log - Logger instance
- * @returns {Promise<Array[]>} - Array of batches (each batch is an array of suggestion payloads)
- */
-async function readBatchesFromS3(s3Client, bucketName, key, log) {
-  const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
-  const body = await response.Body.transformToString();
-  const batches = JSON.parse(body);
-  log.info(`${LOG_PREFIX} Read ${batches.length} batches from S3 key=${key}`);
-  return batches;
-}
-
-/**
- * Deletes the batch list file from S3 after all batches are complete.
+ * Deletes an S3 object. Used to clean up the suggestions file after Mystique completes.
  *
  * @param {Object} s3Client - AWS S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} key - S3 object key to delete
  * @param {Object} log - Logger instance
  */
-async function deleteBatchesFromS3(s3Client, bucketName, key, log) {
+async function deleteS3Object(s3Client, bucketName, key, log) {
   try {
     await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
-    log.info(`${LOG_PREFIX} Deleted S3 batch file key=${key}`);
+    log.info(`${LOG_PREFIX} Deleted S3 object key=${key}`);
   } catch (error) {
-    log.warn(`${LOG_PREFIX} Failed to delete S3 batch file key=${key}: ${error.message}`);
+    log.warn(`${LOG_PREFIX} Failed to delete S3 object key=${key}: ${error.message}`);
   }
 }
 
 /**
- * Chains the next Mystique batch after the current one completes.
- * Reads session state from the opportunity, sends the next SQS message,
- * updates the session cursor, and posts Slack notifications.
- * Cleans up S3 + session when the last batch finishes.
+ * Posts a Slack completion notification and cleans up the mystiqueSession
+ * on the Opportunity after Mystique finishes processing.
  *
  * @param {Object} opportunity - The Opportunity model instance
  * @param {string} siteId - Site ID
- * @param {string} auditId - Audit ID
  * @param {string} baseUrl - Site base URL
- * @param {string} deliveryType - Site delivery type
- * @param {Object} context - Lambda context with sqs, env, s3Client, log
+ * @param {Object} context - Lambda context with s3Client, env, log
  */
-async function chainNextMystiqueBatch(
-  opportunity,
-  siteId,
-  auditId,
-  baseUrl,
-  deliveryType,
-  context,
-) {
-  const {
-    sqs, env, s3Client, log,
-  } = context;
+async function completeMystiqueRun(opportunity, siteId, baseUrl, context) {
+  const { s3Client, env, log } = context;
 
   const oppData = opportunity.getData() ?? {};
   const session = oppData.mystiqueSession;
 
   if (!session) {
-    return; // No session at all (non-Slack trigger, single-batch) — nothing to do
+    return; // No session — nothing to clean up
   }
 
-  const {
-    totalBatches,
-    currentBatchIndex,
-    batchesS3Key,
-    slackChannelId,
-    slackThreadTs,
-    generatePrompts,
-    siteRegion,
-  } = session;
-
-  // Single-batch run: no chaining needed, just notify and clean up session.
-  if (!batchesS3Key) {
-    await postMessageOptional(
-      context,
-      slackChannelId,
-      `:white_check_mark: AI summaries complete for *${baseUrl}*`,
-      { threadTs: slackThreadTs },
-    );
-    opportunity.setData({ ...oppData, mystiqueSession: undefined });
-    await opportunity.save();
-
-    log.info(`${LOG_PREFIX} Single-batch Mystique run complete for `
-      + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
-    return;
-  }
-
-  // Multi-batch: post per-batch progress and chain the next batch.
-  const completedBatch = currentBatchIndex + 1;
+  const { slackChannelId, slackThreadTs, suggestionsS3Key } = session;
 
   await postMessageOptional(
     context,
     slackChannelId,
-    `:white_check_mark: Batch ${completedBatch}/${totalBatches} complete`,
+    `:white_check_mark: AI summaries complete for *${baseUrl}*`,
     { threadTs: slackThreadTs },
   );
 
-  if (currentBatchIndex < totalBatches - 1) {
-    const nextIndex = currentBatchIndex + 1;
-    const allBatches = await readBatchesFromS3(
-      s3Client,
-      env.S3_SCRAPER_BUCKET_NAME,
-      batchesS3Key,
-      log,
-    );
-    const nextBatch = allBatches[nextIndex];
-
-    if (!Array.isArray(nextBatch) || nextBatch.length === 0) {
-      log.error(`${LOG_PREFIX} Batch ${nextIndex} missing or empty in S3 manifest `
-        + `for opportunityId=${opportunity.getId()}, siteId=${siteId}. Aborting chain.`);
-      await deleteBatchesFromS3(s3Client, env.S3_SCRAPER_BUCKET_NAME, batchesS3Key, log);
-      opportunity.setData({ ...oppData, mystiqueSession: undefined });
-      await opportunity.save();
-      return;
-    }
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
-      type: 'guidance:prerender',
-      url: baseUrl,
-      siteId,
-      auditId,
-      deliveryType,
-      time: new Date().toISOString(),
-      data: {
-        opportunityId: opportunity.getId(),
-        suggestions: nextBatch,
-        batchIndex: nextIndex,
-        totalBatches,
-        generatePrompts: generatePrompts ?? false,
-        siteRegion: siteRegion ?? '',
-      },
-    });
-
-    opportunity.setData({
-      ...oppData,
-      mystiqueSession: {
-        ...session,
-        currentBatchIndex: nextIndex,
-      },
-    });
-    await opportunity.save();
-
-    await postMessageOptional(
-      context,
-      slackChannelId,
-      `:adobe-run: Sending batch ${nextIndex + 1}/${totalBatches} to Mystique (${nextBatch.length} URLs)`,
-      { threadTs: slackThreadTs },
-    );
-
-    log.info(`${LOG_PREFIX} Chained batch ${nextIndex + 1}/${totalBatches} to Mystique for `
-      + `opportunityId=${opportunity.getId()}, siteId=${siteId}, suggestions=${nextBatch.length}`);
-  } else {
-    // All batches done — clean up
-    await deleteBatchesFromS3(s3Client, env.S3_SCRAPER_BUCKET_NAME, batchesS3Key, log);
-
-    opportunity.setData({ ...oppData, mystiqueSession: undefined });
-    await opportunity.save();
-
-    await postMessageOptional(
-      context,
-      slackChannelId,
-      `:white_check_mark: All ${totalBatches} batches complete for *${baseUrl}*`,
-      { threadTs: slackThreadTs },
-    );
-
-    log.info(`${LOG_PREFIX} All ${totalBatches} Mystique batches complete for `
-      + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
+  // Clean up the suggestions file from S3
+  if (suggestionsS3Key) {
+    await deleteS3Object(s3Client, env.S3_SCRAPER_BUCKET_NAME, suggestionsS3Key, log);
   }
+
+  // Clear session from opportunity
+  opportunity.setData({ ...oppData, mystiqueSession: undefined });
+  await opportunity.save();
+
+  log.info(`${LOG_PREFIX} Mystique run complete for `
+    + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
 }
 
 export default async function handler(message, context) {
@@ -412,23 +295,19 @@ export default async function handler(message, context) {
       log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
 
-    // Chain the next Mystique batch if this is a multi-batch run.
-    // Wrapped in its own try/catch so a chaining failure does not invalidate the
-    // current batch (Suggestion.saveMany already succeeded — returning badRequest
+    // Post completion notification and clean up session/S3.
+    // Wrapped in its own try/catch so a cleanup failure does not invalidate the
+    // current run (Suggestion.saveMany already succeeded — returning badRequest
     // would trigger an SQS retry and duplicate processing).
     try {
-      const auditId = message.auditId ?? null;
-      const deliveryType = site.getDeliveryType?.() ?? 'unknown';
-      await chainNextMystiqueBatch(
+      await completeMystiqueRun(
         opportunity,
         siteId,
-        auditId,
         site.getBaseURL(),
-        deliveryType,
         context,
       );
-    } catch (chainError) {
-      log.error(`${LOG_PREFIX} Failed to chain next batch for opportunityId=${opportunityId}, siteId=${siteId}: ${chainError.message}`, chainError);
+    } catch (cleanupError) {
+      log.error(`${LOG_PREFIX} Failed to complete Mystique run for opportunityId=${opportunityId}, siteId=${siteId}: ${cleanupError.message}`, cleanupError);
     }
 
     return ok();

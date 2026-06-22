@@ -1,4 +1,4 @@
-# Sequential Mystique Batch Processing
+# S3-Based Mystique Suggestion Dispatch
 
 | Field | Value |
 |-------|-------|
@@ -11,23 +11,23 @@
 
 ## Summary
 
-When prerender suggestions exceed the Mystique batch size limit (320), the system now sends batches sequentially — batch N+1 is only dispatched after Mystique confirms batch N is complete. Slack notifications report progress per batch and on completion.
+Prerender suggestions are now uploaded to S3 and Mystique receives only the S3 key via SQS. This removes the 256 KB SQS message size limit that previously capped batches at 320 suggestions, eliminating the need for multi-batch chaining entirely.
 
 ---
 
 ## Problem Statement
 
-Mystique cannot process multiple batches in parallel. The previous implementation only sent the first 320 suggestions and silently dropped the rest (marked with a `TODO` comment). Sites with more than 320 suggestions never received AI summaries for the overflow.
+SQS has a 256 KB message size limit. The previous implementation sent suggestions inline in the SQS message, limiting batches to 320 suggestions. Sites with more suggestions required complex sequential batch chaining, adding state management overhead and failure modes.
 
 ---
 
 ## Goals
 
-1. All eligible suggestions reach Mystique, regardless of count
-2. Batches are processed strictly sequentially (no parallel overload)
-3. Slack notifications provide per-batch visibility when triggered from Slack
-4. S3 and session state are cleaned up after the last batch completes
-5. Single-batch runs (≤ 320 suggestions) remain unchanged — zero overhead
+1. All eligible suggestions reach Mystique in a single dispatch, regardless of count
+2. No artificial batch size limit imposed by SQS message size constraints
+3. Slack notifications report completion when triggered from Slack
+4. S3 suggestions file is cleaned up after Mystique completes
+5. Simpler architecture with no batch chaining or session cursors
 
 ---
 
@@ -35,56 +35,56 @@ Mystique cannot process multiple batches in parallel. The previous implementatio
 
 ### State Storage
 
-- **S3** — the full batch manifest (array of arrays) is stored at `prerender/mystique-batches/{opportunityId}.json`. Deleted after the last batch completes.
-- **Opportunity data** — a `mystiqueSession` object is saved on the Opportunity's data field with:
-  - `totalBatches`, `currentBatchIndex` — cursor
-  - `batchesS3Key` — S3 key for the manifest
-  - `slackChannelId`, `slackThreadTs` — Slack thread context (nullable)
-  - `generatePrompts`, `siteRegion` — forwarded to each chained SQS message
+- **S3** — all suggestions are stored at `prerender/mystique-suggestions/{opportunityId}.json`. Deleted after Mystique completes.
+- **Opportunity data** — a `mystiqueSession` object is saved on the Opportunity's data field (only when Slack context is present) with:
+  - `slackChannelId`, `slackThreadTs` — Slack thread context for completion notification
+  - `suggestionsS3Key` — S3 key for cleanup
 
 ### Flow
 
 ```mermaid
 flowchart TD
     A[Trigger: Slack / Scheduled / Full prerender] --> B[sendPrerenderGuidanceRequestToMystique]
-    B --> C{Suggestions > 320?}
+    B --> C[Upload all suggestions to S3]
+    C --> D[Send SQS message with S3 key]
 
-    C -- No --> D[Send all in 1 SQS message]
-    D --> E[Mystique processes]
+    D --> E[Mystique downloads from S3 and processes]
     E --> F[guidance-handler: save AI summaries]
     F --> G{mystiqueSession?}
+
     G -- No --> H[Done]
+    G -- Yes --> I[Slack: AI summaries complete]
+    I --> J[Delete S3 suggestions file]
+    J --> K[Clear mystiqueSession]
+    K --> H
+```
 
-    C -- Yes --> I[Split into N batches of 320]
-    I --> J[Store manifest in S3]
-    J --> K[Save mystiqueSession to Opportunity]
-    K --> L[Send batch 1 to Mystique]
+### SQS Message Format
 
-    L --> M[Mystique processes batch]
-    M --> N[guidance-handler: save AI summaries]
-    N --> O{mystiqueSession?}
-    O -- Yes --> P[Slack: Batch X/N complete]
-    P --> Q{Last batch?}
+The SQS message to Mystique now contains S3 coordinates instead of inline suggestions:
 
-    Q -- No --> R[Read next batch from S3]
-    R --> S{Batch valid?}
-    S -- No --> T[Log error, clean up, abort]
-    S -- Yes --> U[Send next batch via SQS]
-    U --> V[Update cursor on Opportunity]
-    V --> M
-
-    Q -- Yes --> W[Delete S3 manifest]
-    W --> X[Clear mystiqueSession]
-    X --> Y[Slack: All batches complete]
-    Y --> H
-
-    O -- No --> H
+```json
+{
+  "type": "guidance:prerender",
+  "url": "https://example.com",
+  "siteId": "...",
+  "auditId": "...",
+  "deliveryType": "aem_edge",
+  "time": "2026-06-22T...",
+  "data": {
+    "opportunityId": "...",
+    "suggestionsS3Key": "prerender/mystique-suggestions/{opportunityId}.json",
+    "suggestionsS3Bucket": "spacecat-scraper-bucket",
+    "generatePrompts": false,
+    "siteRegion": ""
+  }
+}
 ```
 
 ### Error Handling
 
-- **Chain errors are isolated** — `chainNextMystiqueBatch` runs in its own try/catch inside guidance-handler. If S3, SQS, or `opportunity.save()` fails during chaining, the current batch's saved suggestions are not invalidated (returns `ok()`, not `badRequest()`).
-- **Corrupt manifest guard** — before sending the next batch, validates `Array.isArray(nextBatch) && nextBatch.length > 0`. If invalid, logs an error, cleans up S3 + session, and aborts.
+- **Cleanup errors are isolated** — `completeMystiqueRun` runs in its own try/catch inside guidance-handler. If S3 delete or `opportunity.save()` fails during cleanup, the current run's saved suggestions are not invalidated (returns `ok()`, not `badRequest()`).
+- **S3 delete failures are non-fatal** — logged as a warning; the suggestions file may linger but does not affect correctness.
 - **Non-Slack triggers** — `postMessageOptional` no-ops when `slackChannelId` or `slackThreadTs` is null. Only log lines are emitted.
 
 ### Trigger Compatibility
@@ -93,7 +93,7 @@ flowchart TD
 - **ai-only mode** — `handleAiOnlyMode()` in step 1
 - **Full prerender** — `processContentAndGenerateOpportunities()` in step 3
 
-The batching logic is trigger-agnostic.
+The S3 upload logic is trigger-agnostic.
 
 ---
 
@@ -101,18 +101,17 @@ The batching logic is trigger-agnostic.
 
 | Alternative | Why rejected |
 |-------------|-------------|
-| **Send all batches in parallel** | Mystique cannot handle parallel processing — the original constraint |
+| **Send suggestions inline in SQS** | SQS has a 256 KB limit, capping batches at ~320 suggestions |
+| **Multi-batch sequential chaining** | Complex state management (cursors, S3 manifests, session tracking) for a problem solved by S3 indirection |
 | **Store session in a separate DB table** | Over-engineered; Opportunity data field is sufficient and auto-cleaned |
-| **Store session entirely in S3** | Would require a separate S3 read on every guidance-handler invocation to check for session existence, even for single-batch runs |
-| **Require Mystique to echo back batch metadata** | Would require Mystique-side changes; `opportunityId` already in response is sufficient to re-hydrate state from the DB |
 
 ---
 
 ## Success Criteria
 
-- [ ] Sites with >320 suggestions receive AI summaries for all suggestions
-- [ ] No parallel Mystique processing — strictly sequential
-- [ ] Slack notifications per batch when triggered from Slack
-- [ ] S3 batch file and `mystiqueSession` cleaned up after completion
-- [ ] Single-batch runs have zero behavioral change
-- [ ] 100% test coverage on changed files
+- [x] Sites with any number of suggestions receive AI summaries for all suggestions
+- [x] No artificial batch size limit from SQS message size constraints
+- [x] Slack notifications on completion when triggered from Slack
+- [x] S3 suggestions file cleaned up after Mystique completes
+- [x] Simpler codebase with no multi-batch chaining
+- [x] 100% test coverage on changed files
