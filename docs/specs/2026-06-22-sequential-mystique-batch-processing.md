@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | **Status** | Accepted |
-| **Author** | Shubham Silare |
+| **Author** | Sahil Silare |
 | **Created** | 2026-06-22 |
 | **PR** | [#2709](https://github.com/adobe/spacecat-audit-worker/pull/2709) |
 
