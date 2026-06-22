@@ -684,6 +684,10 @@ async function sendPrerenderGuidanceRequestToMystique(
     // TODO: send all batches once Mystique multi-batch handling is fully deployed.
     const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
 
+    if (suggestionsPayload.length > MYSTIQUE_BATCH_SIZE) {
+      log.warn(`${LOG_PREFIX} Truncating suggestions from ${suggestionsPayload.length} to ${MYSTIQUE_BATCH_SIZE} for opportunityId=${opportunityId}, baseUrl=${baseUrl}`);
+    }
+
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
     await sqs.sendMessage(queue, {

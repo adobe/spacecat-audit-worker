@@ -976,6 +976,11 @@ describe('Prerender AI-Only Mode', () => {
       expect(sqsMsg.data.batchIndex).to.equal(0);
       expect(sqsMsg.data.totalBatches).to.equal(1);
       expect(sqsMsg.data).to.not.have.property('suggestionsS3Key');
+
+      // Truncation warning should be logged
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Truncating suggestions from 400 to 320/),
+      );
     });
 
   });
