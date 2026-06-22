@@ -1200,5 +1200,130 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
   });
+
+  describe('mode:ai-only-current — scopes to current-tab suggestions', () => {
+    beforeEach(() => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-current',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-current'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/current', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-covered'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/covered', coveredByDomainWide: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-deployed'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/deployed', edgeDeployed: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-pattern'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/pattern', coveredByPattern: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-fixed'),
+          getStatus: sandbox.stub().returns('FIXED'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/fixed', scrapeJobId: 'test-scrape-job' }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+    });
+
+    it('should trigger ai-only-current via importTopPages', async () => {
+      const result = await importTopPages(context);
+      expect(result.status).to.equal('complete');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Scoping to 1 URLs from DB suggestions \(mode=ai-only-current\)/),
+      );
+    });
+
+    it('should skip step 2 for ai-only-current', async () => {
+      const result = await submitForScraping(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-current');
+    });
+
+    it('should skip step 3 for ai-only-current', async () => {
+      const result = await processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-current');
+    });
+  });
+
+  describe('mode:ai-only-missing — scopes to suggestions without AI summary', () => {
+    beforeEach(() => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-missing',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-no-summary'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/no-summary', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-has-summary'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/has-summary', aiSummary: 'some text', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-fixed-missing'),
+          getStatus: sandbox.stub().returns('FIXED'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/fixed-missing', scrapeJobId: 'test-scrape-job' }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+    });
+
+    it('should trigger ai-only-missing via importTopPages', async () => {
+      const result = await importTopPages(context);
+      expect(result.status).to.equal('complete');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Scoping to 2 URLs from DB suggestions \(mode=ai-only-missing\)/),
+      );
+    });
+
+    it('should skip step 2 for ai-only-missing', async () => {
+      const result = await submitForScraping(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-missing');
+    });
+  });
+
+  describe('mode:ai-only-current — returns early when no suggestions match', () => {
+    it('should return complete with 0 suggestions when all are filtered out', async () => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-current',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-covered'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/covered', coveredByDomainWide: true }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+
+      const result = await handleAiOnlyMode(context);
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions match mode=ai-only-current/),
+      );
+    });
+  });
 });
 

@@ -36,6 +36,8 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
+  MODE_AI_ONLY_CURRENT,
+  MODE_AI_ONLY_MISSING,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -545,6 +547,17 @@ function getModeFromData(data) {
 }
 
 /**
+ * Returns true when the mode is any AI-only variant (ai-only, ai-only-current, ai-only-missing).
+ * @param {string|null} mode - The mode value from data
+ * @returns {boolean}
+ */
+function isAiOnlyMode(mode) {
+  return mode === MODE_AI_ONLY
+    || mode === MODE_AI_ONLY_CURRENT
+    || mode === MODE_AI_ONLY_MISSING;
+}
+
+/**
  * Fetches the latest scrapeJobId from the status.json file in S3
  * @param {string} siteId - The site ID
  * @param {Object} context - Audit context with s3Client and env
@@ -844,12 +857,53 @@ export async function handleAiOnlyMode(context) {
     };
   }
 
-  // When explicit URLs are provided (CSV batch), scope suggestions to that set.
-  const urlScope = Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
-    ? new Set(auditContext.urls)
-    : null;
-  if (urlScope) {
+  // Build URL scope: explicit URLs (CSV), or mode-based filtering from DB suggestions.
+  const mode = getModeFromData(data);
+  let urlScope = null;
+
+  if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
+    // Explicit URLs from CSV batch
+    urlScope = new Set(auditContext.urls);
     log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
+  } else if (mode === MODE_AI_ONLY_CURRENT || mode === MODE_AI_ONLY_MISSING) {
+    // Derive URL scope from DB suggestions based on mode
+    const allSuggestions = await opportunity.getSuggestions();
+    const scopeUrls = new Set();
+
+    for (const s of allSuggestions) {
+      const d = s.getData();
+      if (!d?.url || d.isDomainWide || d.url.includes('*')) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (mode === MODE_AI_ONLY_CURRENT) {
+        // Current-tab: NEW, not covered/deployed/pattern-matched
+        if (s.getStatus() === 'NEW' && !d.coveredByDomainWide && !d.edgeDeployed && !d.coveredByPattern) {
+          scopeUrls.add(d.url);
+        }
+      } else if (mode === MODE_AI_ONLY_MISSING) {
+        // Missing AI summary: NEW or FIXED, no aiSummary
+        const status = s.getStatus();
+        if ((status === 'NEW' || status === 'FIXED') && !d.aiSummary) {
+          scopeUrls.add(d.url);
+        }
+      }
+    }
+
+    if (scopeUrls.size === 0) {
+      log.info(`${LOG_PREFIX} ai-only: No suggestions match mode=${mode} for baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        status: 'complete',
+        mode,
+        opportunityId: opportunity.getId(),
+        fullAuditRef: `${mode}/${opportunity.getId()}`,
+        auditResult: { message: 'No suggestions match the requested mode', suggestionCount: 0 },
+      };
+    }
+
+    urlScope = scopeUrls;
+    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} URLs from DB suggestions (mode=${mode}). baseUrl=${baseUrl}, siteId=${siteId}`);
   }
 
   // Send to Mystique using the existing function
@@ -896,8 +950,8 @@ export async function importTopPages(context) {
 
   // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
   const mode = getModeFromData(data);
-  if (mode === MODE_AI_ONLY) {
-    log.info(`${LOG_PREFIX} Detected ai-only mode in step 1, skipping import/scraping/processing`);
+  if (isAiOnlyMode(mode)) {
+    log.info(`${LOG_PREFIX} Detected ${mode} mode in step 1, skipping import/scraping/processing`);
     return handleAiOnlyMode(context);
   }
 
@@ -942,9 +996,9 @@ export async function submitForScraping(context) {
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
   const mode = getModeFromData(data);
-  if (mode === MODE_AI_ONLY) {
-    log.info(`${LOG_PREFIX} Detected ai-only mode in step 2, skipping scraping (already handled in step 1)`);
-    return { status: 'skipped', mode: MODE_AI_ONLY };
+  if (isAiOnlyMode(mode)) {
+    log.info(`${LOG_PREFIX} Detected ${mode} mode in step 2, skipping scraping (already handled in step 1)`);
+    return { status: 'skipped', mode };
   }
 
   const siteId = site.getId();
@@ -1678,9 +1732,9 @@ export async function processContentAndGenerateOpportunities(context) {
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
   const mode = getModeFromData(data);
-  if (mode === MODE_AI_ONLY) {
-    log.info(`${LOG_PREFIX} Detected ai-only mode in step 3, skipping processing (already handled in step 1)`);
-    return { status: 'skipped', mode: MODE_AI_ONLY };
+  if (isAiOnlyMode(mode)) {
+    log.info(`${LOG_PREFIX} Detected ${mode} mode in step 3, skipping processing (already handled in step 1)`);
+    return { status: 'skipped', mode };
   }
 
   const siteId = site.getId();
