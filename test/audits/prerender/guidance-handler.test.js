@@ -1554,6 +1554,17 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockPostMessageOptional).to.not.have.been.called;
     });
 
+    it('should handle opportunity.getData() returning null without crashing', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns(null); // covers ?? {} fallback on line 106
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
     it('should post "batch complete" Slack and send next batch when not on last batch', async () => {
       const nextBatch = [{ suggestionId: 's-3', url: 'https://example.com/page3' }];
       const allBatches = [

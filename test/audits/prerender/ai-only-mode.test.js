@@ -1007,6 +1007,20 @@ describe('Prerender AI-Only Mode', () => {
       expect(sqsMsg.data.totalBatches).to.equal(1);
     });
 
+    it('should handle opportunity.getData() returning null in multi-batch scenario', async () => {
+      const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
+      mockOpportunity.getSuggestions.resolves(manySuggestions);
+      mockOpportunity.getData.returns(null); // covers ?? {} fallback
+      mockS3Client.send.resolves();
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: sinon.match({ totalBatches: 2 }) }),
+      );
+    });
+
     it('should include slackContext in mystiqueSession when triggered from Slack', async () => {
       const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
       mockOpportunity.getSuggestions.resolves(manySuggestions);
