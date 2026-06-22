@@ -1,3 +1,10 @@
+# [1.485.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.2...v1.485.0) (2026-06-22)
+
+
+### Features
+
+* **prerender:** handle ai-only-current and ai-only-missing modes ([#2713](https://github.com/adobe/spacecat-audit-worker/issues/2713)) ([bf126c4](https://github.com/adobe/spacecat-audit-worker/commit/bf126c4e155939fcfe10427a0685705d13160e10)), closes [adobe/spacecat-api-service#2659](https://github.com/adobe/spacecat-api-service/issues/2659)
+
 ## [1.484.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.1...v1.484.2) (2026-06-22)
 
 
