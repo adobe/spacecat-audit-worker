@@ -10,10 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import { MYSTIQUE_SUGGESTIONS_S3_PREFIX } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -40,6 +42,37 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
   }
 
   return data;
+}
+
+/**
+ * Deletes an S3 object. Used to clean up the suggestions file after Mystique completes.
+ *
+ * @param {Object} s3Client - AWS S3 client
+ * @param {string} bucketName - S3 bucket name
+ * @param {string} key - S3 object key to delete
+ * @param {Object} log - Logger instance
+ */
+async function deleteS3Object(s3Client, bucketName, key, log) {
+  try {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+    log.info(`${LOG_PREFIX} Deleted S3 object key=${key}`);
+  } catch (error) {
+    log.warn(`${LOG_PREFIX} Failed to delete S3 object key=${key}: ${error.message}`);
+  }
+}
+
+/**
+ * Deletes the suggestions S3 file uploaded before the Mystique request.
+ * The key is derived from the opportunityId — the format is always
+ * `prerender/mystique-suggestions/${opportunityId}.json`.
+ *
+ * @param {string} opportunityId - The opportunity ID
+ * @param {Object} context - Lambda context with s3Client, env, log
+ */
+async function cleanupSuggestionsFile(opportunityId, context) {
+  const { s3Client, env, log } = context;
+  const suggestionsS3Key = `${MYSTIQUE_SUGGESTIONS_S3_PREFIX}/${opportunityId}.json`;
+  await deleteS3Object(s3Client, env.S3_SCRAPER_BUCKET_NAME, suggestionsS3Key, log);
 }
 
 export default async function handler(message, context) {
@@ -209,7 +242,6 @@ export default async function handler(message, context) {
       return true;
     });
 
-    // 9. Batch save all suggestions using DynamoDB batch write
     if (uniqueSuggestionsToSave.length > 0) {
       try {
         await Suggestion.saveMany(uniqueSuggestionsToSave);
@@ -234,6 +266,17 @@ export default async function handler(message, context) {
       }
     } else {
       log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
+    }
+
+    // Clean up the suggestions S3 file.
+    // Wrapped in its own try/catch so a cleanup failure does not invalidate the
+    // current run (Suggestion.saveMany already succeeded — returning badRequest
+    // would trigger an SQS retry and duplicate processing).
+    try {
+      await cleanupSuggestionsFile(opportunityId, context);
+    /* c8 ignore next 3 - deleteS3Object swallows errors internally, so this catch is defensive */
+    } catch (cleanupError) {
+      log.error(`${LOG_PREFIX} Failed to complete Mystique run for opportunityId=${opportunityId}, siteId=${siteId}: ${cleanupError.message}`, cleanupError);
     }
 
     return ok();

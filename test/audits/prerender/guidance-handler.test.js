@@ -29,6 +29,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let fetchStub;
   let handler;
   let mockIsPaidLLMOCustomer;
+  let mockS3Client;
+  let mockSqs;
 
   // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
@@ -52,6 +54,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getDeliveryType: sinon.stub().returns('aem_edge'),
     };
 
     mockSuggestions = [
@@ -89,6 +92,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
       getType: () => 'prerender',
+      getData: sinon.stub().returns({}), // no mystiqueSession by default
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     Site = {
@@ -113,13 +119,16 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
+    mockS3Client = { send: sinon.stub().resolves() };
+    mockSqs = { sendMessage: sinon.stub().resolves() };
+
     // Stub the shared analysis-fetch helper directly (no need to fake a Response).
     fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
-    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
+    // Import handler with mocked helpers
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
@@ -132,6 +141,12 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     context = {
       log,
       site: mockSite,
+      s3Client: mockS3Client,
+      sqs: mockSqs,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-mystique-queue',
+      },
       dataAccess: {
         Site,
         Opportunity,
@@ -928,6 +943,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
         getType: () => 'prerender',
+        getData: sinon.stub().returns({}),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',
@@ -1501,6 +1519,59 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // Verify no duplicate IDs in the saved array
       const ids = saved.map((s) => s.getId());
       expect(new Set(ids).size).to.equal(ids.length);
+    });
+  });
+
+  describe('Completion and cleanup', () => {
+    const baseMessage = {
+      siteId: 'site-123',
+      auditId: 'audit-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+        opportunityId: 'opportunity-123',
+      },
+    };
+
+    const successPayload = {
+      opportunityId: 'opportunity-123',
+      suggestions: [
+        { url: 'https://example.com/page1', aiSummary: 'Summary 1', valuable: true },
+      ],
+    };
+
+    it('should delete S3 suggestions file at derived key after successful save', async () => {
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // cleanupSuggestionsFile derives the key from opportunityId
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const deleteCall = mockS3Client.send.firstCall.args[0];
+      expect(deleteCall.input.Bucket).to.equal('test-bucket');
+      expect(deleteCall.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+    });
+
+    it('should warn but not throw when S3 suggestions file delete fails', async () => {
+      mockS3Client.send.rejects(new Error('S3 delete failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to delete S3 object/));
+    });
+
+    it('should return ok() even when cleanupSuggestionsFile throws', async () => {
+      // Force cleanupSuggestionsFile to throw by making s3Client.send reject with a non-warn path
+      mockS3Client.send.rejects(new Error('S3 network error'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      // Suggestions were saved successfully — should return ok, not badRequest
+      expect(result.status).to.equal(200);
     });
   });
 
