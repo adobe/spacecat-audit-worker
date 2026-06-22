@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { AUDIT_TRIGGER_COOLDOWN_MS } from '../../src/offsite-brand-presence/constants.js';
 
 use(sinonChai);
 
@@ -69,6 +70,9 @@ describe('offsite-brand-presence DRS status handler', () => {
       dataAccess: {
         Configuration: {
           findLatest: sandbox.stub().resolves({ getQueues: () => ({ audits: 'audits-queue-url' }) }),
+        },
+        LatestAudit: {
+          findBySiteIdAndAuditType: sandbox.stub().resolves(null),
         },
       },
     };
@@ -295,6 +299,51 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
       expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits/);
+    });
+
+    it('skips an audit type when a recent audit exists within the cooldown window', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      const recentAudit = { getAuditedAt: () => new Date(Date.now() - AUDIT_TRIGGER_COOLDOWN_MS / 2).toISOString() };
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType
+        .withArgs(SITE_ID, 'reddit-analysis').resolves(recentAudit);
+
+      await handler.default(buildMessage(), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.include('youtube-analysis');
+      expect(types).to.not.include('reddit-analysis');
+      expect(log.info).to.have.been.calledWithMatch(/Skipping reddit-analysis.*recent audit exists/);
+    });
+
+    it('triggers the audit when the most recent audit is older than the cooldown window', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      const oldAudit = { getAuditedAt: () => new Date(Date.now() - AUDIT_TRIGGER_COOLDOWN_MS * 2).toISOString() };
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType
+        .withArgs(SITE_ID, 'reddit-analysis').resolves(oldAudit);
+
+      await handler.default(buildMessage(), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.include('reddit-analysis');
+      expect(types).to.include('youtube-analysis');
+    });
+
+    it('still triggers when the recent-audit lookup fails', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.rejects(new Error('DB timeout'));
+
+      await handler.default(buildMessage(), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.include('reddit-analysis');
+      expect(types).to.include('youtube-analysis');
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to check recent/);
     });
   });
 });
