@@ -1,3 +1,10 @@
+## [1.484.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.1...v1.484.2) (2026-06-22)
+
+
+### Bug Fixes
+
+* add cooldown period for offsite audits ([#2710](https://github.com/adobe/spacecat-audit-worker/issues/2710)) ([6bb0fe5](https://github.com/adobe/spacecat-audit-worker/commit/6bb0fe543d0fe6d2bc018661501d0eda8c5153a8))
+
 ## [1.484.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.0...v1.484.1) (2026-06-22)
 
 
