@@ -65,6 +65,9 @@ describe('Prerender AI-Only Mode', () => {
       getSiteId: sandbox.stub().returns('site-123'),
       getType: sandbox.stub().returns('prerender'),
       getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      getData: sandbox.stub().returns({}),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     mockDataAccess = {
@@ -930,6 +933,98 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.auditResult.suggestionCount).to.equal(0);
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send guidance:prerender message/),
+      );
+    });
+  });
+
+  describe('Multi-batch Mystique dispatch (>320 suggestions)', () => {
+    const buildSuggestion = (index) => ({
+      getId: sandbox.stub().returns(`suggestion-${index}`),
+      getData: sandbox.stub().returns({
+        url: `https://example.com/page${index}`,
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+      }),
+      getStatus: sandbox.stub().returns('NEW'),
+    });
+
+    it('should store all batches in S3 and save mystiqueSession when suggestions exceed MYSTIQUE_BATCH_SIZE', async () => {
+      // Create 321 suggestions to force a second batch
+      const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
+      mockOpportunity.getSuggestions.resolves(manySuggestions);
+      mockS3Client.send.resolves(); // PutObjectCommand for batch file
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+
+      // S3 PutObjectCommand was called to store batch file
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const [s3Call] = mockS3Client.send.firstCall.args;
+      expect(s3Call.input.Key).to.match(/^prerender\/mystique-batches\/opportunity-123\.json$/);
+
+      const storedBatches = JSON.parse(s3Call.input.Body);
+      expect(storedBatches).to.have.lengthOf(2);
+      expect(storedBatches[0]).to.have.lengthOf(320);
+      expect(storedBatches[1]).to.have.lengthOf(1);
+
+      // mystiqueSession saved to opportunity
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            totalBatches: 2,
+            currentBatchIndex: 0,
+            batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          }),
+        }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+
+      // Only first 320 sent to Mystique
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
+      expect(sqsMsg.data.suggestions).to.have.lengthOf(320);
+      expect(sqsMsg.data.batchIndex).to.equal(0);
+      expect(sqsMsg.data.totalBatches).to.equal(2);
+    });
+
+    it('should send single batch without S3 or session when suggestions fit in one batch', async () => {
+      // Default: only 2 suggestions (< 320)
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+
+      // No S3 write for batch file
+      expect(mockS3Client.send).to.not.have.been.called;
+
+      // No mystiqueSession saved
+      expect(mockOpportunity.setData).to.not.have.been.called;
+      expect(mockOpportunity.save).to.not.have.been.called;
+
+      // All suggestions in the single SQS message
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
+      expect(sqsMsg.data.totalBatches).to.equal(1);
+    });
+
+    it('should include slackContext in mystiqueSession when triggered from Slack', async () => {
+      const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
+      mockOpportunity.getSuggestions.resolves(manySuggestions);
+      mockS3Client.send.resolves();
+
+      context.auditContext = {
+        slackContext: { channelId: 'C999', threadTs: '9999.999' },
+      };
+
+      await importTopPages(context);
+
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            slackChannelId: 'C999',
+            slackThreadTs: '9999.999',
+          }),
+        }),
       );
     });
   });

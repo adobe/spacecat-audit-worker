@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
@@ -693,9 +694,49 @@ async function sendPrerenderGuidanceRequestToMystique(
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
-    // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
+    // SQS has a 256 KB message size limit — chunk into MYSTIQUE_BATCH_SIZE batches.
+    // Send only the first batch now; guidance-handler will chain subsequent batches
+    // sequentially after each Mystique response to avoid parallel-processing overload.
+    const totalBatches = Math.ceil(suggestionsPayload.length / MYSTIQUE_BATCH_SIZE);
     const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
+
+    if (totalBatches > 1) {
+      const { s3Client } = context;
+      const batchesKey = `prerender/mystique-batches/${opportunityId}.json`;
+
+      const allBatches = Array.from({ length: totalBatches }, (_, i) => suggestionsPayload
+        .slice(i * MYSTIQUE_BATCH_SIZE, (i + 1) * MYSTIQUE_BATCH_SIZE));
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: env.S3_SCRAPER_BUCKET_NAME,
+        Key: batchesKey,
+        Body: JSON.stringify(allBatches),
+        ContentType: 'application/json',
+      }));
+
+      const slackCtx = context.auditContext?.slackContext;
+      opportunity.setData({
+        ...(opportunity.getData() ?? {}),
+        mystiqueSession: {
+          totalBatches,
+          currentBatchIndex: 0,
+          batchesS3Key: batchesKey,
+          slackChannelId: slackCtx?.channelId ?? null,
+          slackThreadTs: slackCtx?.threadTs ?? null,
+        },
+      });
+      await opportunity.save();
+
+      await postMessageOptional(
+        context,
+        slackCtx?.channelId,
+        `:adobe-run: Sending batch 1/${totalBatches} to Mystique (${firstBatch.length} URLs)`,
+        { threadTs: slackCtx?.threadTs },
+      );
+
+      log.info(`${LOG_PREFIX} Multi-batch Mystique run: stored ${totalBatches} batches to S3 key=${batchesKey}, `
+        + `sending batch 1/${totalBatches}. baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId}`);
+    }
 
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
@@ -710,14 +751,15 @@ async function sendPrerenderGuidanceRequestToMystique(
         opportunityId,
         suggestions: firstBatch,
         batchIndex: 0,
-        totalBatches: 1,
+        totalBatches,
         generatePrompts,
         siteRegion: site.getRegion() ?? '',
       },
     });
 
     log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length} (capped to 1 batch of ${MYSTIQUE_BATCH_SIZE})`);
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length}, `
+      + `batch 1/${totalBatches}`);
     return firstBatch.length;
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
