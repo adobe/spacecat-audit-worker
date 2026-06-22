@@ -1,3 +1,10 @@
+# [1.484.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.1...v1.484.0) (2026-06-22)
+
+
+### Features
+
+* **prerender:** upload suggestions to S3 and send S3 link to Mystique ([#2709](https://github.com/adobe/spacecat-audit-worker/issues/2709)) ([2f4748a](https://github.com/adobe/spacecat-audit-worker/commit/2f4748acd9bb2d4d2683a4289e05400bdbf9db26))
+
 ## [1.483.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.0...v1.483.1) (2026-06-20)
 
 
