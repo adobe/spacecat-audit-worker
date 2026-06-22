@@ -269,10 +269,25 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
+    log.info(
+      `${LOG_PREFIX} DRS content available for ${storeData.urls.length} URL(s) `
+        + '— no scrape job needed, proceeding to Mystique',
+    );
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     const { slackContext } = auditContext;
+
+    // Manual Slack-triggered runs get a notification explaining that no DRS scrape
+    // job was needed (content already available). No-ops on scheduled runs where
+    // slackContext is absent.
+    await postMessageOptional(
+      context,
+      slackContext?.channelId,
+      `:mag: *cited-analysis* for *${site.getBaseURL()}* — DRS content already available `
+        + `(${storeData.urls.length} URL(s)); no scrape job needed, sending to Mystique.`,
+      { threadTs: slackContext?.threadTs },
+    );
 
     return {
       auditResult: {

@@ -30,7 +30,9 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('YouTube Analysis Handler', () => {
+describe('YouTube Analysis Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -39,6 +41,7 @@ describe('YouTube Analysis Handler', () => {
   let mockComputeTopicsFromBrandPresence;
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
+  let mockPostMessageOptional;
   let youtubeAnalysisHandler;
   let StoreEmptyError;
 
@@ -107,6 +110,8 @@ describe('YouTube Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockDrsClient),
     };
 
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+
     youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
       '@adobe/spacecat-shared-drs-client': {
         default: mockDrsClientClass,
@@ -128,6 +133,9 @@ describe('YouTube Analysis Handler', () => {
       },
       '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
+      },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     });
 
@@ -409,6 +417,12 @@ describe('YouTube Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: '1700000000.123456' },
+      );
     });
 
     it('should not include slackContext in auditResult when not provided', async () => {
@@ -416,6 +430,13 @@ describe('YouTube Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+      // postMessageOptional is still invoked but with no channel/thread, so it no-ops.
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        undefined,
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: undefined },
+      );
     });
   });
 
