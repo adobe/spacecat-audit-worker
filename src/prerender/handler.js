@@ -817,7 +817,7 @@ export async function handleAiOnlyMode(context) {
     return {
       error,
       status: 'failed',
-      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+      fullAuditRef: `${mode}/failed-${siteId}`,
       auditResult: { error },
     };
   }

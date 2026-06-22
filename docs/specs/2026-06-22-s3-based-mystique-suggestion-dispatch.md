@@ -86,6 +86,7 @@ The SQS message to Mystique contains S3 coordinates instead of inline suggestion
 
 ### Error Handling
 
+- **Dispatch failures propagate** — `sendPrerenderGuidanceRequestToMystique` throws on S3 upload or SQS send failure. Callers must catch: `handleAiOnlyMode` returns `status: 'failed'`; step-3 lets the audit framework handle the error.
 - **Cleanup errors are isolated** — `cleanupSuggestionsFile` runs in its own try/catch inside guidance-handler. If S3 delete fails during cleanup, the saved suggestions are not invalidated (returns `ok()`, not `badRequest()`).
 - **S3 delete failures are non-fatal** — logged as a warning; the suggestions file may linger but does not affect correctness.
 
