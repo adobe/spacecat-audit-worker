@@ -10,10 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
+import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer, normalizePathnameWithQuery } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -40,6 +42,148 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
   }
 
   return data;
+}
+
+/**
+ * Reads the full batch list from S3 for a multi-batch Mystique run.
+ *
+ * @param {Object} s3Client - AWS S3 client
+ * @param {string} bucketName - S3 bucket name
+ * @param {string} key - S3 object key for the batch file
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Array[]>} - Array of batches (each batch is an array of suggestion payloads)
+ */
+async function readBatchesFromS3(s3Client, bucketName, key, log) {
+  const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
+  const body = await response.Body.transformToString();
+  const batches = JSON.parse(body);
+  log.info(`${LOG_PREFIX} Read ${batches.length} batches from S3 key=${key}`);
+  return batches;
+}
+
+/**
+ * Deletes the batch list file from S3 after all batches are complete.
+ *
+ * @param {Object} s3Client - AWS S3 client
+ * @param {string} bucketName - S3 bucket name
+ * @param {string} key - S3 object key to delete
+ * @param {Object} log - Logger instance
+ */
+async function deleteBatchesFromS3(s3Client, bucketName, key, log) {
+  try {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+    log.info(`${LOG_PREFIX} Deleted S3 batch file key=${key}`);
+  } catch (error) {
+    log.warn(`${LOG_PREFIX} Failed to delete S3 batch file key=${key}: ${error.message}`);
+  }
+}
+
+/**
+ * Chains the next Mystique batch after the current one completes.
+ * Reads session state from the opportunity, sends the next SQS message,
+ * updates the session cursor, and posts Slack notifications.
+ * Cleans up S3 + session when the last batch finishes.
+ *
+ * @param {Object} opportunity - The Opportunity model instance
+ * @param {string} siteId - Site ID
+ * @param {string} auditId - Audit ID
+ * @param {string} baseUrl - Site base URL
+ * @param {string} deliveryType - Site delivery type
+ * @param {Object} context - Lambda context with sqs, env, s3Client, log
+ */
+async function chainNextMystiqueBatch(
+  opportunity,
+  siteId,
+  auditId,
+  baseUrl,
+  deliveryType,
+  context,
+) {
+  const {
+    sqs, env, s3Client, log,
+  } = context;
+
+  const oppData = opportunity.getData() ?? {};
+  const session = oppData.mystiqueSession;
+
+  if (!session) {
+    return; // Single-batch run — nothing to chain
+  }
+
+  const {
+    totalBatches,
+    currentBatchIndex,
+    batchesS3Key,
+    slackChannelId,
+    slackThreadTs,
+  } = session;
+
+  const completedBatch = currentBatchIndex + 1;
+
+  await postMessageOptional(
+    context,
+    slackChannelId,
+    `:white_check_mark: Batch ${completedBatch}/${totalBatches} complete`,
+    { threadTs: slackThreadTs },
+  );
+
+  if (currentBatchIndex < totalBatches - 1) {
+    const nextIndex = currentBatchIndex + 1;
+    const allBatches = await readBatchesFromS3(
+      s3Client,
+      env.S3_SCRAPER_BUCKET_NAME,
+      batchesS3Key,
+      log,
+    );
+    const nextBatch = allBatches[nextIndex];
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
+      type: 'guidance:prerender',
+      url: baseUrl,
+      siteId,
+      auditId,
+      deliveryType,
+      time: new Date().toISOString(),
+      data: {
+        opportunityId: opportunity.getId(),
+        suggestions: nextBatch,
+        batchIndex: nextIndex,
+        totalBatches,
+      },
+    });
+
+    opportunity.setData({
+      ...oppData,
+      mystiqueSession: { ...session, currentBatchIndex: nextIndex },
+    });
+    await opportunity.save();
+
+    await postMessageOptional(
+      context,
+      slackChannelId,
+      `:adobe-run: Sending batch ${nextIndex + 1}/${totalBatches} to Mystique (${nextBatch.length} URLs)`,
+      { threadTs: slackThreadTs },
+    );
+
+    log.info(`${LOG_PREFIX} Chained batch ${nextIndex + 1}/${totalBatches} to Mystique for `
+      + `opportunityId=${opportunity.getId()}, siteId=${siteId}, suggestions=${nextBatch.length}`);
+  } else {
+    // All batches done — clean up
+    await deleteBatchesFromS3(s3Client, env.S3_SCRAPER_BUCKET_NAME, batchesS3Key, log);
+
+    opportunity.setData({ ...oppData, mystiqueSession: undefined });
+    await opportunity.save();
+
+    await postMessageOptional(
+      context,
+      slackChannelId,
+      `:white_check_mark: All ${totalBatches} batches complete for *${baseUrl}*`,
+      { threadTs: slackThreadTs },
+    );
+
+    log.info(`${LOG_PREFIX} All ${totalBatches} Mystique batches complete for `
+      + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
+  }
 }
 
 export default async function handler(message, context) {
@@ -209,7 +353,6 @@ export default async function handler(message, context) {
       return true;
     });
 
-    // 9. Batch save all suggestions using DynamoDB batch write
     if (uniqueSuggestionsToSave.length > 0) {
       try {
         await Suggestion.saveMany(uniqueSuggestionsToSave);
@@ -235,6 +378,19 @@ export default async function handler(message, context) {
     } else {
       log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
+
+    // Chain the next Mystique batch if this is a multi-batch run.
+    // Reads session state from the opportunity and sends the next SQS message.
+    const auditId = message.auditId ?? null;
+    const deliveryType = site.getDeliveryType?.() ?? 'unknown';
+    await chainNextMystiqueBatch(
+      opportunity,
+      siteId,
+      auditId,
+      site.getBaseURL(),
+      deliveryType,
+      context,
+    );
 
     return ok();
   } catch (error) {

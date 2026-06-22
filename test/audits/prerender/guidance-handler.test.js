@@ -29,6 +29,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let fetchStub;
   let handler;
   let mockIsPaidLLMOCustomer;
+  let mockPostMessageOptional;
+  let mockS3Client;
+  let mockSqs;
 
   // Helper to mock successful fetch response (resolves the parsed JSON directly).
   const mockFetchSuccess = (data) => {
@@ -52,6 +55,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getDeliveryType: sinon.stub().returns('aem_edge'),
     };
 
     mockSuggestions = [
@@ -89,6 +93,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
       getType: () => 'prerender',
+      getData: sinon.stub().returns({}), // no mystiqueSession by default
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     Site = {
@@ -113,13 +120,17 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       },
     };
 
+    mockS3Client = { send: sinon.stub().resolves() };
+    mockSqs = { sendMessage: sinon.stub().resolves() };
+
     // Stub the shared analysis-fetch helper directly (no need to fake a Response).
     fetchStub = sinon.stub();
 
     // Mock isPaidLLMOCustomer utility
     mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
+    mockPostMessageOptional = sinon.stub().resolves({ success: true });
 
-    // Import handler with mocked isPaidLLMOCustomer + shared fetch helper
+    // Import handler with mocked helpers
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
         isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
@@ -127,11 +138,20 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchStub,
       },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
+      },
     });
 
     context = {
       log,
       site: mockSite,
+      s3Client: mockS3Client,
+      sqs: mockSqs,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-mystique-queue',
+      },
       dataAccess: {
         Site,
         Opportunity,
@@ -928,6 +948,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
         getType: () => 'prerender',
+        getData: sinon.stub().returns({}),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',
@@ -1501,6 +1524,168 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // Verify no duplicate IDs in the saved array
       const ids = saved.map((s) => s.getId());
       expect(new Set(ids).size).to.equal(ids.length);
+    });
+  });
+
+  describe('Multi-batch chaining', () => {
+    const baseMessage = {
+      siteId: 'site-123',
+      auditId: 'audit-123',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+        opportunityId: 'opportunity-123',
+      },
+    };
+
+    const successPayload = {
+      opportunityId: 'opportunity-123',
+      suggestions: [
+        { url: 'https://example.com/page1', aiSummary: 'Summary 1', valuable: true },
+      ],
+    };
+
+    it('should not chain or post Slack when no mystiqueSession on opportunity', async () => {
+      mockFetchSuccess(successPayload);
+      mockOpportunity.getData.returns({});
+
+      await handler.default(baseMessage, context);
+
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should post "batch complete" Slack and send next batch when not on last batch', async () => {
+      const nextBatch = [{ suggestionId: 's-3', url: 'https://example.com/page3' }];
+      const allBatches = [
+        [{ suggestionId: 's-1', url: 'https://example.com/page1' }],
+        nextBatch,
+      ];
+
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+        },
+      });
+
+      mockS3Client.send.resolves({
+        Body: { transformToString: sinon.stub().resolves(JSON.stringify(allBatches)) },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // Slack: "Batch 1/2 complete"
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/Batch 1\/2 complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // SQS: next batch sent
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sqsCall = mockSqs.sendMessage.getCall(0);
+      expect(sqsCall.args[0]).to.equal('https://sqs.us-east-1.amazonaws.com/test-mystique-queue');
+      expect(sqsCall.args[1].data.suggestions).to.deep.equal(nextBatch);
+      expect(sqsCall.args[1].data.batchIndex).to.equal(1);
+      expect(sqsCall.args[1].data.totalBatches).to.equal(2);
+
+      // Session updated on opportunity
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: sinon.match({ currentBatchIndex: 1 }) }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+
+      // Slack: "Sending batch 2/2"
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/Sending batch 2\/2/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+    });
+
+    it('should post "all batches complete", clean up S3, and clear session on last batch', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 1, // already on last batch
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // SQS: no next batch
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+
+      // S3 delete called
+      expect(mockS3Client.send).to.have.been.called;
+
+      // Session cleared on opportunity
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+
+      // Slack: "All 2 batches complete"
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/All 2 batches complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+    });
+
+    it('should not post Slack when slackChannelId or slackThreadTs is absent', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 1,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // postMessageOptional is still called but with null channel/thread — it no-ops internally
+      const calls = mockPostMessageOptional.getCalls();
+      calls.forEach((c) => {
+        expect(c.args[1]).to.be.null;
+      });
+    });
+
+    it('should warn but not throw when S3 batch file delete fails on last batch', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 1,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+        },
+      });
+
+      mockS3Client.send.rejects(new Error('S3 delete failed'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to delete S3 batch file/));
     });
   });
 
