@@ -107,7 +107,7 @@ async function chainNextMystiqueBatch(
   const session = oppData.mystiqueSession;
 
   if (!session) {
-    return; // Single-batch run — nothing to chain
+    return; // No session at all (non-Slack trigger, single-batch) — nothing to do
   }
 
   const {
@@ -120,6 +120,23 @@ async function chainNextMystiqueBatch(
     siteRegion,
   } = session;
 
+  // Single-batch run: no chaining needed, just notify and clean up session.
+  if (!batchesS3Key) {
+    await postMessageOptional(
+      context,
+      slackChannelId,
+      `:white_check_mark: AI summaries complete for *${baseUrl}*`,
+      { threadTs: slackThreadTs },
+    );
+    opportunity.setData({ ...oppData, mystiqueSession: undefined });
+    await opportunity.save();
+
+    log.info(`${LOG_PREFIX} Single-batch Mystique run complete for `
+      + `opportunityId=${opportunity.getId()}, siteId=${siteId}`);
+    return;
+  }
+
+  // Multi-batch: post per-batch progress and chain the next batch.
   const completedBatch = currentBatchIndex + 1;
 
   await postMessageOptional(

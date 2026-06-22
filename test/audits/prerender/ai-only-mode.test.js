@@ -1007,6 +1007,45 @@ describe('Prerender AI-Only Mode', () => {
       expect(sqsMsg.data.totalBatches).to.equal(1);
     });
 
+    it('should save Slack-only mystiqueSession for single-batch Slack-triggered run', async () => {
+      context.auditContext = {
+        slackContext: { channelId: 'C999', threadTs: '9999.999' },
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+
+      // No S3 write (single batch)
+      expect(mockS3Client.send).to.not.have.been.called;
+
+      // mystiqueSession saved with Slack context only
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueSession: sinon.match({
+            totalBatches: 1,
+            slackChannelId: 'C999',
+            slackThreadTs: '9999.999',
+          }),
+        }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should handle opportunity.getData() returning null in single-batch Slack-triggered run', async () => {
+      mockOpportunity.getData.returns(null);
+      context.auditContext = {
+        slackContext: { channelId: 'C999', threadTs: '9999.999' },
+      };
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: sinon.match({ totalBatches: 1 }) }),
+      );
+    });
+
     it('should handle opportunity.getData() returning null in multi-batch scenario', async () => {
       const manySuggestions = Array.from({ length: 321 }, (_, i) => buildSuggestion(i));
       mockOpportunity.getSuggestions.resolves(manySuggestions);

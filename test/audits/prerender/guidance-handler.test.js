@@ -1554,6 +1554,39 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockPostMessageOptional).to.not.have.been.called;
     });
 
+    it('should post completion Slack and clear session for single-batch run', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 1,
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // Should post completion message
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/AI summaries complete/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+
+      // Should clear session
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+
+      // Should NOT send any SQS message
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+    });
+
     it('should handle opportunity.getData() returning null without crashing', async () => {
       mockFetchSuccess(successPayload);
       mockOpportunity.getData.returns(null); // covers ?? {} fallback on line 106

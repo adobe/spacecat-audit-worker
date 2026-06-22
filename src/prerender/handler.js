@@ -700,6 +700,14 @@ async function sendPrerenderGuidanceRequestToMystique(
     const totalBatches = Math.ceil(suggestionsPayload.length / MYSTIQUE_BATCH_SIZE);
     const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
 
+    // Persist Slack context on the Opportunity so guidance-handler can post
+    // completion notifications for both single-batch and multi-batch runs.
+    const slackCtx = context.auditContext?.slackContext;
+    const sessionBase = {
+      slackChannelId: slackCtx?.channelId ?? null,
+      slackThreadTs: slackCtx?.threadTs ?? null,
+    };
+
     if (totalBatches > 1) {
       const { s3Client } = context;
       const batchesKey = `prerender/mystique-batches/${opportunityId}.json`;
@@ -714,15 +722,13 @@ async function sendPrerenderGuidanceRequestToMystique(
         ContentType: 'application/json',
       }));
 
-      const slackCtx = context.auditContext?.slackContext;
       opportunity.setData({
         ...(opportunity.getData() ?? {}),
         mystiqueSession: {
+          ...sessionBase,
           totalBatches,
           currentBatchIndex: 0,
           batchesS3Key: batchesKey,
-          slackChannelId: slackCtx?.channelId ?? null,
-          slackThreadTs: slackCtx?.threadTs ?? null,
           generatePrompts,
           siteRegion: site.getRegion() ?? '',
         },
@@ -738,6 +744,13 @@ async function sendPrerenderGuidanceRequestToMystique(
 
       log.info(`${LOG_PREFIX} Multi-batch Mystique run: stored ${totalBatches} batches to S3 key=${batchesKey}, `
         + `sending batch 1/${totalBatches}. baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId}`);
+    } else if (slackCtx?.channelId) {
+      // Single-batch: save only Slack context so guidance-handler can notify on completion.
+      opportunity.setData({
+        ...(opportunity.getData() ?? {}),
+        mystiqueSession: { ...sessionBase, totalBatches: 1 },
+      });
+      await opportunity.save();
     }
 
     const time = new Date().toISOString();
