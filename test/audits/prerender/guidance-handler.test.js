@@ -1579,6 +1579,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
           batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
           slackChannelId: 'C123',
           slackThreadTs: '1234567890.123456',
+          startedAt: new Date().toISOString(),
         },
       });
 
@@ -1629,6 +1630,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
           batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
           slackChannelId: 'C123',
           slackThreadTs: '1234567890.123456',
+          startedAt: new Date().toISOString(),
         },
       });
 
@@ -1677,6 +1679,113 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       calls.forEach((c) => {
         expect(c.args[1]).to.be.null;
       });
+    });
+
+    it('should expire session and clean up when TTL is exceeded', async () => {
+      const expiredStartedAt = new Date(Date.now() - 31 * 60_000).toISOString(); // 31 min ago
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 3,
+          currentBatchIndex: 1,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          startedAt: expiredStartedAt,
+        },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // Should NOT send next batch
+      expect(mockSqs.sendMessage).to.not.have.been.called;
+
+      // Should clean up S3
+      expect(mockS3Client.send).to.have.been.called;
+
+      // Should clear session
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+
+      // Should warn in logs
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Mystique batch session expired/));
+
+      // Should notify Slack about expiry
+      expect(mockPostMessageOptional).to.have.been.calledWith(
+        sinon.match.any,
+        'C123',
+        sinon.match(/expired/),
+        sinon.match({ threadTs: '1234567890.123456' }),
+      );
+    });
+
+    it('should continue chaining when TTL is not exceeded', async () => {
+      const recentStartedAt = new Date(Date.now() - 5 * 60_000).toISOString(); // 5 min ago
+      const nextBatch = [{ suggestionId: 's-2', url: 'https://example.com/page2' }];
+      const allBatches = [
+        [{ suggestionId: 's-1', url: 'https://example.com/page1' }],
+        nextBatch,
+      ];
+
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: 'C123',
+          slackThreadTs: '1234567890.123456',
+          startedAt: recentStartedAt,
+        },
+      });
+
+      mockS3Client.send.resolves({
+        Body: { transformToString: sinon.stub().resolves(JSON.stringify(allBatches)) },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // Should send next batch
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+
+      // Should NOT warn about expiry
+      expect(log.warn).to.not.have.been.calledWith(sinon.match(/expired/));
+    });
+
+    it('should skip TTL check when startedAt is absent (backwards compat)', async () => {
+      const nextBatch = [{ suggestionId: 's-2', url: 'https://example.com/page2' }];
+      const allBatches = [
+        [{ suggestionId: 's-1', url: 'https://example.com/page1' }],
+        nextBatch,
+      ];
+
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+          // no startedAt
+        },
+      });
+
+      mockS3Client.send.resolves({
+        Body: { transformToString: sinon.stub().resolves(JSON.stringify(allBatches)) },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      // Should still chain normally
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
     });
 
     it('should warn but not throw when S3 batch file delete fails on last batch', async () => {
