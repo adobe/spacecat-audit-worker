@@ -1,3 +1,10 @@
+## [1.485.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.0...v1.485.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **prerender:** revert to inline suggestions in Mystique SQS message ([#2716](https://github.com/adobe/spacecat-audit-worker/issues/2716)) ([0be7da4](https://github.com/adobe/spacecat-audit-worker/commit/0be7da47954a76ed46ef0834daa25e865d3ab144))
+
 # [1.485.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.2...v1.485.0) (2026-06-22)
 
 
