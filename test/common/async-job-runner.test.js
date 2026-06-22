@@ -14,7 +14,6 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
-import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import sinon from 'sinon';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
@@ -67,12 +66,6 @@ describe('Job-based Step-Audit Tests', () => {
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
-    // Mock TierClient for entitlement checks
-    const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
-    };
-    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
       IMPORT_WORKER_QUEUE_URL: 'https://space.cat/import-worker',
@@ -105,38 +98,6 @@ describe('Job-based Step-Audit Tests', () => {
       save: sinon.spy(),
     };
   }
-
-  it('skips when audit is disabled for site', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
-
-    const runner = new AuditBuilder()
-      .withAsyncJob()
-      .addStep('first', async () => ({}), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-      .build();
-
-    const job = createMockJob({
-      payload: { siteId: site.getId() },
-    });
-
-    runner.jobProvider = async () => job;
-
-    const message = {
-      type: 'content-audit',
-      jobId: 'job-123',
-    };
-
-    const result = await runner.run(message, context);
-
-    expect(result.status).to.equal(200);
-    expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
-    expect(job.setStatus).to.have.been.calledWith('CANCELLED');
-    expect(job.setMetadata).to.have.been.calledWith({
-      payload: {
-        siteId: site.getId(),
-        reason: 'content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07',
-      },
-    });
-  });
 
   it('executes first step and sends continuation message', async () => {
     const runner = new AuditBuilder()

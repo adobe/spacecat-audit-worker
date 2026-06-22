@@ -25,7 +25,7 @@ import {
 } from '../../../src/utils/offsite-audit-utils.js';
 
 // Mirrors the handler-private constant — update both if the limit changes.
-const CITED_ANALYSIS_URLS_LIMIT = 40;
+const MAX_PROMPTS_PER_URL = 5;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
@@ -221,7 +221,7 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
-      expect(result.auditResult.config.urlLimit).to.equal(CITED_ANALYSIS_URLS_LIMIT);
+      expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
@@ -499,7 +499,11 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWithMatch(/Excluded 3 owned-domain URLs/);
     });
 
-    it('keeps lookalike domains that are not actually owned', async () => {
+    it('drops owned-domain lookalikes that contain the brand token, keeps neutral hosts', async () => {
+      // The owned-domain filter does not treat these as owned (no `.bmw.com`
+      // suffix), but the branded filter drops any host containing the brand
+      // token "bmw". A neutral third-party host is kept even when its path
+      // mentions the brand.
       mockStoreClient.getUrls.resolves([
         { url: 'https://not-bmw.com/page', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com.attacker.example/x', type: 'cited-analysis', metadata: {} },
@@ -510,11 +514,21 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
-      expect(filtered).to.have.lengthOf(3);
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 2 non-earned\/branded URLs/);
     });
 
-    it('is a no-op when baseURL is whitespace-only', async () => {
+    it('is a no-op when baseURL is whitespace-only and no brand keywords configured', async () => {
       mockSite.getBaseURL.returns('   ');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
       const urls = [
         { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
@@ -543,6 +557,14 @@ describe('Cited Analysis Handler', () => {
 
     it('is a no-op when baseURL is missing (defensive — keeps everything)', async () => {
       mockSite.getBaseURL.returns('');
+      // No brand signal (empty baseURL, no keywords) ⇒ nothing is owned or branded.
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('BMW'),
+        getCompetitors: sandbox.stub().returns(['Audi']),
+        getCompetitorRegion: sandbox.stub().returns('EU'),
+        getIndustry: sandbox.stub().returns('Automotive'),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
       const urls = [
         { url: 'https://caranddriver.com/bmw-review', type: 'cited-analysis', metadata: {} },
         { url: 'https://bmw.com/news', type: 'cited-analysis', metadata: {} },
@@ -554,6 +576,48 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.success).to.be.true;
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       expect(filtered).to.have.lengthOf(2);
+    });
+
+    it('drops social/search/deal-aggregator domains (defense in depth)', async () => {
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.google.com/search', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.facebook.com/groups/homedesign/posts/1', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.instagram.com/p/abc', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.groupon.com/coupons/bmw', type: 'cited-analysis', metadata: {} },
+        { url: 'https://caranddriver.com/bmw-3-series-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner(ownedBaseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['caranddriver.com']);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded 4 non-earned\/branded URLs/);
+    });
+
+    it('drops brand-owned lookalike domains via configured brand keywords', async () => {
+      // lovedbylovesac.com is owned by the brand but is not a subdomain of the
+      // apex; the configured brand keyword catches it.
+      mockSite.getBaseURL.returns('https://lovesac.com');
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns('Lovesac'),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns('US'),
+        getIndustry: sandbox.stub().returns('Furniture'),
+        getBrandKeywords: sandbox.stub().returns(['Loved By Lovesac']),
+      });
+      mockStoreClient.getUrls.resolves([
+        { url: 'https://www.lovedbylovesac.com/pages/faqs', type: 'cited-analysis', metadata: {} },
+        { url: 'https://www.goodhousekeeping.com/lovesac-sactional-review', type: 'cited-analysis', metadata: {} },
+      ]);
+
+      const result = await citedAnalysisHandler.default.runner('https://lovesac.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
+      const hosts = filtered.map((u) => new URL(u.url).hostname);
+      expect(hosts).to.deep.equal(['www.goodhousekeeping.com']);
     });
   });
 
@@ -607,7 +671,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[Cited] Queued Cited analysis request to Mystique for Example Corp with 2 URLs',
@@ -658,8 +722,8 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.deep.equal(expectedUrls);
     });
 
-    it('should limit URLs to CITED_ANALYSIS_URLS_LIMIT when many URLs exist', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 20 }, (_, i) => ({
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 20 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -679,14 +743,14 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] Queued Cited analysis request to Mystique for Test with ${CITED_ANALYSIS_URLS_LIMIT} URLs`,
+        `[Cited] Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
       );
     });
 
-    it('should fall back to CITED_ANALYSIS_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 5 }, (_, i) => ({
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -706,9 +770,9 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
     });
 
@@ -762,13 +826,43 @@ describe('Cited Analysis Handler', () => {
       expect(sentUrl).to.not.have.any.keys('siteId', 'byCustomer', 'audits', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy');
     });
 
+    it('should cap prompts to MAX_PROMPTS_PER_URL, keeping stored order', async () => {
+      const manyPrompts = Array.from({ length: MAX_PROMPTS_PER_URL + 10 }, (_, i) => `prompt ${i}`);
+      const urlsWithManyPrompts = [{
+        url: 'https://techreview.io/review-of-example',
+        prompts: manyPrompts,
+      }];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: urlsWithManyPrompts,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls[0].prompts).to.have.lengthOf(MAX_PROMPTS_PER_URL);
+      expect(sentMessage.data.urls[0].prompts).to.deep.equal(
+        manyPrompts.slice(0, MAX_PROMPTS_PER_URL),
+      );
+    });
+
     it('should reduce URL count when serialised message exceeds size budget', async () => {
-      // 40 URLs × 60 prompts × 200 bytes each = ~480 KB, well over the 200 KB budget.
-      // Prompts are no longer capped per URL — the size guard is the safety net.
-      const largePrompt = 'x'.repeat(200);
+      // 40 URLs × (capped to 5 prompts) × 2 KB each = ~400 KB even after the
+      // per-URL prompt cap, well over the 200 KB budget — the size guard is the
+      // last-resort safety net for pathologically long prompt strings.
+      const largePrompt = 'x'.repeat(2 * 1024);
       const bigUrls = Array.from({ length: 40 }, (_, i) => ({
         url: `https://example.com/page-${i}`,
-        prompts: Array.from({ length: 60 }, () => largePrompt),
+        prompts: Array.from({ length: 10 }, () => largePrompt),
       }));
 
       const auditData = {
@@ -788,7 +882,7 @@ describe('Cited Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls.length).to.be.lessThan(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls.length).to.be.lessThan(MYSTIQUE_URLS_LIMIT);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });

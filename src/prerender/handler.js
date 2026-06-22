@@ -55,12 +55,8 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 const getDomainWidePathPattern = (baseUrl) => {
-  try {
-    const pathname = toPathname(baseUrl);
-    return pathname.length > 1 ? `${pathname}/*` : '/*';
-  } catch {
-    return '/*';
-  }
+  const pathname = toPathname(baseUrl);
+  return pathname.length > 1 ? `${pathname}/*` : '/*';
 };
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
