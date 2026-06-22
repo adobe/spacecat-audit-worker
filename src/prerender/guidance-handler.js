@@ -118,6 +118,8 @@ async function chainNextMystiqueBatch(
     slackChannelId,
     slackThreadTs,
     startedAt,
+    generatePrompts,
+    siteRegion,
   } = session;
 
   // TTL guard: abandon the chain if the session is older than the configured limit.
@@ -160,6 +162,15 @@ async function chainNextMystiqueBatch(
     );
     const nextBatch = allBatches[nextIndex];
 
+    if (!Array.isArray(nextBatch) || nextBatch.length === 0) {
+      log.error(`${LOG_PREFIX} Batch ${nextIndex} missing or empty in S3 manifest `
+        + `for opportunityId=${opportunity.getId()}, siteId=${siteId}. Aborting chain.`);
+      await deleteBatchesFromS3(s3Client, env.S3_SCRAPER_BUCKET_NAME, batchesS3Key, log);
+      opportunity.setData({ ...oppData, mystiqueSession: undefined });
+      await opportunity.save();
+      return;
+    }
+
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
       type: 'guidance:prerender',
       url: baseUrl,
@@ -172,6 +183,8 @@ async function chainNextMystiqueBatch(
         suggestions: nextBatch,
         batchIndex: nextIndex,
         totalBatches,
+        generatePrompts: generatePrompts ?? false,
+        siteRegion: siteRegion ?? '',
       },
     });
 
@@ -407,17 +420,23 @@ export default async function handler(message, context) {
     }
 
     // Chain the next Mystique batch if this is a multi-batch run.
-    // Reads session state from the opportunity and sends the next SQS message.
-    const auditId = message.auditId ?? null;
-    const deliveryType = site.getDeliveryType?.() ?? 'unknown';
-    await chainNextMystiqueBatch(
-      opportunity,
-      siteId,
-      auditId,
-      site.getBaseURL(),
-      deliveryType,
-      context,
-    );
+    // Wrapped in its own try/catch so a chaining failure does not invalidate the
+    // current batch (Suggestion.saveMany already succeeded — returning badRequest
+    // would trigger an SQS retry and duplicate processing).
+    try {
+      const auditId = message.auditId ?? null;
+      const deliveryType = site.getDeliveryType?.() ?? 'unknown';
+      await chainNextMystiqueBatch(
+        opportunity,
+        siteId,
+        auditId,
+        site.getBaseURL(),
+        deliveryType,
+        context,
+      );
+    } catch (chainError) {
+      log.error(`${LOG_PREFIX} Failed to chain next batch for opportunityId=${opportunityId}, siteId=${siteId}: ${chainError.message}`, chainError);
+    }
 
     return ok();
   } catch (error) {

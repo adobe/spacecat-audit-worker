@@ -724,6 +724,8 @@ async function sendPrerenderGuidanceRequestToMystique(
           slackChannelId: slackCtx?.channelId ?? null,
           slackThreadTs: slackCtx?.threadTs ?? null,
           startedAt: new Date().toISOString(),
+          generatePrompts,
+          siteRegion: site.getRegion() ?? '',
         },
       });
       await opportunity.save();

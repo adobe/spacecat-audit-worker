@@ -1807,6 +1807,100 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(result.status).to.equal(200);
       expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to delete S3 batch file/));
     });
+
+    it('should return ok() even when chainNextMystiqueBatch throws', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+          startedAt: new Date().toISOString(),
+        },
+      });
+
+      // S3 read fails — chainNextMystiqueBatch will throw
+      mockS3Client.send.rejects(new Error('S3 read timeout'));
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      // Current batch was saved successfully — should return ok, not badRequest
+      expect(result.status).to.equal(200);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to chain next batch/),
+        sinon.match.instanceOf(Error),
+      );
+    });
+
+    it('should abort chain and clean up when next batch is missing from S3 manifest', async () => {
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 3,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+          startedAt: new Date().toISOString(),
+        },
+      });
+
+      // S3 manifest only has 1 batch instead of 3 — nextIndex=1 will be undefined
+      const corruptManifest = [[{ suggestionId: 's-1', url: 'https://example.com/page1' }]];
+      mockS3Client.send
+        .onFirstCall().resolves({
+          Body: { transformToString: sinon.stub().resolves(JSON.stringify(corruptManifest)) },
+        })
+        .onSecondCall().resolves(); // DeleteObjectCommand
+
+      mockFetchSuccess(successPayload);
+
+      const result = await handler.default(baseMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Batch 1 missing or empty in S3 manifest/),
+      );
+      // Session should be cleared
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ mystiqueSession: undefined }),
+      );
+    });
+
+    it('should forward generatePrompts and siteRegion in chained SQS messages', async () => {
+      const nextBatch = [{ suggestionId: 's-2', url: 'https://example.com/page2' }];
+      const allBatches = [
+        [{ suggestionId: 's-1', url: 'https://example.com/page1' }],
+        nextBatch,
+      ];
+
+      mockOpportunity.getData.returns({
+        mystiqueSession: {
+          totalBatches: 2,
+          currentBatchIndex: 0,
+          batchesS3Key: 'prerender/mystique-batches/opportunity-123.json',
+          slackChannelId: null,
+          slackThreadTs: null,
+          startedAt: new Date().toISOString(),
+          generatePrompts: true,
+          siteRegion: 'US',
+        },
+      });
+
+      mockS3Client.send.resolves({
+        Body: { transformToString: sinon.stub().resolves(JSON.stringify(allBatches)) },
+      });
+
+      mockFetchSuccess(successPayload);
+
+      await handler.default(baseMessage, context);
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
+      expect(sqsMsg.data.generatePrompts).to.equal(true);
+      expect(sqsMsg.data.siteRegion).to.equal('US');
+    });
   });
 
   describe('Logging (Presigned URL)', () => {
