@@ -1,3 +1,10 @@
+# [1.487.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.2...v1.487.0) (2026-06-23)
+
+
+### Features
+
+*  retrieve recently processes url from site scrapes instead of PageCitability table ([#2696](https://github.com/adobe/spacecat-audit-worker/issues/2696)) ([6483c28](https://github.com/adobe/spacecat-audit-worker/commit/6483c28e9e45f2d8deaddb9d0fa58f9699de3199))
+
 ## [1.486.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.1...v1.486.2) (2026-06-23)
 
 
