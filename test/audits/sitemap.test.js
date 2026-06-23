@@ -948,6 +948,39 @@ describe('Sitemap Audit', () => {
       });
     });
 
+    it('should emit distinct error suggestions when a single broken sitemap triggers both NO_VALID_PATHS_EXTRACTED and sitemapErrors', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${brokenSitemapUrl}`);
+      nock(url).get('/sitemap-missing.xml').reply(404);
+
+      const auditResult = await findSitemap(url);
+      expect(auditResult).to.not.have.property('success');
+      expect(auditResult.reasons).to.deep.equal([{
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: brokenSitemapUrl,
+      }]);
+      expect(auditResult.details.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+
+      const withSuggestions = generateSuggestions(url, { auditResult }, context);
+      expect(withSuggestions.suggestions).to.have.lengthOf(2);
+      expect(withSuggestions.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: brokenSitemapUrl,
+      });
+      expect(withSuggestions.suggestions[1]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: brokenSitemapUrl,
+      });
+    });
+
     it('should process root sitemap for subpath URL and filter correctly', async () => {
       const subpathUrl = `${url}/en/us`;
       const rootSitemapWithMultipleLocales = '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -1505,7 +1538,7 @@ describe('Sitemap Audit', () => {
       });
     });
 
-    it('should dedupe identical error suggestions from reasons and sitemapErrors', () => {
+    it('buildErrorSuggestionsFromReasons dedupes identical reason entries', () => {
       const duplicateReason = {
         error: ERROR_CODES.SITEMAP_NOT_FOUND,
         value: 'https://some-domain.adobe/sitemap-missing.xml',
@@ -1515,6 +1548,30 @@ describe('Sitemap Audit', () => {
         duplicateReason,
       ]);
       expect(suggestions).to.have.lengthOf(1);
+    });
+
+    it('should dedupe identical error suggestions when merging reasons and sitemapErrors via generateSuggestions', () => {
+      const duplicateReason = {
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: 'https://some-domain.adobe/sitemap-missing.xml',
+      };
+      const auditData = {
+        auditResult: {
+          reasons: [duplicateReason],
+          details: {
+            issues: {},
+            sitemapErrors: [duplicateReason],
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://some-domain.adobe/sitemap-missing.xml',
+      });
     });
 
     it('should generate both error and url suggestions from the same audit result', () => {

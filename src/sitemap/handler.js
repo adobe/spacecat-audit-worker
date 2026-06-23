@@ -54,7 +54,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
-const HANDLER_VERSION = 1; // manually update as needed
+const HANDLER_VERSION = 2; // manually update as needed
 
 // HTTP status codes explicitly handled by this audit for suggestion generation
 const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
@@ -346,7 +346,7 @@ export async function findSitemap(inputUrl, log) {
   return toPersistedAuditResult({
     reasons: [{
       value: filteredSitemapUrls[0], // a sitemap URL ... granted, the 1st if there is a list
-      error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+      error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED, // ... across all sitemap.xml files
     }],
     url: inputUrl,
     details: { issues: notOkPagesFromSitemap, sitemapErrors },

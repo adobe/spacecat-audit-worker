@@ -22,7 +22,7 @@ import {
 } from '../support/utils.js';
 
 // ----- version ----------------------------------------------------------------
-export const COMMON_VERSION = 102; // manually update as needed
+export const COMMON_VERSION = 103; // manually update as needed
 
 // ----- performance tuning constants ------------------------------------------
 
