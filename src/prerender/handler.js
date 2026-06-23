@@ -329,32 +329,23 @@ function normalizePathname(url) {
 }
 
 /**
- * Returns pathnames from PageCitability records updated within the configured recent window.
- * @param {Object} context
- * @param {string} siteId
- * @returns {Promise<Set<string>>}
+ * Returns pathnames from siteStatus pages processed within the configured recent window.
+ * @param {Object} siteStatus - siteStatus object with a pages array
+ * @returns {Set<string>}
  */
-async function getRecentlyProcessedPathnames(context, siteId) {
-  const { dataAccess, log } = context;
-  try {
-    const { PageCitability } = dataAccess;
-    if (!PageCitability?.allByIndexKeys) {
-      return new Set();
+function getRecentlyProcessedPathnames(siteStatus) {
+  const pages = Array.isArray(siteStatus?.pages) ? siteStatus.pages : [];
+  const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
+  const pathnames = new Set();
+  for (const p of pages) {
+    if (p.scrapedAt && new Date(p.scrapedAt) >= recentWindowStart && p.url) {
+      const pathname = normalizePathnameWithQuery(p.url);
+      if (pathname) {
+        pathnames.add(pathname);
+      }
     }
-    const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
-    const records = await PageCitability.allByIndexKeys(
-      { siteId },
-      { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
-    );
-    return new Set(
-      records
-        .map((r) => normalizePathnameWithQuery(r.getUrl()))
-        .filter(Boolean),
-    );
-  } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
-    return new Set();
   }
+  return pathnames;
 }
 
 /**
@@ -1080,7 +1071,7 @@ export async function submitForScraping(context) {
     agenticUrlsCount = agenticUrls.length;
 
     // Daily batching: filter URLs recently processed within the rolling recent window
-    const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+    const recentPathnames = getRecentlyProcessedPathnames(siteStatus);
     edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
 
     const filteredOrganicUrls = rebasedTopPagesUrls
@@ -1410,87 +1401,6 @@ export async function processOpportunityAndSuggestions(
 }
 
 /**
- * Writes citability metrics to the PageCitability entity for all successfully scraped URLs.
- * This enables the page-citability audit to detect recently-processed URLs via its 7-day
- * staleness filter, avoiding duplicate scraping across both audits.
- *
- * @param {Array} comparisonResults - Results from compareHtmlContent (all scraped URLs)
- * @param {string} siteId - Site ID
- * @param {Object} context - Audit context with dataAccess and log
- * @returns {Promise<void>}
- */
-export async function writeToCitabilityRecords(comparisonResults, siteId, context) {
-  if (!comparisonResults?.length) {
-    return;
-  }
-
-  const { dataAccess, log } = context;
-  const { PageCitability } = dataAccess;
-
-  if (!PageCitability?.allBySiteId) {
-    log.debug(`${LOG_PREFIX} PageCitability not available, skipping citability record writes`);
-    return;
-  }
-
-  const existingRecords = await PageCitability.allBySiteId(siteId);
-  const existingRecordsMap = new Map(
-    existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
-  );
-
-  const successful = comparisonResults.filter((r) => !r.error);
-  const WRITE_BATCH_SIZE = 10;
-
-  const writeOne = async (result) => {
-    const {
-      url,
-      citabilityScore,
-      contentGainRatio,
-      wordDifference,
-      wordCountBefore,
-      wordCountAfter,
-      isDeployedAtEdge,
-    } = result;
-    try {
-      const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
-      if (existing) {
-        existing.setCitabilityScore(citabilityScore ?? null);
-        existing.setContentRatio(contentGainRatio ?? null);
-        existing.setWordDifference(wordDifference ?? null);
-        existing.setBotWords(wordCountBefore ?? null);
-        existing.setNormalWords(wordCountAfter ?? null);
-        existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
-        await existing.save();
-      } else {
-        await PageCitability.create({
-          siteId,
-          url,
-          citabilityScore: citabilityScore ?? null,
-          contentRatio: contentGainRatio ?? null,
-          wordDifference: wordDifference ?? null,
-          botWords: wordCountBefore ?? null,
-          normalWords: wordCountAfter ?? null,
-          isDeployedAtEdge: isDeployedAtEdge ?? false,
-        });
-      }
-      return true;
-    } catch (e) {
-      log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
-      return false;
-    }
-  };
-
-  let written = 0;
-  for (let i = 0; i < successful.length; i += WRITE_BATCH_SIZE) {
-    const batch = successful.slice(i, i + WRITE_BATCH_SIZE);
-    // eslint-disable-next-line no-await-in-loop
-    const results = await Promise.all(batch.map(writeOne));
-    written += results.filter(Boolean).length;
-  }
-
-  log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
-}
-
-/**
  * Post processor to upload a status JSON file to S3 after audit completion
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data with results
@@ -1766,9 +1676,6 @@ export async function processContentAndGenerateOpportunities(context) {
     const comparisonResults = isDomainBlocked
       ? []
       : await Promise.all(urlsToCheck.map((url) => compareHtmlContent(url, context)));
-
-    // Phase 2c: write citability metrics to PageCitability entity.
-    await writeToCitabilityRecords(comparisonResults, siteId, context);
 
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
