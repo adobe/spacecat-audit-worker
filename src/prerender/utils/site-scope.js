@@ -51,10 +51,9 @@ export function isUrlWithinSiteBaseUrl(url, baseUrl) {
  *
  * @param {string[]} urls - Array of absolute URL strings
  * @param {string} baseUrl - Site baseUrl from site config
- * @param {Object} log - Logger
  * @returns {string[]}
  */
-export function filterUrlsBySiteBaseUrl(urls, baseUrl, log) {
+export function filterUrlsBySiteBaseUrl(urls, baseUrl) {
   if (!urls || urls.length === 0) {
     return urls;
   }
@@ -63,11 +62,7 @@ export function filterUrlsBySiteBaseUrl(urls, baseUrl, log) {
     if (!parsedBase.pathname || parsedBase.pathname === '/') {
       return urls;
     }
-    const filtered = urls.filter((url) => isUrlWithinSiteBaseUrl(url, baseUrl));
-    log?.debug?.(
-      `[prerender] Scoped ${urls.length} URLs to ${filtered.length} for site baseUrl ${baseUrl}`,
-    );
-    return filtered;
+    return urls.filter((url) => isUrlWithinSiteBaseUrl(url, baseUrl));
   } catch {
     return urls;
   }

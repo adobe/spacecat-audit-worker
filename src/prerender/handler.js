@@ -987,7 +987,7 @@ export async function submitForScraping(context) {
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const scopedCsvUrls = filterUrlsBySiteBaseUrl(rebasedCsvUrls, site.getBaseURL(), log);
+    const scopedCsvUrls = filterUrlsBySiteBaseUrl(rebasedCsvUrls, site.getBaseURL());
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       scopedCsvUrls,
       { includeQueryParams: true },
@@ -1037,7 +1037,6 @@ export async function submitForScraping(context) {
   const rebasedTopPagesUrls = filterUrlsBySiteBaseUrl(
     topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
     site.getBaseURL(),
-    log,
   );
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));

@@ -10,15 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect, use } from 'chai';
-import sinon from 'sinon';
-import sinonChai from 'sinon-chai';
+import { expect } from 'chai';
 import {
   isUrlWithinSiteBaseUrl,
   filterUrlsBySiteBaseUrl,
 } from '../../../src/prerender/utils/site-scope.js';
-
-use(sinonChai);
 
 describe('prerender/utils/site-scope', () => {
   describe('isUrlWithinSiteBaseUrl', () => {
@@ -86,14 +82,6 @@ describe('prerender/utils/site-scope', () => {
         'https://nba.com/kings/roster',
         'https://nba.com/kings/schedule',
       ]);
-    });
-
-    it('logs the scoping result when baseUrl has a path', () => {
-      const log = { debug: sinon.stub() };
-      const urls = ['https://nba.com/kings/roster', 'https://nba.com/lakers/page'];
-      filterUrlsBySiteBaseUrl(urls, 'https://nba.com/kings', log);
-      expect(log.debug).to.have.been.calledOnce;
-      expect(log.debug.firstCall.args[0]).to.include('https://nba.com/kings');
     });
 
     it('returns all URLs unchanged when baseUrl parsing fails', () => {
