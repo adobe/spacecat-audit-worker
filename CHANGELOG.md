@@ -1,3 +1,10 @@
+## [1.486.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.0...v1.486.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* Sitemap audit now saves both "error" and "url" suggestions ([#2706](https://github.com/adobe/spacecat-audit-worker/issues/2706)) ([f789e32](https://github.com/adobe/spacecat-audit-worker/commit/f789e32261d16db8cc2bc6ad875f2a50099345b8))
+
 # [1.486.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.1...v1.486.0) (2026-06-22)
 
 
