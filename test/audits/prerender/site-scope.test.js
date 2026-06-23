@@ -103,6 +103,28 @@ describe('site-scope utils', () => {
       });
     });
 
+    describe('siteBaseUrl with trailing slash', () => {
+      it('returns true when absolute URL is within subpath and siteBaseUrl has trailing slash', () => {
+        expect(isWithinSiteScope('https://bulk.com/uk/page', 'bulk.com/uk/')).to.be.true;
+      });
+
+      it('returns true when absolute URL exactly equals subpath with siteBaseUrl trailing slash', () => {
+        expect(isWithinSiteScope('https://bulk.com/uk', 'bulk.com/uk/')).to.be.true;
+      });
+
+      it('returns false when absolute URL is outside subpath and siteBaseUrl has trailing slash', () => {
+        expect(isWithinSiteScope('https://bulk.com/fr/page', 'bulk.com/uk/')).to.be.false;
+      });
+
+      it('returns true when relative URL is within subpath and siteBaseUrl has trailing slash', () => {
+        expect(isWithinSiteScope('/uk/page', 'bulk.com/uk/')).to.be.true;
+      });
+
+      it('returns false when relative URL is outside subpath and siteBaseUrl has trailing slash', () => {
+        expect(isWithinSiteScope('/fr/page', 'bulk.com/uk/')).to.be.false;
+      });
+    });
+
     describe('error handling', () => {
       it('returns false when siteBaseUrl cannot be parsed', () => {
         expect(isWithinSiteScope('https://bulk.com/uk/page', 'not a valid url!!')).to.be.false;

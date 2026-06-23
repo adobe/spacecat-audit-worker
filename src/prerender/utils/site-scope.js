@@ -34,14 +34,18 @@ export function isWithinSiteScope(url, siteBaseUrl) {
   try {
     const baseURLWithSchema = prependSchema(siteBaseUrl);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
+    const rawPath = parsedBaseURL.pathname;
+    // Normalize away any trailing slash on the base path before building the guard suffix,
+    // otherwise a siteBaseUrl like "bulk.com/uk/" produces basePath="/uk/" and
+    // basePathWithSlash="/uk//" which would never match any real URL.
+    const basePath = rawPath.endsWith('/') ? rawPath.slice(0, -1) : rawPath;
     const hasBasePath = basePath && basePath !== '/';
 
     if (!hasBasePath) {
       return true;
     }
 
-    // Trailing slash prevents false positives (e.g., /fr/ matching /french)
+    // Trailing slash prevents false positives (e.g., /uk/ matching /ukraine)
     const basePathWithSlash = `${basePath}/`;
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
