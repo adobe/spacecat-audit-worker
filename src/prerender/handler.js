@@ -582,10 +582,7 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const rebasedTopPagesUrls = filterBySiteScope(
-    topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
-    site.getBaseURL(),
-  );
+  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = filterBySiteScope(
     ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
       .map((url) => rebaseUrl(url, preferredBase, log)),

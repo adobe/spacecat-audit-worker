@@ -1604,6 +1604,119 @@ describe('Prerender Audit', () => {
         expect(athenaStub).to.have.been.called;
       });
 
+      describe('site-scope filtering', () => {
+        it('filters out CSV URLs outside the site subpath', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://bulk.com/uk',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+            },
+            auditContext: {
+              urls: [
+                'https://bulk.com/uk/page-1',
+                'https://bulk.com/fr/page-2',
+                'https://bulk.com/uk/page-3',
+              ],
+            },
+            finalUrl: 'https://bulk.com/uk',
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            env: {},
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://bulk.com/uk/page-1');
+          expect(submittedUrls).to.include('https://bulk.com/uk/page-3');
+          expect(submittedUrls).to.not.include('https://bulk.com/fr/page-2');
+        });
+
+        it('filters out included URLs outside the site subpath but passes organic top pages through', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://bulk.com/uk',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+              getConfig: () => ({
+                getIncludedURLs: () => [
+                  'https://bulk.com/uk/special',
+                  'https://bulk.com/de/special',
+                ],
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://bulk.com/uk/organic-1' },
+                  { getUrl: () => 'https://bulk.com/fr/organic-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            finalUrl: 'https://bulk.com/uk',
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          // Organic top pages are NOT filtered by scope
+          expect(submittedUrls).to.include('https://bulk.com/uk/organic-1');
+          expect(submittedUrls).to.include('https://bulk.com/fr/organic-2');
+          // Included URLs ARE filtered by scope
+          expect(submittedUrls).to.include('https://bulk.com/uk/special');
+          expect(submittedUrls).to.not.include('https://bulk.com/de/special');
+        });
+
+        it('filters out agentic URLs outside the site subpath', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [
+                'https://bulk.com/uk/agentic-1',
+                'https://bulk.com/fr/agentic-2',
+                'https://bulk.com/uk/agentic-3',
+              ],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: async () => [] },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://bulk.com/uk/agentic-1');
+          expect(submittedUrls).to.include('https://bulk.com/uk/agentic-3');
+          expect(submittedUrls).to.not.include('https://bulk.com/fr/agentic-2');
+        });
+      });
+
     });
 
     describe('processContentAndGenerateOpportunities', () => {

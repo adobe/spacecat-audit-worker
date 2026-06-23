@@ -24,8 +24,11 @@ import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
  * @returns {boolean} - True if URL is within scope, false otherwise
  */
 export function isWithinSiteScope(url, siteBaseUrl) {
-  if (!url || !siteBaseUrl) {
+  if (!url) {
     return false;
+  }
+  if (!siteBaseUrl) {
+    return true;
   }
 
   try {
