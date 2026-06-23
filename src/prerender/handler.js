@@ -62,8 +62,9 @@ const getDomainWidePathPattern = (baseUrl) => {
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => {
-  const label = getDomainWidePathPattern(baseUrl) === '/*' ? 'All Domain URLs' : 'All Subpath URLs';
-  return `${baseUrl}/* (${label})`;
+  const pathPattern = getDomainWidePathPattern(baseUrl);
+  const label = pathPattern === '/*' ? 'All Domain URLs' : 'All Subpath URLs';
+  return `${baseUrl.replace(/\/$/, '')}/* (${label})`;
 };
 
 /**

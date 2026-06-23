@@ -10169,6 +10169,63 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.data.url).to.include('All Domain URLs');
       });
+
+      it('should not produce a double slash when baseURL has a trailing slash', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://nba.com/kings/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://nba.com/kings/' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://nba.com/kings/', auditData, context);
+
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+        const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.url).to.equal('https://nba.com/kings/* (All Subpath URLs)');
+      });
     });
 
     describe('pathPattern scoping in domain-wide suggestion', () => {
