@@ -852,6 +852,111 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(countArg).to.equal(0);
     });
   });
+
+  describe('syncOpportunityAndSuggestionsStep - Slack handoff signal', () => {
+    // Covers handler.js:85 (`auditContext?.slackContext`) — the branch where
+    // the audit was triggered from Slack and the step must post the
+    // "Sent to Mystique" handoff message back to the originating thread.
+    let mockedSyncStep;
+    let sayStub;
+
+    beforeEach(async () => {
+      sayStub = sandbox.stub().resolves();
+
+      const esmockLib = (await import('esmock')).default;
+      const mockedHandler = await esmockLib('../../src/cwv/handler.js', {
+        '../../src/utils/slack-utils.js': {
+          say: sayStub,
+          formatDownstreamDispatchMessage: (target, detail) => (
+            detail ? `:outbox_tray: *Sent to ${target}* — ${detail}` : `:outbox_tray: *Sent to ${target}*`
+          ),
+        },
+      });
+      mockedSyncStep = mockedHandler.syncOpportunityAndSuggestionsStep;
+
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        create: sandbox.stub(),
+      };
+      context.dataAccess.Suggestion = {
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([
+          { getId: () => 's1', getStatus: () => 'NEW', getData: () => ({}) },
+          { getId: () => 's2', getStatus: () => 'NEW', getData: () => ({}) },
+          { getId: () => 's3', getStatus: () => 'NEW', getData: () => ({}) },
+        ]),
+        bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+      context.sqs = { sendMessage: sandbox.stub().resolves() };
+
+      const mockOppty = {
+        getId: () => 'oppty-id',
+        setAuditId: sandbox.stub(),
+        getData: sandbox.stub().returns({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+        getType: () => 'cwv',
+      };
+      context.dataAccess.Opportunity.create.resolves(mockOppty);
+    });
+
+    const mockAuditRecord = {
+      getId: () => 'audit-id',
+      getAuditResult: () => ({ cwv: [], auditContext: { interval: 7 } }),
+      getFullAuditRef: () => auditUrl,
+    };
+
+    it('posts a "Sent to Mystique" Slack message when auditContext.slackContext is present', async () => {
+      const slackContext = { channelId: 'C123', threadTs: '1700000000.000001' };
+
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        auditContext: { slackContext },
+        log: context.log,
+      });
+
+      expect(sayStub).to.have.been.calledOnce;
+      const [, slackArg, messageArg] = sayStub.firstCall.args;
+      // Threads the same slackContext we passed in — proves the `?.slackContext`
+      // truthy branch is exercised, not the early-return.
+      expect(slackArg).to.equal(slackContext);
+      expect(messageArg).to.include('Sent to Mystique');
+      // newSuggestions.length above is 3 — detail string must echo it.
+      expect(messageArg).to.include('3');
+    });
+
+    it('still calls say() (which no-ops internally) when auditContext is absent', async () => {
+      // Covers the `?.` falsy branch — auditContext undefined → slackContext
+      // arg to say() is undefined. say() guards on channelId/threadTs so the
+      // post is a no-op, but the call site itself must still run for line 85
+      // coverage to be deterministic across runs.
+      await mockedSyncStep({
+        ...context,
+        site,
+        audit: mockAuditRecord,
+        finalUrl: auditUrl,
+        // auditContext intentionally omitted
+        log: context.log,
+      });
+
+      expect(sayStub).to.have.been.calledOnce;
+      const [, slackArg] = sayStub.firstCall.args;
+      expect(slackArg).to.be.undefined;
+    });
+  });
 });
 
 describe('shouldSendAutoSuggestForSuggestion — codefix dispatch gating', () => {
