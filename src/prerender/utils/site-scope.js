@@ -12,26 +12,26 @@
 
 import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 
-/**
- * Checks whether a URL is within the scope defined by baseUrl.
- * Root-domain baseUrls (no path) include all URLs on that domain.
- */
-function isUrlWithinBaseUrl(url, baseUrl) {
-  if (!url || !baseUrl) {
+function isWithinAuditScope(url, baseURL) {
+  if (!url || !baseURL) {
     return false;
   }
   try {
-    const parsedBase = new URL(prependSchema(baseUrl));
-    const parsedUrl = new URL(prependSchema(url));
-    if (stripWWW(parsedUrl.hostname) !== stripWWW(parsedBase.hostname)
-      || parsedUrl.port !== parsedBase.port) {
-      return false;
-    }
-    const basePath = parsedBase.pathname;
-    if (!basePath || basePath === '/') {
+    const parsedBaseURL = new URL(prependSchema(baseURL));
+    const basePath = parsedBaseURL.pathname;
+    const hasBasePath = basePath && basePath !== '/';
+    if (!hasBasePath) {
       return true;
     }
     const basePathWithSlash = `${basePath}/`;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return url.startsWith(basePathWithSlash) || url === basePath;
+    }
+    const parsedUrl = new URL(prependSchema(url));
+    if (stripWWW(parsedUrl.hostname) !== stripWWW(parsedBaseURL.hostname)
+      || parsedUrl.port !== parsedBaseURL.port) {
+      return false;
+    }
     return parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath;
   } catch {
     return false;
@@ -55,7 +55,7 @@ function isUrlWithinBaseUrl(url, baseUrl) {
  * @returns {boolean}
  */
 export function isUrlWithinSite(url, site) {
-  return isUrlWithinBaseUrl(url, site?.getBaseURL?.());
+  return isWithinAuditScope(url, site?.getBaseURL?.());
 }
 
 /**

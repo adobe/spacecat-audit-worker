@@ -986,8 +986,8 @@ export async function submitForScraping(context) {
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
-    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const scopedCsvUrls = filterUrlsBySite(rebasedCsvUrls, site);
+    const scopedOriginalCsvUrls = filterUrlsBySite(auditContext.urls, site);
+    const scopedCsvUrls = scopedOriginalCsvUrls.map((url) => rebaseUrl(url, preferredBase, log));
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       scopedCsvUrls,
       { includeQueryParams: true },
@@ -1000,6 +1000,7 @@ export async function submitForScraping(context) {
     topPagesUrls=0,
     includedURLs=0,
     filteredOutUrls=${filteredCount},
+    scopeFilteredUrls=${auditContext.urls.length - scopedOriginalCsvUrls.length},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},
     csvUrls=${auditContext.urls.length},`);
@@ -1034,12 +1035,11 @@ export async function submitForScraping(context) {
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   const preferredBase = getPreferredBaseUrl(site, context);
-  const rebasedTopPagesUrls = filterUrlsBySite(
-    topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
-    site,
-  );
-  const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
-    .map((url) => rebaseUrl(url, preferredBase, log));
+  const scopedTopPagesUrls = filterUrlsBySite(topPagesUrls, site);
+  const rebasedTopPagesUrls = scopedTopPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
+  const allIncludedURLs = (await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [];
+  const scopedIncludedURLs = filterUrlsBySite(allIncludedURLs, site);
+  const rebasedIncludedURLs = scopedIncludedURLs.map((url) => rebaseUrl(url, preferredBase, log));
 
   let finalUrls;
   let filteredCount;
@@ -1089,7 +1089,7 @@ export async function submitForScraping(context) {
       .filter((url) => isNotRecentUrl(url, recentPathnames))
       .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
-    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
+    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
@@ -1127,8 +1127,10 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${topPagesUrls.length},
+    topPagesUrls=${scopedTopPagesUrls.length},
+    topPagesScopeFiltered=${topPagesUrls.length - scopedTopPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
+    includedScopeFiltered=${allIncludedURLs.length - scopedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},
