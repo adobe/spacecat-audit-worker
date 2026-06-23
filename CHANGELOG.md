@@ -1,3 +1,59 @@
+## [1.486.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.0...v1.486.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* Sitemap audit now saves both "error" and "url" suggestions ([#2706](https://github.com/adobe/spacecat-audit-worker/issues/2706)) ([f789e32](https://github.com/adobe/spacecat-audit-worker/commit/f789e32261d16db8cc2bc6ad875f2a50099345b8))
+
+# [1.486.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.1...v1.486.0) (2026-06-22)
+
+
+### Features
+
+* **offsite:** notify Slack when DRS scrape is skipped ([#2717](https://github.com/adobe/spacecat-audit-worker/issues/2717)) ([c4dcd36](https://github.com/adobe/spacecat-audit-worker/commit/c4dcd363c2cb6f78ecabae0bedbc345a53d16176))
+
+## [1.485.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.485.0...v1.485.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **prerender:** revert to inline suggestions in Mystique SQS message ([#2716](https://github.com/adobe/spacecat-audit-worker/issues/2716)) ([0be7da4](https://github.com/adobe/spacecat-audit-worker/commit/0be7da47954a76ed46ef0834daa25e865d3ab144))
+
+# [1.485.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.2...v1.485.0) (2026-06-22)
+
+
+### Features
+
+* **prerender:** handle ai-only-current and ai-only-missing modes ([#2713](https://github.com/adobe/spacecat-audit-worker/issues/2713)) ([bf126c4](https://github.com/adobe/spacecat-audit-worker/commit/bf126c4e155939fcfe10427a0685705d13160e10)), closes [adobe/spacecat-api-service#2659](https://github.com/adobe/spacecat-api-service/issues/2659)
+
+## [1.484.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.1...v1.484.2) (2026-06-22)
+
+
+### Bug Fixes
+
+* add cooldown period for offsite audits ([#2710](https://github.com/adobe/spacecat-audit-worker/issues/2710)) ([6bb0fe5](https://github.com/adobe/spacecat-audit-worker/commit/6bb0fe543d0fe6d2bc018661501d0eda8c5153a8))
+
+## [1.484.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.484.0...v1.484.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2712](https://github.com/adobe/spacecat-audit-worker/issues/2712)) ([e3891f1](https://github.com/adobe/spacecat-audit-worker/commit/e3891f1f712ef5c2217b90a65417191210ae62e0))
+
+# [1.484.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.1...v1.484.0) (2026-06-22)
+
+
+### Features
+
+* **prerender:** upload suggestions to S3 and send S3 link to Mystique ([#2709](https://github.com/adobe/spacecat-audit-worker/issues/2709)) ([2f4748a](https://github.com/adobe/spacecat-audit-worker/commit/2f4748acd9bb2d4d2683a4289e05400bdbf9db26))
+
+## [1.483.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.483.0...v1.483.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2707](https://github.com/adobe/spacecat-audit-worker/issues/2707)) ([0cb9e76](https://github.com/adobe/spacecat-audit-worker/commit/0cb9e763c18e57546b3a11dac3bc2204e122a4f1))
+
 # [1.483.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.482.5...v1.483.0) (2026-06-19)
 
 

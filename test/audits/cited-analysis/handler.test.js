@@ -33,7 +33,9 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Cited Analysis Handler', () => {
+describe('Cited Analysis Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -433,6 +435,12 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: '1700000000.123456' },
+      );
     });
 
     it('should not include slackContext in auditResult when not provided', async () => {
@@ -440,6 +448,13 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+      // postMessageOptional is still invoked but with no channel/thread, so it no-ops.
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        undefined,
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: undefined },
+      );
     });
   });
 

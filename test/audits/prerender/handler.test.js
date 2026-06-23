@@ -1682,6 +1682,9 @@ describe('Prerender Audit', () => {
           getId: () => 'opportunity-123',
           getSiteId: () => 'test-site-id',
           getSuggestions: sandbox.stub().resolves([]),
+          getData: sandbox.stub().returns({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
         });
         const syncSuggestionsStub = sandbox.stub().resolves();
 
