@@ -189,6 +189,7 @@ export async function submitForScraping(context) {
 
 async function sendEnrichment(productPages, commerceConfig, site, env, log, {
   imsOrgId = null,
+  auditId = null,
 } = {}) {
   const allScrapes = productPages.map((page) => ({ sku: page.sku, key: page.location }));
 
@@ -200,6 +201,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    auditId,
     storeViewUrl: commerceConfig.storeViewUrl,
     imsOrgId,
     scrapes: allScrapes,
@@ -413,7 +415,7 @@ export async function runAuditAndProcessResults(context) {
     site,
     env,
     log,
-    { imsOrgId },
+    { imsOrgId, auditId: audit.getId() },
   ));
   const settledResults = await Promise.allSettled(enrichmentPromises);
   const enrichmentResponses = settledResults.map((result) => {
