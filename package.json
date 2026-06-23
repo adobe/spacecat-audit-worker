@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.486.2",
+  "version": "1.488.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -134,7 +134,7 @@
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.28",
-    "@adobe/helix-deploy": "14.0.8",
+    "@adobe/helix-deploy": "14.0.9",
     "@adobe/helix-universal": "5.4.2",
     "@adobe/helix-universal-devserver": "1.1.148",
     "@adobe/semantic-release-coralogix": "1.1.41",

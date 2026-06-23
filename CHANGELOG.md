@@ -1,3 +1,17 @@
+# [1.488.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.487.0...v1.488.0) (2026-06-23)
+
+
+### Features
+
+* **prerender:** revert inline suggestions revert ([#2716](https://github.com/adobe/spacecat-audit-worker/issues/2716)) ([#2720](https://github.com/adobe/spacecat-audit-worker/issues/2720)) ([2b3bdfe](https://github.com/adobe/spacecat-audit-worker/commit/2b3bdfe2022352a0eb07a4bb2bf993a008f3d93b)), closes [#2709](https://github.com/adobe/spacecat-audit-worker/issues/2709)
+
+# [1.487.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.2...v1.487.0) (2026-06-23)
+
+
+### Features
+
+*  retrieve recently processes url from site scrapes instead of PageCitability table ([#2696](https://github.com/adobe/spacecat-audit-worker/issues/2696)) ([6483c28](https://github.com/adobe/spacecat-audit-worker/commit/6483c28e9e45f2d8deaddb9d0fa58f9699de3199))
+
 ## [1.486.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.486.1...v1.486.2) (2026-06-23)
 
 

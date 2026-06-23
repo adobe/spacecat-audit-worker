@@ -108,7 +108,6 @@ async function runAudit(sandbox, existingSuggestions, auditUrl = BASE_URL) {
         STATUSES: Suggestion.STATUSES,
       },
       SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-      PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
     },
     site: {
       getId: () => 'test-site-id',
