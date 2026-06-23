@@ -1637,7 +1637,7 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.not.include('https://bulk.com/fr/page-2');
         });
 
-        it('filters out included URLs outside the site subpath but passes organic top pages through', async () => {
+        it('filters out both included URLs and organic top pages outside the site subpath', async () => {
           const mockHandler = await esmock('../../../src/prerender/handler.js', {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -1674,9 +1674,9 @@ describe('Prerender Audit', () => {
 
           const result = await mockHandler.submitForScraping(context);
           const submittedUrls = result.urls.map((u) => u.url);
-          // Organic top pages are NOT filtered by scope
+          // Organic top pages ARE filtered by scope
           expect(submittedUrls).to.include('https://bulk.com/uk/organic-1');
-          expect(submittedUrls).to.include('https://bulk.com/fr/organic-2');
+          expect(submittedUrls).to.not.include('https://bulk.com/fr/organic-2');
           // Included URLs ARE filtered by scope
           expect(submittedUrls).to.include('https://bulk.com/uk/special');
           expect(submittedUrls).to.not.include('https://bulk.com/de/special');
@@ -1714,6 +1714,33 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.include('https://bulk.com/uk/agentic-1');
           expect(submittedUrls).to.include('https://bulk.com/uk/agentic-3');
           expect(submittedUrls).to.not.include('https://bulk.com/fr/agentic-2');
+        });
+
+        it('filters scrape result URLs to site scope before suggestion creation', async () => {
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+            },
+            audit: { getId: () => 'audit-1' },
+            dataAccess: {
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            scrapeResultPaths: new Map([
+              ['https://bulk.com/uk/page-1', {}],
+              ['https://bulk.com/uk/page-2', {}],
+              ['https://bulk.com/fr/page-3', {}],
+            ]),
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+            s3Client: {},
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            auditContext: { scrapeJobId: 'job-1' },
+          };
+
+          const result = await processContentAndGenerateOpportunities(context);
+          // Only the 2 in-scope URLs (uk) should be compared; the out-of-scope (fr) is dropped
+          expect(result.auditResult.totalUrlsChecked).to.equal(2);
         });
       });
 
@@ -9677,7 +9704,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('URL filtering in getTopOrganicUrlsFromSeo', () => {
-      it('should include all top pages regardless of subpath when baseURL is a subpath', async () => {
+      it('should filter top pages to site subpath scope when baseURL is a subpath', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -9715,8 +9742,8 @@ describe('Prerender Audit', () => {
 
         expect(urls).to.include('https://nba.com/kings/roster');
         expect(urls).to.include('https://nba.com/kings/schedule');
-        expect(urls).to.include('https://nba.com/lakers/page');
-        expect(urls).to.include('https://nba.com/about');
+        expect(urls).to.not.include('https://nba.com/lakers/page');
+        expect(urls).to.not.include('https://nba.com/about');
       });
 
       it('should include all URLs when baseURL is a root domain', async () => {

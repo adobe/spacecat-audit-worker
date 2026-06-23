@@ -582,7 +582,10 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
+  const rebasedTopPagesUrls = filterBySiteScope(
+    topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
+    site.getBaseURL(),
+  );
   const rebasedIncludedURLs = filterBySiteScope(
     ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
       .map((url) => rebaseUrl(url, preferredBase, log)),
@@ -640,7 +643,7 @@ export async function submitForScraping(context) {
       .filter((url) => isNotRecentUrl(url, recentPathnames))
       .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
-    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
+    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
@@ -678,7 +681,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${topPagesUrls.length},
+    topPagesUrls=${rebasedTopPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     currentAgentic=${currentAgentic},
@@ -1216,7 +1219,10 @@ export async function processContentAndGenerateOpportunities(context) {
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
       if (scrapeResultPaths?.size > 0) {
-        urlsToCheck = Array.from(context.scrapeResultPaths.keys());
+        urlsToCheck = filterBySiteScope(
+          Array.from(context.scrapeResultPaths.keys()),
+          site.getBaseURL(),
+        );
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
         // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.
