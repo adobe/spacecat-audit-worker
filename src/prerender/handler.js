@@ -41,6 +41,7 @@ import {
 import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
+import { filterBySiteScope } from './utils/site-scope.js';
 
 function rebaseUrl(url, preferredBase, log) {
   try {
@@ -529,10 +530,13 @@ export async function submitForScraping(context) {
 
   const siteId = site.getId();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+  const preferredBase = getPreferredBaseUrl(site, context);
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const preferredBase = getPreferredBaseUrl(site, context);
-    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
+    const rebasedCsvUrls = filterBySiteScope(
+      auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log)),
+      site.getBaseURL(),
+    );
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       rebasedCsvUrls,
       { includeQueryParams: true },
@@ -578,10 +582,15 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const preferredBase = getPreferredBaseUrl(site, context);
-  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
-  const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
-    .map((url) => rebaseUrl(url, preferredBase, log));
+  const rebasedTopPagesUrls = filterBySiteScope(
+    topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
+    site.getBaseURL(),
+  );
+  const rebasedIncludedURLs = filterBySiteScope(
+    ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
+      .map((url) => rebaseUrl(url, preferredBase, log)),
+    site.getBaseURL(),
+  );
 
   let finalUrls;
   let filteredCount;
@@ -614,7 +623,10 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle = true;
   } else {
     // getTopAgenticUrls internally handles errors and returns [] on failure
-    const agenticUrls = await getTopAgenticUrls(site, context);
+    const agenticUrls = filterBySiteScope(
+      await getTopAgenticUrls(site, context),
+      site.getBaseURL(),
+    );
     agenticUrlsCount = agenticUrls.length;
 
     // Daily batching: filter URLs recently processed within the rolling recent window
