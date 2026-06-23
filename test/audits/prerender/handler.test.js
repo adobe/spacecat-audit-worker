@@ -10346,6 +10346,123 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
         expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/*']);
       });
+
+      it('should use /a/b/* pathPattern for a multi-segment subpath (nba.com/a/b)', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://nba.com/a/b/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://nba.com/a/b' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://nba.com/a/b', auditData, context);
+
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+        const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.pathPattern).to.equal('/a/b/*');
+        expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/a/b/*']);
+        expect(domainWideSuggestion.data.url).to.equal('https://nba.com/a/b/* (All Subpath URLs)');
+      });
+
+      it('should lowercase the pathPattern for a mixed-case subpath (nba.com/Kings)', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://nba.com/Kings/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://nba.com/Kings' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://nba.com/Kings', auditData, context);
+
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+        const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.pathPattern).to.equal('/kings/*');
+        expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/kings/*']);
+      });
     });
 
     describe('URL filtering in getTopOrganicUrlsFromSeo', () => {
