@@ -1120,6 +1120,171 @@ describe('guidance-broken-links-remediation handler', () => {
     }));
   });
 
+  it('should prefer parent path over homepage fallback when parent path exists', async () => {
+    const rootDomainMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['https://foo.com/'],
+          aiRationale: 'Could not access content, suggesting homepage',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/products/old-product',
+          url_from: 'https://example.com/page',
+          urlsSuggested: [],
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // Homepage returns 200 (passes filterBrokenSuggestedUrls) but should be overridden
+    nock('https://foo.com').get('/').reply(200);
+    // Parent path /products/ responds 200
+    nock('https://foo.com').get('/products/').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(rootDomainMessage, mockContext);
+    expect(response.status).to.equal(200);
+    // Parent path is used instead of homepage
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      url_to: 'https://foo.com/products/old-product',
+      urlsSuggested: ['https://foo.com/products/'],
+    }));
+    // Mystique's rationale (written about the homepage) must be cleared
+    expect(mockSetData).to.have.been.calledWith(sinon.match((data) => !data.aiRationale));
+  });
+
+  it('should keep homepage suggestion when no valid parent path exists', async () => {
+    const rootDomainMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['https://foo.com/'],
+          aiRationale: 'Entire section removed, homepage is the best destination',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/old-section/old-product',
+          url_from: 'https://example.com/page',
+          urlsSuggested: [],
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // Homepage returns 200
+    nock('https://foo.com').get('/').reply(200);
+    // Parent path /old-section/ returns 404 — section no longer exists
+    nock('https://foo.com').get('/old-section/').reply(404);
+
+    const response = await brokenLinksGuidanceHandler(rootDomainMessage, mockContext);
+    expect(response.status).to.equal(200);
+    // Homepage is restored since no valid parent path exists
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      url_to: 'https://foo.com/old-section/old-product',
+      urlsSuggested: ['https://foo.com/'],
+    }));
+    // Mystique's rationale is kept since the homepage suggestion is intentional
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      aiRationale: 'Entire section removed, homepage is the best destination',
+    }));
+  });
+
+  it('should keep a schema-less suggested URL that passes domain check but fails URL parsing in nonRootSuggestedUrls', async () => {
+    // 'foo.com/page' has no schema. filterBrokenSuggestedUrls prepends 'https://' for the
+    // fetch (returns 200) and hands back the original schema-less string. Inside
+    // nonRootSuggestedUrls the bare `new URL('foo.com/page')` throws, so the catch
+    // branch returns true — keeping the URL rather than dropping it.
+    const schemalessMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['foo.com/page'],
+          aiRationale: 'Schema-less suggestion',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    // filterBrokenSuggestedUrls fetches the prepended URL https://foo.com/page
+    nock('https://foo.com').get('/page').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(schemalessMessage, mockContext);
+    expect(response.status).to.equal(200);
+    // The schema-less URL survives because the catch branch returns true
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      urlsSuggested: ['foo.com/page'],
+    }));
+  });
+
   it('should use parent path fallback when no suggestions pass filtering', async () => {
     const noSuggestionMessage = {
       ...mockMessage,
