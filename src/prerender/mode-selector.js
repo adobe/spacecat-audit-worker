@@ -27,6 +27,27 @@ export function isAiOnlyMode(mode) {
   return AI_ONLY_MODES.has(mode);
 }
 
+/**
+ * Extracts the `mode` value from the audit `data` field.
+ * Accepts either a JSON string or an already-parsed object and returns the
+ * `mode` property, or null when absent or unparseable.
+ * @param {string|Object|null} data - The audit data field
+ * @returns {string|null}
+ */
+export function getModeFromData(data) {
+  if (!data) {
+    return null;
+  }
+
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    return parsedData.mode || null;
+  } catch (e) {
+    // Ignore parse errors
+    return null;
+  }
+}
+
 const EXCLUDED_STATUSES = new Set(['OUTDATED', 'SKIPPED', 'FIXED']);
 
 /**

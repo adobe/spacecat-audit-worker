@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
@@ -23,9 +23,11 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   buildSuggestionKey,
+  getS3Path,
   isPaidLLMOCustomer,
   mergeAndGetUniqueHtmlUrls,
   normalizePathnameWithQuery,
+  readSiteStatusJson,
   toPathname,
 } from './utils/utils.js';
 import {
@@ -35,10 +37,10 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
-  MODE_AI_ONLY,
-  MYSTIQUE_BATCH_SIZE,
 } from './utils/constants.js';
-import { isAiOnlyMode, buildUrlScopeForMode } from './mode-selector.js';
+import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
+import { handleAiOnlyMode } from './ai-only-handler.js';
+import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
 
 function rebaseUrl(url, preferredBase, log) {
   try {
@@ -57,33 +59,6 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
-
-/**
- * Reads and parses the site's status.json from S3.
- * Returns {} when S3 is not configured, the file does not exist, or any read error occurs.
- * Logs a warning for unexpected errors (non-NoSuchKey).
- * @param {string} siteId
- * @param {Object} context
- * @returns {Promise<Object>}
- */
-async function readSiteStatusJson(siteId, context) {
-  const { s3Client, env, log } = context;
-  if (!env?.S3_SCRAPER_BUCKET_NAME || !s3Client) {
-    return {};
-  }
-  const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-  try {
-    const response = await s3Client.send(
-      new GetObjectCommand({ Bucket: env.S3_SCRAPER_BUCKET_NAME, Key: statusKey }),
-    );
-    return JSON.parse(await response.Body.transformToString());
-  } catch (e) {
-    if (e.name !== 'NoSuchKey') {
-      log?.warn?.(`${LOG_PREFIX} Could not read status.json: ${e.message}. siteId=${siteId}`);
-    }
-    return {};
-  }
-}
 
 /** Skip re-scraping when status.json records a confirmed sticky block within this window. */
 const DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000;
@@ -383,35 +358,6 @@ function isNotRecentUrl(url, recentPathnames) {
 }
 
 /**
- * Sanitizes the import path by replacing special characters with hyphens
- * @param {string} importPath - The path to sanitize
- * @returns {string} The sanitized path
- */
-function sanitizeImportPath(importPath) {
-  return importPath
-    .replace(/^\/+|\/+$/g, '')
-    .replace(/[/._?=&]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-/**
-* Transforms a URL into an S3 path for a given identifier and file type.
-* The identifier can be either a scrape job id or a site id.
-* @param {string} url - The URL to transform
-* @param {string} id - The identifier - scrapeJobId
-* @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
-* 'client-side.html')
-* @returns {string} The S3 path to the file
-*/
-function getS3Path(url, id, fileName) {
-  const { pathname, search } = new URL(url);
-  const sanitizedImportPath = sanitizeImportPath(pathname + search);
-  const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
-  return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
-}
-
-/**
  * Gets scraped HTML content and metadata from S3 for a specific URL
  * @param {string} url - Full URL
  * @param {Object} context - Audit context (must contain log, s3Client, env;
@@ -516,405 +462,6 @@ async function compareHtmlContent(url, context) {
     log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
     return { ...scrapeContext, error: true, needsPrerender: false };
   }
-}
-
-/**
- * Parses the mode from the data field
- * @param {string|Object} data - The data field from the message
- * @returns {string|null} - The mode value or null
- */
-function getModeFromData(data) {
-  if (!data) {
-    return null;
-  }
-
-  try {
-    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    return parsedData.mode || null;
-  } catch (e) {
-    // Ignore parse errors
-    return null;
-  }
-}
-
-/**
- * Fetches the latest scrapeJobId from the status.json file in S3
- * @param {string} siteId - The site ID
- * @param {Object} context - Audit context with s3Client and env
- * @returns {Promise<string|null>} - The scrapeJobId or null if not found
- */
-async function fetchLatestScrapeJobId(siteId, context) {
-  const { log } = context;
-  log.info(`${LOG_PREFIX} ai-only: Fetching status.json for siteId=${siteId}`);
-  const statusData = await readSiteStatusJson(siteId, context);
-  if (statusData.scrapeJobId) {
-    log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
-    return statusData.scrapeJobId;
-  }
-  log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
-  return null;
-}
-
-/**
- * Sends a guidance:prerender message to Mystique with AI summary generation request
- * @param {string} auditUrl - Audited URL (site base URL)
- * @param {Object} auditData - Audit data used to build the message
- * @param {Object} opportunity - The prerender opportunity entity
- * @param {Object} context - Processing context
- * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
- *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
- *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
- * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
- * @returns {Promise<number>} - Number of suggestions sent to Mystique
- */
-async function sendPrerenderGuidanceRequestToMystique(
-  auditUrl,
-  auditData,
-  opportunity,
-  context,
-  preBuiltCandidates,
-  generatePrompts = false,
-  urlScope = null,
-) {
-  const {
-    log, sqs, env, site,
-  } = context;
-  /* c8 ignore start - Defensive checks and destructuring, tested in ai-only mode tests */
-  const {
-    siteId,
-    auditId,
-  } = auditData || {};
-
-  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn(`${LOG_PREFIX} SQS or Mystique queue not configured, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
-    return 0;
-  }
-
-  if (!opportunity || !opportunity.getId) {
-    log.warn(`${LOG_PREFIX} Opportunity entity not available, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
-    return 0;
-  }
-  /* c8 ignore stop */
-
-  const opportunityId = opportunity.getId();
-
-  try {
-    const baseUrl = auditUrl;
-
-    let suggestionsPayload;
-
-    /* c8 ignore next 4 - Normal run path exercised via processContentAndGenerateOpportunities */
-    if (preBuiltCandidates) {
-      suggestionsPayload = preBuiltCandidates;
-    /* c8 ignore start - Defensive fallback: handleAiOnlyMode now builds
-     * preBuiltCandidates directly, and step-3 always provides them.
-     * This branch is retained as a safety net if called with null. */
-    } else {
-      const existingSuggestions = await opportunity.getSuggestions();
-
-      if (!existingSuggestions || existingSuggestions.length === 0) {
-        log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
-        return 0;
-      }
-
-      const candidates = [];
-
-      existingSuggestions.forEach((s) => {
-        const data = s.getData();
-
-        if (!data?.url || data?.isDomainWide) {
-          return;
-        }
-
-        const status = s.getStatus();
-        const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
-        if (
-          status === Suggestion.STATUSES.OUTDATED
-          || status === Suggestion.STATUSES.SKIPPED
-          || isDeployedOrFixed
-        ) {
-          return;
-        }
-
-        const suggestionId = s.getId();
-
-        let effectiveScrapeJobId = data.scrapeJobId;
-        if (!effectiveScrapeJobId && data.originalHtmlKey) {
-          const parts = data.originalHtmlKey.split('/');
-          effectiveScrapeJobId = parts[2] || null;
-        }
-        if (!effectiveScrapeJobId) {
-          return;
-        }
-
-        candidates.push({
-          suggestionId,
-          url: data.url,
-          originalHtmlMarkdownKey: getS3Path(data.url, effectiveScrapeJobId, 'server-side-html.md'),
-          markdownDiffKey: getS3Path(data.url, effectiveScrapeJobId, 'markdown-diff.md'),
-          hasPrompts: Array.isArray(data.prompts) && data.prompts.length > 0,
-        });
-      });
-
-      suggestionsPayload = candidates;
-    }
-
-    if (urlScope && suggestionsPayload.length > 0) {
-      suggestionsPayload = suggestionsPayload.filter((s) => urlScope.has(s.url));
-    }
-    /* c8 ignore stop */
-
-    if (suggestionsPayload.length === 0) {
-      log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
-      return 0;
-    }
-
-    const deliveryType = site?.getDeliveryType?.() || 'unknown';
-
-    // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
-    const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
-
-    if (suggestionsPayload.length > MYSTIQUE_BATCH_SIZE) {
-      log.warn(`${LOG_PREFIX} Truncating suggestions from ${suggestionsPayload.length} to ${MYSTIQUE_BATCH_SIZE} for opportunityId=${opportunityId}, baseUrl=${baseUrl}`);
-    }
-
-    const time = new Date().toISOString();
-    const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
-    await sqs.sendMessage(queue, {
-      type: 'guidance:prerender',
-      url: baseUrl,
-      siteId,
-      auditId,
-      deliveryType,
-      time,
-      data: {
-        opportunityId,
-        suggestions: firstBatch,
-        batchIndex: 0,
-        totalBatches: 1,
-        generatePrompts,
-        siteRegion: site.getRegion() ?? '',
-      },
-    });
-
-    log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length}`);
-    return firstBatch.length;
-  /* c8 ignore next 5 - SQS dispatch failures */
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
-      + `baseUrl=${auditUrl}, siteId=${siteId}: ${error.message}`, error);
-    throw error;
-  }
-}
-
-/**
- * Handles AI-summary-only mode: sends existing suggestions to Mystique without running audit.
- * Called early in step 1 to bypass import/scraping/processing steps.
- * @param {Object} context - Audit context
- * @returns {Promise<Object>} - Result indicating success/failure
- */
-export async function handleAiOnlyMode(context) {
-  const {
-    site, log, dataAccess, data, auditContext,
-  } = context;
-  const { Opportunity } = dataAccess;
-  const siteId = site.getId();
-  const baseUrl = site.getBaseURL();
-
-  // Resolve mode early so error returns use the correct value in fullAuditRef.
-  // Default to MODE_AI_ONLY when data is malformed — the caller (importTopPages)
-  // already verified isAiOnlyMode before dispatching here.
-  const mode = getModeFromData(data) || MODE_AI_ONLY;
-
-  // Parse optional params from data field (opportunityId, scrapeJobId, generatePrompts)
-  let opportunityId = null;
-  let scrapeJobId = null;
-  let generatePrompts = false;
-  try {
-    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    if (parsedData) {
-      opportunityId = parsedData.opportunityId;
-      scrapeJobId = parsedData.scrapeJobId;
-      generatePrompts = !!parsedData.generatePrompts;
-    }
-  } catch (e) {
-    // Ignore parse errors
-    // Non-JSON data — graceful degradation, values stay at defaults
-    log.warn(`${LOG_PREFIX} Failed to parse context.data for opportunityId, scrapeJobId, generatePrompts, defaulting to null, null, false: ${e.message}`);
-  }
-
-  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}, generatePrompts=${generatePrompts}`);
-
-  // Fetch scrapeJobId from status.json if not provided
-  if (!scrapeJobId) {
-    log.info(`${LOG_PREFIX} ai-only: scrapeJobId not provided, fetching from status.json for baseUrl=${baseUrl}, siteId=${siteId}`);
-    scrapeJobId = await fetchLatestScrapeJobId(siteId, context);
-
-    if (!scrapeJobId) {
-      const error = 'scrapeJobId not found. Either provide it in data or ensure a prerender audit has run recently.';
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-      return {
-        error,
-        status: 'failed',
-        fullAuditRef: `${mode}/failed-${siteId}`,
-        auditResult: { error },
-      };
-    }
-  }
-
-  // Find the opportunity
-  let opportunity;
-  if (opportunityId) {
-    opportunity = await Opportunity.findById(opportunityId);
-    if (!opportunity) {
-      const error = `Opportunity not found: ${opportunityId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-      return {
-        error,
-        status: 'failed',
-        fullAuditRef: `${mode}/failed-${siteId}`,
-        auditResult: { error },
-      };
-    }
-  } else {
-    // Find latest NEW prerender opportunity for this site
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
-
-    if (!opportunity) {
-      const error = `No NEW prerender opportunity found for site: ${siteId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-      return {
-        error,
-        status: 'failed',
-        fullAuditRef: `${mode}/failed-${siteId}`,
-        auditResult: { error },
-      };
-    }
-
-    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()} for baseUrl=${baseUrl}, siteId=${siteId}`);
-  }
-
-  // Verify opportunity belongs to the site
-  if (opportunity.getSiteId() !== siteId) {
-    const error = `Opportunity ${opportunity.getId()} does not belong to site ${siteId}`;
-    log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-    return {
-      error,
-      status: 'failed',
-      fullAuditRef: `${mode}/failed-${siteId}`,
-      auditResult: { error },
-    };
-  }
-
-  // Fetch suggestions once and build candidates directly — avoids a redundant
-  // DB fetch inside sendPrerenderGuidanceRequestToMystique and ensures mode-specific
-  // filtering (e.g. including FIXED suggestions for ai-only-missing) is respected.
-  const allSuggestions = await opportunity.getSuggestions();
-
-  // Determine which URLs are in scope via explicit CSV or mode-based filter.
-  let urlScope = null;
-  if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    urlScope = new Set(auditContext.urls);
-    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} explicit URLs from auditContext. baseUrl=${baseUrl}, siteId=${siteId}`);
-  } else {
-    urlScope = buildUrlScopeForMode(mode, allSuggestions);
-    if (urlScope.size === 0) {
-      log.info(`${LOG_PREFIX} ai-only: No suggestions match mode=${mode} for baseUrl=${baseUrl}, siteId=${siteId}`);
-      return {
-        status: 'complete',
-        mode,
-        opportunityId: opportunity.getId(),
-        fullAuditRef: `${mode}/${opportunity.getId()}`,
-        auditResult: { message: 'No suggestions match the requested mode', suggestionCount: 0 },
-      };
-    }
-    log.info(`${LOG_PREFIX} ai-only: Scoping to ${urlScope.size} URLs from DB suggestions (mode=${mode}). baseUrl=${baseUrl}, siteId=${siteId}`);
-  }
-
-  // Build candidates from the already-fetched suggestions so the downstream
-  // function receives them as preBuiltCandidates and skips its own filter.
-  const candidates = [];
-  for (const s of allSuggestions) {
-    const d = s.getData();
-    if (!d?.url || d.isDomainWide || !urlScope.has(d.url)) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    const suggestionId = s.getId?.();
-
-    // Resolve the scrapeJobId in priority order:
-    //   1. data.scrapeJobId — stamped at suggestion-creation time
-    //   2. data.originalHtmlKey — extract the job segment from the S3 path
-    //   3. Neither available → skip
-    let effectiveScrapeJobId = d.scrapeJobId;
-    if (!effectiveScrapeJobId && d.originalHtmlKey) {
-      const parts = d.originalHtmlKey.split('/');
-      effectiveScrapeJobId = parts[2] || null;
-      if (effectiveScrapeJobId) {
-        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
-          + `derived from originalHtmlKey: ${effectiveScrapeJobId}. `
-          + `baseUrl=${baseUrl}, siteId=${siteId}`);
-      }
-    }
-    if (!effectiveScrapeJobId) {
-      log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
-        + `originalHtmlKey to derive one from. baseUrl=${baseUrl}, siteId=${siteId}`);
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    candidates.push({
-      suggestionId,
-      url: d.url,
-      originalHtmlMarkdownKey: getS3Path(d.url, effectiveScrapeJobId, 'server-side-html.md'),
-      markdownDiffKey: getS3Path(d.url, effectiveScrapeJobId, 'markdown-diff.md'),
-      hasPrompts: Array.isArray(d.prompts) && d.prompts.length > 0,
-    });
-  }
-
-  const auditData = {
-    siteId,
-    auditId: opportunity.getAuditId() || `prerender-ai-only-${siteId}`,
-    scrapeJobId,
-  };
-
-  let suggestionCount;
-  try {
-    suggestionCount = await sendPrerenderGuidanceRequestToMystique(
-      site.getBaseURL(),
-      auditData,
-      opportunity,
-      context,
-      candidates,
-      generatePrompts,
-    );
-  } catch (dispatchError) {
-    const error = `Mystique dispatch failed: ${dispatchError.message}`;
-    log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-    return {
-      error,
-      status: 'failed',
-      fullAuditRef: `${mode}/failed-${siteId}`,
-      auditResult: { error },
-    };
-  }
-
-  log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
-
-  return {
-    status: 'complete',
-    mode,
-    opportunityId: opportunity.getId(),
-    fullAuditRef: `${mode}/${opportunity.getId()}`,
-    auditResult: {
-      message: `AI summary generation queued successfully for ${suggestionCount} suggestion(s)`,
-      suggestionCount,
-    },
-  };
 }
 
 /**
