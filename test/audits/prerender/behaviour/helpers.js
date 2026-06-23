@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { getS3Path } from '../../../../src/prerender/utils/utils.js';
+
 /**
  * Shared factory helpers for prerender behavioural contract tests.
  *
@@ -33,24 +35,14 @@ export const HTML_CLIENT_NEEDS_PRERENDER = `<html><body><p>${'word '.repeat(60).
 // ─── S3 key helpers ───────────────────────────────────────────────────────────
 
 /**
- * Mirrors handler.js sanitizeImportPath + getS3Path to compute canonical S3 keys
- * for a given scrapeJobId + URL triple (server-side.html, client-side.html, scrape.json).
- *
- * Used in test keyMaps so there's a single source of truth for the expected key format.
+ * Uses the production getS3Path so the expected key format stays the single source of truth
+ * (no second sanitization copy to drift out of sync).
  */
 export function scrapeKeys(scrapeJobId, url) {
-  const { pathname } = new URL(url);
-  const sanitized = pathname
-    .replace(/^\/+|\/+$/g, '')
-    .replace(/[/._]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  const segment = sanitized ? `/${sanitized}` : '';
-  const base = `prerender/scrapes/${scrapeJobId}${segment}`;
   return {
-    serverHtml: `${base}/server-side.html`,
-    clientHtml: `${base}/client-side.html`,
-    scrapeJson: `${base}/scrape.json`,
+    serverHtml: getS3Path(url, scrapeJobId, 'server-side.html'),
+    clientHtml: getS3Path(url, scrapeJobId, 'client-side.html'),
+    scrapeJson: getS3Path(url, scrapeJobId, 'scrape.json'),
   };
 }
 
