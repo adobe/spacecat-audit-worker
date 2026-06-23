@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema } from '@adobe/spacecat-shared-utils';
+import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 
 /**
  * Checks whether a URL is within the scope defined by baseUrl.
@@ -22,12 +22,15 @@ function isUrlWithinBaseUrl(url, baseUrl) {
   }
   try {
     const parsedBase = new URL(prependSchema(baseUrl));
+    const parsedUrl = new URL(prependSchema(url));
+    if (stripWWW(parsedUrl.hostname) !== stripWWW(parsedBase.hostname)) {
+      return false;
+    }
     const basePath = parsedBase.pathname;
     if (!basePath || basePath === '/') {
       return true;
     }
     const basePathWithSlash = `${basePath}/`;
-    const parsedUrl = new URL(prependSchema(url));
     return parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath;
   } catch {
     return false;
