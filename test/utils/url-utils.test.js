@@ -252,6 +252,43 @@ describe('filterBrokenSuggestedUrls', () => {
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page2']);
   });
+
+  it('should keep URLs blocked by CDN (403, 429) since they may be valid pages', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/cdn-blocked',
+      'https://www.example.com/rate-limited',
+      'https://www.example.com/missing',
+    ];
+    nock('https://www.example.com')
+      .get('/cdn-blocked').reply(403)
+      .get('/rate-limited')
+      .reply(429)
+      .get('/missing')
+      .reply(404);
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal([
+      'https://www.example.com/cdn-blocked',
+      'https://www.example.com/rate-limited',
+    ]);
+  });
+
+  it('should filter out URLs that exceed the fetch timeout', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/slow',
+      'https://www.example.com/fast',
+    ];
+    const mockFetch = (url, { signal }) => {
+      if (url.includes('slow')) {
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        });
+      }
+      return Promise.resolve({ status: 200, ok: true });
+    };
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL, 50, mockFetch);
+    expect(result).to.deep.equal(['https://www.example.com/fast']);
+  });
 });
 
 describe('isUnscrapeable', () => {

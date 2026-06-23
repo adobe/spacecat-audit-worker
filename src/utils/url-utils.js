@@ -173,7 +173,12 @@ export function isPreviewPage(url) {
   return urlObj.hostname.endsWith('.page');
 }
 
-export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+export async function filterBrokenSuggestedUrls(
+  suggestedUrls,
+  baseURL,
+  timeoutMs = 5000,
+  fetchFn = fetch,
+) {
   // Strip www from both sides for consistent domain comparison
   const baseDomain = stripWWW(new URL(baseURL).hostname);
   const checks = suggestedUrls.map(async (suggestedUrl) => {
@@ -182,9 +187,16 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
       const suggestedURLObj = new URL(schemaPrependedUrl);
       const suggestedDomain = stripWWW(suggestedURLObj.hostname);
       if (suggestedDomain === baseDomain) {
-        const response = await fetch(schemaPrependedUrl);
-        if (response.ok) {
-          return suggestedUrl;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetchFn(schemaPrependedUrl, { signal: controller.signal });
+          // Only filter confirmed 404s — CDN blocks (403, 429, 5xx) may be valid pages
+          if (response.status !== 404) {
+            return suggestedUrl;
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
       }
       return null;
