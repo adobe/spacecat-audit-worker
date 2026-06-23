@@ -12,81 +12,96 @@
 
 import { expect } from 'chai';
 import {
-  isUrlWithinSiteBaseUrl,
-  filterUrlsBySiteBaseUrl,
+  isUrlWithinSite,
+  filterUrlsBySite,
 } from '../../../src/prerender/utils/site-scope.js';
 
+const site = (baseUrl) => ({ getBaseURL: () => baseUrl });
+
 describe('prerender/utils/site-scope', () => {
-  describe('isUrlWithinSiteBaseUrl', () => {
-    it('returns false for missing url', () => {
-      expect(isUrlWithinSiteBaseUrl(null, 'https://nba.com/kings')).to.be.false;
+  describe('isUrlWithinSite', () => {
+    it('returns false when url is null', () => {
+      expect(isUrlWithinSite(null, site('https://nba.com/kings'))).to.be.false;
     });
 
-    it('returns false for missing baseUrl', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/kings/roster', null)).to.be.false;
+    it('returns false when site is null', () => {
+      expect(isUrlWithinSite('https://nba.com/kings/roster', null)).to.be.false;
     });
 
-    it('returns true for root-domain site (no path in baseUrl)', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/lakers/page', 'https://nba.com')).to.be.true;
+    it('returns false when site has no getBaseURL', () => {
+      expect(isUrlWithinSite('https://nba.com/kings/roster', {})).to.be.false;
     });
 
-    it('returns true for URL belonging to the same site baseUrl', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/kings/roster', 'https://nba.com/kings')).to.be.true;
+    it('returns false when url is unparseable', () => {
+      expect(isUrlWithinSite('not a url ::::', site('https://nba.com/kings'))).to.be.false;
+    });
+
+    it('returns false when site baseUrl is unparseable', () => {
+      expect(isUrlWithinSite('https://nba.com/kings/roster', site('not a url ::::'))).to.be.false;
+    });
+
+    it('returns false for URL on a different hostname', () => {
+      expect(isUrlWithinSite('https://wnba.com/kings/roster', site('https://nba.com/kings'))).to.be.false;
+    });
+
+    it('treats www and non-www as the same hostname', () => {
+      expect(isUrlWithinSite('https://www.nba.com/kings/roster', site('https://nba.com/kings'))).to.be.true;
+    });
+
+    it('returns true for any URL on a root-domain site', () => {
+      expect(isUrlWithinSite('https://nba.com/lakers/page', site('https://nba.com'))).to.be.true;
+    });
+
+    it('returns true for URL within the site baseUrl path', () => {
+      expect(isUrlWithinSite('https://nba.com/kings/roster', site('https://nba.com/kings'))).to.be.true;
     });
 
     it('returns true for URL equal to the site baseUrl path exactly', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/kings', 'https://nba.com/kings')).to.be.true;
+      expect(isUrlWithinSite('https://nba.com/kings', site('https://nba.com/kings'))).to.be.true;
     });
 
-    it('returns false for URL belonging to a different site on the same domain', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/lakers/roster', 'https://nba.com/kings')).to.be.false;
+    it('returns false for URL on a different site sharing the same domain', () => {
+      expect(isUrlWithinSite('https://nba.com/lakers/roster', site('https://nba.com/kings'))).to.be.false;
     });
 
-    it('returns false for URL whose path is a prefix of baseUrl path but not within it', () => {
-      // /kingsley is not part of the /kings site
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/kingsley/page', 'https://nba.com/kings')).to.be.false;
-    });
-
-    it('returns false when URL parsing fails', () => {
-      expect(isUrlWithinSiteBaseUrl('not a url ::::', 'https://nba.com/kings')).to.be.false;
-    });
-
-    it('returns false when baseUrl parsing fails', () => {
-      expect(isUrlWithinSiteBaseUrl('https://nba.com/kings/roster', 'not a url ::::')).to.be.false;
+    it('returns false for URL whose path is a string prefix but not a path child', () => {
+      // /kingsley starts with /kings but is a different site
+      expect(isUrlWithinSite('https://nba.com/kingsley/page', site('https://nba.com/kings'))).to.be.false;
     });
   });
 
-  describe('filterUrlsBySiteBaseUrl', () => {
-    it('returns empty input unchanged', () => {
-      expect(filterUrlsBySiteBaseUrl([], 'https://nba.com/kings')).to.deep.equal([]);
-    });
-
+  describe('filterUrlsBySite', () => {
     it('returns null input unchanged', () => {
-      expect(filterUrlsBySiteBaseUrl(null, 'https://nba.com/kings')).to.be.null;
+      expect(filterUrlsBySite(null, site('https://nba.com/kings'))).to.be.null;
     });
 
-    it('returns all URLs for root-domain site (no path in baseUrl)', () => {
+    it('returns empty array unchanged', () => {
+      expect(filterUrlsBySite([], site('https://nba.com/kings'))).to.deep.equal([]);
+    });
+
+    it('returns all URLs for a root-domain site', () => {
       const urls = ['https://nba.com/kings/roster', 'https://nba.com/lakers/page'];
-      expect(filterUrlsBySiteBaseUrl(urls, 'https://nba.com')).to.deep.equal(urls);
+      expect(filterUrlsBySite(urls, site('https://nba.com'))).to.deep.equal(urls);
     });
 
-    it('keeps only URLs belonging to the site baseUrl', () => {
+    it('keeps only URLs belonging to the site', () => {
       const urls = [
         'https://nba.com/kings/roster',
         'https://nba.com/lakers/page',
         'https://nba.com/kings/schedule',
         'https://nba.com/about',
       ];
-      const result = filterUrlsBySiteBaseUrl(urls, 'https://nba.com/kings');
-      expect(result).to.deep.equal([
+      expect(filterUrlsBySite(urls, site('https://nba.com/kings'))).to.deep.equal([
         'https://nba.com/kings/roster',
         'https://nba.com/kings/schedule',
       ]);
     });
 
-    it('returns all URLs unchanged when baseUrl parsing fails', () => {
-      const urls = ['https://nba.com/kings/roster'];
-      expect(filterUrlsBySiteBaseUrl(urls, 'not a url ::::')).to.deep.equal(urls);
+    it('excludes URLs on a different hostname entirely', () => {
+      const urls = ['https://wnba.com/kings/roster', 'https://nba.com/kings/schedule'];
+      expect(filterUrlsBySite(urls, site('https://nba.com/kings'))).to.deep.equal([
+        'https://nba.com/kings/schedule',
+      ]);
     });
   });
 });
