@@ -44,6 +44,10 @@ describe('prerender/utils/site-scope', () => {
       expect(isUrlWithinSite('https://wnba.com/kings/roster', site('https://nba.com/kings'))).to.be.false;
     });
 
+    it('returns false for URL on a different port', () => {
+      expect(isUrlWithinSite('https://nba.com:8080/kings/roster', site('https://nba.com/kings'))).to.be.false;
+    });
+
     it('treats www and non-www as the same hostname', () => {
       expect(isUrlWithinSite('https://www.nba.com/kings/roster', site('https://nba.com/kings'))).to.be.true;
     });

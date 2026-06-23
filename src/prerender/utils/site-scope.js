@@ -23,7 +23,8 @@ function isUrlWithinBaseUrl(url, baseUrl) {
   try {
     const parsedBase = new URL(prependSchema(baseUrl));
     const parsedUrl = new URL(prependSchema(url));
-    if (stripWWW(parsedUrl.hostname) !== stripWWW(parsedBase.hostname)) {
+    if (stripWWW(parsedUrl.hostname) !== stripWWW(parsedBase.hostname)
+      || parsedUrl.port !== parsedBase.port) {
       return false;
     }
     const basePath = parsedBase.pathname;
