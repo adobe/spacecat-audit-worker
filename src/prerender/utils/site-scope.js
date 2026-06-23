@@ -13,19 +13,26 @@
 import { prependSchema } from '@adobe/spacecat-shared-utils';
 
 /**
- * Checks whether a URL falls within the subpath scope defined by baseURL.
- * When baseURL has no subpath (root domain), all URLs are considered in scope.
+ * Checks whether a URL belongs to the site identified by its configured baseUrl.
+ *
+ * Two sites can share the same domain but have different baseUrls
+ * (e.g. nba.com and nba.com/kings are separate sites). Top pages,
+ * scrape jobs, and suggestions must be restricted to the site's own
+ * baseUrl so that results from one site do not bleed into another.
+ *
+ * When baseUrl has no path component (root-domain site), all URLs
+ * on that domain are considered in scope.
  *
  * @param {string} url - Absolute URL to check
- * @param {string} baseURL - Site base URL (e.g. "https://example.com/en")
+ * @param {string} baseUrl - Site baseUrl from site config (e.g. "https://nba.com/kings")
  * @returns {boolean}
  */
-export function isUrlInScope(url, baseURL) {
-  if (!url || !baseURL) {
+export function isUrlWithinSiteBaseUrl(url, baseUrl) {
+  if (!url || !baseUrl) {
     return false;
   }
   try {
-    const parsedBase = new URL(prependSchema(baseURL));
+    const parsedBase = new URL(prependSchema(baseUrl));
     const basePath = parsedBase.pathname;
     if (!basePath || basePath === '/') {
       return true;
@@ -39,26 +46,26 @@ export function isUrlInScope(url, baseURL) {
 }
 
 /**
- * Filters an array of absolute URL strings to those within the site.baseUrl subpath.
- * No-op for root-domain sites (no subpath).
+ * Filters an array of absolute URL strings to those belonging to the site's baseUrl.
+ * No-op for root-domain sites.
  *
  * @param {string[]} urls - Array of absolute URL strings
- * @param {string} baseURL - Site base URL
+ * @param {string} baseUrl - Site baseUrl from site config
  * @param {Object} log - Logger
  * @returns {string[]}
  */
-export function filterUrlsToScope(urls, baseURL, log) {
+export function filterUrlsBySiteBaseUrl(urls, baseUrl, log) {
   if (!urls || urls.length === 0) {
     return urls;
   }
   try {
-    const parsedBase = new URL(prependSchema(baseURL));
+    const parsedBase = new URL(prependSchema(baseUrl));
     if (!parsedBase.pathname || parsedBase.pathname === '/') {
       return urls;
     }
-    const filtered = urls.filter((url) => isUrlInScope(url, baseURL));
+    const filtered = urls.filter((url) => isUrlWithinSiteBaseUrl(url, baseUrl));
     log?.debug?.(
-      `[prerender/subpath-utils] Scoped ${urls.length} URLs to ${filtered.length} within ${parsedBase.pathname}`,
+      `[prerender] Scoped ${urls.length} URLs to ${filtered.length} for site baseUrl ${baseUrl}`,
     );
     return filtered;
   } catch {

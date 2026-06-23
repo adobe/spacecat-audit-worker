@@ -1604,8 +1604,8 @@ describe('Prerender Audit', () => {
         expect(athenaStub).to.have.been.called;
       });
 
-      describe('subpath/baseUrl scoping', () => {
-        it('filters CSV auditContext.urls to site.baseUrl subpath', async () => {
+      describe('site baseUrl scoping', () => {
+        it('filters CSV auditContext.urls to site baseUrl', async () => {
           const mockHandler = await esmock('../../../src/prerender/handler.js', {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -1640,7 +1640,7 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.not.include('https://example.com/de/page-4');
         });
 
-        it('does not filter CSV auditContext.urls for root-domain sites (no subpath)', async () => {
+        it('does not filter CSV auditContext.urls for root-domain sites', async () => {
           const mockHandler = await esmock('../../../src/prerender/handler.js', {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -1671,7 +1671,7 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.include('https://example.com/fr/page-2');
         });
 
-        it('filters top organic page URLs to site.baseUrl subpath', async () => {
+        it('filters top organic page URLs to site baseUrl', async () => {
           const mockHandler = await esmock('../../../src/prerender/handler.js', {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -1713,7 +1713,7 @@ describe('Prerender Audit', () => {
           });
         });
 
-        it('does not filter top organic page URLs for root-domain sites (no subpath)', async () => {
+        it('does not filter top organic page URLs for root-domain sites', async () => {
           const mockHandler = await esmock('../../../src/prerender/handler.js', {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => [],
@@ -9711,7 +9711,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('URL filtering in getTopOrganicUrlsFromSeo', () => {
-      it('should only include top pages within baseURL subpath (LLMO-5748)', async () => {
+      it('should only include top pages within site baseUrl (LLMO-5748)', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => [],
