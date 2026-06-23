@@ -22,7 +22,7 @@ import {
 } from '../support/utils.js';
 
 // ----- version ----------------------------------------------------------------
-export const COMMON_VERSION = 102; // manually update as needed
+export const COMMON_VERSION = 103; // manually update as needed
 
 // ----- performance tuning constants ------------------------------------------
 
@@ -1075,6 +1075,8 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
   const baseUrl = getUrlWithoutPath(inputUrl);
   const baseUrlVariant = toggleWWW(baseUrl);
   const pagesBySitemap = {};
+  /** @type {Array<{ error: string, value: string }>} */
+  const sitemapErrors = [];
   let sitemapsToProcess = [...initialUrls];
   const processedSitemaps = new Set();
 
@@ -1113,6 +1115,18 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
           if (pages.length > 0) {
             pagesBySitemap[sitemapUrl] = pages;
           }
+        } else {
+          log?.warn(
+            `Sitemap: off-domain sitemap — skipping valid sitemap URL outside audit scope for ${inputUrl}: ${sitemapUrl}`,
+          );
+        }
+      } else {
+        const reason = sitemapData.reasons?.find((r) => r?.error);
+        if (reason) {
+          sitemapErrors.push({
+            error: reason.error,
+            value: reason.value ?? sitemapUrl,
+          });
         }
       }
     };
@@ -1131,7 +1145,7 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
     sitemapsToProcess = sitemapsFromIndexes;
   }
 
-  return pagesBySitemap;
+  return { pagesBySitemap, sitemapErrors };
 }
 
 export async function getSitemapUrls(inputUrl, log) {
@@ -1194,16 +1208,24 @@ export async function getSitemapUrls(inputUrl, log) {
 
   // Extract and validate page URLs from our validated sitemap URLs:
   //   getBaseUrlPagesFromSitemaps filters sitemaps by domain, then filters page URLs by full path
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok, log);
-  log?.info(`Sitemap: Extracted ${Object.keys(extractedPaths).length} sitemap URLs for ${inputUrl}`);
-  log?.info(`Sitemap: Extracted ${Object.values(extractedPaths).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
+  const { pagesBySitemap, sitemapErrors } = await getBaseUrlPagesFromSitemaps(
+    inputUrl,
+    sitemapUrls.ok,
+    log,
+  );
+  log?.info(`Sitemap: Extracted ${Object.keys(pagesBySitemap).length} sitemap URLs for ${inputUrl}`);
+  log?.info(`Sitemap: Extracted ${Object.values(pagesBySitemap).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
+  if (sitemapErrors.length > 0) {
+    log?.info(`Sitemap: Found ${sitemapErrors.length} per-sitemap error(s) for ${inputUrl}`);
+  }
 
   return {
     success: true,
     reasons: [{ value: 'URLs are extracted from sitemap.' }],
     details: {
-      extractedPaths,
+      extractedPaths: pagesBySitemap,
       filteredSitemapUrls: sitemapUrls.ok, // Validated sitemap URLs
+      sitemapErrors,
     },
   };
 }
