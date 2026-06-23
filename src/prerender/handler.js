@@ -36,7 +36,7 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
-  MYSTIQUE_BATCH_SIZE,
+  MYSTIQUE_SUGGESTIONS_S3_PREFIX,
 } from './utils/constants.js';
 import { isAiOnlyMode, buildUrlScopeForMode } from './mode-selector.js';
 
@@ -671,13 +671,17 @@ async function sendPrerenderGuidanceRequestToMystique(
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
-    // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
-    const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
+    // Upload all suggestions to S3 and send just the S3 key via SQS.
+    // This avoids the 256 KB SQS message size limit — Mystique downloads from S3.
+    const { s3Client } = context;
+    const suggestionsS3Key = `${MYSTIQUE_SUGGESTIONS_S3_PREFIX}/${opportunityId}.json`;
 
-    if (suggestionsPayload.length > MYSTIQUE_BATCH_SIZE) {
-      log.warn(`${LOG_PREFIX} Truncating suggestions from ${suggestionsPayload.length} to ${MYSTIQUE_BATCH_SIZE} for opportunityId=${opportunityId}, baseUrl=${baseUrl}`);
-    }
+    await s3Client.send(new PutObjectCommand({
+      Bucket: env.S3_SCRAPER_BUCKET_NAME,
+      Key: suggestionsS3Key,
+      Body: JSON.stringify(suggestionsPayload),
+      ContentType: 'application/json',
+    }));
 
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
@@ -690,18 +694,18 @@ async function sendPrerenderGuidanceRequestToMystique(
       time,
       data: {
         opportunityId,
-        suggestions: firstBatch,
-        batchIndex: 0,
-        totalBatches: 1,
+        suggestionsS3Key,
+        suggestionsS3Bucket: env.S3_SCRAPER_BUCKET_NAME,
         generatePrompts,
         siteRegion: site.getRegion() ?? '',
       },
     });
 
     log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length}`);
-    return firstBatch.length;
-  /* c8 ignore next 5 - SQS dispatch failures */
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}, `
+      + `suggestionsS3Key=${suggestionsS3Key}`);
+    return suggestionsPayload.length;
+  /* c8 ignore next 5 - S3/SQS dispatch failures */
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
       + `baseUrl=${auditUrl}, siteId=${siteId}: ${error.message}`, error);
