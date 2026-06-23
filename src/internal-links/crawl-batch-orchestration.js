@@ -182,7 +182,7 @@ export function createCrawlBatchOrchestration({
   }
 
   async function processOneBatch({
-    auditId, batchNum, batchStartIndex, batchSize, scrapeResultPaths, context, log,
+    auditId, batchNum, batchStartIndex, batchSize, scrapeResultPaths, context, log, lambdaStartTime,
   }) {
     const claimEtag = await tryStartBatchProcessing(auditId, batchNum, { ...context, log });
     /* c8 ignore next 4 - Concurrent worker guard; requires multi-Lambda race to trigger */
@@ -203,7 +203,22 @@ export function createCrawlBatchOrchestration({
         batchSize,
         initialBrokenUrls: brokenUrlsCache,
         initialWorkingUrls: workingUrlsCache,
+        lambdaStartTime,
       }, { ...context, log });
+
+      if (batchResult.earlyExit) {
+        // Batch was interrupted mid-page due to Lambda timeout approaching.
+        // Only persist the cache (broken/working URLs found so far) — do NOT save partial batch
+        // results or mark the batch complete. The next Lambda will re-process this full batch
+        // from batchStartIndex, using the updated cache to skip already-validated URLs quickly.
+        await updateCache(auditId, batchResult.brokenUrlsCache, batchResult.workingUrlsCache, {
+          ...context, log,
+        });
+        /* c8 ignore next 3 - earlyExit claim release; tested via outer loop continuation test */
+        await releaseBatchProcessingClaim(auditId, batchNum, claimEtag, { ...context, log });
+        log.info(`Batch ${batchNum}: early exit after ${batchResult.pagesProcessed} pages (timeout), resuming from index ${batchStartIndex}`);
+        return { ...batchResult, nextBatchStartIndex: batchStartIndex };
+      }
 
       await saveBatchResults(auditId, batchNum, batchResult.results, batchResult.pagesProcessed, {
         ...context, log,
@@ -215,8 +230,8 @@ export function createCrawlBatchOrchestration({
 
       await markBatchCompleted(auditId, batchNum, { ...context, log });
       await releaseBatchProcessingClaim(auditId, batchNum, claimEtag, { ...context, log });
-
       log.info(`Batch ${batchNum}: ${batchResult.results.length} broken links from ${batchResult.pagesProcessed} pages`);
+
       return batchResult;
     /* c8 ignore start - Claim cleanup on unexpected batch failure */
     } catch (error) {
@@ -355,6 +370,7 @@ export function createCrawlBatchOrchestration({
           scrapeResultPaths,
           context,
           log,
+          lambdaStartTime,
         });
       } catch (error) {
         log.error(`Batch ${batchNum} processing failed: ${error.message}`);
@@ -370,6 +386,30 @@ export function createCrawlBatchOrchestration({
 
       batchesProcessedThisLambda += 1;
       currentIndex = batchResult.nextBatchStartIndex;
+
+      if (batchResult.earlyExit) {
+        // Batch was interrupted mid-page due to Lambda timeout — send continuation immediately
+        // without attempting another batch, to ensure the SQS message is sent before Lambda dies.
+        log.info(`Early exit detected, sending continuation from index ${currentIndex}`);
+        // eslint-disable-next-line no-await-in-loop
+        await sendContinuationWithRetry({
+          auditId,
+          nextBatchIndex: currentIndex,
+          continuationCount: continuationCount + 1,
+          site,
+          audit,
+          scrapeJobId,
+          sqs,
+          env,
+          log,
+          context,
+        });
+        return {
+          status: 'batch-continuation',
+          batchesProcessedThisLambda,
+          batchesSkipped,
+        };
+      }
     }
 
     log.info(`All ${estimatedTotalBatches} batches complete (${batchesProcessedThisLambda} processed, ${batchesSkipped} skipped in this Lambda)`);
