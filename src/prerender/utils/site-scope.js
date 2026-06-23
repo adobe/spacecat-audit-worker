@@ -56,7 +56,6 @@ export function isUrlWithinSite(url, site) {
 
 /**
  * Filters an array of absolute URL strings to those belonging to the site's scope.
- * No-op for root-domain sites.
  *
  * @param {string[]} urls - Array of absolute URL strings
  * @param {Object} site - Site object with getBaseURL()
@@ -66,14 +65,5 @@ export function filterUrlsBySite(urls, site) {
   if (!urls || urls.length === 0) {
     return urls;
   }
-  const baseUrl = site?.getBaseURL?.();
-  try {
-    const parsedBase = new URL(prependSchema(baseUrl));
-    if (!parsedBase.pathname || parsedBase.pathname === '/') {
-      return urls;
-    }
-    return urls.filter((url) => isUrlWithinBaseUrl(url, baseUrl));
-  } catch {
-    return urls;
-  }
+  return urls.filter((url) => isUrlWithinSite(url, site));
 }
