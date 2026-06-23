@@ -178,6 +178,7 @@ export async function filterBrokenSuggestedUrls(
   baseURL,
   timeoutMs = 5000,
   fetchFn = fetch,
+  log = null,
 ) {
   // Strip www from both sides for consistent domain comparison
   const baseDomain = stripWWW(new URL(baseURL).hostname);
@@ -200,8 +201,8 @@ export async function filterBrokenSuggestedUrls(
         }
       }
       return null;
-      // eslint-disable-next-line no-unused-vars
     } catch (error) {
+      log?.warn(`Backlinks: failed to validate suggested URL ${suggestedUrl}: ${error.message}`);
       return null;
     }
   });

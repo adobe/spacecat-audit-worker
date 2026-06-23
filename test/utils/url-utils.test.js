@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
+import sinon from 'sinon';
 import nock from 'nock';
 import {
   isPreviewPage,
@@ -22,6 +24,8 @@ import {
   resolveParentPathFallback,
 } from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
+
+use(sinonChai);
 
 describe('isPdfUrl', () => {
   it('should return true for URLs ending with .pdf', () => {
@@ -253,16 +257,20 @@ describe('filterBrokenSuggestedUrls', () => {
     expect(result).to.deep.equal(['https://www.example.com/page2']);
   });
 
-  it('should keep URLs blocked by CDN (403, 429) since they may be valid pages', async () => {
+  it('should keep URLs blocked by CDN (403, 429, 5xx) since they may be valid pages', async () => {
     const suggestedUrls = [
       'https://www.example.com/cdn-blocked',
       'https://www.example.com/rate-limited',
+      'https://www.example.com/server-error',
       'https://www.example.com/missing',
     ];
     nock('https://www.example.com')
-      .get('/cdn-blocked').reply(403)
+      .get('/cdn-blocked')
+      .reply(403)
       .get('/rate-limited')
       .reply(429)
+      .get('/server-error')
+      .reply(503)
       .get('/missing')
       .reply(404);
 
@@ -270,6 +278,7 @@ describe('filterBrokenSuggestedUrls', () => {
     expect(result).to.deep.equal([
       'https://www.example.com/cdn-blocked',
       'https://www.example.com/rate-limited',
+      'https://www.example.com/server-error',
     ]);
   });
 
@@ -288,6 +297,23 @@ describe('filterBrokenSuggestedUrls', () => {
     };
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL, 50, mockFetch);
     expect(result).to.deep.equal(['https://www.example.com/fast']);
+  });
+
+  it('should log a warning when a network error occurs during validation', async () => {
+    const suggestedUrls = ['https://www.example.com/unreachable'];
+    const mockFetch = () => Promise.reject(new Error('ECONNREFUSED'));
+    const mockLog = { warn: sinon.spy() };
+    const result = await utils.filterBrokenSuggestedUrls(
+      suggestedUrls,
+      baseURL,
+      5000,
+      mockFetch,
+      mockLog,
+    );
+    expect(result).to.deep.equal([]);
+    expect(mockLog.warn).to.have.been.calledOnceWith(
+      'Backlinks: failed to validate suggested URL https://www.example.com/unreachable: ECONNREFUSED',
+    );
   });
 });
 
