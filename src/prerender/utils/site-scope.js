@@ -13,21 +13,10 @@
 import { prependSchema } from '@adobe/spacecat-shared-utils';
 
 /**
- * Checks whether a URL belongs to the site identified by its configured baseUrl.
- *
- * Two sites can share the same domain but have different baseUrls
- * (e.g. nba.com and nba.com/kings are separate sites). Top pages,
- * scrape jobs, and suggestions must be restricted to the site's own
- * baseUrl so that results from one site do not bleed into another.
- *
- * When baseUrl has no path component (root-domain site), all URLs
- * on that domain are considered in scope.
- *
- * @param {string} url - Absolute URL to check
- * @param {string} baseUrl - Site baseUrl from site config (e.g. "https://nba.com/kings")
- * @returns {boolean}
+ * Checks whether a URL is within the scope defined by baseUrl.
+ * Root-domain baseUrls (no path) include all URLs on that domain.
  */
-export function isUrlWithinSiteBaseUrl(url, baseUrl) {
+function isUrlWithinBaseUrl(url, baseUrl) {
   if (!url || !baseUrl) {
     return false;
   }
@@ -46,23 +35,44 @@ export function isUrlWithinSiteBaseUrl(url, baseUrl) {
 }
 
 /**
- * Filters an array of absolute URL strings to those belonging to the site's baseUrl.
+ * Checks whether a URL belongs to the given site.
+ *
+ * Two sites can share the same domain but have different baseUrls
+ * (e.g. nba.com and nba.com/kings are separate sites). Top pages,
+ * scrape jobs, and suggestions must be restricted to the site's own
+ * scope so that results from one site do not bleed into another.
+ *
+ * Scoping is currently driven by site.getBaseURL(). Accepting the full
+ * site object allows future scoping rules (e.g. locale config, org-level
+ * overrides) to be added without changing call sites.
+ *
+ * @param {string} url - Absolute URL to check
+ * @param {Object} site - Site object with getBaseURL()
+ * @returns {boolean}
+ */
+export function isUrlWithinSite(url, site) {
+  return isUrlWithinBaseUrl(url, site?.getBaseURL?.());
+}
+
+/**
+ * Filters an array of absolute URL strings to those belonging to the site's scope.
  * No-op for root-domain sites.
  *
  * @param {string[]} urls - Array of absolute URL strings
- * @param {string} baseUrl - Site baseUrl from site config
+ * @param {Object} site - Site object with getBaseURL()
  * @returns {string[]}
  */
-export function filterUrlsBySiteBaseUrl(urls, baseUrl) {
+export function filterUrlsBySite(urls, site) {
   if (!urls || urls.length === 0) {
     return urls;
   }
+  const baseUrl = site?.getBaseURL?.();
   try {
     const parsedBase = new URL(prependSchema(baseUrl));
     if (!parsedBase.pathname || parsedBase.pathname === '/') {
       return urls;
     }
-    return urls.filter((url) => isUrlWithinSiteBaseUrl(url, baseUrl));
+    return urls.filter((url) => isUrlWithinBaseUrl(url, baseUrl));
   } catch {
     return urls;
   }
