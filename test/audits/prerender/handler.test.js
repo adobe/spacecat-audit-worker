@@ -1569,6 +1569,153 @@ describe('Prerender Audit', () => {
         expect(athenaStub).to.have.been.called;
       });
 
+      describe('subpath/baseUrl scoping', () => {
+        it('filters CSV auditContext.urls to site.baseUrl subpath', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com/en',
+            },
+            auditContext: {
+              urls: [
+                'https://example.com/en/page-1',
+                'https://example.com/fr/page-2',
+                'https://example.com/en/page-3',
+                'https://example.com/de/page-4',
+              ],
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            env: {},
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+
+          expect(submittedUrls).to.have.length(2);
+          expect(submittedUrls).to.include('https://example.com/en/page-1');
+          expect(submittedUrls).to.include('https://example.com/en/page-3');
+          expect(submittedUrls).to.not.include('https://example.com/fr/page-2');
+          expect(submittedUrls).to.not.include('https://example.com/de/page-4');
+        });
+
+        it('does not filter CSV auditContext.urls for root-domain sites (no subpath)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+            },
+            auditContext: {
+              urls: [
+                'https://example.com/en/page-1',
+                'https://example.com/fr/page-2',
+              ],
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            env: {},
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+
+          expect(submittedUrls).to.have.length(2);
+          expect(submittedUrls).to.include('https://example.com/en/page-1');
+          expect(submittedUrls).to.include('https://example.com/fr/page-2');
+        });
+
+        it('filters top organic page URLs to site.baseUrl subpath', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com/en',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                  { getUrl: () => 'https://example.com/en/page-a' },
+                  { getUrl: () => 'https://example.com/fr/page-b' },
+                  { getUrl: () => 'https://example.com/en/page-c' },
+                  { getUrl: () => 'https://example.com/de/page-d' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+
+          expect(submittedUrls).to.not.include('https://example.com/fr/page-b');
+          expect(submittedUrls).to.not.include('https://example.com/de/page-d');
+          submittedUrls.forEach((url) => {
+            expect(url).to.satisfy((u) => u.startsWith('https://example.com/en/') || u === 'https://example.com/en');
+          });
+        });
+
+        it('does not filter top organic page URLs for root-domain sites (no subpath)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                  { getUrl: () => 'https://example.com/en/page-a' },
+                  { getUrl: () => 'https://example.com/fr/page-b' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+
+          expect(submittedUrls).to.include('https://example.com/en/page-a');
+          expect(submittedUrls).to.include('https://example.com/fr/page-b');
+        });
+      });
+
     });
 
     describe('processContentAndGenerateOpportunities', () => {
