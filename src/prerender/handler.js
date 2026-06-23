@@ -1255,7 +1255,7 @@ async function prepareDomainWideAggregateSuggestion(
     pathPattern,
   };
 
-  log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
+  log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for scope ${pathPattern} with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
   return {
     key: DOMAIN_WIDE_SUGGESTION_KEY,

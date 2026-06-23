@@ -3230,7 +3230,7 @@ describe('Prerender Audit', () => {
         const domainWideSuggestionLog = logCalls.find((msg) => msg.includes('domain-wide aggregate suggestion'));
 
         if (domainWideSuggestionLog) {
-          expect(domainWideSuggestionLog).to.include('entire domain');
+          expect(domainWideSuggestionLog).to.include('scope /*');
           expect(domainWideSuggestionLog).to.include('Regex');
         }
       });
@@ -10284,6 +10284,12 @@ describe('Prerender Audit', () => {
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
         expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.url).to.equal('https://nba.com/kings/* (All Subpath URLs)');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(2);
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(100);
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(200);
+        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(50);
         expect(domainWideSuggestion.data.pathPattern).to.equal('/kings/*');
         expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/kings/*']);
       });
@@ -10343,6 +10349,12 @@ describe('Prerender Audit', () => {
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key === 'domain-wide-aggregate|prerender');
         expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.url).to.equal('https://nba.com/* (All Domain URLs)');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(2);
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(100);
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(200);
+        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(50);
         expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
         expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/*']);
       });
