@@ -1,3 +1,24 @@
+## [1.488.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.3...v1.488.4) (2026-06-24)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** stop emitting citability score + deployed-at-edge (LLMO-5646) ([#2633](https://github.com/adobe/spacecat-audit-worker/issues/2633)) ([910ad1a](https://github.com/adobe/spacecat-audit-worker/commit/910ad1a652cffae69738871d2ebf2371ef85f1f6))
+
+## [1.488.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.2...v1.488.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* enable Bright Data URL validation by default and fix CDN-block false negatives ([#2723](https://github.com/adobe/spacecat-audit-worker/issues/2723)) ([d35d9b8](https://github.com/adobe/spacecat-audit-worker/commit/d35d9b8702cbd489a463c380ae26c09446cb20e3))
+
+## [1.488.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.1...v1.488.2) (2026-06-24)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2726](https://github.com/adobe/spacecat-audit-worker/issues/2726)) ([a083a40](https://github.com/adobe/spacecat-audit-worker/commit/a083a407a91fe5046c8362c6f1bb0d4818a65ab1))
+
 ## [1.488.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.0...v1.488.1) (2026-06-23)
 
 
