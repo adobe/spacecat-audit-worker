@@ -1219,6 +1219,8 @@ export async function processContentAndGenerateOpportunities(context) {
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
       if (scrapeResultPaths?.size > 0) {
+        // Defensive re-filter: scrape result paths should already be in-scope (submitForScraping
+        // scoped them before submission), but a stale scrape job could carry out-of-scope paths.
         urlsToCheck = filterBySiteScope(
           Array.from(context.scrapeResultPaths.keys()),
           site.getBaseURL(),
