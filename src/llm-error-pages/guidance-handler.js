@@ -21,6 +21,7 @@ import {
   SPREADSHEET_COLUMNS,
 } from './utils.js';
 import { getS3Config } from '../utils/cdn-utils.js';
+import { filterOutConfirmedBrokenUrls } from './url-health-check.js';
 
 function derivePeriodFromBrokenLinks(brokenLinks = []) {
   const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
@@ -45,7 +46,7 @@ export default async function handler(message, context) {
     Site, Audit, Opportunity, Suggestion,
   } = dataAccess;
   const { siteId, data, auditId } = message;
-  const { brokenLinks, opportunityId } = data;
+  const { brokenLinks: incomingBrokenLinks, opportunityId } = data;
 
   log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -61,6 +62,40 @@ export default async function handler(message, context) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
   }
+
+  // Defence-in-depth: HEAD-check Mystique's suggested URLs and drop any that
+  // resolve to 4xx/5xx on the live site (Mystique's locale_filtered_urls pool
+  // is not verified end-to-end). When the filter empties a link's suggestion
+  // list, also blank its aiRationale so the row stays internally consistent —
+  // the rationale text references URLs that no longer survive the check.
+  const incoming = Array.isArray(incomingBrokenLinks) ? incomingBrokenLinks : [];
+  const allSuggestedUrls = Array.from(new Set(
+    incoming.flatMap((l) => (Array.isArray(l.suggestedUrls) ? l.suggestedUrls : [])),
+  ));
+  const reachable = new Set(await filterOutConfirmedBrokenUrls(allSuggestedUrls, log));
+  let droppedCount = 0;
+  const brokenLinks = incoming.map((link) => {
+    const original = Array.isArray(link.suggestedUrls) ? link.suggestedUrls : [];
+    const filtered = original.filter((u) => reachable.has(u));
+    droppedCount += original.length - filtered.length;
+    // When all picks were dropped, blank the rationale: it references URLs that
+    // didn't survive the HEAD check and would otherwise read as orphaned prose.
+    const aiRationale = filtered.length === 0 ? '' : (link.aiRationale ?? '');
+    return { ...link, suggestedUrls: filtered, aiRationale };
+  });
+  if (droppedCount > 0) {
+    log.info(`[LLM-ERROR-PAGES] Dropped ${droppedCount} suggested URL(s) that failed HEAD check`);
+  }
+  // Structured summary line — dashboard query target. Emitted regardless of
+  // whether any URLs were dropped so the absence of drops is also observable.
+  // Passed as structured metadata (second arg) so Coralogix/CloudWatch can
+  // index the counters as native fields rather than re-parsing a JSON string.
+  log.info('[LLM-ERROR-PAGES] head-check-summary', {
+    siteId,
+    total: allSuggestedUrls.length,
+    kept: reachable.size,
+    dropped: droppedCount,
+  });
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
@@ -89,13 +124,16 @@ export default async function handler(message, context) {
       } = brokenLink;
       const keyUrl = toPathOnly(urlTo, baseUrl);
 
-      if (!suggestedUrls || suggestedUrls.length === 0) {
-        log.warn(`No suggested URLs for broken link: ${urlTo}`);
+      // suggestedUrls is normalized to an array by the HEAD-check pass above.
+      if (suggestedUrls.length === 0) {
+        // Aggregate counter in the head-check-summary log line above is the
+        // real signal; per-link traces stay at debug to keep INFO clean.
+        log.debug(`No suggested URLs for broken link: ${urlTo}`);
       }
 
       brokenUrlsMap.set(keyUrl, {
         userAgents: urlFrom,
-        suggestedUrls: suggestedUrls || [],
+        suggestedUrls,
         aiRationale: aiRationale || '',
       });
     });
@@ -158,13 +196,15 @@ export default async function handler(message, context) {
           existingSuggestions.map((s) => [toPathOnly(s.getData()?.url, baseUrl), s]),
         );
 
+        // Note: we intentionally do NOT gate on `suggestedUrls.length` here.
+        // Empty-suggestion rows are still written to Excel (so the report stays
+        // complete), and skipping them in the DB created Excel↔DB drift. The
+        // HEAD-check above already cleared the rationale on those rows, so what
+        // lands in the DB is consistent with what lands in Excel.
         const toUpdate = brokenLinks.reduce((acc, link) => {
           const {
             urlTo, suggestedUrls, aiRationale, confidenceScore,
           } = link;
-          if (!suggestedUrls?.length) {
-            return acc;
-          }
           const path = toPathOnly(urlTo, baseUrl);
           const suggestion = suggestionByPath.get(path);
           if (!suggestion) {
@@ -172,6 +212,7 @@ export default async function handler(message, context) {
           }
           suggestion.setData({
             ...suggestion.getData(),
+            // suggestedUrls is normalized to an array by the HEAD-check pass.
             suggestedUrls,
             aiRationale: aiRationale || '',
             ...(confidenceScore !== undefined && { confidenceScore }),

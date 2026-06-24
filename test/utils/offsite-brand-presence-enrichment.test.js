@@ -14,54 +14,68 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import ExcelJS from 'exceljs';
 import {
   BRAND_PRESENCE_REGEX,
-  FETCH_TIMEOUT_MS,
-  INCLUDE_COLUMNS,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
 } from '../../src/offsite-brand-presence/constants.js';
 
 use(sinonChai);
 
-const MOCK_FETCH_PAGE_SIZE = 100;
 const SITE_ID = 'site-123';
 const DEFAULT_WEEK = 7;
 const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
+const DATA_FOLDER = 'test-llmo-folder';
 
 const SHARED_CONSTANTS_MOCK = {
   BRAND_PRESENCE_REGEX,
   PROVIDERS_SET,
-  INCLUDE_COLUMNS,
-  FETCH_PAGE_SIZE: MOCK_FETCH_PAGE_SIZE,
-  FETCH_TIMEOUT_MS,
   OFFSITE_DOMAINS,
 };
 
-function okJsonResponse(sandbox, body) {
+function makeSite(overrides = {}) {
   return {
-    ok: true,
-    json: sandbox.stub().resolves(body),
-    text: sandbox.stub().resolves(JSON.stringify(body)),
+    getId: () => SITE_ID,
+    getConfig: () => ({
+      getLlmoDataFolder: () => DATA_FOLDER,
+    }),
+    getBaseURL: () => 'https://www.example.com',
+    ...overrides,
   };
 }
 
-function failResponse(sandbox, status, statusText = 'Error') {
-  return {
-    ok: false,
-    status,
-    statusText,
-    text: sandbox.stub().resolves(statusText),
-  };
+async function makeQueryIndexBuffer(paths) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(['Path']);
+  for (const p of paths) {
+    ws.addRow([p]);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-function makeQueryIndex(providers = ['copilot'], week = DEFAULT_WEEK, year = DEFAULT_YEAR) {
-  return {
-    data: providers.map((p) => ({
-      path: `/adobe/brand-presence/w${week}/brandpresence-${p}-w${week}-${year}-010126.json`,
-    })),
-  };
+function makeQueryIndexPaths(providers = ['copilot'], week = DEFAULT_WEEK, year = DEFAULT_YEAR) {
+  return providers.map(
+    (p) => `/adobe/brand-presence/w${week}/brandpresence-${p}-w${week}-${year}-010126.json`,
+  );
+}
+
+async function makeBrandPresenceBuffer(rows) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(['Sources', 'Region', 'Topics', 'Category', 'Prompt']);
+  for (const row of rows) {
+    ws.addRow([
+      row.Sources ?? '',
+      row.Region ?? '',
+      row.Topics ?? '',
+      row.Category ?? '',
+      row.Prompt ?? '',
+    ]);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 function makeBrandPresenceRow(overrides = {}) {
@@ -75,24 +89,60 @@ function makeBrandPresenceRow(overrides = {}) {
   };
 }
 
-describe('offsite-brand-presence-enrichment', () => {
+/**
+ * Builds a brand-presence sheet from raw ExcelJS cell arrays, allowing non-string
+ * cell encodings (hyperlink/richText/formula objects, numbers, Dates, null) and a
+ * custom header set so column-mapping edge cases can be exercised.
+ */
+async function makeRawSheetBuffer(rows, headers = ['Sources', 'Region', 'Topics', 'Category', 'Prompt']) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(headers);
+  for (const cells of rows) {
+    ws.addRow(cells);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** Builds a query-index sheet from raw cell arrays (supports hyperlink/object cells). */
+async function makeRawQueryIndexBuffer(cellRows) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Sheet1');
+  ws.addRow(['Path']);
+  for (const cells of cellRows) {
+    ws.addRow(cells);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** Builds a valid XLSX buffer for a workbook that contains no worksheets. */
+async function makeEmptyWorkbookBuffer() {
+  const workbook = new ExcelJS.Workbook();
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+describe('offsite-brand-presence-enrichment', function () {
+  this.timeout(10000);
+
   let sandbox;
-  let mockFetch;
   let mockIsoCalendarWeek;
+  let mockCreateSPClient;
+  let mockReadFromSP;
   let computeTopicsFromBrandPresence;
   let formatTopicsForEnrichment;
   let filterBrandPresenceFiles;
   let loadBrandPresenceData;
   let getPreviousWeeks;
   let log;
-  let env;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    mockFetch = sandbox.stub();
     mockIsoCalendarWeek = sandbox.stub();
     mockIsoCalendarWeek.onFirstCall().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
     mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
+
+    mockCreateSPClient = sandbox.stub().resolves({});
+    mockReadFromSP = sandbox.stub();
 
     log = {
       info: sandbox.stub(),
@@ -101,17 +151,15 @@ describe('offsite-brand-presence-enrichment', () => {
       debug: sandbox.stub(),
     };
 
-    env = {
-      SPACECAT_API_BASE_URL: 'https://spacecat.api.example.com',
-      SPACECAT_API_KEY: 'test-api-key',
-    };
-
     const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
       '@adobe/spacecat-shared-utils': {
         isoCalendarWeek: mockIsoCalendarWeek,
-        tracingFetch: mockFetch,
       },
       '../../src/offsite-brand-presence/constants.js': SHARED_CONSTANTS_MOCK,
+      '../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: mockCreateSPClient,
+        readFromSharePointWithRetry: mockReadFromSP,
+      },
     });
 
     computeTopicsFromBrandPresence = mod.computeTopicsFromBrandPresence;
@@ -129,9 +177,12 @@ describe('offsite-brand-presence-enrichment', () => {
     return esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
       '@adobe/spacecat-shared-utils': {
         isoCalendarWeek: mockIsoCalendarWeek,
-        tracingFetch: mockFetch,
       },
       '../../src/offsite-brand-presence/constants.js': SHARED_CONSTANTS_MOCK,
+      '../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: mockCreateSPClient,
+        readFromSharePointWithRetry: mockReadFromSP,
+      },
       '../../src/utils/brandalf-utils.js': {
         isBrandalfEnabled: sandbox.stub().resolves(true),
         resolveOrganizationIdForSite: sandbox.stub().resolves('org-123'),
@@ -144,59 +195,81 @@ describe('offsite-brand-presence-enrichment', () => {
     });
   }
 
-  function setupQueryIndexAndData(rows, providers = ['copilot']) {
-    mockFetch
-      .onFirstCall().resolves(okJsonResponse(sandbox, makeQueryIndex(providers)))
-      .onSecondCall().resolves(okJsonResponse(sandbox, { data: rows }));
+  async function setupSharePointStubs(rows, providers = ['copilot']) {
+    const qiPaths = makeQueryIndexPaths(providers);
+    const qiBuffer = await makeQueryIndexBuffer(qiPaths);
+    const bpBuffer = await makeBrandPresenceBuffer(rows);
+
+    mockReadFromSP.callsFake(async (filename) => {
+      if (filename === 'query-index.xlsx') {
+        return qiBuffer;
+      }
+      return bpBuffer;
+    });
+  }
+
+  // Wires the query-index read to `qiBuffer` and every sheet read to `bpResolver`
+  // (either a fixed buffer or a function of the requested filename).
+  function stubSharePoint(qiBuffer, bpResolver) {
+    mockReadFromSP.callsFake(async (filename) => {
+      if (filename === 'query-index.xlsx') {
+        return qiBuffer;
+      }
+      return typeof bpResolver === 'function' ? bpResolver(filename) : bpResolver;
+    });
   }
 
   describe('filterBrandPresenceFiles', () => {
     it('returns paths matching week, year, and known provider', () => {
-      const paths = filterBrandPresenceFiles(makeQueryIndex(), DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(paths).to.deep.equal([
-        `brand-presence/w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json`,
-      ]);
+      const paths = [
+        `w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126`,
+      ];
+      const result = filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.deep.equal(paths);
     });
 
     it('returns empty array when no entries match', () => {
-      expect(filterBrandPresenceFiles({ data: [] }, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+      expect(filterBrandPresenceFiles([], DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
     it('excludes files when ISO week in filename does not match target week', () => {
-      const qi = { data: [{ path: `/adobe/brand-presence/w8/brandpresence-copilot-w8-${DEFAULT_YEAR}-010126.json` }] };
-      expect(filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+      const paths = [`w8/brandpresence-copilot-w8-${DEFAULT_YEAR}-010126`];
+      expect(filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
-    it('treats null queryIndex as empty', () => {
+    it('treats null paths as empty', () => {
       expect(filterBrandPresenceFiles(null, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
-    it('ignores entries without path, without brand-presence segment, or unknown provider id', () => {
-      const qi = {
-        data: [
-          {},
-          { path: '/other/file.json' },
-          { path: `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-not-a-real-provider-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json` },
-        ],
-      };
-      expect(filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+    it('ignores paths with unknown provider id or that do not match the pattern', () => {
+      const paths = [
+        'other/file',
+        `w${DEFAULT_WEEK}/brandpresence-not-a-real-provider-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126`,
+      ];
+      expect(filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
     it('ignores brand-presence paths that do not match the filename pattern', () => {
-      const qi = { data: [{ path: '/adobe/brand-presence/w7/foo.json' }] };
-      expect(filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+      const paths = ['w7/foo'];
+      expect(filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
     it('excludes files when year in filename does not match target year', () => {
-      const qi = { data: [{ path: `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-2025-010126.json` }] };
-      expect(filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+      const paths = [`w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-2025-010126`];
+      expect(filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
 
     it('matches filenames without a trailing date suffix', () => {
-      const qi = { data: [{ path: `/site/brand-presence/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}.json` }] };
-      const paths = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(paths).to.have.lengthOf(1);
-      expect(paths[0]).to.include('copilot');
+      const paths = [`brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}`];
+      const result = filterBrandPresenceFiles(paths, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.include('copilot');
+    });
+
+    it('ignores empty or falsy path entries', () => {
+      const valid = `w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126`;
+      const result = filterBrandPresenceFiles(['', null, valid], DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.deep.equal([valid]);
     });
   });
 
@@ -234,7 +307,7 @@ describe('offsite-brand-presence-enrichment', () => {
   });
 
   describe('computeTopicsFromBrandPresence', () => {
-    it('uses PostgREST data before query-index/file fetches', async () => {
+    it('uses PostgREST data before SharePoint reads', async () => {
       const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves({
         data: [makeBrandPresenceRow()],
       });
@@ -242,7 +315,6 @@ describe('offsite-brand-presence-enrichment', () => {
       const postgrestClient = { from: sandbox.stub() };
 
       const result = await mod.computeTopicsFromBrandPresence(SITE_ID, {
-        env: {},
         log,
         dataAccess: { services: { postgrestClient } },
       });
@@ -250,35 +322,36 @@ describe('offsite-brand-presence-enrichment', () => {
       expect(result).to.have.lengthOf(1);
       expect(result[0].name).to.equal('MyTopic');
       expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/test/comments/abc');
-      expect(mockFetch).to.not.have.been.called;
+      expect(mockReadFromSP).to.not.have.been.called;
       expect(
         loadBrandPresenceDataFromPostgrest.firstCall.args[0].postgrestClient,
       ).to.equal(postgrestClient);
     });
 
-    it('returns empty array for brandalf-enabled site when PostgREST returns no rows', async () => {
+    it('falls back to SharePoint fetch for brandalf-enabled site when PostgREST returns no rows', async () => {
       const mod = await esmockWithPostgrest();
+      const site = makeSite();
 
       const result = await mod.computeTopicsFromBrandPresence(
         SITE_ID,
-        { env, log, dataAccess: {} },
+        { log, dataAccess: {} },
+        site,
       );
 
       expect(result).to.deep.equal([]);
-      expect(mockFetch).to.not.have.been.called;
       expect(log.info).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
 
     it('forwards the provided site object to organization resolution', async () => {
-      const fakeSite = { getOrganizationId: sandbox.stub().returns('org-from-site') };
       const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
       const mod = await esmockWithPostgrest({ resolveOrganizationIdForSite });
+      const fakeSite = makeSite({ getOrganizationId: sandbox.stub().returns('org-from-site') });
 
       await mod.computeTopicsFromBrandPresence(
         SITE_ID,
-        { env, log, dataAccess: {} },
+        { log, dataAccess: {} },
         fakeSite,
       );
 
@@ -287,72 +360,45 @@ describe('offsite-brand-presence-enrichment', () => {
       expect(resolveOrganizationIdForSite.firstCall.args[0].siteId).to.equal(SITE_ID);
     });
 
-    it('returns empty array when SPACECAT_API_BASE_URL is missing', async () => {
+    it('returns empty array when site cannot be resolved', async () => {
       const result = await computeTopicsFromBrandPresence(SITE_ID, {
-        env: { SPACECAT_API_KEY: 'k' },
         log,
+        dataAccess: { Site: { findById: sandbox.stub().resolves(null) } },
       });
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/);
+      expect(log.warn).to.have.been.calledWithMatch(/Cannot resolve site/);
     });
 
-    it('returns empty array when SPACECAT_API_KEY is missing', async () => {
-      const result = await computeTopicsFromBrandPresence(SITE_ID, {
-        env: { SPACECAT_API_BASE_URL: 'https://example.com' },
-        log,
-      });
+    it('returns empty array when site has no LLMO data folder', async () => {
+      const site = makeSite({ getConfig: () => ({ getLlmoDataFolder: () => null }) });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
+      expect(log.warn).to.have.been.calledWithMatch(/No LLMO data folder configured/);
     });
 
-    it('returns empty array when query-index fetch is not ok', async () => {
-      mockFetch.resolves(failResponse(sandbox, 500));
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+    it('returns empty array when SharePoint query-index read throws', async () => {
+      mockReadFromSP.rejects(new Error('SharePoint down'));
+      const site = makeSite();
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to fetch query-index/);
-    });
-
-    it('returns empty array when query-index fetch throws', async () => {
-      mockFetch.rejects(new Error('network'));
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(result).to.deep.equal([]);
-      expect(log.error).to.have.been.calledWithMatch(/Error fetching query-index/);
-    });
-
-    it('returns empty array when query-index json() rejects', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().rejects(new SyntaxError('Unexpected token')),
-      });
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(result).to.deep.equal([]);
-      expect(log.error).to.have.been.calledWithMatch(/Error fetching query-index/);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to fetch query-index for site/);
-    });
-
-    it('treats null JSON body on brand presence page as empty rows', async () => {
-      mockFetch
-        .onFirstCall().resolves(okJsonResponse(sandbox, makeQueryIndex()))
-        .onSecondCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves(null),
-          text: sandbox.stub().resolves(''),
-        });
-
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(result).to.deep.equal([]);
+      expect(log.error).to.have.been.calledWithMatch(/Error reading query-index from SharePoint/);
     });
 
     it('returns empty array when no brand presence files match the week', async () => {
-      mockFetch.resolves(okJsonResponse(sandbox, { data: [] }));
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const qiBuffer = await makeQueryIndexBuffer([]);
+      mockReadFromSP.resolves(qiBuffer);
+
+      const site = makeSite();
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.info).to.have.been.calledWithMatch(/Found 0 brand presence files/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index for site/);
     });
 
     it('aggregates topics from brand presence rows (US, reddit URL, topic)', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow()]);
+      await setupSharePointStubs([makeBrandPresenceRow()]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].name).to.equal('MyTopic');
@@ -364,17 +410,18 @@ describe('offsite-brand-presence-enrichment', () => {
     });
 
     it('skips non-US rows and rows without Sources', async () => {
-      setupQueryIndexAndData([
+      await setupSharePointStubs([
         { Sources: 'https://reddit.com/r/a', Region: 'EU', Topics: 'T' },
         { Sources: '', Region: 'US', Topics: 'T' },
       ]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
     });
 
     it('skips empty source segments and invalid URL tokens', async () => {
-      setupQueryIndexAndData([
+      await setupSharePointStubs([
         makeBrandPresenceRow({
           Sources: ';https://www.reddit.com/r/good',
           Topics: 'T',
@@ -383,8 +430,9 @@ describe('offsite-brand-presence-enrichment', () => {
         }),
         { Sources: ':::', Region: 'US', Topics: 'T2' },
       ]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.have.lengthOf(1);
       expect(result[0].name).to.equal('T');
       expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/good');
@@ -392,7 +440,7 @@ describe('offsite-brand-presence-enrichment', () => {
 
     it('increments citation count when the same normalized URL appears in multiple rows', async () => {
       const url = 'https://www.reddit.com/r/x/y';
-      setupQueryIndexAndData([
+      await setupSharePointStubs([
         makeBrandPresenceRow({
           Sources: url, Topics: 'T', Category: 'C', Prompt: 'P',
         }),
@@ -400,180 +448,122 @@ describe('offsite-brand-presence-enrichment', () => {
           Sources: url, Topics: 'T', Category: 'C', Prompt: '',
         }),
       ]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].timesCited).to.equal(2);
     });
 
     it('does not track topic when Topics is empty', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({ Topics: '   ' })]);
+      await setupSharePointStubs([makeBrandPresenceRow({ Topics: '   ' })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
     });
 
-    describe('pagination (small FETCH_PAGE_SIZE)', () => {
-      let computeTopicsPaginated;
-
-      beforeEach(async () => {
-        const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
-          '@adobe/spacecat-shared-utils': {
-            isoCalendarWeek: mockIsoCalendarWeek,
-            tracingFetch: mockFetch,
-          },
-          '../../src/offsite-brand-presence/constants.js': {
-            ...SHARED_CONSTANTS_MOCK,
-            FETCH_PAGE_SIZE: 2,
-          },
-        });
-        computeTopicsPaginated = mod.computeTopicsFromBrandPresence;
-      });
-
-      it('paginates brand presence fetch when rows exceed page size', async () => {
-        const r1 = makeBrandPresenceRow({ Sources: 'https://reddit.com/r/a', Topics: 'T1' });
-        const r2 = makeBrandPresenceRow({ Sources: 'https://reddit.com/r/b', Topics: 'T2' });
-        const r3 = makeBrandPresenceRow({ Sources: 'https://reddit.com/r/c', Topics: 'T3' });
-        mockFetch
-          .onFirstCall()
-          .resolves(okJsonResponse(sandbox, makeQueryIndex()))
-          .onSecondCall()
-          .resolves(okJsonResponse(sandbox, { data: [r1, r2] }))
-          .onThirdCall()
-          .resolves(okJsonResponse(sandbox, { data: [r3] }));
-
-        const result = await computeTopicsPaginated(SITE_ID, { env, log });
-        expect(mockFetch.callCount).to.be.at.least(3);
-        expect(result.length).to.be.at.least(1);
-      });
-
-      it('returns partial rows when a later page fetch fails after at least one ok page', async () => {
-        const r1 = makeBrandPresenceRow({ Sources: 'https://reddit.com/r/partial', Topics: 'T1' });
-        const r2 = makeBrandPresenceRow({ Sources: 'https://reddit.com/r/partial2', Topics: 'T2' });
-        mockFetch
-          .onFirstCall()
-          .resolves(okJsonResponse(sandbox, makeQueryIndex()))
-          .onSecondCall()
-          .resolves(okJsonResponse(sandbox, { data: [r1, r2] }))
-          .onThirdCall()
-          .resolves(failResponse(sandbox, 500));
-
-        const result = await computeTopicsPaginated(SITE_ID, { env, log });
-        expect(log.warn).to.have.been.calledWithMatch(/Failed to fetch data for/);
-        expect(result.length).to.be.at.least(1);
-      });
-    });
-
-    it('continues when one file fetch returns null and another succeeds', async () => {
-      const qi = makeQueryIndex(['copilot', 'gemini']);
+    it('continues when one sheet read throws and another succeeds', async () => {
+      const qiPaths = makeQueryIndexPaths(['copilot', 'gemini']);
+      const qiBuffer = await makeQueryIndexBuffer(qiPaths);
       const row = makeBrandPresenceRow({ Topics: 'T', Category: '', Prompt: 'x' });
-      mockFetch
-        .onFirstCall()
-        .resolves(okJsonResponse(sandbox, qi))
-        .onSecondCall()
-        .resolves(failResponse(sandbox, 404))
-        .onThirdCall()
-        .resolves(okJsonResponse(sandbox, { data: [row] }));
+      const bpBuffer = await makeBrandPresenceBuffer([row]);
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(result).to.have.lengthOf(1);
-    });
+      let callCount = 0;
+      mockReadFromSP.callsFake(async (filename) => {
+        if (filename === 'query-index.xlsx') {
+          return qiBuffer;
+        }
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error('SharePoint error');
+        }
+        return bpBuffer;
+      });
 
-    it('logs and continues when fetchBrandPresenceData throws for a file', async () => {
-      const qi = makeQueryIndex(['copilot', 'gemini']);
-      const row = makeBrandPresenceRow({ Topics: 'T' });
-      mockFetch
-        .onFirstCall()
-        .resolves(okJsonResponse(sandbox, qi))
-        .onSecondCall()
-        .rejects(new Error('boom'))
-        .onThirdCall()
-        .resolves(okJsonResponse(sandbox, { data: [row] }));
-
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(log.error).to.have.been.calledWithMatch(/Error fetching brand presence file/);
+      const site = makeSite();
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+      expect(log.error).to.have.been.calledWithMatch(/Error reading brand presence sheet/);
       expect(result).to.have.lengthOf(1);
     });
 
     it('normalizes youtu.be watch URLs and classifies youtube domain', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.youtube.com/watch?v=abc123',
         Topics: 'Vid',
         Category: 'C',
         Prompt: 'P',
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].url).to.equal('https://youtu.be/abc123');
     });
 
     it('handles youtube watch without video id using origin pathname', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.youtube.com/watch',
         Topics: 'Vid',
-        Category: undefined,
-        Prompt: undefined,
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].url).to.match(/youtube\.com\/watch$/);
     });
 
     it('maps youtu.be hostname through DOMAIN_ALIASES', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://youtu.be/xyz789',
         Topics: 'Short',
-        Category: undefined,
-        Prompt: undefined,
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].url).to.equal('https://youtu.be/xyz789');
     });
 
     it('strips trailing slash from normalized URLs (non-root path)', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.reddit.com/r/foo/',
         Topics: 'Trailing',
-        Category: undefined,
-        Prompt: undefined,
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/foo');
     });
 
     it('includes generic (non-offsite) normalized URLs', async () => {
-      setupQueryIndexAndData([makeBrandPresenceRow({
-        Sources: 'https://news.example.com/story',
+      await setupSharePointStubs([makeBrandPresenceRow({
+        Sources: 'https://news.otherdomain.com/story',
         Topics: 'News',
-        Category: undefined,
-        Prompt: undefined,
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
-      expect(result[0].urls[0].url).to.equal('https://news.example.com/story');
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+      expect(result[0].urls[0].url).to.equal('https://news.otherdomain.com/story');
     });
 
     it('merges duplicate trackTopicUrl entries for same url (subPrompts set)', async () => {
-      setupQueryIndexAndData([
+      await setupSharePointStubs([
         makeBrandPresenceRow({ Sources: 'https://www.reddit.com/r/same', Topics: 'T', Prompt: 'a' }),
         makeBrandPresenceRow({ Sources: 'https://www.reddit.com/r/same', Topics: 'T', Prompt: 'b' }),
       ]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result[0].urls[0].subPrompts.sort()).to.deep.equal(['a', 'b']);
     });
 
     it('excludes URLs matching the site own hostname when site is provided', async () => {
-      const fakeSite = { getBaseURL: () => 'https://www.example.com' };
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://example.com/page;https://www.reddit.com/r/other',
         Topics: 'T',
         Category: 'C',
         Prompt: 'P',
       })]);
+      const site = makeSite();
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, fakeSite);
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].urls).to.have.lengthOf(1);
@@ -581,15 +571,15 @@ describe('offsite-brand-presence-enrichment', () => {
     });
 
     it('logs a warning and skips site filter when baseURL is unparseable', async () => {
-      const fakeSite = { getBaseURL: () => 'not-a-valid-url' };
-      setupQueryIndexAndData([makeBrandPresenceRow({
+      await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.reddit.com/r/test',
         Topics: 'T',
         Category: 'C',
         Prompt: 'P',
       })]);
+      const site = makeSite({ getBaseURL: () => 'not-a-valid-url' });
 
-      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, fakeSite);
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
 
       expect(result).to.have.lengthOf(1);
       expect(log.warn).to.have.been.calledWithMatch(/Could not parse baseURL/);
@@ -619,23 +609,47 @@ describe('offsite-brand-presence-enrichment', () => {
       const result = await mod.loadBrandPresenceData({
         siteId: SITE_ID,
         previousWeeks,
-        context: { env, log, dataAccess: { services: { postgrestClient: {} } } },
+        context: { log, dataAccess: { services: { postgrestClient: {} } } },
       });
 
       expect(result).to.deep.equal({ data: rows });
-      expect(mockFetch).to.not.have.been.called;
+      expect(mockReadFromSP).to.not.have.been.called;
     });
 
-    it('returns null for brandalf org when PostgREST has no data', async () => {
+    it('falls back to SharePoint fetch for brandalf org when PostgREST has no data', async () => {
       const mod = await esmockWithPostgrest();
+      const site = makeSite();
 
       const result = await mod.loadBrandPresenceData({
         siteId: SITE_ID,
+        site,
         previousWeeks,
-        context: { env, log, dataAccess: {} },
+        context: { log, dataAccess: {} },
       });
 
       expect(result).to.be.null;
+      expect(log.info).to.have.been.calledWithMatch(
+        /No PostgREST data for brandalf-enabled site/,
+      );
+    });
+
+    it('returns data from SharePoint fetch when brandalf org has no PostgREST data', async () => {
+      const row = makeBrandPresenceRow();
+      await setupSharePointStubs([row]);
+      const mod = await esmockWithPostgrest();
+      const site = makeSite();
+
+      const result = await mod.loadBrandPresenceData({
+        siteId: SITE_ID,
+        site,
+        previousWeeks,
+        context: { log, dataAccess: {} },
+      });
+
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(1);
+      expect(result.data[0].Sources).to.equal(row.Sources);
+      expect(result.data[0].Topics).to.equal(row.Topics);
       expect(log.info).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
@@ -653,81 +667,261 @@ describe('offsite-brand-presence-enrichment', () => {
       const result = await mod.loadBrandPresenceData({
         siteId: SITE_ID,
         previousWeeks,
-        context: { env, log, dataAccess: {} },
+        context: { log, dataAccess: {} },
       });
 
       expect(result).to.be.null;
       expect(loadBrandPresenceDataFromPostgrest).to.not.have.been.called;
-      expect(mockFetch).to.not.have.been.called;
+      expect(mockReadFromSP).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(
         /Brandalf flag state unknown/,
       );
     });
 
-    it('returns { data: rows } from legacy file fetch for non-brandalf org', async () => {
+    it('returns { data: rows } from SharePoint for non-brandalf org', async () => {
       const row = makeBrandPresenceRow();
-      setupQueryIndexAndData([row]);
+      await setupSharePointStubs([row]);
+      const site = makeSite();
 
       const result = await loadBrandPresenceData({
         siteId: SITE_ID,
+        site,
         previousWeeks,
-        context: { env, log },
+        context: { log },
       });
 
-      expect(result).to.deep.equal({ data: [row] });
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(1);
+      expect(result.data[0].Sources).to.equal(row.Sources);
     });
 
-    it('fetches legacy brand presence files across a year boundary', async () => {
+    it('reads brand presence sheets across a year boundary', async () => {
       const firstWeekRow = makeBrandPresenceRow({ Topics: 'Week 1' });
       const previousYearRow = makeBrandPresenceRow({ Topics: 'Week 52' });
-      mockFetch
-        .onFirstCall()
-        .resolves(okJsonResponse(sandbox, {
-          data: [
-            { path: '/adobe/brand-presence/w1/brandpresence-copilot-w1-2026-010126.json' },
-            { path: '/adobe/brand-presence/w52/brandpresence-gemini-w52-2025-122925.json' },
-          ],
-        }))
-        .onSecondCall()
-        .resolves(okJsonResponse(sandbox, { data: [firstWeekRow] }))
-        .onThirdCall()
-        .resolves(okJsonResponse(sandbox, { data: [previousYearRow] }));
+      const qiPaths = [
+        '/adobe/brand-presence/w1/brandpresence-copilot-w1-2026-010126.json',
+        '/adobe/brand-presence/w52/brandpresence-gemini-w52-2025-122925.json',
+      ];
+      const qiBuffer = await makeQueryIndexBuffer(qiPaths);
+      const bpBuffer1 = await makeBrandPresenceBuffer([firstWeekRow]);
+      const bpBuffer2 = await makeBrandPresenceBuffer([previousYearRow]);
 
+      let sheetCallIdx = 0;
+      mockReadFromSP.callsFake(async (filename) => {
+        if (filename === 'query-index.xlsx') {
+          return qiBuffer;
+        }
+        sheetCallIdx += 1;
+        return sheetCallIdx === 1 ? bpBuffer1 : bpBuffer2;
+      });
+
+      const site = makeSite();
       const result = await loadBrandPresenceData({
         siteId: SITE_ID,
+        site,
         previousWeeks: [{ week: 1, year: 2026 }, { week: 52, year: 2025 }],
-        context: { env, log },
+        context: { log },
       });
 
-      expect(result).to.deep.equal({ data: [firstWeekRow, previousYearRow] });
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(2);
+      expect(result.data[0].Topics).to.equal('Week 1');
+      expect(result.data[1].Topics).to.equal('Week 52');
     });
 
-    it('returns null when SPACECAT_API vars are missing (non-brandalf)', async () => {
+    it('returns null when site cannot be resolved (non-brandalf)', async () => {
       const result = await loadBrandPresenceData({
         siteId: SITE_ID,
         previousWeeks,
-        context: { env: { SPACECAT_API_KEY: 'k' }, log },
+        context: { log },
       });
 
       expect(result).to.be.null;
       expect(log.warn).to.have.been.calledWithMatch(
-        /SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/,
+        /Cannot resolve site/,
       );
     });
 
-    it('returns null when query-index fetch fails (non-brandalf)', async () => {
-      mockFetch.resolves(failResponse(sandbox, 500));
+    it('returns null when SharePoint query-index read fails (non-brandalf)', async () => {
+      mockReadFromSP.rejects(new Error('SharePoint unavailable'));
+      const site = makeSite();
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site,
+        previousWeeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+      expect(log.error).to.have.been.calledWithMatch(
+        /Error reading query-index from SharePoint/,
+      );
+    });
+
+    it('resolves site via dataAccess when site is not provided', async () => {
+      const row = makeBrandPresenceRow();
+      await setupSharePointStubs([row]);
+      const site = makeSite();
+      const findById = sandbox.stub().resolves(site);
 
       const result = await loadBrandPresenceData({
         siteId: SITE_ID,
         previousWeeks,
-        context: { env, log },
+        context: { log, dataAccess: { Site: { findById } } },
+      });
+
+      expect(findById).to.have.been.calledWith(SITE_ID);
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(1);
+    });
+  });
+
+  describe('SharePoint XLSX decoding and corner cases', () => {
+    const site = () => makeSite();
+    const weeks = [{ week: DEFAULT_WEEK, year: DEFAULT_YEAR }];
+
+    it('decodes hyperlink, rich-text, and formula Sources cells without corruption', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const bpBuffer = await makeRawSheetBuffer([
+        [{ text: 'https://www.reddit.com/r/hyperlink', hyperlink: 'https://www.reddit.com/r/hyperlink' }, 'US', 'HL', 'C', 'P'],
+        [{ richText: [{ text: 'https://www.reddit.com/' }, { text: 'r/richtext' }] }, 'US', 'RT', 'C', 'P'],
+        [{ formula: 'A1', result: 'https://www.reddit.com/r/formula' }, 'US', 'FM', 'C', 'P'],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      const byName = Object.fromEntries(result.map((t) => [t.name, t.urls[0].url]));
+      expect(byName.HL).to.equal('https://www.reddit.com/r/hyperlink');
+      expect(byName.RT).to.equal('https://www.reddit.com/r/richtext');
+      expect(byName.FM).to.equal('https://www.reddit.com/r/formula');
+    });
+
+    it('treats error cells and empty cells as blank', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const bpBuffer = await makeRawSheetBuffer([
+        // Error-valued Sources -> '' -> row yields no URL -> topic dropped.
+        [{ error: '#REF!' }, 'US', 'ErrTopic', 'C', 'P'],
+        // Short row: Category and Prompt cells are absent (null) -> '' default.
+        ['https://www.reddit.com/r/nulls', 'US', 'NullTopic'],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result.map((t) => t.name)).to.not.include('ErrTopic');
+      const nullTopic = result.find((t) => t.name === 'NullTopic');
+      expect(nullTopic).to.exist;
+      expect(nullTopic.urls[0].category).to.equal('');
+      expect(nullTopic.urls[0].subPrompts).to.deep.equal([]);
+    });
+
+    it('coerces numeric and date-valued cells to strings', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const promptDate = new Date('2026-01-02T03:04:05Z');
+      const bpBuffer = await makeRawSheetBuffer([
+        ['https://www.reddit.com/r/numdate', 'US', 2026, 'C', promptDate],
+      ]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('2026');
+      expect(result[0].urls[0].subPrompts).to.deep.equal([promptDate.toISOString()]);
+    });
+
+    it('skips non-brand-presence, "latest", and duplicate query-index entries and decodes hyperlink paths', async () => {
+      const copilotPath = `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json`;
+      const geminiPath = `/adobe/brand-presence/w${DEFAULT_WEEK}/brandpresence-gemini-w${DEFAULT_WEEK}-${DEFAULT_YEAR}-010126.json`;
+      const qiBuffer = await makeRawQueryIndexBuffer([
+        ['/adobe/blog/some-article'], // not a brand-presence path -> skipped
+        [`/adobe/brand-presence/latest/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}`], // latest -> skipped
+        [copilotPath],
+        [copilotPath], // duplicate -> deduped
+        [{ text: geminiPath, hyperlink: 'https://example.com' }], // hyperlink cell -> decoded
+      ]);
+      const bpBuffer = await makeBrandPresenceBuffer([makeBrandPresenceRow()]);
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      const sheetReads = mockReadFromSP.getCalls().filter((c) => c.args[0] !== 'query-index.xlsx');
+      expect(sheetReads).to.have.lengthOf(2); // copilot (deduped) + gemini; blog/latest excluded
+      expect(result).to.not.be.null;
+      expect(result.data).to.have.lengthOf(2);
+    });
+
+    it('returns null when query-index has brand-presence files but none match the audited weeks', async () => {
+      // Audited week is DEFAULT_WEEK; the only brand-presence file is for week 8.
+      const qiBuffer = await makeQueryIndexBuffer([
+        `/adobe/brand-presence/w8/brandpresence-copilot-w8-${DEFAULT_YEAR}-010126.json`,
+      ]);
+      mockReadFromSP.resolves(qiBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
       });
 
       expect(result).to.be.null;
-      expect(log.warn).to.have.been.calledWithMatch(
-        /Failed to fetch query-index for site/,
+      expect(log.info).to.have.been.calledWithMatch(/Found 0 brand presence files/);
+    });
+
+    it('skips a brand-presence sheet whose workbook has no worksheets', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const emptyBuffer = await makeEmptyWorkbookBuffer();
+      stubSharePoint(qiBuffer, emptyBuffer);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+      // A missing worksheet is skipped gracefully, not treated as a read error.
+      expect(log.error).to.not.have.been.called;
+    });
+
+    it('reads a header-only brand-presence sheet as zero rows', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      const headerOnly = await makeRawSheetBuffer([]);
+      stubSharePoint(qiBuffer, headerOnly);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        site: site(),
+        previousWeeks: weeks,
+        context: { log },
+      });
+
+      expect(result).to.be.null;
+    });
+
+    it('defaults a missing optional column to an empty string (schema drift)', async () => {
+      const qiBuffer = await makeQueryIndexBuffer(makeQueryIndexPaths(['copilot']));
+      // 'Category' header intentionally omitted.
+      const bpBuffer = await makeRawSheetBuffer(
+        [['https://www.reddit.com/r/drift', 'US', 'DriftTopic', 'P']],
+        ['Sources', 'Region', 'Topics', 'Prompt'],
       );
+      stubSharePoint(qiBuffer, bpBuffer);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site());
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('DriftTopic');
+      expect(result[0].urls[0].category).to.equal('');
     });
   });
 });

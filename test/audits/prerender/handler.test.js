@@ -23,7 +23,6 @@ import prerenderHandler, {
   processOpportunityAndSuggestions,
   createScrapeForbiddenOpportunity,
   uploadStatusSummaryToS3,
-  writeToCitabilityRecords,
   getScrapeJobStats,
   buildMergeDataFunction,
 } from '../../../src/prerender/handler.js';
@@ -33,6 +32,7 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
+  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
 } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
@@ -324,7 +324,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -467,7 +466,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -500,7 +498,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -531,7 +528,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -564,17 +560,12 @@ describe('Prerender Audit', () => {
                 { getUrl: () => recentUrl },
               ]),
             },
-            // PageCitability returns the organic URL as recently processed → hasRecentOrganic=true
-            PageCitability: {
-              allByIndexKeys: sandbox.stub().resolves([{
-                getUrl: () => recentUrl,
-              }]),
-            },
+            // siteStatus returns the organic URL as recently processed → hasRecentOrganic=true
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          s3Client: { send: async () => ({ Body: { transformToString: async () => JSON.stringify({ pages: [{ url: recentUrl, scrapedAt: new Date().toISOString(), needsPrerender: true, scrapingStatus: 'success' }] }) } }) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
@@ -603,7 +594,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -635,7 +625,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
@@ -688,7 +677,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -725,7 +713,6 @@ describe('Prerender Audit', () => {
                 { getUrl: () => 'https://www.example.com/organic-2' },
               ],
             },
-            PageCitability: { allByIndexKeys: async () => [] },
           },
           finalUrl: 'https://example.com',
           log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
@@ -766,7 +753,6 @@ describe('Prerender Audit', () => {
                 { getUrl: () => 'https://main--example--adobecom.hlx.page/organic-1' },
               ],
             },
-            PageCitability: { allByIndexKeys: async () => [] },
           },
           finalUrl: 'https://main--example--adobecom.hlx.page',
           log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
@@ -812,7 +798,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           s3Client: { send: s3Send },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -859,7 +844,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           s3Client: { send: s3Send },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -905,7 +889,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           s3Client: { send: s3Send },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -950,7 +933,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           s3Client: { send: s3Send },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -984,7 +966,6 @@ describe('Prerender Audit', () => {
                 { getUrl: () => 'https://slack.example/page' },
               ]),
             },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           auditContext: { slackContext: { channelId: 'C01234567' } },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
@@ -1017,7 +998,6 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -1031,8 +1011,11 @@ describe('Prerender Audit', () => {
 
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
-        const makeCitabilityRecord = (path) => ({
-          getUrl: () => `https://example.com${path}`,
+        const makeRecentPage = (path) => ({
+          url: `https://example.com${path}`,
+          scrapedAt: new Date().toISOString(),
+          needsPrerender: true,
+          scrapingStatus: 'success',
         });
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
@@ -1044,7 +1027,7 @@ describe('Prerender Audit', () => {
           },
         });
 
-        const makeContext = (pageCitabilityRecords = []) => ({
+        const makeContext = (recentPages = []) => ({
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
@@ -1052,9 +1035,10 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves(pageCitabilityRecords) },
           },
-          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          s3Client: recentPages.length > 0
+            ? { send: async () => ({ Body: { transformToString: async () => JSON.stringify({ pages: recentPages }) } }) }
+            : { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         });
@@ -1075,8 +1059,8 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-1',
             'https://example.com/agentic-2',
           ];
-          // agentic-0 is in recently-processed set → skip (DB already filtered by date)
-          const recentRecord = makeCitabilityRecord('/agentic-0');
+          // agentic-0 is in recently-processed set → skip
+          const recentRecord = makeRecentPage('/agentic-0');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([recentRecord]);
 
@@ -1090,12 +1074,56 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should include agentic URLs when allByIndexKeys returns no recent records', async () => {
+        it('should exclude recently scraped URL regardless of needsPrerender or scrapingStatus value', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-success',
+            'https://example.com/agentic-other',
+          ];
+          // Any URL with a recent scrapedAt is excluded, regardless of needsPrerender/scrapingStatus
+          const recentPage = {
+            url: 'https://example.com/agentic-success',
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: false,
+            scrapingStatus: 'success',
+          };
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([recentPage]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.not.include('https://example.com/agentic-success');
+          expect(resultUrls).to.include('https://example.com/agentic-other');
+        });
+
+        it('should exclude recently scraped URL even when scrapingStatus is error', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-failed',
+            'https://example.com/agentic-other',
+          ];
+          // Any URL with a recent scrapedAt is excluded, regardless of scrapingStatus
+          const failedPage = {
+            url: 'https://example.com/agentic-failed',
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: false,
+            scrapingStatus: 'error',
+          };
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([failedPage]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.not.include('https://example.com/agentic-failed');
+          expect(resultUrls).to.include('https://example.com/agentic-other');
+        });
+
+        it('should include agentic URLs when status.json has no recent pages', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
           ];
-          // DB returns no records — date filter excluded stale records at query time
+          // S3 returns NoSuchKey — no previously processed pages in the window
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([]);
 
@@ -1122,7 +1150,6 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
             s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
@@ -1139,8 +1166,13 @@ describe('Prerender Audit', () => {
         it('should skip organic URLs recently processed by prerender', async () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
-          // organic-page is in recently-processed set → skip (DB already filtered by date)
-          const recentRecord = makeCitabilityRecord('/organic-page');
+          // organic-page is in recently-processed set → skip
+          const recentPage = {
+            url: organicUrl,
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: true,
+            scrapingStatus: 'success',
+          };
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -1153,10 +1185,9 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              PageCitability: { allByIndexKeys: sandbox.stub().resolves([recentRecord]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            s3Client: { send: async () => ({ Body: { transformToString: async () => JSON.stringify({ pages: [recentPage] }) } }) },
             env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
@@ -1182,9 +1213,12 @@ describe('Prerender Audit', () => {
             ...includedUrls,
             ...agenticUrls.slice(0, DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length),
           ];
-          const recentRecords = firstBatchUrls.map(
-            (url) => makeCitabilityRecord(new URL(url).pathname),
-          );
+          const recentRecords = firstBatchUrls.map((url) => ({
+            url,
+            scrapedAt: new Date().toISOString(),
+            needsPrerender: true,
+            scrapingStatus: 'success',
+          }));
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -1199,10 +1233,9 @@ describe('Prerender Audit', () => {
                   organicUrls.map((url) => ({ getUrl: () => url })),
                 ),
               },
-              PageCitability: { allByIndexKeys: sandbox.stub().resolves(recentRecords) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            s3Client: { send: async () => ({ Body: { transformToString: async () => JSON.stringify({ pages: recentRecords }) } }) },
             env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
@@ -1218,22 +1251,39 @@ describe('Prerender Audit', () => {
         });
 
         it('should silently ignore citability records with invalid URLs when building recent pathnames', async () => {
-          // Record with an empty URL — new URL('') throws, triggering catch { return null; }
-          // The null is filtered out so the URL is not treated as recent.
-          const invalidRecord = {
-            getUrl: () => '',
-          };
+          // Page with an empty URL — `p.url` is falsy so it is skipped before normalizePathnameWithQuery is called.
+          const invalidPage = { url: '', scrapedAt: new Date().toISOString(), needsPrerender: true };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext([invalidRecord]);
+          const context = makeContext([invalidPage]);
 
           // Should not throw; agentic-0 is not blocked by the invalid record
           const result = await mockHandler.submitForScraping(context);
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
+        it('should exclude pages whose scrapedAt is older than the recent window', async () => {
+          const agenticUrls = ['https://example.com/stale', 'https://example.com/fresh'];
+          const stalePage = {
+            url: 'https://example.com/stale',
+            scrapedAt: new Date(Date.now() - (PRERENDER_RECENT_PROCESSING_TIME_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString(),
+            needsPrerender: true,
+          };
+          const freshPage = makeRecentPage('/fresh');
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([stalePage, freshPage]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // stale page is outside the recent window → should be included in the batch (not filtered out)
+          expect(resultUrls).to.include('https://example.com/stale');
+          // fresh page is within the recent window → should be filtered out
+          expect(resultUrls).to.not.include('https://example.com/fresh');
+        });
+
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
-          // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
-          // triggering catch { return false; } in hasRecentOrganic.
+          // 'not-a-valid-url' is not an absolute URL — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic([]);
           const context = {
             site: {
@@ -1247,7 +1297,6 @@ describe('Prerender Audit', () => {
                   { getUrl: () => 'not-a-valid-url' },
                 ]),
               },
-              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
             s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
@@ -1261,8 +1310,8 @@ describe('Prerender Audit', () => {
         });
 
         it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
-          // 'not-a-valid-url' in the agentic list causes new URL(url) to throw inside filteredAgenticUrls,
-          // triggering catch { return true; } — the URL is kept in the batch.
+          // 'not-a-valid-url' in the agentic list — normalizePathnameWithQuery falls back
+          // to the raw string which is not in the recentPathnames Set so the URL is kept.
           const mockHandler = await makeHandlerWithAgentic(['not-a-valid-url', 'https://example.com/valid']);
           const context = makeContext([]);
 
@@ -1270,6 +1319,37 @@ describe('Prerender Audit', () => {
           const resultUrls = result.urls.map((u) => u.url);
           expect(resultUrls).to.include('not-a-valid-url');
           expect(resultUrls).to.include('https://example.com/valid');
+        });
+
+        it('should treat query-param URL variants as distinct in the recently-processed set', async () => {
+          // Gap 2: /page?filter=iphone in siteStatus should NOT suppress /page?filter=mac.
+          const mockHandler = await makeHandlerWithAgentic([]);
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [
+                  'https://example.com/page?filter=iphone',
+                  'https://example.com/page?filter=mac',
+                ],
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: async () => ({ Body: { transformToString: async () => JSON.stringify({ pages: [{ url: 'https://example.com/page?filter=iphone', scrapedAt: new Date().toISOString(), needsPrerender: true, scrapingStatus: 'success' }] }) } }) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // iphone was recently processed → should NOT appear
+          expect(resultUrls).to.not.include('https://example.com/page?filter=iphone');
+          // mac was NOT recently processed → should appear
+          expect(resultUrls).to.include('https://example.com/page?filter=mac');
         });
 
         describe('edge-deployed URL filtering', () => {
@@ -1295,7 +1375,6 @@ describe('Prerender Audit', () => {
                     { getUrl: () => freshUrl },
                   ]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: makeS3WithStatus([{ url: deployedUrl, isDeployedAtEdge: true }]),
             };
@@ -1314,7 +1393,6 @@ describe('Prerender Audit', () => {
               ...makeContext([]),
               dataAccess: {
                 SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: makeS3WithStatus([{ url: deployedUrl, isDeployedAtEdge: true }]),
             };
@@ -1334,7 +1412,6 @@ describe('Prerender Audit', () => {
                 SiteTopPage: {
                   allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: makeS3WithStatus([{ url, isDeployedAtEdge: false }]),
             };
@@ -1352,7 +1429,6 @@ describe('Prerender Audit', () => {
                 SiteTopPage: {
                   allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               // makeContext default s3Client already throws NoSuchKey
             };
@@ -1372,7 +1448,6 @@ describe('Prerender Audit', () => {
                 SiteTopPage: {
                   allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: { send: sandbox.stub().rejects(new Error('S3 read error')) },
             };
@@ -1391,7 +1466,6 @@ describe('Prerender Audit', () => {
                 SiteTopPage: {
                   allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => validUrl }]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: makeS3WithStatus([
                 { url: 'not-a-url', isDeployedAtEdge: true },
@@ -1416,7 +1490,6 @@ describe('Prerender Audit', () => {
                     { getUrl: () => freshUrl },
                   ]),
                 },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
               s3Client: makeS3WithStatus([{ url: rootUrl, isDeployedAtEdge: true }]),
             };
@@ -1522,7 +1595,6 @@ describe('Prerender Audit', () => {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
             },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
           env: {},
@@ -1646,6 +1718,9 @@ describe('Prerender Audit', () => {
           getId: () => 'opportunity-123',
           getSiteId: () => 'test-site-id',
           getSuggestions: sandbox.stub().resolves([]),
+          getData: sandbox.stub().returns({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
         });
         const syncSuggestionsStub = sandbox.stub().resolves();
 
@@ -2261,9 +2336,10 @@ describe('Prerender Audit', () => {
         expect(syncCall.mapNewSuggestion).to.be.a('function');
         expect(syncCall.scrapedUrlsSet).to.have.property('has').that.is.a('function');
 
-        // buildKey uses pathname only, consistent with processOpportunityAndSuggestions
+        // buildKey uses pathname+search, consistent with processOpportunityAndSuggestions
         expect(syncCall.buildKey({ url: 'https://test.com/' })).to.equal('/');
         expect(syncCall.buildKey({ url: 'https://test.com/page' })).to.equal('/page');
+        expect(syncCall.buildKey({ url: 'https://test.com/page?filter=a' })).to.equal('/page?filter=a');
         expect(syncCall.mapNewSuggestion()).to.deep.equal({});
 
         expect(result.auditResult).to.have.property('urlsSubmittedForScraping');
@@ -3410,6 +3486,13 @@ describe('Prerender Audit', () => {
         expect(buildKey({ allowedRegexPatterns: ['/products/*'], url: 'https://example.com/products' })).to.equal('/products/*|prerender');
         expect(buildKey({ allowedRegexPatterns: ['/blog/*'], url: 'https://example.com/blog' })).to.equal('/blog/*|prerender');
 
+        // Query-param variants must produce distinct keys
+        expect(buildKey({ url: 'https://example.com/some/page?filter=iphone' })).to.equal('/some/page?filter=iphone');
+        expect(buildKey({ url: 'https://www.example.com/some/page?filter=mac' })).to.equal('/some/page?filter=mac');
+
+        // Domain-wide suggestions return the constant key regardless of how the data is stored
+        expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+
         // Existing domain-wide suggestion stored in DB must use the fixed constant key
         expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
       });
@@ -3681,7 +3764,11 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.be.undefined;
       });
 
-      it('should create new domain-wide suggestion when existing one is OUTDATED without deployed flags', async () => {
+      it('should pass domain-wide suggestion to syncSuggestions when existing one is OUTDATED — buildKey symmetry prevents duplicate', async () => {
+        // When the existing domain-wide is not preservable (OUTDATED, no edgeDeployed),
+        // the new domain-wide aggregate is always included in newData. The fixed buildKey
+        // returns DOMAIN_WIDE_SUGGESTION_KEY for stored data with isDomainWide:true, so
+        // syncSuggestions matches the existing record and updates it instead of creating a duplicate.
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
           getStatus: () => 'OUTDATED',
@@ -3732,6 +3819,87 @@ describe('Prerender Audit', () => {
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+
+        // Verify buildKey treats both new (data.key) and stored (isDomainWide) domain-wide
+        // records as the same key — the core fix preventing duplicates
+        const { buildKey } = syncArgs;
+        expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+        expect(buildKey({ isDomainWide: true, url: 'https://example.com/* (All Domain URLs)' })).to.equal('domain-wide-aggregate|prerender');
+      });
+
+      it('should preserve first NEW domain-wide when duplicates exist, passing no domain-wide into syncSuggestions', async () => {
+        // Two NEW domain-wide suggestions accumulated from the pre-#2650 asymmetric-buildKey bug.
+        // findPreservableDomainWideSuggestion returns the first NEW and leaves dw2 untouched.
+        // The mergeStatusFunction closure in syncSuggestions guards against future all-OUTDATED
+        // promotions (separate code path). For the 2-NEW case, existing duplicates must be
+        // manually cleaned up; new duplicates cannot form after PR #2650.
+        const setStatusStub1 = sinon.stub();
+        const setStatusStub2 = sinon.stub();
+
+        const dw1 = {
+          getId: () => 'dw-id-1',
+          getStatus: () => 'NEW',
+          getData: () => ({ isDomainWide: true, pathPattern: '/*' }),
+          setStatus: setStatusStub1,
+          setUpdatedBy: sinon.stub(),
+        };
+        const dw2 = {
+          getId: () => 'dw-id-2',
+          getStatus: () => 'NEW',
+          getData: () => ({ isDomainWide: true, pathPattern: '/*' }),
+          setStatus: setStatusStub2,
+          setUpdatedBy: sinon.stub(),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([dw1, dw2]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+            defaultMergeStatusFunction: sinon.stub(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED' },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        // Neither dw1 nor dw2 should have their status mutated by findPreservableDomainWideSuggestion
+        expect(setStatusStub1).not.to.have.been.called;
+        expect(setStatusStub2).not.to.have.been.called;
+
+        // Since dw1 is preserved, no domain-wide item should be in syncSuggestions newData
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const domainWideInNewData = syncSuggestionsStub.firstCall.args[0].newData.find((s) => s.key);
+        expect(domainWideInNewData).to.be.undefined;
       });
 
       it('should not detect domain-wide suggestion by pathPattern alone (requires isDomainWide flag)', async () => {
@@ -4906,8 +5074,8 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should return the raw Athena URL when it is already absolute but invalid', async function () {
       this.timeout(5000);
-      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
-        urls: urlGroups.flat(),
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...args) => ({
+        urls: args.filter(Array.isArray).flat(),
         filteredCount: 0,
       }));
 
@@ -4929,7 +5097,6 @@ describe('Prerender Audit', () => {
         },
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
-          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
         },
         log: {
           info: sinon.stub(),
@@ -4943,7 +5110,8 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
+      // Four calls: one per source (organic, included, agentic) + one cross-source dedup
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(4);
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
@@ -8307,7 +8475,10 @@ describe('Prerender Audit', () => {
       );
     });
 
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
+    it('should pass domain-wide aggregate to syncSuggestions when existing one is not preservable — buildKey match prevents duplicate', async () => {
+      // The domain-wide item is always present in newData when no preservable one exists.
+      // The fixed buildKey returns DOMAIN_WIDE_SUGGESTION_KEY for stored isDomainWide:true data,
+      // so syncSuggestions matches and updates the existing record rather than inserting a new one.
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
         getId: () => 'outdated-domain-wide-id',
@@ -8358,9 +8529,13 @@ describe('Prerender Audit', () => {
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const { newData, buildKey } = syncSuggestionsStub.getCall(0).args[0];
       const domainWide = newData.find((item) => item.key);
       expect(domainWide).to.exist;
+
+      // buildKey must return the same constant for both new and stored domain-wide data
+      expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+      expect(buildKey({ isDomainWide: true })).to.equal('domain-wide-aggregate|prerender');
     });
 
     it('should include suggestionId in auditRunCandidates from saved suggestions', async () => {
@@ -9248,7 +9423,10 @@ describe('Prerender Audit', () => {
       );
     });
 
-    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
+    it('should pass domain-wide aggregate to syncSuggestions when existing one is not preservable — buildKey match prevents duplicate', async () => {
+      // The domain-wide item is always present in newData when no preservable one exists.
+      // The fixed buildKey returns DOMAIN_WIDE_SUGGESTION_KEY for stored isDomainWide:true data,
+      // so syncSuggestions matches and updates the existing record rather than inserting a new one.
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
         getId: () => 'outdated-domain-wide-id',
@@ -9299,9 +9477,13 @@ describe('Prerender Audit', () => {
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const { newData, buildKey } = syncSuggestionsStub.getCall(0).args[0];
       const domainWide = newData.find((item) => item.key);
       expect(domainWide).to.exist;
+
+      // buildKey must return the same constant for both new and stored domain-wide data
+      expect(buildKey({ key: 'domain-wide-aggregate|prerender' })).to.equal('domain-wide-aggregate|prerender');
+      expect(buildKey({ isDomainWide: true })).to.equal('domain-wide-aggregate|prerender');
     });
   });
 
@@ -9420,67 +9602,6 @@ describe('Prerender Audit', () => {
   });
 
   describe('compareHtmlContent — citability score', () => {
-    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async function () {
-      this.timeout(5000);
-      const pageCitabilityCreateStub = sinon.stub().resolves({});
-      const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/prerender/utils/html-comparator.js': {
-          analyzeHtmlForPrerender: sinon.stub().resolves({
-            needsPrerender: false,
-            contentGainRatio: 1.3,
-            wordCountBefore: 100,
-            wordCountAfter: 130,
-            citabilityScore: 0.85,
-            wordDifference: 30,
-          }),
-        },
-      });
-
-      const mockS3Client = {
-        send: sinon.stub().callsFake(async (cmd) => {
-          const key = cmd.input?.Key || '';
-          if (key.endsWith('scrape.json')) {
-            throw Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
-          }
-          return {
-            ContentType: 'text/html',
-            Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
-          };
-        }),
-      };
-
-      const context = {
-        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
-        audit: { getId: () => 'audit-id' },
-        dataAccess: {
-          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-          PageCitability: {
-            allBySiteId: pageCitabilityAllBySiteIdStub,
-            create: pageCitabilityCreateStub,
-          },
-        },
-        log: {
-          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
-        },
-        s3Client: mockS3Client,
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        auditContext: { scrapeJobId: 'job-1' },
-        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
-      };
-
-      await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(pageCitabilityAllBySiteIdStub).to.have.been.calledWith('site-1');
-      expect(pageCitabilityCreateStub).to.have.been.calledOnce;
-      expect(pageCitabilityCreateStub.firstCall.args[0]).to.deep.include({
-        citabilityScore: 0.85,
-        botWords: 100,
-        normalWords: 130,
-      });
-    });
-
     it('should forward usedEarlyClientSideHtml from scrape.json metadata to auditResult.results', async () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/prerender/utils/html-comparator.js': {
@@ -9516,10 +9637,6 @@ describe('Prerender Audit', () => {
         audit: { getId: () => 'audit-id' },
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-          PageCitability: {
-            allBySiteId: sinon.stub().resolves([]),
-            create: sinon.stub().resolves({}),
-          },
         },
         log: {
           info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
@@ -9534,363 +9651,6 @@ describe('Prerender Audit', () => {
 
       const page = result.auditResult.results.find((r) => r.url === 'https://example.com/page1');
       expect(page.usedEarlyClientSideHtml).to.equal(true);
-    });
-  });
-
-  describe('writeToCitabilityRecords', () => {
-    it('should create new PageCitability records for URLs not in existing map', async () => {
-      const createStub = sandbox.stub().resolves({});
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      const comparisonResults = [
-        {
-          url: 'https://example.com/page1',
-          citabilityScore: 0.8,
-          contentGainRatio: 1.5,
-          wordDifference: 50,
-          wordCountBefore: 100,
-          wordCountAfter: 150,
-          isDeployedAtEdge: false,
-        },
-      ];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(createStub).to.have.been.calledOnce;
-      expect(createStub.firstCall.args[0]).to.deep.include({
-        siteId: 'site-1',
-        url: 'https://example.com/page1',
-        citabilityScore: 0.8,
-        contentRatio: 1.5,
-        wordDifference: 50,
-        botWords: 100,
-        normalWords: 150,
-        isDeployedAtEdge: false,
-      });
-    });
-
-    it('should update an existing PageCitability record when URL matches', async () => {
-      const saveStub = sandbox.stub().resolves();
-      const existingRecord = {
-        getUrl: () => 'https://example.com/page1',
-        setCitabilityScore: sandbox.stub(),
-        setContentRatio: sandbox.stub(),
-        setWordDifference: sandbox.stub(),
-        setBotWords: sandbox.stub(),
-        setNormalWords: sandbox.stub(),
-        setIsDeployedAtEdge: sandbox.stub(),
-        save: saveStub,
-      };
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([existingRecord]),
-            create: sandbox.stub(),
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      const comparisonResults = [
-        {
-          url: 'https://example.com/page1',
-          citabilityScore: 0.9,
-          contentGainRatio: 1.2,
-          wordDifference: 20,
-          wordCountBefore: 80,
-          wordCountAfter: 100,
-          isDeployedAtEdge: true,
-        },
-      ];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
-      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
-      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
-      expect(saveStub).to.have.been.calledOnce;
-    });
-
-    it('should update an existing PageCitability record when only the hostname differs', async () => {
-      const saveStub = sandbox.stub().resolves();
-      const existingRecord = {
-        getUrl: () => 'https://www.example.com/page1',
-        setCitabilityScore: sandbox.stub(),
-        setContentRatio: sandbox.stub(),
-        setWordDifference: sandbox.stub(),
-        setBotWords: sandbox.stub(),
-        setNormalWords: sandbox.stub(),
-        setIsDeployedAtEdge: sandbox.stub(),
-        save: saveStub,
-      };
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([existingRecord]),
-            create: sandbox.stub(),
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      const comparisonResults = [
-        {
-          url: 'https://example.com/page1',
-          citabilityScore: 0.75,
-          contentGainRatio: 1.1,
-          wordDifference: 12,
-          wordCountBefore: 90,
-          wordCountAfter: 102,
-          isDeployedAtEdge: false,
-        },
-      ];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
-      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
-      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
-      expect(saveStub).to.have.been.calledOnce;
-    });
-
-    it('should skip results with error flag set', async () => {
-      const createStub = sandbox.stub().resolves({});
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      const comparisonResults = [
-        { url: 'https://example.com/error-page', error: true },
-        { url: 'https://example.com/ok-page', citabilityScore: 0.5 },
-      ];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(createStub).to.have.been.calledOnce;
-      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/ok-page');
-    });
-
-    it('should warn and continue when a single URL write fails', async () => {
-      const warnStub = sandbox.stub();
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: sandbox.stub().rejects(new Error('DB write error')),
-          },
-        },
-        log: { info: sandbox.stub(), warn: warnStub },
-      };
-      const comparisonResults = [
-        { url: 'https://example.com/page1', citabilityScore: 0.5 },
-        { url: 'https://example.com/page2', citabilityScore: 0.7 },
-      ];
-
-      // Should not throw despite individual failures
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(warnStub).to.have.been.calledTwice;
-      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
-    });
-
-    it('should return early without any calls when comparisonResults is empty', async () => {
-      const debugStub = sandbox.stub();
-      const context = {
-        dataAccess: {},
-        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
-      };
-
-      await writeToCitabilityRecords([], 'site-1', context);
-
-      expect(debugStub).to.not.have.been.called;
-    });
-
-    it('should skip writes when PageCitability is not available in dataAccess', async () => {
-      const debugStub = sandbox.stub();
-      const context = {
-        dataAccess: {},
-        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
-      };
-
-      await writeToCitabilityRecords(
-        [{ url: 'https://example.com/page1', citabilityScore: 0.5 }],
-        'site-1',
-        context,
-      );
-
-      expect(debugStub).to.have.been.calledWith(sinon.match('PageCitability not available'));
-    });
-
-    it('should fall back to null/false for undefined fields when updating an existing record', async () => {
-      // Exercises the ?? null / ?? false branches at handler.js:1028-1033
-      const saveStub = sandbox.stub().resolves();
-      const existingRecord = {
-        getUrl: () => 'https://example.com/page1',
-        setCitabilityScore: sandbox.stub(),
-        setContentRatio: sandbox.stub(),
-        setWordDifference: sandbox.stub(),
-        setBotWords: sandbox.stub(),
-        setNormalWords: sandbox.stub(),
-        setIsDeployedAtEdge: sandbox.stub(),
-        save: saveStub,
-      };
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([existingRecord]),
-            create: sandbox.stub(),
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
-      const comparisonResults = [{ url: 'https://example.com/page1' }];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(null);
-      expect(existingRecord.setContentRatio).to.have.been.calledWith(null);
-      expect(existingRecord.setWordDifference).to.have.been.calledWith(null);
-      expect(existingRecord.setBotWords).to.have.been.calledWith(null);
-      expect(existingRecord.setNormalWords).to.have.been.calledWith(null);
-      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
-      expect(saveStub).to.have.been.calledOnce;
-    });
-
-    it('should fall back to null/false for undefined fields when creating a new record', async () => {
-      // Exercises the ?? null / ?? false branches at handler.js:1039+ in the create path
-      const createStub = sandbox.stub().resolves({});
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
-      const comparisonResults = [{ url: 'https://example.com/new-page' }];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(createStub).to.have.been.calledOnce;
-      expect(createStub.firstCall.args[0]).to.deep.equal({
-        siteId: 'site-1',
-        url: 'https://example.com/new-page',
-        citabilityScore: null,
-        contentRatio: null,
-        wordDifference: null,
-        botWords: null,
-        normalWords: null,
-        isDeployedAtEdge: false,
-      });
-    });
-
-    it('should process writes in batches of 10 to avoid connection pool exhaustion', async () => {
-      // 320 concurrent writes would exhaust the DB connection pool (20 per task).
-      // Writes must be chunked to 10 at a time.
-      const createOrder = [];
-      const createStub = sandbox.stub().callsFake(async ({ url }) => {
-        createOrder.push(url);
-        return {};
-      });
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: sandbox.stub() },
-      };
-
-      // 25 URLs — spans 3 batches (10 + 10 + 5)
-      const comparisonResults = Array.from({ length: 25 }, (_, i) => ({
-        url: `https://example.com/page${i}`,
-        citabilityScore: 0.5,
-      }));
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      expect(createStub.callCount).to.equal(25);
-      // All 25 URLs written — batching doesn't drop any
-      expect(createOrder).to.have.lengthOf(25);
-    });
-
-    it('RC-1: should attempt create twice when the same URL appears twice — stale snapshot gap', async () => {
-      // existingRecordsMap is built ONCE from allBySiteId before Promise.all runs.
-      // If the same URL appears twice in comparisonResults (upstream dedup failure),
-      // both iterations see undefined in the map and both call PageCitability.create().
-      // The second create fails (e.g. unique constraint) and is caught silently.
-      const createStub = sandbox.stub()
-        .onFirstCall().resolves({})
-        .onSecondCall().rejects(new Error('unique constraint violation: page_citability_url_key'));
-      const warnStub = sandbox.stub();
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: warnStub },
-      };
-
-      const comparisonResults = [
-        { url: 'https://example.com/page', citabilityScore: 0.8 },
-        { url: 'https://example.com/page', citabilityScore: 0.8 }, // same URL duplicated
-      ];
-
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-
-      // Both iterations attempt create because the map was built before either resolved
-      expect(createStub).to.have.been.calledTwice;
-      // The second fails and is warned, not thrown
-      expect(warnStub).to.have.been.calledOnce;
-      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
-    });
-
-    it('RC-2: should survive a concurrent Lambda creating the same new URL — second create caught', async () => {
-      // SQS at-least-once delivery can trigger two Lambda instances for the same site.
-      // Both read allBySiteId before either has written, so both see the URL as new.
-      // Simulated by calling writeToCitabilityRecords twice with the same stale empty snapshot:
-      // the first invocation creates the record; the second throws a duplicate-key error.
-      const createStub = sandbox.stub()
-        .onFirstCall().resolves({})
-        .onSecondCall().rejects(new Error('duplicate key value violates unique constraint'));
-      const warnStub = sandbox.stub();
-      const context = {
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]), // always empty — simulates stale read
-            create: createStub,
-          },
-        },
-        log: { info: sandbox.stub(), warn: warnStub },
-      };
-      const comparisonResults = [{ url: 'https://example.com/new-page', citabilityScore: 0.7 }];
-
-      // First Lambda invocation: create succeeds
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-      expect(createStub).to.have.been.calledOnce;
-      expect(warnStub).to.not.have.been.called;
-
-      // Second Lambda invocation: stale snapshot still shows URL as new → create throws
-      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
-      expect(createStub).to.have.been.calledTwice;
-      expect(warnStub).to.have.been.calledOnce;
-      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
     });
   });
 
@@ -9942,7 +9702,7 @@ describe('Prerender Audit', () => {
       expect(syncCall).to.not.have.property('stalenessDays');
     });
 
-    it('should not augment scrapedUrlsSet with PageCitability records from other writes', async () => {
+    it('should build scrapedUrlsSet only from scrapeResultPaths, not from any external source', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
         getId: () => 'opp-id',
@@ -9956,26 +9716,12 @@ describe('Prerender Audit', () => {
         },
       });
 
-      // PageCitability writes should no longer affect prerender suggestion syncing.
-      const recentCitabilityRecord = {
-        getUrl: () => 'https://example.com/citability-page',
-        getUpdatedAt: () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-      };
-      const staleCitabilityRecord = {
-        getUrl: () => 'https://example.com/stale-page',
-        getUpdatedAt: () => new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-
       const context = {
         site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
         audit: { getId: () => 'audit-id' },
         dataAccess: {
           Opportunity: {
             allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]),
-          },
-          PageCitability: {
-            allBySiteId: sinon.stub().resolves([recentCitabilityRecord, staleCitabilityRecord]),
-            create: sinon.stub().resolves({}),
           },
         },
         log: {
@@ -9993,8 +9739,7 @@ describe('Prerender Audit', () => {
 
       expect(syncSuggestionsStub).to.have.been.called;
       const syncCall = syncSuggestionsStub.firstCall.args[0];
-      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.false;
-      expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/other-page')).to.be.false;
       expect(syncCall).to.not.have.property('stalenessDays');
     });
   });

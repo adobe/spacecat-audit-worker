@@ -408,63 +408,11 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('saveExcelReportForBatch', () => {
-    it('uploads and returns metadata when sharepointClient is provided', async () => {
-      const uploadToSharePoint = sandbox.stub().resolves();
-      const mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '../../../src/utils/report-uploader.js': {
-          uploadToSharePoint,
-        },
-      });
-      const mockWorkbook = {
-        xlsx: {
-          writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
-        },
-      };
-      const mockLog = { info: sandbox.stub() };
-      const sharepointClient = {};
-
-      const result = await mockedReportUtils.saveExcelReportForBatch({
-        workbook: mockWorkbook,
-        outputLocation: 'test-location',
-        log: mockLog,
-        sharepointClient,
-        filename: 'test-file.xlsx',
-      });
-
-      expect(uploadToSharePoint).to.have.been.calledWith(
-        Buffer.from('test'),
-        'test-file.xlsx',
-        'test-location',
-        sharepointClient,
-        mockLog,
-      );
-      expect(result).to.deep.equal({
-        filename: 'test-file.xlsx',
-        outputLocation: 'test-location',
-      });
-    });
-
-    it('returns null when sharepointClient is not provided', async () => {
-      const mockWorkbook = {
-        xlsx: {
-          writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
-        },
-      };
-      const mockLog = {
-        info: sandbox.stub(),
-      };
-
-      const result = await reportUtils.saveExcelReportForBatch({
-        workbook: mockWorkbook,
-        outputLocation: 'test-location',
-        log: mockLog,
-        sharepointClient: null,
-        filename: 'test-file.xlsx',
-      });
-
-      expect(result).to.be.null;
-      expect(mockWorkbook.xlsx.writeBuffer).to.have.been.calledOnce;
+  describe('getImporterS3Client', () => {
+    it('lazily creates and caches a single importer S3 client', () => {
+      const first = reportUtils.getImporterS3Client();
+      const second = reportUtils.getImporterS3Client();
+      expect(first).to.equal(second);
     });
   });
 });

@@ -86,37 +86,6 @@ function buildTopicExtractionSQL(remotePatterns = null) {
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
 }
 
-async function createAgenticReportQuery(options) {
-  const {
-    periods, databaseName, tableName, site, context,
-  } = options;
-
-  const filters = site.getConfig().getLlmoCdnlogsFilter();
-  const siteFilters = buildSiteFilters(filters, site);
-
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClause(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
-    siteFilters,
-  );
-
-  const rawPatterns = Object.hasOwn(options, 'remotePatterns')
-    ? options.remotePatterns
-    : await fetchAgenticUrlClassificationRules(site, context);
-  const remotePatterns = rawPatterns?.error ? null : rawPatterns;
-
-  return loadSql('agentic-traffic-report', {
-    agentTypeClassification: buildAgentTypeClassificationSQL(),
-    userAgentDisplay: buildUserAgentDisplaySQL(),
-    countryExtraction: buildCountryExtractionSQL(),
-    topicExtraction: buildTopicExtractionSQL(remotePatterns),
-    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
-    databaseName,
-    tableName,
-    whereClause,
-  });
-}
-
 async function createAgenticDailyReportQuery(options) {
   const {
     trafficDate, databaseName, tableName, site, context,
@@ -158,27 +127,6 @@ function buildWhereClauseReferral(conditions = [], siteFilters = []) {
 
   /* c8 ignore next */
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
-}
-
-async function createReferralReportQuery(options) {
-  const {
-    periods, databaseName, tableName, site,
-  } = options;
-
-  const filters = site.getConfig().getLlmoCdnlogsFilter();
-  const siteFilters = buildSiteFilters(filters, site);
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
-  const whereClause = buildWhereClauseReferral(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
-    siteFilters,
-  );
-
-  return loadSql('referral-traffic-report', {
-    databaseName,
-    tableName,
-    whereClause,
-    countryExtraction: buildCountryExtractionSQL(),
-  });
 }
 
 async function createReferralDailyReportQuery(options) {
@@ -322,9 +270,7 @@ function createTopUrlsWithHitsQuery(options) {
 }
 
 export const weeklyBreakdownQueries = {
-  createAgenticReportQuery,
   createAgenticDailyReportQuery,
-  createReferralReportQuery,
   createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,

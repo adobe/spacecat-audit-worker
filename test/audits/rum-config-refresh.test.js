@@ -26,25 +26,24 @@ const sandbox = sinon.createSandbox();
 const SITE_ID = 'test-site-id';
 const BASE_URL = 'https://www.example.com';
 
-describe('rum-config-refresh handler', () => {
+describe('rum-config-refresh handler', function () {
+  this.timeout(10000);
   let context;
   let mockSite;
   let mockConfig;
-  let retrieveDomainkeyStub;
+  let resolveRumDomainKeyStub;
   let toDynamoItemStub;
   let handler;
 
   beforeEach(async () => {
-    retrieveDomainkeyStub = sandbox.stub();
+    resolveRumDomainKeyStub = sandbox.stub().resolves({ hasDomainKey: false, timedOut: false });
     toDynamoItemStub = sandbox.stub().returns({});
 
     handler = await esmock(
       '../../src/rum-config-refresh/handler.js',
       {
         '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: () => ({ retrieveDomainkey: retrieveDomainkeyStub }),
-          },
+          resolveRumDomainKey: resolveRumDomainKeyStub,
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: toDynamoItemStub },
@@ -111,13 +110,13 @@ describe('rum-config-refresh handler', () => {
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ skipped: true, reason: 'recently checked' });
-      expect(retrieveDomainkeyStub).not.to.have.been.called;
+      expect(resolveRumDomainKeyStub).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
     });
 
     it('proceeds when rumConfig has no lastCheckedAt', async () => {
       mockConfig.getRumConfig.returns(undefined);
-      retrieveDomainkeyStub.resolves('domainkey-value');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -129,7 +128,7 @@ describe('rum-config-refresh handler', () => {
     it('proceeds when lastCheckedAt is older than 7 days', async () => {
       const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
       mockConfig.getRumConfig.returns({ hasDomainKey: false, lastCheckedAt: staleDate });
-      retrieveDomainkeyStub.resolves('domainkey-value');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -140,21 +139,22 @@ describe('rum-config-refresh handler', () => {
   });
 
   describe('RUM domain key check', () => {
-    it('sets hasDomainKey=true when retrieveDomainkey resolves', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+    it('sets hasDomainKey=true and saves when resolveRumDomainKey resolves with a key', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      expect(resolveRumDomainKeyStub).to.have.been.calledOnceWith(mockSite, context);
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(true);
       expect(toDynamoItemStub).to.have.been.calledWith(mockConfig);
       expect(mockSite.save).to.have.been.calledOnce;
     });
 
-    it('sets hasDomainKey=false when retrieveDomainkey rejects', async () => {
-      retrieveDomainkeyStub.rejects(new Error('no domain key found'));
+    it('sets hasDomainKey=false and saves when no domain key is found', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: false, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -162,223 +162,37 @@ describe('rum-config-refresh handler', () => {
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
-      expect(toDynamoItemStub).to.have.been.calledWith(mockConfig);
       expect(mockSite.save).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWithMatch('RUM check failed');
     });
 
-    it('skips config update and does not write lastCheckedAt when RUM check times out', async () => {
-      const clock = sinon.useFakeTimers();
-      retrieveDomainkeyStub.returns(new Promise(() => {})); // never resolves
+    it('skips config update and save when RUM check times out', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: false, timedOut: true });
 
-      const resultPromise = handler.default({ siteId: SITE_ID }, context);
-      await clock.tickAsync(4000); // advance past the 3 s timeout
-      const result = await resultPromise;
-      clock.restore();
+      const result = await handler.default({ siteId: SITE_ID }, context);
 
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
       expect(mockConfig.updateRumConfig).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
-      expect(context.log.error).to.have.been.calledWithMatch('timed out');
+      expect(context.log.warn).to.have.been.calledWithMatch('timed out');
     });
 
-    it('extracts hostname from baseURL before calling retrieveDomainkey', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
-
-      await handler.default({ siteId: SITE_ID }, context);
-
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
-    });
-
-    it('tries overrideBaseURL first when fetchConfig.overrideBaseURL is set', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+    it('returns 500 when resolveRumDomainKey rejects unexpectedly', async () => {
+      resolveRumDomainKeyStub.rejects(new Error('network timeout'));
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.override.com');
-      expect(retrieveDomainkeyStub).not.to.have.been.calledWith('www.example.com');
-    });
-
-    it('falls back to baseURL when overrideBaseURL domain key lookup fails', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
-      retrieveDomainkeyStub
-        .withArgs('www.override.com').rejects(new Error('404'))
-        .withArgs('www.example.com').resolves('domainkey-abc');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      sinon.assert.callOrder(
-        retrieveDomainkeyStub.withArgs('www.override.com'),
-        retrieveDomainkeyStub.withArgs('www.example.com'),
-      );
-      expect(context.log.info).to.have.been.calledWithMatch('RUM check failed for www.override.com');
-    });
-
-    it('falls back to baseURL only when overrideBaseURL is malformed', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'not-a-valid-url' });
-      retrieveDomainkeyStub.resolves('domainkey-abc');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
-      expect(context.log.warn).to.have.been.calledWithMatch('Malformed overrideBaseURL');
-    });
-
-    it('skips when baseURL is malformed', async () => {
-      mockSite.getBaseURL.returns('not-a-valid-url');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      expect(result.status).to.equal(200);
-      const body = await result.json();
-      expect(body).to.deep.equal({ skipped: true, reason: 'malformed baseURL' });
-      expect(retrieveDomainkeyStub).not.to.have.been.called;
+      expect(result.status).to.equal(500);
+      expect(mockConfig.updateRumConfig).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
-      expect(context.log.error).to.have.been.calledWithMatch('Malformed baseURL');
-    });
-
-    it('uses baseURL when fetchConfig is set but overrideBaseURL is absent', async () => {
-      mockConfig.getFetchConfig.returns({ someOtherProp: 'value' });
-      retrieveDomainkeyStub.resolves('domainkey-abc');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
-    });
-
-    it('deduplicates when overrideBaseURL hostname matches baseURL hostname', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.example.com' });
-      retrieveDomainkeyStub.resolves('domainkey-abc');
-
-      await handler.default({ siteId: SITE_ID }, context);
-
-      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
-    });
-
-    it('cancellation flag stops the loop when first domain finishes after timeout', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
-      const clock = sinon.useFakeTimers();
-      // first domain rejects after 5 s — past the 3 s timeout
-      retrieveDomainkeyStub.withArgs('www.override.com').returns(
-        new Promise((_, reject) => { setTimeout(() => reject(new Error('slow error')), 5000); }),
-      );
-      retrieveDomainkeyStub.withArgs('www.example.com').resolves('domainkey-abc');
-
-      const resultPromise = handler.default({ siteId: SITE_ID }, context);
-      await clock.tickAsync(3001); // fires 3 s timeout → cancelled = true, handler returns
-      const result = await resultPromise;
-      await clock.tickAsync(5000); // fires 5 s timer → first domain rejects, loop hits cancelled check
-      clock.restore();
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
-      expect(retrieveDomainkeyStub).not.to.have.been.calledWith('www.example.com');
-    });
-
-    it('times out before reaching baseURL when override domain hangs', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
-      const clock = sinon.useFakeTimers();
-      retrieveDomainkeyStub.withArgs('www.override.com').returns(new Promise(() => {}));
-      retrieveDomainkeyStub.withArgs('www.example.com').resolves('domainkey-abc');
-
-      const resultPromise = handler.default({ siteId: SITE_ID }, context);
-      await clock.tickAsync(4000);
-      const result = await resultPromise;
-      clock.restore();
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
-      expect(retrieveDomainkeyStub).not.to.have.been.calledWith('www.example.com');
-      expect(mockSite.save).not.to.have.been.called;
-    });
-
-    it('sets hasDomainKey=false when all domain candidates fail', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.com' });
-      retrieveDomainkeyStub.rejects(new Error('404'));
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
-      expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
-      expect(context.log.warn).to.have.been.calledWithMatch('No domain key found');
-    });
-
-    it('falls back to www.{domain} and sets hasDomainKey=true when bare domain has no key', async () => {
-      mockSite.getBaseURL.returns('https://example.com');
-      retrieveDomainkeyStub
-        .withArgs('example.com').rejects(new Error('404'))
-        .withArgs('www.example.com').resolves('domainkey-abc');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      sinon.assert.callOrder(
-        retrieveDomainkeyStub.withArgs('example.com'),
-        retrieveDomainkeyStub.withArgs('www.example.com'),
-      );
-      expect(mockConfig.updateRumConfig).to.have.been.calledWith(true);
-    });
-
-    it('does not try www.www.{domain} when baseURL already has www. prefix', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
-
-      await handler.default({ siteId: SITE_ID }, context);
-
-      const calledDomains = retrieveDomainkeyStub.args.map(([d]) => d);
-      expect(calledDomains).not.to.include('www.www.example.com');
-      expect(calledDomains).to.include('www.example.com');
-      expect(retrieveDomainkeyStub).to.have.been.calledOnce;
-    });
-
-    it('sets hasDomainKey=false when both bare and www. domain fail', async () => {
-      mockSite.getBaseURL.returns('https://example.com');
-      retrieveDomainkeyStub.rejects(new Error('404'));
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('example.com');
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
-      expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
-    });
-
-    it('includes www. fallback for overrideBaseURL when it has no www. prefix', async () => {
-      mockConfig.getFetchConfig.returns({ overrideBaseURL: 'https://override.com' });
-      retrieveDomainkeyStub
-        .withArgs('override.com').rejects(new Error('404'))
-        .withArgs('www.override.com').resolves('domainkey-abc');
-
-      const result = await handler.default({ siteId: SITE_ID }, context);
-
-      const body = await result.json();
-      expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
-      sinon.assert.callOrder(
-        retrieveDomainkeyStub.withArgs('override.com'),
-        retrieveDomainkeyStub.withArgs('www.override.com'),
-      );
+      expect(context.log.error).to.have.been.calledWithMatch('resolveRumDomainKey failed');
     });
   });
 
   describe('save failure', () => {
     it('returns 500 when site.save() throws', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
       mockSite.save.rejects(new Error('DynamoDB write failed'));
 
       const result = await handler.default({ siteId: SITE_ID }, context);

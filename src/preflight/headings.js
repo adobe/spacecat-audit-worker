@@ -45,7 +45,7 @@ function getSeoImpact(checkType) {
  * @param {Object} check - The check result from validatePageHeadingFromScrapeJson
  * @returns {Object} Element targets with selectors
  */
-function getElementsFromCheck(scrapeJsonObject, check) {
+function getElementsFromCheck(scrapeJsonObject, check, log) {
   if (!scrapeJsonObject?.scrapeResult?.rawBody) {
     return {};
   }
@@ -88,15 +88,20 @@ function getElementsFromCheck(scrapeJsonObject, check) {
     }
 
     case 'heading-empty': {
-      // Find empty headings - extract tag name from check
-      const tagName = check.tagName?.toLowerCase();
-      if (tagName && /^h[1-6]$/.test(tagName)) {
-        const headingsArray = $(tagName).toArray();
-        // Find empty ones
-        const emptyHeadings = headingsArray.filter((h) => $(h).text().trim().length === 0);
-        selectors = emptyHeadings
-          .map((h) => getDomElementSelector(h))
-          .filter(Boolean);
+      // Use the specific element selector from the check rather than re-querying all empty
+      // headings — re-querying attaches every empty heading's selector to every card, making
+      // N empty headings produce N cards each showing "1 of N instances found".
+      const selector = check.transformRules?.selector;
+      if (selector) {
+        const element = $(selector).get(0);
+        if (element) {
+          const resolvedSelector = getDomElementSelector(element);
+          if (resolvedSelector) {
+            selectors.push(resolvedSelector);
+          }
+        }
+      } else {
+        log.debug(`[preflight-headings] heading-empty check has no transformRules.selector — element target will be omitted (check: ${JSON.stringify(check.transformRules)})`);
       }
       break;
     }
@@ -281,7 +286,7 @@ export default async function headings(context, auditContext) {
 
           // Generate selectors from the scraped HTML
           if (scrapeJsonObject) {
-            const elementData = getElementsFromCheck(scrapeJsonObject, check);
+            const elementData = getElementsFromCheck(scrapeJsonObject, check, log);
             if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }

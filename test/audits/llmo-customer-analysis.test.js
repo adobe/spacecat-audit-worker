@@ -1477,7 +1477,11 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(mockIsBrandalfEnabled).to.have.been.calledWith('org-123', context.env, log);
+      expect(mockIsBrandalfEnabled).to.have.been.calledWith(
+        'org-123',
+        context.dataAccess.services.postgrestClient,
+        log,
+      );
       expect(mockFetch).to.have.callCount(2);
 
       // Verify schedule was created with brand_id
@@ -1802,47 +1806,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(body.spacecat_org_id).to.be.undefined;
     });
 
-    it('should skip brand resolution when brandalf helper warns and returns false', async () => {
-      const auditContext = {};
-      mockIsBrandalfEnabled.callsFake(async () => {
-        log.warn('Failed to fetch feature flags for org org-123: 500');
-        return false;
-      });
-
-      mockFetch.reset();
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: async () => ({ schedule_id: 'sched-001' }),
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
-        json: async () => ({}),
-      });
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to fetch feature flags/));
-      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
-      expect(createCall).to.exist;
-      const body = JSON.parse(createCall.args[1].body);
-      expect(body.brand_id).to.be.undefined;
-    });
-
     it('should warn when postgrestClient is not available for brandalf-enabled org', async () => {
       const auditContext = {};
       mockIsBrandalfEnabled.resolves(true);
@@ -1876,47 +1839,6 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
-    });
-
-    it('should continue when brandalf helper warns on error', async () => {
-      const auditContext = {};
-      mockIsBrandalfEnabled.callsFake(async () => {
-        log.warn('Error checking brandalf flag for org org-123: ECONNREFUSED');
-        return false;
-      });
-
-      mockFetch.reset();
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: async () => ({ schedule_id: 'sched-001' }),
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
-        json: async () => ({}),
-      });
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(log.warn).to.have.been.calledWith(sinon.match(/Error checking brandalf flag/));
-      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
-      expect(createCall).to.exist;
-      const body = JSON.parse(createCall.args[1].body);
-      expect(body.brand_id).to.be.undefined;
     });
 
     it('should skip brandalf check and omit brand_id when onboardingMode is v1 (mixed-state org)', async () => {

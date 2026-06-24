@@ -36,6 +36,18 @@ export const PREFLIGHT_STEP_IDENTIFY = 'identify';
 export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 
 /**
+ * Per-selector timeout (ms) handed to the content scraper's meta-tags wait via the
+ * scrape `options`. When set, the scraper waits for `title`/`h1`/`description` to
+ * appear (non-throwing `Promise.allSettled`) before capturing, and resolves the
+ * instant they land — so fast pages are unaffected while slow-rendering SPA pages
+ * are captured after hydration instead of as an empty shell.
+ *
+ * Fixes SITES-46324: slow-rendering AEM author SPAs (e.g. Cox) whose `<h1>` paints
+ * after the scraper's fixed ~5s wait, causing a false "h1 not found".
+ */
+export const PREFLIGHT_META_TAGS_WAIT_MS = 5000;
+
+/**
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
@@ -101,6 +113,7 @@ export async function scrapePages(context) {
     options: {
       enableAuthentication,
       screenshotTypes: [],
+      waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
   };
@@ -144,28 +157,22 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Enabled checks for this run: site configuration, optionally narrowed by job payload.
-  // Persist the resolved set so SUGGEST inherits the IDENTIFY-time decision; this guarantees
-  // consistency across step boundaries even if site configuration changes between steps.
+  // Enabled checks for this run, resolved from per-site configuration. Persist the resolved
+  // set into the job metadata so the consuming MFE can read which checks will run for this job.
   let enabledChecks = [];
   try {
-    const siteEnabled = (await Promise.all(
+    enabledChecks = (await Promise.all(
       AVAILABLE_CHECKS.map(async (audit) => {
         const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
         return enabled ? audit : null;
       }),
     )).filter(Boolean);
 
-    enabledChecks = siteEnabled;
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
     const currentPayload = currentMetadata?.payload;
-    if (currentPayload?.checks?.length) {
-      enabledChecks = currentPayload.checks.filter((c) => siteEnabled.includes(c));
-    }
-
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     jobEntity.setMetadata({
       ...currentMetadata,

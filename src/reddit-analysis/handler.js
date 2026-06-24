@@ -21,11 +21,13 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  requestOffsiteScrape,
 } from '../utils/offsite-audit-utils.js';
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const LOG_PREFIX = '[Reddit]';
 
@@ -146,10 +148,25 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
 
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
+    log.info(
+      `${LOG_PREFIX} DRS content available for ${storeData.urls.length} URL(s) `
+        + '— no scrape job needed, proceeding to Mystique',
+    );
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     const { slackContext } = auditContext;
+
+    // Manual Slack-triggered runs get a notification explaining that no DRS scrape
+    // job was needed (content already available). No-ops on scheduled runs where
+    // slackContext is absent.
+    await postMessageOptional(
+      context,
+      slackContext?.channelId,
+      `:mag: *reddit-analysis* for *${site.getBaseURL()}* — DRS content already available `
+        + `(${storeData.urls.length} URL(s)); no scrape job needed, sending to Mystique.`,
+      { threadTs: slackContext?.threadTs },
+    );
 
     return {
       auditResult: {
@@ -175,12 +192,17 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     }
 
     if (error instanceof DrsNoContentAvailableError) {
-      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      if (auditContext.drsScrapeRequested) {
+        log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        return {
+          auditResult: { success: false, error: error.message },
+          fullAuditRef: url,
+        };
+      }
+      log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for reddit.com`);
+      await requestOffsiteScrape(context, siteId, 'reddit.com', auditContext.slackContext);
       return {
-        auditResult: {
-          success: false,
-          error: error.message,
-        },
+        auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }

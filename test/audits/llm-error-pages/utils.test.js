@@ -32,7 +32,6 @@ import {
   downloadExistingCdnSheet,
   groupErrorsByUrl,
   parsePeriodIdentifier,
-  EXCLUDED_URL_SUFFIXES,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
@@ -99,16 +98,6 @@ describe('LLM Error Pages Utils', () => {
     it('should be case insensitive', () => {
       const result = getLlmProviderPattern('CHATGPT');
       expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
-    });
-  });
-
-  describe('EXCLUDED_URL_SUFFIXES', () => {
-    it('should include common image and document extensions', () => {
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.jpg');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.jpeg');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.png');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.pdf');
-      expect(EXCLUDED_URL_SUFFIXES).to.include('.docx');
     });
   });
 
@@ -286,18 +275,6 @@ describe('LLM Error Pages Utils', () => {
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
-    });
-
-    it('should pass excludedUrlSuffixesFilter excluding static asset extensions', async () => {
-      await utils.buildLlmErrorPagesQuery(mockOptions);
-
-      const callArg = mockGetStaticContent.firstCall.args[0];
-      expect(callArg).to.have.property('excludedUrlSuffixesFilter');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('NOT regexp_like(url');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.pdf');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.jpg');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.png');
-      expect(callArg.excludedUrlSuffixesFilter).to.include('\\.docx');
     });
 
     it('should handle template with only static content', async () => {
@@ -1032,6 +1009,35 @@ describe('LLM Error Pages Utils', () => {
     it('handles URL with search params but no query', () => {
       const result = toPathOnly('https://example.com/path');
       expect(result).to.equal('/path');
+    });
+
+    // SECURITY REGRESSION PIN.
+    //
+    // The `publishObservationLlmBrokenUrls` helper in handler.js relies
+    // on this function to strip off-origin hosts from input URLs — that
+    // is the ONLY origin defense in the observation publish path. If
+    // anyone refactors toPathOnly to preserve absolute URLs (e.g.
+    // returning `parsed.href` instead of `parsed.pathname`), the helper
+    // would emit attacker-controlled hostnames into the Mystique
+    // blackboard. These three assertions pin the contract.
+    it('SECURITY: strips off-origin host from absolute attacker URL (pathname only)', () => {
+      // Different scheme + different host: must reduce to pathname.
+      expect(toPathOnly('https://evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host from protocol-relative attacker URL', () => {
+      // `//evil.com/x` resolves to `https://evil.com/x` under base
+      // `https://example.com`; we must NOT preserve evil.com.
+      expect(toPathOnly('//evil.example.com/x', 'https://example.com'))
+        .to.equal('/x');
+    });
+
+    it('SECURITY: strips host even when input scheme matches base', () => {
+      // Same-scheme attacker URL is the easiest to miss — pathname
+      // extraction must still discard the attacker host.
+      expect(toPathOnly('https://evil.example.com/admin', 'https://example.com'))
+        .to.equal('/admin');
     });
 
     it('returns original string when URL construction fails', () => {
