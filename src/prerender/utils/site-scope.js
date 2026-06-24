@@ -74,5 +74,8 @@ export function isWithinSiteScope(url, siteBaseUrl) {
  * @returns {string[]}
  */
 export function filterBySiteScope(urls, siteBaseUrl) {
+  if (!Array.isArray(urls)) {
+    return [];
+  }
   return urls.filter((url) => isWithinSiteScope(url, siteBaseUrl));
 }

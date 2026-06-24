@@ -125,6 +125,46 @@ describe('site-scope utils', () => {
       });
     });
 
+    describe('query strings (scope matches on pathname only)', () => {
+      it('returns true for an in-scope absolute URL with a query string', () => {
+        expect(isWithinSiteScope('https://bulk.com/uk/page?foo=bar', 'bulk.com/uk')).to.be.true;
+      });
+
+      it('returns false for an out-of-scope absolute URL with a query string', () => {
+        expect(isWithinSiteScope('https://bulk.com/fr/page?foo=bar', 'bulk.com/uk')).to.be.false;
+      });
+
+      it('ignores a query string on the siteBaseUrl when matching scope', () => {
+        expect(isWithinSiteScope('https://bulk.com/uk/page', 'bulk.com/uk?ref=nav')).to.be.true;
+      });
+
+      it('returns true for an in-scope relative URL with a query string', () => {
+        expect(isWithinSiteScope('/uk/page?foo=bar', 'bulk.com/uk')).to.be.true;
+      });
+    });
+
+    describe('multi-segment base paths', () => {
+      it('returns true when absolute URL is within a multi-segment subpath', () => {
+        expect(isWithinSiteScope('https://bulk.com/eu/uk/en/page', 'bulk.com/eu/uk/en')).to.be.true;
+      });
+
+      it('returns true when absolute URL exactly equals a multi-segment subpath', () => {
+        expect(isWithinSiteScope('https://bulk.com/eu/uk/en', 'bulk.com/eu/uk/en')).to.be.true;
+      });
+
+      it('returns false when absolute URL only partially matches the multi-segment subpath', () => {
+        expect(isWithinSiteScope('https://bulk.com/eu/uk/page', 'bulk.com/eu/uk/en')).to.be.false;
+      });
+
+      it('prevents false-positive prefix match on a multi-segment subpath', () => {
+        expect(isWithinSiteScope('https://bulk.com/eu/uk/english/page', 'bulk.com/eu/uk/en')).to.be.false;
+      });
+
+      it('returns true when relative URL is within a multi-segment subpath', () => {
+        expect(isWithinSiteScope('/eu/uk/en/page', 'bulk.com/eu/uk/en')).to.be.true;
+      });
+    });
+
     describe('error handling', () => {
       it('returns false when siteBaseUrl cannot be parsed', () => {
         expect(isWithinSiteScope('https://bulk.com/uk/page', 'not a valid url!!')).to.be.false;
@@ -157,6 +197,11 @@ describe('site-scope utils', () => {
 
     it('returns empty array for empty input', () => {
       expect(filterBySiteScope([], 'bulk.com/uk')).to.deep.equal([]);
+    });
+
+    it('returns empty array when urls is not an array', () => {
+      expect(filterBySiteScope(undefined, 'bulk.com/uk')).to.deep.equal([]);
+      expect(filterBySiteScope(null, 'bulk.com/uk')).to.deep.equal([]);
     });
   });
 });
