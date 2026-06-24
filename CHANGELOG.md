@@ -1,3 +1,10 @@
+## [1.488.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.2...v1.488.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* enable Bright Data URL validation by default and fix CDN-block false negatives ([#2723](https://github.com/adobe/spacecat-audit-worker/issues/2723)) ([d35d9b8](https://github.com/adobe/spacecat-audit-worker/commit/d35d9b8702cbd489a463c380ae26c09446cb20e3))
+
 ## [1.488.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.1...v1.488.2) (2026-06-24)
 
 
