@@ -131,11 +131,17 @@ function isBrokenStatus(status) {
  * connection level (e.g. ups.com resets the HTTP/2 stream with NGHTTP2_INTERNAL_ERROR), so these
  * must NOT be reported as broken (SITES-47125).
  *
+ * Node's DNS resolver reliably sets `err.code === 'ENOTFOUND'`, which is the primary signal. The
+ * message check is a narrow fallback for wrappers that strip `.code`: it only fires when no code
+ * is present and matches the canonical `getaddrinfo ENOTFOUND` format — not any message that
+ * merely contains the substring, which would re-introduce false positives (PR #2727 review).
+ *
  * @param {Error} err
  * @returns {boolean}
  */
 function isDnsResolutionFailure(err) {
-  return err.code === 'ENOTFOUND' || /ENOTFOUND/.test(err.message);
+  return err.code === 'ENOTFOUND'
+    || (err.code == null && /getaddrinfo ENOTFOUND/.test(err.message));
 }
 
 /**
