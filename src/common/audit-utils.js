@@ -59,7 +59,7 @@ export async function isAuditEnabledForSite(type, site, context) {
       context,
     );
     if (!hasValidEnrollment) {
-      context.log.error(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);
+      context.log.info(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);
       return false;
     }
   } else {

@@ -80,10 +80,13 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
   beforeEach(() => {
     context.rumApiClient.query = sandbox.stub().resolves(rumData);
+    // Stub fetch so 4xx filter does not remove URLs (HEAD returns 200)
+    sandbox.stub(globalThis, 'fetch').resolves({ status: 200 });
   });
 
   afterEach(() => {
     nock.cleanAll();
+    sandbox.restore();
     sinon.restore();
     site.getDeliveryConfig.reset();
   });

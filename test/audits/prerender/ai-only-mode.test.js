@@ -17,8 +17,8 @@ import {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
-  handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { handleAiOnlyMode } from '../../../src/prerender/ai-only-handler.js';
 
 use(sinonChai);
 
@@ -65,6 +65,9 @@ describe('Prerender AI-Only Mode', () => {
       getSiteId: sandbox.stub().returns('site-123'),
       getType: sandbox.stub().returns('prerender'),
       getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      getData: sandbox.stub().returns({}),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     mockDataAccess = {
@@ -368,8 +371,8 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/No existing suggestions found/),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions match mode=ai-only/),
       );
     });
 
@@ -390,9 +393,9 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-domain-wide
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
 
     it('should skip suggestions without URL', async () => {
@@ -420,9 +423,9 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-SKIPPED
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
 
     it('should return 0 if all suggestions are SKIPPED', async () => {
@@ -433,7 +436,7 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.auditResult.suggestionCount).to.equal(0);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/No eligible suggestions to send to Mystique/),
+        sinon.match(/No suggestions match mode=ai-only/),
       );
     });
 
@@ -445,7 +448,7 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(result.auditResult.suggestionCount).to.equal(0);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/No eligible suggestions to send to Mystique/),
+        sinon.match(/No suggestions match mode=ai-only/),
       );
     });
 
@@ -490,8 +493,8 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const suggestion = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
       expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
       expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
@@ -512,8 +515,8 @@ describe('Prerender AI-Only Mode', () => {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/derived from originalHtmlKey/),
       );
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const suggestion = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
       expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${derivedJobId}`);
       expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${derivedJobId}`);
@@ -533,9 +536,9 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
       );
       // suggestion-1 is skipped; only suggestion-2 (which has scrapeJobId) is sent
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
 
     it('should skip suggestion when originalHtmlKey has fewer than 3 path segments', async () => {
@@ -553,9 +556,9 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
       );
       // suggestion-1 is skipped; only suggestion-2 is sent
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
   });
 
@@ -580,8 +583,8 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.status).to.equal('complete');
       // All 3 suggestions (2 from current run + 1 stale) must be sent
       expect(result.auditResult.suggestionCount).to.equal(3);
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      const sentUrls = message.data.suggestions.map((s) => s.url);
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const sentUrls = uploadedSuggestions.map((s) => s.url);
       expect(sentUrls).to.include('https://example.com/page1');
       expect(sentUrls).to.include('https://example.com/page2');
       expect(sentUrls).to.include('https://example.com/old-page');
@@ -747,9 +750,9 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page1');
     });
 
     it('should filter out suggestions not in auditContext.urls', async () => {
@@ -760,9 +763,9 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(1);
+      expect(uploadedSuggestions[0].url).to.equal('https://example.com/page2');
     });
 
     it('should send all suggestions when auditContext.urls is not set', async () => {
@@ -830,8 +833,8 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      message.data.suggestions.forEach((s) => {
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      uploadedSuggestions.forEach((s) => {
         expect(s.hasPrompts).to.equal(false);
       });
     });
@@ -851,9 +854,9 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
-      const s2 = message.data.suggestions.find((s) => s.url === 'https://example.com/page2');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const s1 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
+      const s2 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page2');
       expect(s1.hasPrompts).to.equal(true);
       expect(s2.hasPrompts).to.equal(false);
     });
@@ -869,8 +872,8 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      const s1 = uploadedSuggestions.find((s) => s.url === 'https://example.com/page1');
       expect(s1.hasPrompts).to.equal(false);
     });
   });
@@ -906,32 +909,83 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
-  describe('batchIndex and totalBatches in SQS payload', () => {
-    it('should include batchIndex:0 and totalBatches:1 in SQS message', async () => {
+  describe('suggestionsS3Key and suggestionsS3Bucket in SQS payload', () => {
+    it('should include suggestionsS3Key and suggestionsS3Bucket instead of inline suggestions', async () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.batchIndex).to.equal(0);
-      expect(message.data.totalBatches).to.equal(1);
+      expect(message.data.suggestionsS3Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+      expect(message.data.suggestionsS3Bucket).to.equal('test-bucket');
+      expect(message.data).to.not.have.property('suggestions');
+      expect(message.data).to.not.have.property('batchIndex');
+      expect(message.data).to.not.have.property('totalBatches');
     });
   });
 
   describe('sendPrerenderGuidanceRequestToMystique error handling', () => {
-    it('should return success with 0 suggestions when SQS sendMessage fails', async () => {
-      // sendPrerenderGuidanceRequestToMystique catches errors and returns 0
-      // So the overall flow succeeds but with 0 suggestions sent
+    it('should return failed when SQS sendMessage fails', async () => {
       mockSqs.sendMessage.rejects(new Error('SQS network error'));
 
       const result = await importTopPages(context);
 
-      // SQS error is caught internally, returns 0 suggestions
-      expect(result.status).to.equal('complete');
-      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(result.status).to.equal('failed');
+      expect(result.error).to.match(/Mystique dispatch failed/);
+      expect(result.fullAuditRef).to.match(/failed-/);
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send guidance:prerender message/),
+        sinon.match.instanceOf(Error),
       );
     });
+  });
+
+  describe('S3 upload and mystiqueSession behavior', () => {
+    it('should always upload suggestions to S3 at the correct key', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+
+      // S3 PutObjectCommand is always called for the suggestions upload
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const s3Call = mockS3Client.send.firstCall.args[0];
+      expect(s3Call.input.Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+      expect(s3Call.input.Bucket).to.equal('test-bucket');
+      expect(s3Call.input.ContentType).to.equal('application/json');
+
+      const uploadedSuggestions = JSON.parse(s3Call.input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(2);
+    });
+
+    it('should upload all suggestions to S3 for large suggestion counts', async () => {
+      const manySuggestions = Array.from({ length: 400 }, (_, i) => ({
+        getId: sandbox.stub().returns(`suggestion-${i}`),
+        getData: sandbox.stub().returns({
+          url: `https://example.com/page${i}`,
+          isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
+        }),
+        getStatus: sandbox.stub().returns('NEW'),
+      }));
+      mockOpportunity.getSuggestions.resolves(manySuggestions);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(400);
+
+      // S3 upload contains all 400 suggestions in a single call
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const uploadedSuggestions = JSON.parse(mockS3Client.send.firstCall.args[0].input.Body);
+      expect(uploadedSuggestions).to.have.lengthOf(400);
+
+      // Single SQS message with S3 key reference (no inline suggestions)
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sqsMsg = mockSqs.sendMessage.firstCall.args[1];
+      expect(sqsMsg.data.suggestionsS3Key).to.equal('prerender/mystique-suggestions/opportunity-123.json');
+      expect(sqsMsg.data.suggestionsS3Bucket).to.equal('test-bucket');
+      expect(sqsMsg.data).to.not.have.property('suggestions');
+    });
+
   });
 
   describe('handleAiOnlyMode - malformed JSON handling', () => {
@@ -998,6 +1052,141 @@ describe('Prerender AI-Only Mode', () => {
       expect(mockSqs.sendMessage).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Successfully queued AI summary request for 2 suggestion/),
+      );
+    });
+  });
+
+  describe('mode:ai-only-current — scopes to current-tab suggestions', () => {
+    beforeEach(() => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-current',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-current'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/current', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-covered'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/covered', coveredByDomainWide: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-deployed'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/deployed', edgeDeployed: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-pattern'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/pattern', coveredByPattern: true, scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-fixed'),
+          getStatus: sandbox.stub().returns('FIXED'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/fixed', scrapeJobId: 'test-scrape-job' }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+    });
+
+    it('should trigger ai-only-current via importTopPages', async () => {
+      const result = await importTopPages(context);
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only-current');
+      expect(result.fullAuditRef).to.equal('ai-only-current/opportunity-123');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Scoping to 1 URLs from DB suggestions \(mode=ai-only-current\)/),
+      );
+    });
+
+    it('should skip step 2 for ai-only-current', async () => {
+      const result = await submitForScraping(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-current');
+    });
+
+    it('should skip step 3 for ai-only-current', async () => {
+      const result = await processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-current');
+    });
+  });
+
+  describe('mode:ai-only-missing — scopes to suggestions without AI summary', () => {
+    beforeEach(() => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-missing',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-no-summary'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/no-summary', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-has-summary'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/has-summary', aiSummary: 'some text', scrapeJobId: 'test-scrape-job' }),
+        },
+        {
+          getId: sandbox.stub().returns('s-fixed-missing'),
+          getStatus: sandbox.stub().returns('FIXED'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/fixed-missing', scrapeJobId: 'test-scrape-job' }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+    });
+
+    it('should trigger ai-only-missing via importTopPages', async () => {
+      const result = await importTopPages(context);
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only-missing');
+      expect(result.fullAuditRef).to.equal('ai-only-missing/opportunity-123');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Scoping to 2 URLs from DB suggestions \(mode=ai-only-missing\)/),
+      );
+    });
+
+    it('should skip step 2 for ai-only-missing', async () => {
+      const result = await submitForScraping(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-missing');
+    });
+
+    it('should skip step 3 for ai-only-missing', async () => {
+      const result = await processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('skipped');
+      expect(result.mode).to.equal('ai-only-missing');
+    });
+  });
+
+  describe('mode:ai-only-current — returns early when no suggestions match', () => {
+    it('should return complete with 0 suggestions when all are filtered out', async () => {
+      context.data = JSON.stringify({
+        mode: 'ai-only-current',
+        scrapeJobId: 'test-scrape-job',
+      });
+
+      const suggestions = [
+        {
+          getId: sandbox.stub().returns('s-covered'),
+          getStatus: sandbox.stub().returns('NEW'),
+          getData: sandbox.stub().returns({ url: 'https://example.com/covered', coveredByDomainWide: true }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(suggestions);
+
+      const result = await handleAiOnlyMode(context);
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions match mode=ai-only-current/),
       );
     });
   });

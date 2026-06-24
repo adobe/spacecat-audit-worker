@@ -22,7 +22,7 @@ import {
 } from '../support/utils.js';
 
 // ----- version ----------------------------------------------------------------
-export const COMMON_VERSION = 101; // manually update as needed
+export const COMMON_VERSION = 103; // manually update as needed
 
 // ----- performance tuning constants ------------------------------------------
 
@@ -51,17 +51,19 @@ export const SLOW_PAGE_URL_BATCH_SIZE = 4; // must stay under 1000 per SpaceCat 
 export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay between batches
 
 // ----- internal constants ----------------------------------------------------
+
+// Warning: Keep any updates or changes in sync with the corresponding BackOffice UI list.
 export const ERROR_CODES = Object.freeze({
-  // ... codes applicable for the /robots.txt file ...
-  CANNOT_READ_ROBOTS: 'CANNOT READ ROBOTS',
-  NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
   // ... codes applicable for a specific sitemap.xml URL ...
-  SITEMAP_NOT_FOUND: 'NO SITEMAP FOUND',
-  CANNOT_READ_SITEMAP: 'ERROR FETCHING DATA',
-  INVALID_SITEMAP_FORMAT: 'INVALID SITEMAP FORMAT',
-  NO_VALID_PATHS_EXTRACTED: 'NO VALID URLs FOUND IN SITEMAP',
+  SITEMAP_NOT_FOUND: 'sitemap-not-found', // was 'NO SITEMAP FOUND'
+  CANNOT_READ_SITEMAP: 'cannot-read-sitemap', // was 'ERROR FETCHING DATA'
+  INVALID_SITEMAP_FORMAT: 'invalid-sitemap-format', // was 'INVALID SITEMAP FORMAT'
+  NO_VALID_PATHS_EXTRACTED: 'no-valid-urls-in-sitemap', // was 'NO VALID URLs FOUND IN SITEMAP'
+  // ... codes applicable for the /robots.txt file ...
+  CANNOT_READ_ROBOTS: 'cannot-read-robots', // was 'CANNOT READ ROBOTS'
+  NO_SITEMAP_IN_ROBOTS: 'robots-missing-sitemap', // wsa 'NO SITEMAP FOUND IN ROBOTS'
   // ... audit-level codes ...
-  GENERAL_ERROR: 'INVALID URL', // the customer's URL provided for the audit is not valid
+  GENERAL_ERROR: 'general-error', // was 'INVALID URL'
 });
 
 const VALID_MIME_TYPES = Object.freeze([
@@ -1014,7 +1016,9 @@ export async function checkRobotsForSitemap(protocol, domain) {
   //       sitemap URLs, such as the root-level sitemap.xml file.
   return {
     paths: sitemapPaths,
-    reasons: sitemapPaths.length ? [] : [ERROR_CODES.NO_SITEMAP_IN_ROBOTS],
+    reasons: sitemapPaths.length
+      ? []
+      : [{ value: robotsUrl, error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS }],
   };
 }
 
@@ -1042,7 +1046,7 @@ export async function checkSitemap(sitemapUrl, log) {
     if (!isValidFormat) {
       return {
         existsAndIsValid: false,
-        reasons: [ERROR_CODES.INVALID_SITEMAP_FORMAT],
+        reasons: [{ value: sitemapUrl, error: ERROR_CODES.INVALID_SITEMAP_FORMAT }],
       };
     }
 
@@ -1055,9 +1059,10 @@ export async function checkSitemap(sitemapUrl, log) {
     /* c8 ignore next */
     log?.error(`Sitemap: Error fetching sitemap URL ${sitemapUrl}: ${error.message}`);
     const isNotFound = error.message.includes('404');
+    const errorCode = isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.CANNOT_READ_SITEMAP;
     return {
       existsAndIsValid: false,
-      reasons: [isNotFound ? ERROR_CODES.SITEMAP_NOT_FOUND : ERROR_CODES.CANNOT_READ_SITEMAP],
+      reasons: [{ value: sitemapUrl, error: errorCode }],
     };
   }
 }
@@ -1070,6 +1075,8 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
   const baseUrl = getUrlWithoutPath(inputUrl);
   const baseUrlVariant = toggleWWW(baseUrl);
   const pagesBySitemap = {};
+  /** @type {Array<{ error: string, value: string }>} */
+  const sitemapErrors = [];
   let sitemapsToProcess = [...initialUrls];
   const processedSitemaps = new Set();
 
@@ -1108,6 +1115,18 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
           if (pages.length > 0) {
             pagesBySitemap[sitemapUrl] = pages;
           }
+        } else {
+          log?.warn(
+            `Sitemap: off-domain sitemap — skipping valid sitemap URL outside audit scope for ${inputUrl}: ${sitemapUrl}`,
+          );
+        }
+      } else {
+        const reason = sitemapData.reasons?.find((r) => r?.error);
+        if (reason) {
+          sitemapErrors.push({
+            error: reason.error,
+            value: reason.value ?? sitemapUrl,
+          });
         }
       }
     };
@@ -1126,7 +1145,7 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
     sitemapsToProcess = sitemapsFromIndexes;
   }
 
-  return pagesBySitemap;
+  return { pagesBySitemap, sitemapErrors };
 }
 
 export async function getSitemapUrls(inputUrl, log) {
@@ -1136,7 +1155,7 @@ export async function getSitemapUrls(inputUrl, log) {
     log?.error(`Sitemap: Invalid URL provided: ${inputUrl}`);
     return {
       success: false,
-      reasons: [{ value: inputUrl, error: ERROR_CODES.GENERAL_ERROR }],
+      reasons: [{ value: `Invalid URL provided: ${inputUrl}`, error: ERROR_CODES.GENERAL_ERROR }],
     };
   }
 
@@ -1189,16 +1208,24 @@ export async function getSitemapUrls(inputUrl, log) {
 
   // Extract and validate page URLs from our validated sitemap URLs:
   //   getBaseUrlPagesFromSitemaps filters sitemaps by domain, then filters page URLs by full path
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok, log);
-  log?.info(`Sitemap: Extracted ${Object.keys(extractedPaths).length} sitemap URLs for ${inputUrl}`);
-  log?.info(`Sitemap: Extracted ${Object.values(extractedPaths).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
+  const { pagesBySitemap, sitemapErrors } = await getBaseUrlPagesFromSitemaps(
+    inputUrl,
+    sitemapUrls.ok,
+    log,
+  );
+  log?.info(`Sitemap: Extracted ${Object.keys(pagesBySitemap).length} sitemap URLs for ${inputUrl}`);
+  log?.info(`Sitemap: Extracted ${Object.values(pagesBySitemap).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
+  if (sitemapErrors.length > 0) {
+    log?.info(`Sitemap: Found ${sitemapErrors.length} per-sitemap error(s) for ${inputUrl}`);
+  }
 
   return {
     success: true,
     reasons: [{ value: 'URLs are extracted from sitemap.' }],
     details: {
-      extractedPaths,
+      extractedPaths: pagesBySitemap,
       filteredSitemapUrls: sitemapUrls.ok, // Validated sitemap URLs
+      sitemapErrors,
     },
   };
 }

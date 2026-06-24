@@ -18,14 +18,20 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { computeBrandTokens, isExcludedCitedHost } from '../utils/offsite-audit-utils.js';
 import {
   DRS_URLS_LIMIT,
   RETRIABLE_STATUSES,
   RETRY_DELAY_MS,
+  ACCEPTED_REGIONS,
   OFFSITE_DOMAINS,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
+  TOP_CITED_EXCLUDED_DOMAINS,
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_POLL_MAX_WAIT_SECONDS,
+  DRS_STATUS_AUDIT_TYPE,
 } from './constants.js';
 
 /**
@@ -90,6 +96,11 @@ function resolveRedditCommentsParams(messageData) {
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
+// The top-cited bucket key (mirrors addUrlsToUrlStore) — also a valid granular scope.
+const TOP_CITED_BUCKET = 'top-cited';
+// Valid values for messageData.domainScope on granular single-audit runs.
+const VALID_DOMAIN_SCOPES = new Set([...Object.keys(OFFSITE_DOMAINS), TOP_CITED_BUCKET]);
+
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
@@ -146,9 +157,12 @@ function normalizeUrl(parsed, domain) {
  * @param {string} rawUrl - The raw URL string to classify and normalize
  * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
  *   matching this hostname or any subdomain of it are excluded
+ * @param {Set<string>} [brandTokens] - brand tokens (see `computeBrandTokens`); URLs whose
+ *   host is a non-earned/social domain or contains a brand token are excluded
+ * @param {object} log - logger; debug-logs the matched domain/token for each excluded URL
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname) {
+function classifyAndNormalize(rawUrl, siteHostname, brandTokens, log) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -165,6 +179,16 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       return null;
     }
   }
+
+  // Drop social/search/deal-aggregator domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) before they can enter the URL Store. Cited
+  // analysis measures earned, non-branded, non-social citations only.
+  const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
+  if (exclusionReason) {
+    log.debug(`${LOG_PREFIX} Excluding ${rawUrl} (${exclusionReason})`);
+    return null;
+  }
+
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
@@ -173,6 +197,13 @@ function classifyAndNormalize(rawUrl, siteHostname) {
       if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
         return null;
       }
+      return { url: normalizeUrl(parsed, domain), domain };
+    }
+  }
+
+  // Tag (but don't scrape) these so selectTopUrls keeps them out of top-cited.
+  for (const domain of TOP_CITED_EXCLUDED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -216,19 +247,20 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
  * Populates both the global URL map (for URL store) and the topic map (for guideline store).
- * Only processes rows with Region=US.
+ * Only processes rows whose Region is in ACCEPTED_REGIONS.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
  * @param {string} [siteHostname] - Client site hostname to exclude
+ * @param {Set<string>} [brandTokens] - brand tokens used to exclude non-earned/branded hosts
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandTokens) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (!sources || row.Region !== 'US') {
+    if (!sources || !ACCEPTED_REGIONS.has(row.Region)) {
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -246,7 +278,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed, siteHostname);
+      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens, log);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -633,6 +665,25 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Restricts the selected buckets to a single scope for granular single-audit runs.
+ * Non-scoped per-domain buckets are emptied (kept as keys so addUrlsToUrlStore stays
+ * happy); `'top-cited'` keeps only the top-cited bucket, any other value keeps only
+ * that offsite-domain bucket.
+ *
+ * @param {Object<string, string[]>} topByDomain
+ * @param {string[]} topCited
+ * @param {string} domainScope - An OFFSITE_DOMAINS key or 'top-cited'
+ * @returns {{ topByDomain: Object<string, string[]>, topCited: string[] }}
+ */
+function scopeBucketsToDomain(topByDomain, topCited, domainScope) {
+  const scoped = {};
+  for (const domain of Object.keys(topByDomain)) {
+    scoped[domain] = domain === domainScope ? topByDomain[domain] : [];
+  }
+  return { topByDomain: scoped, topCited: domainScope === TOP_CITED_BUCKET ? topCited : [] };
+}
+
+/**
  * Sends a Slack notification when DRS scraping was skipped before any jobs were
  * triggered (e.g. DRS not configured, or the organization has no imsOrgId).
  * Posts only when a Slack thread context is available (manual runs);
@@ -677,6 +728,50 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
 }
 
 /**
+ * Schedules a delayed DRS status poll for the jobs that were submitted successfully.
+ * Only runs for manual Slack runs (channelId + threadTs present) with at least one
+ * job_id to track; scheduled runs and submission-only failures are skipped. The poll
+ * message carries the job list, Slack context, and an absolute deadline so each poll
+ * invocation is self-describing.
+ *
+ * @param {Array} drsResults - DRS job results from triggerDrsScraping
+ * @param {string} baseURL - The site's base URL
+ * @param {string} siteId - The site ID
+ * @param {object} context - The execution context (sqs, dataAccess, log)
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs) {
+  const { sqs, dataAccess, log } = context;
+
+  if (!channelId || !threadTs) {
+    return;
+  }
+
+  const jobs = drsResults
+    .filter((r) => r.status === 'success' && r.response?.job_id)
+    .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
+
+  if (jobs.length === 0) {
+    return;
+  }
+
+  const configuration = await dataAccess.Configuration.findLatest();
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: DRS_STATUS_AUDIT_TYPE,
+    siteId,
+    auditContext: {
+      baseURL,
+      slackContext: { channelId, threadTs },
+      jobs,
+      deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
+    },
+  }, null, DRS_POLL_INTERVAL_SECONDS);
+
+  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs)`);
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -697,10 +792,24 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { dataAccess, log } = context;
   const { slackContext, messageData } = auditContext || {};
   const spacecatOrgId = messageData?.spacecatOrgId;
+  // Granular single-audit runs (triggered by an analysis audit that found no scraped
+  // content) scope collection + scraping to one bucket so only that audit re-triggers.
+  const domainScope = messageData?.domainScope;
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+
+  // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
+  // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
+  if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
+    log.error(`${LOG_PREFIX} Unknown domainScope '${domainScope}', aborting run`);
+    return {
+      auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
+      fullAuditRef: finalUrl,
+    };
+  }
+
   const organization = await site.getOrganization();
   const imsOrgId = organization?.getImsOrgId();
   const previousWeeks = getPreviousWeeks();
@@ -717,6 +826,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
   }
 
+  // Brand tokens drop social/search domains and brand-owned lookalikes
+  // (e.g. lovedbylovesac.com) from the cited URLs before they are stored.
+  const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
+
   const brandPresenceData = await loadBrandPresenceData({
     siteId, site, previousWeeks, context,
   });
@@ -724,7 +838,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const allUrls = new Map();
   if (brandPresenceData) {
     const topicMap = new Map();
-    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
   }
 
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
@@ -742,6 +856,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   if (allUrls.size === 0) {
     log.info(`${LOG_PREFIX} No offsite URLs found, audit complete`);
+    await postMessageOptional(
+      context,
+      channelId,
+      `:white_check_mark: *offsite-brand-presence* audit complete for *${baseURL}* — no offsite URLs found.`,
+      { threadTs },
+    );
     return {
       auditResult: {
         success: true,
@@ -753,10 +873,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   // Sort once, partition into per-domain + top-cited buckets
-  const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
-  const {
-    topByDomain, topCited,
-  } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+  const excludedFromTopCited = [...Object.keys(OFFSITE_DOMAINS), ...TOP_CITED_EXCLUDED_DOMAINS];
+  let { topByDomain, topCited } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
+
+  if (domainScope) {
+    ({ topByDomain, topCited } = scopeBucketsToDomain(topByDomain, topCited, domainScope));
+    log.info(`${LOG_PREFIX} Scoped run to '${domainScope}'`);
+  }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const { skipped, results: drsResults } = await triggerDrsScraping(
@@ -772,6 +895,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     await notifyDrsSkipped(skipped, baseURL, context, channelId, threadTs);
   } else {
     await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
+    // Best-effort follow-up: a failure here (e.g. transient Configuration/SQS error)
+    // must not fail the run, which already submitted the DRS jobs (POST /jobs is not
+    // idempotent) and posted the initial notification. Re-running would duplicate both.
+    try {
+      await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+    } catch (err) {
+      log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
+    }
   }
 
   // TODO: temporarily disabled

@@ -11,7 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   generateReportingPeriods,
@@ -43,10 +43,77 @@ const STATUS_BUCKETS = [
   { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
 ];
 
-const RETENTION_WEEKS = 4;
-const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+// Separate lifecycle windows for freshness, DB purge, and history size.
+const DB_RETENTION_WEEKS = 6;
+export const HISTORY_RETENTION_WEEKS = 6;
+const RETENTION_MS = DB_RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+const NEW_WINDOW_WEEKS = 4;
+const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
+
+// Limit per-week agent lists so history payloads stay bounded.
+const MAX_AGENT_ENTRIES = 10;
+
+// Statuses protected from automatic retention changes.
+const PROTECTED_SWEEP_STATUSES = new Set([
+  SuggestionModel.STATUSES.FIXED,
+  SuggestionModel.STATUSES.APPROVED,
+  SuggestionModel.STATUSES.REJECTED,
+  SuggestionModel.STATUSES.SKIPPED,
+  SuggestionModel.STATUSES.ERROR,
+  SuggestionModel.STATUSES.IN_PROGRESS,
+  SuggestionModel.STATUSES.PENDING_VALIDATION,
+]);
 
 const TOP_404_LIMIT = 50;
+
+// ---------------------------------------------------------------------------
+// observation:llm-broken-urls wire-format limits.
+//
+// These mirror the Pydantic validator in mystique PR #2490
+// (`app/tasks/llm_broken_urls_ingestion_task.py`). Keep them in lockstep:
+// if mystique raises or lowers a cap, mirror the change here.
+// ---------------------------------------------------------------------------
+const OBSERVATION_MAX_URLS = 50;
+const OBSERVATION_MAX_USER_AGENTS_PER_URL = 50;
+const OBSERVATION_MAX_USER_AGENT_LENGTH = 512;
+
+// SQS standard-queue maximum payload is 256 KB (262144 bytes). Keep a
+// safety margin so a worst-case-but-not-pathological message still fits
+// without us hitting the hard SQS reject (which would propagate as an
+// audit failure and trigger re-delivery of the inbound audit message).
+const OBSERVATION_MAX_MESSAGE_BYTES = 200 * 1024;
+
+/**
+ * Builds one per-week history record for an llm-error-pages suggestion.
+ */
+function buildWeekHistoryEntry(item, periodIdentifier) {
+  return {
+    periodIdentifier,
+    hitCount: item.hitCount,
+    httpStatus: item.httpStatus,
+    agentTypes: item.agentTypes.slice(0, MAX_AGENT_ENTRIES),
+    userAgents: item.userAgents.slice(0, MAX_AGENT_ENTRIES),
+    avgTtfb: item.avgTtfb,
+  };
+}
+
+/**
+ * Upserts, orders, and prunes per-week suggestion history.
+ */
+export function upsertWeekHistory(existingHistory, weekEntry) {
+  const byPeriod = new Map();
+  (Array.isArray(existingHistory) ? existingHistory : []).forEach((entry) => {
+    if (entry?.periodIdentifier) {
+      byPeriod.set(entry.periodIdentifier, entry);
+    }
+  });
+  byPeriod.set(weekEntry.periodIdentifier, weekEntry);
+
+  return Array.from(byPeriod.values())
+    .sort((a, b) => parsePeriodIdentifier(a.periodIdentifier).getTime()
+      - parsePeriodIdentifier(b.periodIdentifier).getTime())
+    .slice(-HISTORY_RETENTION_WEEKS);
+}
 
 /**
  * Step 1: Import top pages and submit for scraping
@@ -136,6 +203,180 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'llm-error-pages',
   };
+}
+
+/**
+ * Build and publish the `observation:llm-broken-urls` message to mystique's
+ * blackboard ingestion (PR #2490 / `LlmBrokenUrlsIngestionTask`).
+ *
+ * Failure isolation: this is the shadow-validation publish. It MUST NOT fail
+ * the audit run or trigger SQS re-delivery of the legacy
+ * `guidance:llm-error-pages` message that was already sent at the call site.
+ * Every thrown error is caught here and logged.
+ *
+ * Defence layers applied here:
+ *   - per-row `try/catch` around URL parsing so one malformed Athena log row
+ *     cannot abort the whole publish
+ *   - origin re-anchoring guard so a protocol-relative or absolute attacker-
+ *     controlled path cannot smuggle an off-origin URL into the payload
+ *   - per-URL caps on user-agent count + length matching mystique limits
+ *   - serialized-size budget below the SQS 256 KB hard limit
+ *   - empty-array guard so we never emit a payload mystique's `min_length=1`
+ *     would reject at the Pydantic boundary
+ *
+ * @param {object} args
+ * @param {object[]} args.sorted404      Pre-consolidated 404 rows (output of
+ *                                       `consolidateErrorsByUrl` + sort).
+ * @param {string}   args.messageBaseUrl Site baseURL (already verified to be
+ *                                       truthy by caller).
+ * @param {Date}     args.startDate      Audit window start.
+ * @param {Date}     args.endDate        Audit window end.
+ * @param {object}   args.site           Site model (provides id, deliveryType).
+ * @param {object}  [args.audit]         Audit model (optional, provides id).
+ * @param {object}   args.sqs            SQS client (provides `sendMessage`).
+ * @param {object}   args.env            Process env (provides queue URL).
+ * @param {object}   args.log            Logger (info/warn/error).
+ */
+async function publishObservationLlmBrokenUrls({
+  sorted404, facetsByUrl, periodIdentifier, messageBaseUrl, startDate, endDate,
+  site, audit, sqs, env, log,
+}) {
+  try {
+    if (!messageBaseUrl) {
+      log.warn('[LLM-ERROR-PAGES] No baseURL available — skipping observation:llm-broken-urls publish');
+      return;
+    }
+
+    // Origin re-anchoring defence: protocol-relative (`//evil.com/x`) and
+    // absolute attacker-controlled URLs (`https://evil.com/x`) are
+    // neutralised by `toPathOnly`, which returns `parsed.pathname` from
+    // the input URL — discarding host and scheme. So by the time we hit
+    // `new URL(path, messageBaseUrl)` below, `path` is guaranteed
+    // relative and the result inherits `messageBaseUrl`'s origin.
+    //
+    // We intentionally do NOT re-check origin here: it would be dead
+    // code under the current architecture and a stale assertion if
+    // `toPathOnly`'s contract ever changes. Instead, the defense is
+    // pinned by a regression test in `handler.test.js` that verifies
+    // off-origin inputs are stripped to the site's own origin.
+
+    // Re-group by URL only — existing `consolidateErrorsByUrl` keys by
+    // (url, provider) so the same URL appears once per provider. The
+    // observation wire format wants ONE entry per URL with all providers
+    // unioned.
+    //
+    // We intentionally do NOT wrap this loop in a per-row try/catch: the
+    // legacy publish above (see `runAuditAndSendToMystique`) constructs
+    // the same `new URL(path, messageBaseUrl)` and would itself throw
+    // on a malformed row — so the whole week's audit would already have
+    // aborted before reaching this helper. The outer try/catch on this
+    // function is the failure-isolation boundary we actually need.
+    const byUrl = new Map();
+    sorted404.forEach((errorPage) => {
+      const path = toPathOnly(errorPage.url, messageBaseUrl);
+      const fullUrl = new URL(path, messageBaseUrl).toString();
+      const entryHits = Number(errorPage.totalRequests) || 0;
+      const entryUas = errorPage.rawUserAgents || [];
+      // groupErrorsByUrl produced one facet row per URL from the SAME errors404
+      // set this `sorted404` was consolidated from, keyed by the raw `url` — so
+      // every sorted404 url has a facet row (agentTypes is always an array;
+      // avgTtfb/category/product/countryCode may be undefined on sparse rows).
+      // The `|| { agentTypes: [] }` is an unreachable-but-defensive default: if
+      // consolidateErrorsByUrl and groupErrorsByUrl ever diverge, a missing
+      // facet row degrades to empty facets instead of throwing a TypeError the
+      // outer try/catch would swallow (silently dropping the whole publish).
+      /* c8 ignore next */
+      const f = facetsByUrl.get(errorPage.url) || { agentTypes: [] };
+      const existing = byUrl.get(fullUrl);
+      if (existing) {
+        existing.hits += entryHits;
+        entryUas.forEach((ua) => existing.userAgents.add(ua));
+        f.agentTypes.forEach((at) => existing.agentTypes.add(at));
+      } else {
+        byUrl.set(fullUrl, {
+          hits: entryHits,
+          userAgents: new Set(entryUas),
+          // Facets are URL-stable across providers/rows; first sighting seeds
+          // them, agentTypes unions across rows mapping to the same full URL.
+          agentTypes: new Set(f.agentTypes),
+          avgTtfb: f.avgTtfb ?? '',
+          category: f.category ?? '',
+          product: f.product ?? null,
+          countryCode: f.countryCode ?? 'GLOBAL',
+        });
+      }
+    });
+
+    const observationUrls = Array.from(byUrl.entries())
+      .slice(0, OBSERVATION_MAX_URLS)
+      .map(([fullUrl, v]) => ({
+        url: fullUrl,
+        hits: v.hits,
+        userAgents: Array.from(v.userAgents)
+          .slice(0, OBSERVATION_MAX_USER_AGENTS_PER_URL)
+          .map((ua) => String(ua).slice(0, OBSERVATION_MAX_USER_AGENT_LENGTH)),
+        // FIELD NAMING: `observedThrough` (not `lastSeen`).
+        //
+        // This value is the audit-window end — the same value for every
+        // URL in a given publish — not a per-URL last-hit timestamp.
+        // `observedThrough` makes that semantics explicit and avoids a
+        // UI label ("Last seen: ...") that would lie to customers.
+        observedThrough: endDate.toISOString(),
+        // CDN-log trend facets the ELMO UI renders (mystique #2490 accepts
+        // these; the projector builds the weekly history[] + filters from them).
+        // periodIdentifier is the same for every URL in this publish (the audit
+        // week). avgTtfb is stringified to match the consumer's string field.
+        periodIdentifier: periodIdentifier || '',
+        agentTypes: Array.from(v.agentTypes)
+          .slice(0, OBSERVATION_MAX_USER_AGENTS_PER_URL)
+          .map((at) => String(at).slice(0, OBSERVATION_MAX_USER_AGENT_LENGTH)),
+        avgTtfb: String(v.avgTtfb),
+        category: v.category || '',
+        product: v.product ?? null,
+        countryCode: v.countryCode || 'GLOBAL',
+      }));
+
+    // NOTE: `observationUrls` is guaranteed non-empty here.
+    // The legacy publish above this helper only runs when
+    // `errors404.length > 0`, and `byUrl` is keyed by URL — so
+    // `byUrl.size >= 1` whenever the helper is invoked, which means
+    // `observationUrls.length >= 1`. Mystique's `min_length=1` Pydantic
+    // constraint is therefore upheld structurally and we do not add a
+    // redundant guard here. If the upstream guard is ever removed, the
+    // Pydantic boundary will reject and surface via SQS DLQ.
+
+    const observationMessage = {
+      type: 'observation:llm-broken-urls',
+      siteId: site.getId(),
+      auditId: audit?.getId() || null,
+      baseURL: messageBaseUrl,
+      deliveryType: site?.getDeliveryType?.() || null,
+      time: new Date().toISOString(),
+      data: {
+        period: {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+        },
+        urls: observationUrls,
+      },
+    };
+
+    // SQS standard-queue maximum is 256 KB. Stay under our safety budget
+    // — if a hostile log record blows past it, skip the publish with a
+    // warn rather than throw and fail the audit.
+    const serialized = JSON.stringify(observationMessage);
+    if (serialized.length > OBSERVATION_MAX_MESSAGE_BYTES) {
+      log.warn(`[LLM-ERROR-PAGES] observation:llm-broken-urls payload size ${serialized.length} bytes exceeds budget ${OBSERVATION_MAX_MESSAGE_BYTES}; skipping publish (siteId=${site.getId()}, urls=${observationUrls.length})`);
+      return;
+    }
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, observationMessage);
+    log.info(`[LLM-ERROR-PAGES] Sent observation:llm-broken-urls with ${observationUrls.length} URLs to Mystique blackboard`);
+  } catch (err) {
+    // Shadow-validation publish must never affect the legacy path or
+    // trigger SQS re-delivery of the audit message. Log and swallow.
+    log.error(`[LLM-ERROR-PAGES] Failed to publish observation:llm-broken-urls (shadow path); legacy message already sent. siteId=${site?.getId?.()} err=${err?.message}`);
+  }
 }
 
 /**
@@ -274,7 +515,8 @@ export async function runAuditAndSendToMystique(context) {
 
         const opportunityMap = {};
         const { Suggestion, Opportunity } = dataAccess;
-        const retentionCutoff = new Date(Date.now() - RETENTION_MS);
+        const deleteCutoff = new Date(Date.now() - RETENTION_MS);
+        const outdatedCutoff = new Date(Date.now() - NEW_WINDOW_MS);
         let existingOpportunities = [];
         try {
           existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
@@ -309,16 +551,17 @@ export async function runAuditAndSendToMystique(context) {
 
               opportunityMap[code] = opportunity;
 
-              // Temporary: hide newly-created Opps from the UI until it is updated to
-              // recognise the bucket-specific opportunity types (`llm-error-pages-404`,
-              // `-403`, `-5xx`). The existing Excel/SharePoint view is unaffected. Once
-              // the UI ships support for these types, drop this block and bulk-flip any
-              // accumulated IGNORED rows back to NEW.
-              if (opportunity.getStatus() === Oppty.STATUSES.NEW) {
-                opportunity.setStatus(Oppty.STATUSES.IGNORED);
+              // LLMO-5328: the ELMO UI now supports the bucket-specific
+              // opportunity types (`llm-error-pages-404`, `-403`, `-5xx`), so new
+              // Opps are no longer hidden. Un-hide any rows the prior workaround
+              // left IGNORED — system-managed only, so we never override a
+              // customer's explicit IGNORE.
+              if (opportunity.getStatus() === Oppty.STATUSES.IGNORED
+                && opportunity.getUpdatedBy() === 'system') {
+                opportunity.setStatus(Oppty.STATUSES.NEW);
                 opportunity.setUpdatedBy('system');
                 await opportunity.save();
-                log.info(`[LLM-ERROR-PAGES] Marked new opportunity ${opportunity.getId()} as IGNORED (auditType=${auditType}) pending UI support`);
+                log.info(`[LLM-ERROR-PAGES] Restored opportunity ${opportunity.getId()} to NEW (auditType=${auditType}) after LLMO-5328 UI support`);
               }
 
               existingSuggestions = await opportunity.getSuggestions();
@@ -341,6 +584,11 @@ export async function runAuditAndSendToMystique(context) {
                   product: newDataItem.product,
                   category: newDataItem.category,
                   periodIdentifier,
+                  // Keep top-level fields as latest snapshot and history as trend.
+                  history: upsertWeekHistory(
+                    existingData.history,
+                    buildWeekHistoryEntry(newDataItem, periodIdentifier),
+                  ),
                   ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
                   ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
                   ...(existingData.confidenceScore !== undefined && {
@@ -362,6 +610,7 @@ export async function runAuditAndSendToMystique(context) {
                     product: error.product,
                     category: error.category,
                     periodIdentifier,
+                    history: [buildWeekHistoryEntry(error, periodIdentifier)],
                   },
                 }),
               });
@@ -373,25 +622,44 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
-            const toOutdate = existingSuggestions.filter((s) => {
-              const data = s.getData() || {};
-              if (scrapedUrls.has(data.url)) {
-                return false;
-              }
-              const lastSeen = data.periodIdentifier;
-              if (!lastSeen) {
-                return false;
-              }
-              const status = s.getStatus();
-              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
-                return false;
-              }
-              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
-            });
+            // Skip backfill sweeps; otherwise age only system-managed stale suggestions.
+            const isBackfill = context.auditContext?.weekOffset !== undefined;
+            const toDelete = [];
+            const toOutdate = [];
+            if (!isBackfill) {
+              existingSuggestions.forEach((s) => {
+                const data = s.getData() || {};
+                if (scrapedUrls.has(data.url)) {
+                  return;
+                }
+                const lastSeen = data.periodIdentifier;
+                if (!lastSeen) {
+                  return;
+                }
+                if (PROTECTED_SWEEP_STATUSES.has(s.getStatus())) {
+                  return;
+                }
+                const seenAt = parsePeriodIdentifier(lastSeen);
+                if (seenAt.getTime() === 0) {
+                  log.warn(`[LLM-ERROR-PAGES] Skipping suggestion ${s.getId()} with unparseable periodIdentifier: "${lastSeen}" for ${auditType}`);
+                  return;
+                }
+                const isNew = s.getStatus() === SuggestionModel.STATUSES.NEW;
+                if (seenAt < deleteCutoff) {
+                  toDelete.push(s);
+                } else if (seenAt < outdatedCutoff && isNew) {
+                  toOutdate.push(s);
+                }
+              });
+            }
 
+            if (toDelete.length > 0) {
+              await Suggestion.removeByIds(toDelete.map((s) => s.getId()));
+              log.info(`[LLM-ERROR-PAGES] Deleted ${toDelete.length} suggestions older than ${DB_RETENTION_WEEKS} weeks for ${auditType}`);
+            }
             if (toOutdate.length > 0) {
               await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
-              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType}`);
+              log.info(`[LLM-ERROR-PAGES] Marked ${toOutdate.length} suggestions OUTDATED (last seen ${NEW_WINDOW_WEEKS}-${DB_RETENTION_WEEKS} weeks ago) for ${auditType}`);
             }
           } catch (bucketError) {
             log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {
@@ -453,6 +721,33 @@ export async function runAuditAndSendToMystique(context) {
 
             await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
             log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+
+            // Dual-publish the observation:llm-broken-urls message feeding the
+            // Mysticat blackboard cascade alongside the legacy guidance message.
+            // On by default; set OBSERVATION_LLM_BROKEN_URLS_ENABLED='false' to disable.
+            if (env?.OBSERVATION_LLM_BROKEN_URLS_ENABLED !== 'false') {
+              // Per-URL CDN-log facets (agentTypes / avgTtfb / category /
+              // product / countryCode) the ELMO UI renders. groupErrorsByUrl
+              // collapses the raw rows to one entry per URL with these facets;
+              // keyed by the raw `url` so the helper can look them up while it
+              // re-groups sorted404 into the observation wire shape.
+              const facetsByUrl = new Map(
+                groupErrorsByUrl(errors404).map((r) => [r.url, r]),
+              );
+              await publishObservationLlmBrokenUrls({
+                sorted404,
+                facetsByUrl,
+                periodIdentifier,
+                messageBaseUrl,
+                startDate,
+                endDate,
+                site,
+                audit,
+                sqs,
+                env,
+                log,
+              });
+            }
           } else {
             log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
           }

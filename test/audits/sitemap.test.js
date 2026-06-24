@@ -23,6 +23,11 @@ import {
   getPagesWithIssues,
   getSitemapsWithIssues,
   mergeSitemapSuggestionData,
+  buildSitemapSuggestionKey,
+  buildSitemapErrorSuggestionKey,
+  buildErrorSuggestionFromReason,
+  buildErrorSuggestionsFromReasons,
+  normalizeString,
 } from '../../src/sitemap/handler.js';
 import {
   ERROR_CODES,
@@ -137,8 +142,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -169,8 +174,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -209,8 +214,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -241,7 +246,7 @@ describe('Sitemap Audit', () => {
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
-          success: false,
+          url,
         },
         fullAuditRef: url,
         url,
@@ -268,7 +273,7 @@ describe('Sitemap Audit', () => {
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
-          success: false,
+          url,
         },
         fullAuditRef: url,
         url,
@@ -331,7 +336,10 @@ describe('Sitemap Audit', () => {
 
       const { paths, reasons } = await checkRobotsForSitemap(protocol, domain);
       expect(paths).to.eql([]);
-      expect(reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
+      expect(reasons).to.deep.equal([{
+        value: `${protocol}://${domain}/robots.txt`,
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+      }]);
     });
 
     it('should return error when unable to fetch robots.txt', async () => {
@@ -408,17 +416,24 @@ describe('Sitemap Audit', () => {
     it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url).get('/sitemap.xml').reply(404);
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
 
     it('should return CANNOT_READ_SITEMAP when there is a network error', async () => {
       nock(url).get('/sitemap.xml').replyWithError('Network error');
 
-      const resp = await checkSitemap();
+      const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.CANNOT_READ_SITEMAP);
+      expect(resp.reasons).to.deep.equal([{
+        value: `${url}/sitemap.xml`,
+        error: ERROR_CODES.CANNOT_READ_SITEMAP,
+      }]);
     });
 
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
@@ -426,17 +441,25 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.INVALID_SITEMAP_FORMAT);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.INVALID_SITEMAP_FORMAT,
+      }]);
     });
 
     it('checkSitemap returns invalid result for non-existing sitemap', async () => {
       nock(url).get('/non-existent-sitemap.xml').reply(404);
 
-      const result = await checkSitemap(`${url}/non-existent-sitemap.xml`);
+      const sitemapUrl = `${url}/non-existent-sitemap.xml`;
+      const result = await checkSitemap(sitemapUrl);
       expect(result.existsAndIsValid).to.equal(false);
-      expect(result.reasons).to.deep.equal([ERROR_CODES.SITEMAP_NOT_FOUND]);
+      expect(result.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
   });
 
@@ -453,9 +476,10 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return all pages from sitemap that have the same base url variant', async () => {
@@ -465,12 +489,13 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${protocol}://www.${domain}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${protocol}://www.${domain}/sitemap.xml`]: [
           `${url}/foo`,
           `${url}/bar`,
         ],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return all pages from sitemap that include www', async () => {
@@ -478,12 +503,13 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [
           `${protocol}://www.${domain}/foo`,
           `${protocol}://www.${domain}/bar`,
         ],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return nothing when sitemap does not contain urls', async () => {
@@ -501,7 +527,8 @@ describe('Sitemap Audit', () => {
       const resp = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(resp).to.deep.equal({});
+      expect(resp.pagesBySitemap).to.deep.equal({});
+      expect(resp.sitemapErrors).to.deep.equal([]);
     });
 
     it('should skip already processed sitemap URLs', async () => {
@@ -510,9 +537,10 @@ describe('Sitemap Audit', () => {
 
       // Pass the same sitemap URL twice
       const result = await getBaseUrlPagesFromSitemaps(url, [sitemapUrl, sitemapUrl]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [sitemapUrl]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should handle URLs with whitespace in sitemap XML (ex: crucial.com)', async () => {
@@ -527,9 +555,56 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
+    });
+
+    it('should record per-sitemap errors while still extracting pages from other sitemaps', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+      const validSitemapUrl = `${url}/sitemap.xml`;
+
+      nock(url).get('/sitemap-missing.xml').reply(404);
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+
+      const result = await getBaseUrlPagesFromSitemaps(url, [
+        brokenSitemapUrl,
+        validSitemapUrl,
+      ]);
+
+      expect(result.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+      expect(result.pagesBySitemap).to.deep.equal({
+        [validSitemapUrl]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
+
+    it('should warn and skip valid off-domain sitemap URLs', async () => {
+      const offDomainSitemapUrl = 'https://cdn.other-domain.test/sitemap.xml';
+      const mockLog = {
+        info: sandbox.spy(),
+        debug: sandbox.spy(),
+        warn: sandbox.spy(),
+      };
+
+      nock('https://cdn.other-domain.test')
+        .get('/sitemap.xml')
+        .reply(200, sampleSitemapMoreUrls);
+
+      const result = await getBaseUrlPagesFromSitemaps(
+        url,
+        [offDomainSitemapUrl],
+        mockLog,
+      );
+
+      expect(result.pagesBySitemap).to.deep.equal({});
+      expect(result.sitemapErrors).to.deep.equal([]);
+      expect(mockLog.warn).to.have.been.calledOnceWith(
+        `Sitemap: off-domain sitemap — skipping valid sitemap URL outside audit scope for ${url}: ${offDomainSitemapUrl}`,
+      );
     });
 
     it('should add delay between batches when processing multiple sitemaps', async () => {
@@ -558,21 +633,22 @@ describe('Sitemap Audit', () => {
         `${url}/sitemap_index.xml`,
       ]);
 
-      expect(Object.keys(result)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
+      expect(Object.keys(result.pagesBySitemap)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
       sitemapIndexUrls.forEach((sitemapUrl, i) => {
-        expect(result[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
+        expect(result.pagesBySitemap[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
   });
 
   describe('findSitemap', () => {
     it('should return error when URL is invalid', async () => {
       const result = await findSitemap('not a valid url');
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         {
           error: ERROR_CODES.GENERAL_ERROR,
-          value: 'not a valid url',
+          value: 'Invalid URL provided: not a valid url',
         },
       ]);
     });
@@ -585,7 +661,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
 
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         {
           error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
@@ -595,14 +671,15 @@ describe('Sitemap Audit', () => {
       expect(result.paths).to.be.undefined;
     });
 
-    it('should return success when sitemap is found in robots.txt', async () => {
+    it('should return checked result when sitemap is found in robots.txt', async () => {
       nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
       nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
     it('should fail when sitemap contents have a different URL than the base domain (regardless of www. or not)', async () => {
@@ -619,14 +696,16 @@ describe('Sitemap Audit', () => {
         );
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should fail when robots points to an empty string instead of an actual URI', async () => {
       nock(url).get('/robots.txt').reply(200, 'Sitemap: ');
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should fail when sitemap is empty (', async () => {
@@ -636,10 +715,11 @@ describe('Sitemap Audit', () => {
         .reply(200, () => undefined);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
-    it('should return success when sitemap.xml is found', async () => {
+    it('should return checked result when sitemap.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(200);
       nock(url).head('/sitemap_index.xml').reply(404);
@@ -670,10 +750,11 @@ describe('Sitemap Audit', () => {
         info: () => {},
         debug: () => {},
       });
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
-    it('should return success when sitemap_index.xml is found', async () => {
+    it('should return checked result when sitemap_index.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(404);
       nock(url).head('/sitemap_index.xml').reply(200);
@@ -686,10 +767,11 @@ describe('Sitemap Audit', () => {
       nock(url).head('/cux').reply(200);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
-    it('should return success when sitemap paths have www', async () => {
+    it('should return checked result when sitemap paths have www', async () => {
       nock(`${protocol}://www.${domain}`)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
@@ -698,7 +780,8 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`).head('/bar').reply(200);
 
       const result = await findSitemap(`${protocol}://www.${domain}`);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
     it('should return error when no sitemap is found', async () => {
@@ -707,7 +790,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap_index.xml').reply(404);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should return error when no valid paths where extracted from sitemap', async () => {
@@ -721,7 +805,8 @@ describe('Sitemap Audit', () => {
       nock(url).get('/sitemap.xml').reply(200, sitemapInvalidPaths);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
     it('should handle missing details properties with fallback defaults', async () => {
@@ -781,7 +866,7 @@ describe('Sitemap Audit', () => {
       });
 
       const result = await mockedSitemapHandler.findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
@@ -810,13 +895,90 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(subpathUrl);
 
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         { value: 'Sitemaps found and checked.' },
       ]);
 
       // Verify the audit result details
       expect(result.details.issues).to.deep.equal({});
+      expect(result.details.sitemapErrors).to.deep.equal([]);
+    });
+
+    it('should record per-sitemap errors and page issues when one sitemap fails and another is probed', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+      const validSitemapUrl = `${url}/sitemap.xml`;
+
+      nock(url)
+        .get('/robots.txt')
+        .reply(
+          200,
+          `Sitemap: ${brokenSitemapUrl}\nSitemap: ${validSitemapUrl}`,
+        );
+      nock(url).get('/sitemap-missing.xml').reply(404);
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
+      nock(url).head('/foo').reply(404);
+      nock(url).head('/bar').reply(200);
+
+      const auditResult = await findSitemap(url);
+      expect(auditResult).to.not.have.property('success');
+      expect(auditResult.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
+      expect(auditResult.details.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+      expect(auditResult.details.issues[validSitemapUrl]).to.deep.equal([{
+        url: `${url}/foo`,
+        statusCode: 404,
+        urlsSuggested: '',
+      }]);
+
+      const withSuggestions = generateSuggestions(url, { auditResult }, context);
+      expect(withSuggestions.suggestions).to.have.lengthOf(2);
+      expect(withSuggestions.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: brokenSitemapUrl,
+      });
+      expect(withSuggestions.suggestions[1]).to.deep.include({
+        type: 'url',
+        sitemapUrl: validSitemapUrl,
+        pageUrl: `${url}/foo`,
+        statusCode: 404,
+      });
+    });
+
+    it('should emit distinct error suggestions when a single broken sitemap triggers both NO_VALID_PATHS_EXTRACTED and sitemapErrors', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${brokenSitemapUrl}`);
+      nock(url).get('/sitemap-missing.xml').reply(404);
+
+      const auditResult = await findSitemap(url);
+      expect(auditResult).to.not.have.property('success');
+      expect(auditResult.reasons).to.deep.equal([{
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: brokenSitemapUrl,
+      }]);
+      expect(auditResult.details.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+
+      const withSuggestions = generateSuggestions(url, { auditResult }, context);
+      expect(withSuggestions.suggestions).to.have.lengthOf(2);
+      expect(withSuggestions.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: brokenSitemapUrl,
+      });
+      expect(withSuggestions.suggestions[1]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: brokenSitemapUrl,
+      });
     });
 
     it('should process root sitemap for subpath URL and filter correctly', async () => {
@@ -841,7 +1003,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(subpathUrl);
 
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
       // The URLs from /en/ca and /fr should be filtered out, not audited
     });
 
@@ -901,7 +1063,7 @@ describe('Sitemap Audit', () => {
         const result = await findSitemapMocked(url, {
           info: () => {}, debug: () => {}, warn: () => {},
         });
-        expect(result.success).to.equal(true);
+        expect(result).to.not.have.property('success');
         expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.firstCall.args[3]).to.equal(null);
@@ -1179,7 +1341,6 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       auditId: 'audit-id',
       auditResult: {
-        success: true,
         reasons: [
           {
             value: 'Sitemaps found and checked.',
@@ -1202,12 +1363,11 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value:
               'Fetch error for https://maidenform.com/robots.txt Status: 403',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         scores: {},
@@ -1218,11 +1378,10 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value: 'https://some-domain.adobe/sitemap.xml',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         url: 'https://some-domain.adobe',
@@ -1236,11 +1395,10 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value: 'https://some-domain.adobe/robots.txt',
-            error: 'NO SITEMAP FOUND IN ROBOTS',
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
           },
         ],
         details: {
@@ -1260,7 +1418,6 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: true,
         reasons: [
           {
             value: 'Sitemaps found and checked.',
@@ -1307,8 +1464,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+            recommendedAction: '',
           },
         ],
       });
@@ -1331,8 +1488,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
@@ -1351,14 +1508,113 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
     });
 
-    it('should present a suggestion even if the audit is successful as long as there are pages with issues', async () => {
+    it('should generate error suggestions from details.sitemapErrors when reasons have no error', () => {
+      const auditData = {
+        auditResult: {
+          reasons: [{ value: 'Sitemaps found and checked.' }],
+          details: {
+            issues: {},
+            sitemapErrors: [{
+              error: ERROR_CODES.SITEMAP_NOT_FOUND,
+              value: 'https://some-domain.adobe/sitemap-missing.xml',
+            }],
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://some-domain.adobe/sitemap-missing.xml',
+      });
+    });
+
+    it('buildErrorSuggestionsFromReasons dedupes identical reason entries', () => {
+      const duplicateReason = {
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: 'https://some-domain.adobe/sitemap-missing.xml',
+      };
+      const suggestions = buildErrorSuggestionsFromReasons([
+        duplicateReason,
+        duplicateReason,
+      ]);
+      expect(suggestions).to.have.lengthOf(1);
+    });
+
+    it('should dedupe identical error suggestions when merging reasons and sitemapErrors via generateSuggestions', () => {
+      const duplicateReason = {
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: 'https://some-domain.adobe/sitemap-missing.xml',
+      };
+      const auditData = {
+        auditResult: {
+          reasons: [duplicateReason],
+          details: {
+            issues: {},
+            sitemapErrors: [duplicateReason],
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://some-domain.adobe/sitemap-missing.xml',
+      });
+    });
+
+    it('should generate both error and url suggestions from the same audit result', () => {
+      const auditData = {
+        siteId: 'site-id',
+        id: 'audit-id',
+        auditResult: {
+          reasons: [
+            {
+              value: 'https://some-domain.adobe/sitemap.xml',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+            },
+          ],
+          url: 'https://some-domain.adobe',
+          details: {
+            issues: {
+              'https://some-domain.adobe/sitemap.xml': [
+                {
+                  url: 'https://some-domain.adobe/foo',
+                  statusCode: 404,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(2);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+      });
+      expect(response.suggestions[1]).to.deep.include({
+        type: 'url',
+        sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain.adobe/foo',
+        statusCode: 404,
+      });
+    });
+
+    it('should present a suggestion when there are pages with issues', async () => {
       const sitemap = Object.keys(
         auditPartiallySuccessfulOnePageNetworkError.auditResult.paths,
       )[0];
@@ -1398,7 +1654,6 @@ describe('Sitemap Audit', () => {
         siteId: 'site-id',
         id: 'audit-id',
         auditResult: {
-          success: true,
           reasons: [{ value: 'Sitemaps found and checked.' }],
           details: {
             issues: {
@@ -1427,6 +1682,123 @@ describe('Sitemap Audit', () => {
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
         recommendedAction: 'use this URL instead: https://example.com/new-page',
+      });
+    });
+  });
+
+  describe('buildSitemapSuggestionKey', () => {
+    it('builds url-type keys from sitemapUrl and pageUrl', () => {
+      expect(buildSitemapSuggestionKey({
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+      })).to.equal('https://example.com/sitemap.xml|https://example.com/page');
+    });
+
+    it('builds error-type keys with three normalized segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      })).to.equal(`${ERROR_CODES.SITEMAP_NOT_FOUND}|https://example.com/sitemap.xml|`);
+    });
+
+    it('normalizes missing optional error fields to empty strings', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: null,
+        recommendedAction: undefined,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+    });
+
+    it('normalizeString ignores non-string values and trims strings', () => {
+      expect(normalizeString(null)).to.equal('');
+      expect(normalizeString(undefined)).to.equal('');
+      expect(normalizeString(0)).to.equal('');
+      expect(normalizeString(`  ${ERROR_CODES.CANNOT_READ_ROBOTS}  `)).to.equal(ERROR_CODES.CANNOT_READ_ROBOTS);
+      expect(normalizeString('  https://example.com/sitemap.xml  ')).to.equal('https://example.com/sitemap.xml');
+    });
+
+    it('buildSitemapErrorSuggestionKey trims all segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: `  ${ERROR_CODES.GENERAL_ERROR}  `,
+        sitemapUrl: '  https://example.com/sitemap.xml  ',
+        recommendedAction: '  details  ',
+      })).to.equal(`${ERROR_CODES.GENERAL_ERROR}|https://example.com/sitemap.xml|details`);
+    });
+  });
+
+  describe('buildErrorSuggestionFromReason', () => {
+    it('maps robots-only error codes to empty detail fields', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        value: 'network failure',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        value: 'https://example.com/robots.txt',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+    });
+
+    it('maps general-error to trimmed recommendedAction from reason value', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.GENERAL_ERROR,
+        value: '  not-a-valid-url  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.GENERAL_ERROR,
+        sitemapUrl: '',
+        recommendedAction: 'not-a-valid-url',
+      });
+    });
+
+    it('maps sitemap URL error codes when value is an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '  https://example.com/sitemap.xml  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      });
+    });
+
+    it('leaves sitemapUrl empty when reason value is not an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: 'Fetch error for https://example.com/robots.txt Status: 403',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '   ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
       });
     });
   });
@@ -1654,11 +2026,10 @@ describe('Sitemap Audit', () => {
         siteId: 'site-id',
         id: 'audit-id',
         auditResult: {
-          success: false,
           reasons: [
             {
               value: 'https://some-domain.adobe/sitemap.xml',
-              error: 'NO VALID URLs FOUND IN SITEMAP',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             },
           ],
           url: 'https://some-domain.adobe',
@@ -1680,7 +2051,7 @@ describe('Sitemap Audit', () => {
         suggestions: [
           {
             type: 'error',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
               'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
           },
@@ -1703,19 +2074,12 @@ describe('Sitemap Audit', () => {
         ],
       };
 
-      auditDataWithSuggestions = {
-        ...JSON.parse(JSON.stringify(auditDataFailure)),
-        auditResult: {
-          ...JSON.parse(JSON.stringify(auditDataFailure.auditResult)),
-          success: true,
-        },
-      };
+      auditDataWithSuggestions = JSON.parse(JSON.stringify(auditDataFailure));
 
       auditDataSuccess = {
         siteId: 'site-id',
         auditId: 'audit-id',
         auditResult: {
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -1740,10 +2104,22 @@ describe('Sitemap Audit', () => {
       sandbox.restore();
     });
 
-    it('should skip opportunity creation when audit result success is false', async () => {
-      if (context.dataAccess.Opportunity.create.resetHistory) {
-        context.dataAccess.Opportunity.create.resetHistory();
-      }
+    it('should sync error and url suggestions when findings exist', async () => {
+      const opptyId = 'oppty-id';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
+        context.dataAccess.Opportunity,
+      ]);
+      context.dataAccess.Opportunity.getType.returns('sitemap');
+      context.dataAccess.Opportunity.getId.returns(opptyId);
+      context.dataAccess.Opportunity.save.resolves();
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: auditDataFailure.suggestions,
+      });
+      context.site = { requiresValidation: true };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
 
       await opportunityAndSuggestions(
         'https://example.com',
@@ -1751,12 +2127,13 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.log.error).to.have.been.calledWith(
-        'Sitemap audit failed, skipping opportunity and suggestions creation',
-      );
-      // Check that the existing stubs weren't called
-      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+      expect(addSuggestionsCall.args[0]).to.have.lengthOf(3);
+      expect(addSuggestionsCall.args[0][0].data.type).to.equal('error');
+      expect(addSuggestionsCall.args[0][1].data.type).to.equal('url');
+      expect(addSuggestionsCall.args[0][2].data.type).to.equal('url');
     });
 
     it('should handle errors when creating opportunity', async () => {

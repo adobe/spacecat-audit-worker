@@ -508,7 +508,7 @@ export const generateSuggestionData = async (context) => {
 
   // Bright Data: resolve suggestions first, then fallback to Mystique
   const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
-  const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false);
+  const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, true);
   const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 10);
   const brightDataRequestDelayMs = getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500);
 
