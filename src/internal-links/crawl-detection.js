@@ -12,6 +12,7 @@
 
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getTimeoutStatus } from './batch-state.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { isLinkInaccessible } from './helpers.js';
 import { limitConcurrency, sleep } from '../support/utils.js';
@@ -728,6 +729,8 @@ async function validateLinksWithCache(
         };
       }
       if (validation.inconclusive) {
+        log.info(`Inconclusive URL cached as working: ${link.url}`);
+        workingUrlsCache.add(cacheKey);
         return { type: 'api-inconclusive' };
       }
       workingUrlsCache.add(cacheKey);
@@ -783,6 +786,7 @@ function updateValidationStats(stats, validations) {
  * @param {number} params.batchSize - Number of pages to process in this batch
  * @param {Array} params.initialBrokenUrls - Array of known broken URLs from previous batches
  * @param {Array} params.initialWorkingUrls - Array of known working URLs from previous batches
+ * @param {number} [params.lambdaStartTime] - Lambda invocation start timestamp for timeout check
  * @param {Object} context - Context object with s3Client, log, env, site
  * @returns {Promise<Object>} Object containing:
  *   - results: Array of broken links found in this batch
@@ -791,6 +795,7 @@ function updateValidationStats(stats, validations) {
  *   - pagesProcessed: Number of pages processed in this batch
  *   - hasMorePages: Boolean indicating if more pages remain
  *   - nextBatchStartIndex: Index to start the next batch from
+ *   - earlyExit: Boolean, true if processing stopped early due to Lambda timeout
  *   - stats: Object with processing statistics
  */
 export async function detectBrokenLinksFromCrawlBatch({
@@ -799,6 +804,7 @@ export async function detectBrokenLinksFromCrawlBatch({
   batchSize = PAGES_PER_BATCH,
   initialBrokenUrls = [],
   initialWorkingUrls = [],
+  lambdaStartTime = null,
 }, context) {
   const {
     s3Client, env, log: baseLog, site,
@@ -862,6 +868,7 @@ export async function detectBrokenLinksFromCrawlBatch({
   const validationStats = createValidationStats();
   let pagesProcessed = 0;
   let pagesSkipped = 0;
+  let timeoutExit = false;
 
   for (const [url, s3Key] of batchPaths) {
     try {
@@ -924,10 +931,23 @@ export async function detectBrokenLinksFromCrawlBatch({
         Object.assign(validationStats, updateValidationStats(validationStats, batchResults));
         validations.push(...batchResults);
 
+        // Check Lambda timeout after each link batch; finer granularity than per-page
+        // so a single slow page with many links cannot exhaust the remaining Lambda time.
+        if (lambdaStartTime && getTimeoutStatus(lambdaStartTime, context).isApproachingTimeout) {
+          const linkBatchNum = Math.floor(i / linkCheckBatchSize) + 1;
+          log.info(`${formatElapsed()} Approaching Lambda timeout after link batch ${linkBatchNum}, stopping early`);
+          timeoutExit = true;
+          break;
+        }
+
         if (i + linkCheckBatchSize < allLinks.length) {
           // eslint-disable-next-line no-await-in-loop
           await sleep(linkCheckDelayMs);
         }
+      }
+
+      if (timeoutExit) {
+        break;
       }
 
       const brokenLinks = validations.filter(
@@ -963,7 +983,9 @@ export async function detectBrokenLinksFromCrawlBatch({
     : 0;
 
   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-  const hasMorePages = batchEndIndex < totalPages;
+  const actualEndIndex = batchStartIndex + pagesProcessed;
+  const earlyExit = actualEndIndex < batchEndIndex;
+  const hasMorePages = earlyExit || batchEndIndex < totalPages;
 
   log.info(`${formatElapsed()} ====== BATCH SUMMARY ======`);
   log.info(`${formatElapsed()} Time: ${totalTime}s for ${pagesProcessed} pages`);
@@ -971,7 +993,10 @@ export async function detectBrokenLinksFromCrawlBatch({
   log.info(`${formatElapsed()} Cache: ${totalCacheHits} hits (${cacheHitRate}%) - ${cacheHitsBroken} broken, ${cacheHitsWorking} working`);
   log.info(`${formatElapsed()} Results: ${results.length} broken links found in this batch`);
   log.info(`${formatElapsed()} Updated cache: ${brokenUrlsCache.size} broken, ${workingUrlsCache.size} working URLs`);
-  log.info(`${formatElapsed()} Progress: ${hasMorePages ? `${totalPages - batchEndIndex} pages remaining` : 'ALL PAGES COMPLETE'}`);
+  log.info(`${formatElapsed()} Progress: ${hasMorePages ? `${totalPages - actualEndIndex} pages remaining` : 'ALL PAGES COMPLETE'}`);
+  if (earlyExit) {
+    log.info(`${formatElapsed()} Early exit: will resume from page ${actualEndIndex + 1} in next Lambda`);
+  }
   log.info(`${formatElapsed()} ===========================`);
 
   return {
@@ -981,7 +1006,8 @@ export async function detectBrokenLinksFromCrawlBatch({
     pagesProcessed,
     pagesSkipped,
     hasMorePages,
-    nextBatchStartIndex: batchEndIndex,
+    earlyExit,
+    nextBatchStartIndex: actualEndIndex,
     totalPages,
     stats: {
       totalLinksAnalyzed,
