@@ -151,10 +151,18 @@ export default async function handler(message, context) {
         // than re-deriving the threshold here: the gate may surface a payload after
         // dropping bad items, so its decision is authoritative over the raw rate.
         const isVisible = status !== 'IGNORED';
-        const rate = opportunityData.qaVerdict?.rate;
-        const hallucinationNote = typeof rate === 'number'
-          ? ` — hallucination ${Math.round(rate * 100)}%`
-          : '';
+        const verdict = opportunityData.qaVerdict;
+        // rateDetermined === false means there was real analysis but the rate
+        // couldn't be computed (gate failed open → visible); show "n/a" rather
+        // than a misleading 0%. Older payloads without the flag fall back to the rate.
+        let hallucinationNote = '';
+        if (verdict) {
+          if (verdict.rateDetermined === false) {
+            hallucinationNote = ' — hallucination rate n/a';
+          } else if (typeof verdict.rate === 'number') {
+            hallucinationNote = ` — hallucination ${Math.round(verdict.rate * 100)}%`;
+          }
+        }
         const suggestionsLine = `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`;
         const slackMessage = isVisible
           ? `:white_check_mark: *cited-analysis* audit finished for *${baseUrl}*\n`
