@@ -356,7 +356,27 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(context.log.error).to.not.have.been.called;
   });
 
-  it('flags internal link as broken (status 0) on a DNS-resolution error (ENOTFOUND)', async () => {
+  it('does NOT flag as broken when a non-DNS error message merely contains the substring "ENOTFOUND"', async () => {
+    // The message-fallback must only match the canonical Node format ("getaddrinfo ENOTFOUND"),
+    // not any message that happens to contain the substring — otherwise a wrapper error like this
+    // would re-introduce the false positives this fix removes (MysticatBot review on PR #2727).
+    const wrappedError = new Error('Retry after ENOTFOUND was cached'); // no .code, non-canonical
+    fetchStub.onFirstCall().rejects(wrappedError);
+    fetchStub.onSecondCall().rejects(wrappedError);
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.error).to.not.have.been.called;
+  });
+
+  // Message-fallback branch: error carries the canonical "getaddrinfo ENOTFOUND" message but no
+  // .code (e.g. a fetch wrapper that strips the code). Still a definitive DNS failure → broken.
+  it('flags internal link as broken (status 0) on a DNS-resolution error message without a code', async () => {
     fetchStub.onFirstCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
     fetchStub.onSecondCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
 
