@@ -145,13 +145,26 @@ export default async function handler(message, context) {
       const slackContext = auditRecord?.getAuditResult()?.slackContext;
       if (slackContext) {
         const { channelId, threadTs } = slackContext;
-        await postMessageOptional(
-          context,
-          channelId,
-          `:white_check_mark: *cited-analysis* audit finished for *${site.getBaseURL()}*\n`
-          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
-          { threadTs },
-        );
+
+        // Visibility is the QA gate's decision, carried on the opportunity status
+        // (NEW = customer-visible, IGNORED = suppressed). Branch on status rather
+        // than re-deriving the threshold here: the gate may surface a payload after
+        // dropping bad items, so its decision is authoritative over the raw rate.
+        const isVisible = status !== 'IGNORED';
+        const rate = opportunityData.qaVerdict?.rate;
+        const hallucinationNote = typeof rate === 'number'
+          ? ` — hallucination ${Math.round(rate * 100)}%`
+          : '';
+        const suggestionsLine = `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`;
+        const slackMessage = isVisible
+          ? `:white_check_mark: *cited-analysis* audit finished for *${baseUrl}*\n`
+            + `${suggestionsLine}\n`
+            + `• :eye: Visible in the UI${hallucinationNote}`
+          : `:warning: *cited-analysis* audit finished for *${baseUrl}*\n`
+            + `${suggestionsLine}\n`
+            + `• :see_no_evil: Not visible in the UI${hallucinationNote}`;
+
+        await postMessageOptional(context, channelId, slackMessage, { threadTs });
       }
     }
 
