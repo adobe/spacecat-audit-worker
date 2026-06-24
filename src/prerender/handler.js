@@ -18,7 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
+import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl, getAgenticHitsMapFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
@@ -197,11 +197,15 @@ async function markDeployedUrlSuggestionsAsCovered(
     return;
   }
 
-  // Mark per-URL suggestions whose pathnames are confirmed deployed at edge
+  // Mark per-URL suggestions whose pathnames are confirmed deployed at edge.
+  // Path and domain-wide suggestions have no url field — guard before calling toPathname.
   const urlSuggestionsToCover = deployedAtEdgePathnames?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
-      return deployedAtEdgePathnames.has(toPathname(data?.url)) && !data?.edgeDeployed;
+      if (!data?.url) {
+        return false;
+      }
+      return deployedAtEdgePathnames.has(toPathname(data.url)) && !data?.edgeDeployed;
     })
     : [];
 
@@ -911,6 +915,16 @@ export async function processOpportunityAndSuggestions(
     (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
   );
 
+  // Fetch agentic hits map once here and pass it into resolvePathSuggestions so
+  // buildPathTypeSuggestions does not issue a redundant second Athena query.
+  let agenticHitsMap = new Map();
+  if (pathSuggestionsEnabled && !domainWideDeployed) {
+    agenticHitsMap = await getAgenticHitsMapFromAthena(site, context).catch((e) => {
+      log.warn(`${LOG_PREFIX} Failed to fetch agentic hits map: ${e.message}. baseUrl=${auditUrl}`);
+      return new Map();
+    });
+  }
+
   const { preservablePaths, newPathSuggestions } = await resolvePathSuggestions({
     pathSuggestionsEnabled,
     domainWideDeployed,
@@ -921,6 +935,7 @@ export async function processOpportunityAndSuggestions(
     cachedSuggestions,
     auditUrl,
     siteId: auditData.siteId,
+    agenticHitsMap,
   });
 
   // Build key function that handles individual, path, and domain-wide suggestions.
