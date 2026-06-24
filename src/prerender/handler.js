@@ -12,7 +12,7 @@
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
+import { detectBotBlocker, prependSchema } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -57,6 +57,28 @@ const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
+
+/**
+ * Builds the base URL used for site-scope filtering after URLs are rebased onto preferredBase.
+ * preferredBase (from getPreferredBaseUrl) can be an overrideBaseURL or finalUrl whose host
+ * differs from site.getBaseURL(); since rebaseUrl moves every URL onto preferredBase's host,
+ * the scope check must use that same host (with the site's subpath grafted on) — otherwise the
+ * host comparison in isWithinSiteScope rejects every rebased URL, silently emptying the list.
+ * @param {object} site - the site (provides getBaseURL())
+ * @param {string} preferredBase - the base URL that URLs were rebased onto
+ * @param {object} log - logger
+ * @returns {string} scope base URL aligned with preferredBase's host
+ */
+function getScopeBaseUrl(site, preferredBase, log) {
+  const siteBaseUrl = site.getBaseURL();
+  try {
+    const sitePath = new URL(prependSchema(siteBaseUrl)).pathname;
+    return new URL(sitePath, preferredBase).toString();
+  } catch (e) {
+    log?.warn?.(`${LOG_PREFIX} getScopeBaseUrl failed for preferredBase=${preferredBase}, falling back to site baseURL: ${e.message}`);
+    return siteBaseUrl;
+  }
+}
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
@@ -531,11 +553,13 @@ export async function submitForScraping(context) {
   const siteId = site.getId();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
   const preferredBase = getPreferredBaseUrl(site, context);
+  // URLs are rebased onto preferredBase, so scope must match against preferredBase's host.
+  const scopeBaseUrl = getScopeBaseUrl(site, preferredBase, log);
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const rebasedCsvUrls = filterBySiteScope(
       auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log)),
-      site.getBaseURL(),
+      scopeBaseUrl,
     );
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       rebasedCsvUrls,
@@ -584,12 +608,12 @@ export async function submitForScraping(context) {
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   const rebasedTopPagesUrls = filterBySiteScope(
     topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
-    site.getBaseURL(),
+    scopeBaseUrl,
   );
   const rebasedIncludedURLs = filterBySiteScope(
     ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
       .map((url) => rebaseUrl(url, preferredBase, log)),
-    site.getBaseURL(),
+    scopeBaseUrl,
   );
 
   let finalUrls;
@@ -622,7 +646,9 @@ export async function submitForScraping(context) {
     currentIncludedUrls = includedSlackDeduped.length;
     isFirstRunOfCycle = true;
   } else {
-    // getTopAgenticUrls internally handles errors and returns [] on failure
+    // getTopAgenticUrls internally handles errors and returns [] on failure.
+    // Agentic URLs are not rebased (they carry their original/production host), so they are
+    // scoped against the site's own base URL rather than the rebased scopeBaseUrl.
     const agenticUrls = filterBySiteScope(
       await getTopAgenticUrls(site, context),
       site.getBaseURL(),

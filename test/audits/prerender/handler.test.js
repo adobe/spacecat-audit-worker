@@ -1716,6 +1716,87 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.not.include('https://bulk.com/fr/agentic-2');
         });
 
+        it('keeps in-scope URLs when preferredBase host diverges from site baseURL host', async () => {
+          // preferredBase (e.g. an overrideBaseURL) points URLs at a different host than
+          // site.getBaseURL(). The scope check must use the rebase host grafted with the site
+          // subpath, otherwise every rebased URL is dropped and the submit list is silently empty.
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://staging.bulk.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://bulk.com/uk/organic-1' },
+                  { getUrl: () => 'https://bulk.com/fr/organic-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            finalUrl: 'https://bulk.com/uk',
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          // In-scope page survives rebasing to the staging host; out-of-scope /fr is dropped.
+          expect(submittedUrls).to.include('https://staging.bulk.com/uk/organic-1');
+          expect(submittedUrls).to.not.include('https://staging.bulk.com/fr/organic-2');
+        });
+
+        it('falls back to site baseURL scope when preferredBase is unparseable', async () => {
+          // getScopeBaseUrl cannot graft the subpath onto an invalid preferredBase, so it falls
+          // back to site.getBaseURL(). rebaseUrl also fails and keeps the original URLs, which
+          // still carry the site host — so in-scope URLs are kept and out-of-scope dropped.
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'not-a-valid-base',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://bulk.com/uk/organic-1' },
+                  { getUrl: () => 'https://bulk.com/fr/organic-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            finalUrl: 'not-a-valid-base',
+            log: {
+              info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(),
+            },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://bulk.com/uk/organic-1');
+          expect(submittedUrls).to.not.include('https://bulk.com/fr/organic-2');
+        });
+
         it('filters scrape result URLs to site scope before suggestion creation', async () => {
           const context = {
             site: {
