@@ -1,3 +1,10 @@
+## [1.488.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.3...v1.488.4) (2026-06-24)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** stop emitting citability score + deployed-at-edge (LLMO-5646) ([#2633](https://github.com/adobe/spacecat-audit-worker/issues/2633)) ([910ad1a](https://github.com/adobe/spacecat-audit-worker/commit/910ad1a652cffae69738871d2ebf2371ef85f1f6))
+
 ## [1.488.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.2...v1.488.3) (2026-06-24)
 
 
