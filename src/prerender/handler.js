@@ -58,6 +58,25 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
+/**
+ * Applies site-scope filtering and logs how many URLs were dropped. A misconfigured
+ * siteBaseUrl can silently drop every URL, whose only downstream symptom is submittedUrls=0;
+ * logging the per-source drop count makes that visible.
+ * @param {string[]} urls - URLs to filter
+ * @param {string} siteBaseUrl - the site's base URL defining the scope
+ * @param {object} log - logger
+ * @param {string} source - label identifying the URL source (for the log line)
+ * @returns {string[]} URLs within the site scope
+ */
+function filterBySiteScopeWithLog(urls, siteBaseUrl, log, source) {
+  const filtered = filterBySiteScope(urls, siteBaseUrl);
+  const dropped = urls.length - filtered.length;
+  if (dropped > 0) {
+    log?.info?.(`${LOG_PREFIX} site-scope dropped ${dropped} of ${urls.length} ${source} URL(s) outside scope ${siteBaseUrl}`);
+  }
+  return filtered;
+}
+
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
@@ -533,9 +552,11 @@ export async function submitForScraping(context) {
   const preferredBase = getPreferredBaseUrl(site, context);
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const rebasedCsvUrls = filterBySiteScope(
+    const rebasedCsvUrls = filterBySiteScopeWithLog(
       auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log)),
       site.getBaseURL(),
+      log,
+      'CSV',
     );
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       rebasedCsvUrls,
@@ -582,14 +603,18 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const rebasedTopPagesUrls = filterBySiteScope(
+  const rebasedTopPagesUrls = filterBySiteScopeWithLog(
     topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
     site.getBaseURL(),
+    log,
+    'organic top-page',
   );
-  const rebasedIncludedURLs = filterBySiteScope(
+  const rebasedIncludedURLs = filterBySiteScopeWithLog(
     ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
       .map((url) => rebaseUrl(url, preferredBase, log)),
     site.getBaseURL(),
+    log,
+    'included',
   );
 
   let finalUrls;
@@ -623,9 +648,11 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle = true;
   } else {
     // getTopAgenticUrls internally handles errors and returns [] on failure
-    const agenticUrls = filterBySiteScope(
+    const agenticUrls = filterBySiteScopeWithLog(
       await getTopAgenticUrls(site, context),
       site.getBaseURL(),
+      log,
+      'agentic',
     );
     agenticUrlsCount = agenticUrls.length;
 
@@ -1219,9 +1246,13 @@ export async function processContentAndGenerateOpportunities(context) {
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
       if (scrapeResultPaths?.size > 0) {
-        urlsToCheck = filterBySiteScope(
+        // Defensive re-filter: scrape result paths should already be in-scope (submitForScraping
+        // scoped them before submission), but a stale scrape job could carry out-of-scope paths.
+        urlsToCheck = filterBySiteScopeWithLog(
           Array.from(context.scrapeResultPaths.keys()),
           site.getBaseURL(),
+          log,
+          'scrape-result',
         );
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
