@@ -1,3 +1,10 @@
+## [1.488.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.0...v1.488.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* **broken-internal-links:** cache inconclusive URLs ([#2699](https://github.com/adobe/spacecat-audit-worker/issues/2699)) ([a76b12d](https://github.com/adobe/spacecat-audit-worker/commit/a76b12d0290ad42329161c71ba6cb52608065968))
+
 # [1.488.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.487.0...v1.488.0) (2026-06-23)
 
 
