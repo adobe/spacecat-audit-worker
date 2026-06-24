@@ -492,6 +492,105 @@ describe('Reddit Analysis Guidance Handler', () => {
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include('2 suggestions processed');
     });
+
+    it('reports a visible opportunity with the hallucination rate', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
+            opportunity: { status: 'NEW', qaVerdict: { rate: 0.12, rateDetermined: true } },
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':white_check_mark:');
+      expect(callText).to.include('Visible in the UI');
+      expect(callText).to.include('hallucination 12%');
+    });
+
+    it('reports a hidden opportunity (IGNORED) with the hallucination rate', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
+            opportunity: { status: 'IGNORED', qaVerdict: { rate: 0.42, rateDetermined: true } },
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':warning:');
+      expect(callText).to.include('Not visible in the UI');
+      expect(callText).to.include('hallucination 42%');
+    });
+
+    it('shows "n/a" when the rate is visible but undetermined', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
+            opportunity: { status: 'NEW', qaVerdict: { rate: 0, rateDetermined: false } },
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('Visible in the UI');
+      expect(callText).to.include('hallucination rate n/a');
+      expect(callText).to.not.include('hallucination 0%');
+    });
+
+    it('omits the hallucination note when no qaVerdict is present', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
+            opportunity: { status: 'NEW' },
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('Visible in the UI');
+      expect(callText).to.not.include('hallucination');
+    });
   });
 
   describe('Suggestion mapping', () => {
