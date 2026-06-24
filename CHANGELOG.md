@@ -1,3 +1,10 @@
+# [1.489.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.4...v1.489.0) (2026-06-24)
+
+
+### Features
+
+* **cited-analysis:** Slack summary reports UI visibility + hallucina… ([#2729](https://github.com/adobe/spacecat-audit-worker/issues/2729)) ([6137779](https://github.com/adobe/spacecat-audit-worker/commit/613777980478009757bf7b46bb93b4ae99f82cb7))
+
 ## [1.488.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.3...v1.488.4) (2026-06-24)
 
 
