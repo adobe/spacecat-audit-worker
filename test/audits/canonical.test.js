@@ -2152,6 +2152,8 @@ describe('Canonical URL Tests', () => {
           { getUrl: () => 'https://example.com/page2' },
         ]);
 
+        nock('https://example.com').get('/robots.txt').reply(200, '');
+
         const testContext = {
           ...context,
           site,
@@ -2238,6 +2240,8 @@ describe('Canonical URL Tests', () => {
           { getUrl: () => 'https://example.com/auth' },
           { getUrl: () => 'https://example.com/auth/provider' },
         ]);
+
+        nock('https://example.com').get('/robots.txt').reply(200, '');
 
         const testContext = {
           ...context,

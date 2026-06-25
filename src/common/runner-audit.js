@@ -12,6 +12,11 @@
 
 import { BaseAudit } from './base-audit.js';
 import { parseMessageDataForRunnerAudit } from './audit-utils.js';
+import {
+  formatAuditCompletionMessage,
+  say,
+  sendAuditFailureNotification,
+} from '../utils/slack-utils.js';
 
 /**
  * Builds the audit context for RunnerAudit: `message.auditContext` plus optional `messageData`
@@ -42,14 +47,20 @@ export class RunnerAudit extends BaseAudit {
   async run(message, context) {
     const { type, siteId } = message;
     const auditContext = buildRunnerAuditContext(message);
+    let site;
+    let siteUrl = siteId;
 
     try {
-      const site = await this.siteProvider(siteId, context);
+      site = await this.siteProvider(siteId, context);
+      // Cache now so the catch block has it even if a later step throws
+      try {
+        siteUrl = site.getBaseURL();
+      } catch { /* keep siteId fallback */ }
 
       const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site, auditContext);
 
-      return this.processAuditResult(
+      const response = await this.processAuditResult(
         result,
         {
           type,
@@ -59,7 +70,23 @@ export class RunnerAudit extends BaseAudit {
         },
         context,
       );
+
+      // Notify the originating Slack thread that the audit completed.
+      // No-op when the audit was not triggered from Slack.
+      await say(
+        context,
+        auditContext?.slackContext,
+        formatAuditCompletionMessage(),
+      );
+
+      return response;
     } catch (e) {
+      await sendAuditFailureNotification(context, {
+        type,
+        siteUrl,
+        auditContext,
+        error: e,
+      });
       throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`, { cause: e });
     }
   }

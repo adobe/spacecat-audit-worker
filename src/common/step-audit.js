@@ -22,6 +22,13 @@ import {
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
+import {
+  formatAuditCompletionMessage,
+  formatBotProtectionPartialBlockMessage,
+  formatStepCompletionMessage,
+  say,
+  sendAuditFailureNotification,
+} from '../utils/slack-utils.js';
 import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
@@ -115,11 +122,15 @@ export class StepAudit extends BaseAudit {
     const {
       type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
-
     let site;
+    let siteUrl = siteId;
 
     try {
       site = await this.siteProvider(siteId, context);
+      // Cache now so the catch block has it even if a later step throws
+      try {
+        siteUrl = site.getBaseURL();
+      } catch { /* keep siteId fallback */ }
       // Preserve requiresValidation from index.js - siteProvider returns a fresh site
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
@@ -141,7 +152,11 @@ export class StepAudit extends BaseAudit {
             log.warn(
               `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit for jobId=${jobId}`,
             );
-            return handleAbort(abort, jobId, type, site, siteId, log);
+            // Pass the live context reference so the dedup marker
+            // (context.slackFailureNotifiedAt) lands on the shared object.
+            // Mutate auditContext on it rather than spreading a throwaway copy.
+            context.auditContext = auditContext;
+            return handleAbort(abort, jobId, type, site, siteId, context);
           }
           // Some URLs blocked but not all - continue audit processing
           // blockedUrlsCount should be >= 1 if abortInfo exists, but check for safety
@@ -153,6 +168,21 @@ export class StepAudit extends BaseAudit {
               + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
               + `as ${nonBlockedCount} URLs were not blocked by bot protection, jobId=${jobId}, `
               + `Blocked URLs: [${blockedUrlsList}]`,
+            );
+            // Notify the originating Slack thread that the audit is continuing
+            // despite a partial bot-protection block. No-op when not triggered
+            // from Slack.
+            await say(
+              context,
+              auditContext?.slackContext,
+              formatBotProtectionPartialBlockMessage({
+                auditType: type,
+                siteUrl,
+                // abort.details is guaranteed truthy here — destructuring above
+                // produced a positive totalUrlsCount, so it must have unwrapped
+                // a real object.
+                details: abort.details,
+              }),
             );
           }
         }
@@ -205,6 +235,21 @@ export class StepAudit extends BaseAudit {
       if (!isLastStep) {
         const result = await this.chainStep(step, stepResult, stepContext);
         response = ok(result);
+        // Per-step progress update on the audit thread. Last step is
+        // intentionally NOT covered here — its success surfaces via the
+        // overall "Audit Completed" message below.
+        await say(
+          context,
+          auditContext?.slackContext,
+          formatStepCompletionMessage(stepName),
+        );
+      } else {
+        // Last step done — overall audit pipeline completed end-to-end.
+        await say(
+          context,
+          auditContext?.slackContext,
+          formatAuditCompletionMessage(),
+        );
       }
 
       return response;
@@ -213,6 +258,15 @@ export class StepAudit extends BaseAudit {
       const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
 
+      // Slack notification to the originating thread (deduped via context.slackFailureNotifiedAt).
+      await sendAuditFailureNotification(context, {
+        type,
+        siteUrl,
+        auditContext,
+        error: e,
+      });
+
+      // PLG low-suggestion-count alert for opted-in audit types.
       if (site && PLG_AUDIT_TYPES.has(type)) {
         await sendLowSuggestionCountAlert(site, type, 0, context, errorMessage);
       }

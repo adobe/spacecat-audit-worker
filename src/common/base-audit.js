@@ -165,6 +165,9 @@ export class BaseAudit {
         auditId: audit.getId(),
         finalUrl,
         fullAuditRef,
+        // Propagate slack context so callbacks can be routed back to the
+        // originating Slack thread.
+        ...(auditContext.slackContext ? { slackContext: auditContext.slackContext } : {}),
       },
       auditResult,
     };

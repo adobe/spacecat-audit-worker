@@ -17,6 +17,7 @@ import { buildCWVAuditResult } from './cwv-audit-result.js';
 import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
 import { processAutoSuggest } from './auto-suggest.js';
 import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
+import { say, formatDownstreamDispatchMessage } from '../utils/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -55,7 +56,9 @@ export async function collectCWVDataAndImportCode(context) {
  * @returns {Promise<Object>} Status object with 'complete' status
  */
 export async function syncOpportunityAndSuggestionsStep(context) {
-  const { site, log, dataAccess } = context;
+  const {
+    site, log, dataAccess, auditContext,
+  } = context;
   const { Suggestion } = dataAccess;
   const siteId = site.getId();
 
@@ -72,6 +75,19 @@ export async function syncOpportunityAndSuggestionsStep(context) {
     SuggestionModel.STATUSES.NEW,
   );
   await sendLowSuggestionCountAlert(site, Audit.AUDIT_TYPES.CWV, newSuggestions.length, context);
+
+  // processAutoSuggest has dispatched auto-suggest messages to Mystique for the
+  // NEW suggestions. Mystique's reply lands asynchronously via the
+  // `guidance:cwv` handler — between now and then the Slack thread would look
+  // frozen ("Audit Completed" then silence), so surface the handoff explicitly.
+  await say(
+    context,
+    auditContext?.slackContext,
+    formatDownstreamDispatchMessage(
+      'Mystique',
+      `${newSuggestions.length} CWV suggestion(s) queued for AI guidance`,
+    ),
+  );
 
   return {
     status: 'complete',

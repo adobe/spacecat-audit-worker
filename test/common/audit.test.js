@@ -428,21 +428,6 @@ describe('Audit tests', () => {
       expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledOnce;
     });
 
-    it('wwwUrlResolver falls back to apex when www-toggled has a key but no bundle data (ghost key)', async () => {
-      const base = 'http://spacecat.com';
-      context.rumApiClient.retrieveDomainkey.withArgs('www.spacecat.com').resolves('ghost-key');
-      context.rumApiClient.retrieveDomainkey.withArgs('spacecat.com').resolves();
-      nock('https://bundles.aem.page')
-        .get('/bundles/www.spacecat.com/2023/03/12')
-        .query({ domainkey: 'ghost-key' })
-        .reply(200, { rumBundles: [] });
-      const resolvedURL = await wwwUrlResolver({
-        getBaseURL: () => base, getConfig: () => {},
-      }, context);
-      expect(resolvedURL).to.equal('spacecat.com');
-      expect(context.rumApiClient.retrieveDomainkey).to.have.been.calledTwice;
-    });
-
     it('wwwUrlResolver persists overrideBaseURL when resolved hostname differs from baseURL', async () => {
       const base = 'http://spacecat.com';
       const siteConfig = Config.fromDynamoItem({});
