@@ -1,3 +1,10 @@
+## [1.490.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.1...v1.490.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **toc:** cap scraping submissions at MAX_TOP_PAGES=200 (LLMO-5863) ([#2731](https://github.com/adobe/spacecat-audit-worker/issues/2731)) ([44e855c](https://github.com/adobe/spacecat-audit-worker/commit/44e855c99d2ce2921591fe9cd665fb8336dde182))
+
 ## [1.490.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.0...v1.490.1) (2026-06-25)
 
 
