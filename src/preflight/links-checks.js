@@ -98,6 +98,34 @@ export function filterExcludedElements($, excludedElementClasses) {
 const HEAD_FALLBACK_STATUSES = new Set([400, 401, 403, 405, 429, 451]);
 
 /**
+ * Browser-shaped request headers sent alongside the User-Agent on every link probe.
+ *
+ * A request carrying only a User-Agent is itself a bot signal: no real browser omits Accept,
+ * Accept-Language, Sec-Fetch-*, and client-hint headers. Bot managers such as Akamai (which
+ * fronts ups.com) detect that mismatch and reset the HTTP/2 stream (NGHTTP2_INTERNAL_ERROR)
+ * before returning a status, which the audit then misreads as a broken link. Sending the header
+ * set a real Chrome navigation sends makes these probes look legitimate, so the server returns
+ * the true status instead of dropping the connection (SITES-47208). The User-Agent is left to
+ * the caller, which keeps the honest `Spacecat/1.0` token so we still identify ourselves.
+ *
+ * Kept consistent with the Chrome version in DEFAULT_USER_AGENT (131). Safe with `decode: false`:
+ * we only read the status code and never decode the (possibly compressed) body.
+ */
+const BROWSER_REQUEST_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Upgrade-Insecure-Requests': '1',
+  'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"macOS"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+};
+
+/**
  * Returns true only for status codes that definitively indicate a broken link.
  *
  * 404 (Not Found) and 410 (Gone) mean the content does not exist — unambiguously broken.
@@ -144,7 +172,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     return null;
   }
 
-  const headers = { 'User-Agent': DEFAULT_USER_AGENT };
+  const headers = { 'User-Agent': DEFAULT_USER_AGENT, ...BROWSER_REQUEST_HEADERS };
 
   // Add Authorization header only for internal links
   if (isInternal && pageAuthToken) {

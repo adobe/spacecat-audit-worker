@@ -78,6 +78,33 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(headOptions.headers['User-Agent']).to.match(/Spacecat/);
   });
 
+  // SITES-47208: a bare User-Agent-only request is itself a bot tell. Bot managers (e.g.
+  // Akamai on ups.com) reset the HTTP/2 stream when the request lacks the headers every real
+  // browser sends. We send a realistic browser header set on both HEAD and the GET retry so
+  // those probes are accepted and we read the true status instead of a connection failure.
+  it('sends browser-like request headers on both HEAD and the GET retry', async () => {
+    fetchStub.onFirstCall().resolves(makeResponse(403)); // HEAD → forces GET retry
+    fetchStub.onSecondCall().resolves(makeResponse(200));
+
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://www.ups.com/ppwa/doWork?loc=en_US">link</a>'),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(2);
+    for (const call of [fetchStub.firstCall, fetchStub.secondCall]) {
+      const { headers } = call.args[1];
+      expect(headers.Accept, 'Accept').to.match(/text\/html/);
+      expect(headers['Accept-Language'], 'Accept-Language').to.match(/en-US/);
+      expect(headers['Sec-Fetch-Mode'], 'Sec-Fetch-Mode').to.equal('navigate');
+      expect(headers['Sec-Fetch-Dest'], 'Sec-Fetch-Dest').to.equal('document');
+      expect(headers['sec-ch-ua'], 'sec-ch-ua').to.match(/Chrome/);
+      // We still identify ourselves honestly in the UA.
+      expect(headers['User-Agent'], 'User-Agent').to.match(/Spacecat/);
+    }
+  });
+
   // ── 404 / 410 / 5xx — broken only when GET confirms ───────────────────────
   // SITES-43720: HEAD is a fast-path optimization, GET is the source of truth.
   // Real servers (misconfigured Apache origins, SSO endpoints, etc.) commonly
