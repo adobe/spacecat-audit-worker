@@ -27,6 +27,16 @@ const MAX_PAGES_TO_MYSTIQUE = 100;
 // Summarization opportunities remain in NEW status while active/unresolved.
 const ACTIVE_OPPORTUNITY_STATUS = 'NEW';
 
+function parseGeneratePromptsFlag(data, log) {
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    return !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`[SUMMARIZATION] Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+    return false;
+  }
+}
+
 /**
  * Builds a map of URL → stored contentHash from the most recent suggestions
  * for the site's active summarization opportunity.
@@ -110,14 +120,7 @@ export async function importTopPages(context) {
     site, dataAccess, log, data,
   } = context;
 
-  // Extract generatePrompts so it can be forwarded to downstream steps via auditContext.
-  let generatePromptsFlag = false;
-  try {
-    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    generatePromptsFlag = !!parsedData?.generatePrompts;
-  } catch (e) {
-    log.warn(`[SUMMARIZATION] Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
-  }
+  const generatePromptsFlag = parseGeneratePromptsFlag(data, log);
 
   try {
     const { urls: allUrls } = await getMergedAuditInputUrls({
