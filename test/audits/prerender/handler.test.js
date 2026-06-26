@@ -1052,6 +1052,29 @@ describe('Prerender Audit', () => {
           expect(result.urls.length).to.equal(DAILY_BATCH_SIZE);
         });
 
+        it('keeps in-scope URLs that sort after a full batch of out-of-scope URLs (scope filter runs before the daily-batch slice)', async () => {
+          // A full DAILY_BATCH_SIZE of out-of-scope agentic URLs sorts ahead of the in-scope
+          // ones in the merged candidate list. If the site-scope filter ran AFTER the slice,
+          // the out-of-scope URLs would consume every batch slot and starve the in-scope ones.
+          // Filtering before the slice guarantees the in-scope URLs survive.
+          const outOfScope = makeAgenticUrls(DAILY_BATCH_SIZE, 'https://example.com/fr/agentic-');
+          const inScope = [
+            'https://example.com/uk/agentic-a',
+            'https://example.com/uk/agentic-b',
+          ];
+          const mockHandler = await makeHandlerWithAgentic([...outOfScope, ...inScope]);
+          const context = makeContext([]);
+          context.site.getBaseURL = () => 'https://example.com/uk';
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.include('https://example.com/uk/agentic-a');
+          expect(resultUrls).to.include('https://example.com/uk/agentic-b');
+          expect(resultUrls).to.not.include('https://example.com/fr/agentic-0');
+          expect(result.urls.length).to.equal(2);
+        });
+
         it('should filter out agentic URLs recently processed by prerender (within recent window)', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',

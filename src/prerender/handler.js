@@ -533,14 +533,12 @@ export async function submitForScraping(context) {
   const preferredBase = getPreferredBaseUrl(site, context);
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const rebasedCsvUrls = filterBySiteScope(
-      auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log)),
-      site.getBaseURL(),
-    );
-    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
+    const { urls: mergedCsvUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       rebasedCsvUrls,
       { includeQueryParams: true },
     );
+    const explicitUrls = filterBySiteScope(mergedCsvUrls, site.getBaseURL());
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -582,15 +580,9 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const rebasedTopPagesUrls = filterBySiteScope(
-    topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log)),
-    site.getBaseURL(),
-  );
-  const rebasedIncludedURLs = filterBySiteScope(
-    ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
-      .map((url) => rebaseUrl(url, preferredBase, log)),
-    site.getBaseURL(),
-  );
+  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
+  const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
+    .map((url) => rebaseUrl(url, preferredBase, log));
 
   let finalUrls;
   let filteredCount;
@@ -616,17 +608,15 @@ export async function submitForScraping(context) {
       [...organicSlackDeduped, ...includedSlackDeduped],
       { includeQueryParams: true },
     );
-    finalUrls = crossSlackDeduped;
+    // Single site-scope filter on the merged candidate set (scoped here, not per-source).
+    finalUrls = filterBySiteScope(crossSlackDeduped, site.getBaseURL());
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
     isFirstRunOfCycle = true;
   } else {
     // getTopAgenticUrls internally handles errors and returns [] on failure
-    const agenticUrls = filterBySiteScope(
-      await getTopAgenticUrls(site, context),
-      site.getBaseURL(),
-    );
+    const agenticUrls = await getTopAgenticUrls(site, context);
     agenticUrlsCount = agenticUrls.length;
 
     // Daily batching: filter URLs recently processed within the rolling recent window
@@ -665,7 +655,10 @@ export async function submitForScraping(context) {
       [...organicDeduped, ...includedDeduped, ...agenticDeduped],
       { includeQueryParams: true },
     );
-    const batchedUrls = crossDeduped.slice(0, DAILY_BATCH_SIZE);
+    // Single site-scope filter on the merged candidate set, applied before the daily-batch
+    // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
+    const scopedUrls = filterBySiteScope(crossDeduped, site.getBaseURL());
+    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
