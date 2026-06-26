@@ -1,3 +1,10 @@
+# [1.491.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.3...v1.491.0) (2026-06-26)
+
+
+### Features
+
+* **prerender:** generate subpath-scoped domain wide suggestion for subpath sites (LLMO-5145) ([#2605](https://github.com/adobe/spacecat-audit-worker/issues/2605)) ([86d5425](https://github.com/adobe/spacecat-audit-worker/commit/86d5425a2fd897630f8f2053d03c841f00907752))
+
 ## [1.490.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.2...v1.490.3) (2026-06-25)
 
 
