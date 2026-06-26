@@ -127,21 +127,6 @@ describe('CWV Audit Result', () => {
       expect(result.auditResult.cwv).to.have.length(2);
     });
 
-    it('does NOT exclude any URL when ALL candidates report gone (site-wide guard)', async () => {
-      const cwvDataFromRum = [
-        { type: 'url', url: 'https://blocked.com/a', pageviews: 10000, organic: 5000, metrics: [] },
-        { type: 'url', url: 'https://blocked.com/b', pageviews: 8000, organic: 4000, metrics: [] },
-      ];
-      fetchStub.resolves({ status: 404 });
-
-      const fn = await build({ query: sandbox.stub().resolves(cwvDataFromRum) });
-      const context = { site: makeSite('https://blocked.com'), finalUrl: 'blocked.com', log, env: {} };
-      const result = await fn(context);
-
-      expect(result.auditResult.cwv).to.have.length(2);
-      expect(log.warn.calledOnce).to.be.true;
-    });
-
     it('keeps group entries without HEAD check', async () => {
       const cwvDataFromRum = [
         { type: 'url', url: 'https://www.example.com/', pageviews: 10000, organic: 5000, metrics: [] },

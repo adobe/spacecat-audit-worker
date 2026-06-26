@@ -142,22 +142,9 @@ export async function buildCWVAuditResult(context) {
   const goneFlags = await Promise.all(
     urlEntries.map((entry) => isUrlGone(entry.url, log)),
   );
-  const goneUrls = urlEntries.filter((_, i) => goneFlags[i]).map((e) => e.url);
-
-  // Safety guard: if EVERY candidate URL reports "gone", that is almost certainly a
-  // site-wide issue (e.g. a block that returns 404, or a routing/CDN problem) rather
-  // than every real page being deleted. Excluding them all would yield an empty CWV
-  // result that masquerades as "resolved", so we keep them and flag it instead.
-  const allGone = urlEntries.length > 1 && goneUrls.length === urlEntries.length;
-  const urlsToSkip = new Set(allGone ? [] : goneUrls);
-
-  if (allGone) {
-    log.warn(
-      `[audit-worker-cwv] siteId: ${siteId} | All ${urlEntries.length} URL(s) reported gone (404/410) — `
-      + 'treating as a likely site-wide issue (not page deletions) and NOT excluding any. '
-      + 'RUM shows real traffic to these pages.',
-    );
-  }
+  const urlsToSkip = new Set(
+    urlEntries.filter((_, i) => goneFlags[i]).map((e) => e.url),
+  );
 
   const afterGoneFilter = filteredCwvData.filter(
     (entry) => entry.type !== 'url' || !urlsToSkip.has(entry.url),
