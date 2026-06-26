@@ -1,3 +1,45 @@
+# [1.491.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.3...v1.491.0) (2026-06-26)
+
+
+### Features
+
+* **prerender:** generate subpath-scoped domain wide suggestion for subpath sites (LLMO-5145) ([#2605](https://github.com/adobe/spacecat-audit-worker/issues/2605)) ([86d5425](https://github.com/adobe/spacecat-audit-worker/commit/86d5425a2fd897630f8f2053d03c841f00907752))
+
+## [1.490.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.2...v1.490.3) (2026-06-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2733](https://github.com/adobe/spacecat-audit-worker/issues/2733)) ([24916f8](https://github.com/adobe/spacecat-audit-worker/commit/24916f86068407c4e3b760ab0f5e36e751eec170))
+
+## [1.490.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.1...v1.490.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **toc:** cap scraping submissions at MAX_TOP_PAGES=200 (LLMO-5863) ([#2731](https://github.com/adobe/spacecat-audit-worker/issues/2731)) ([44e855c](https://github.com/adobe/spacecat-audit-worker/commit/44e855c99d2ce2921591fe9cd665fb8336dde182))
+
+## [1.490.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.0...v1.490.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2728](https://github.com/adobe/spacecat-audit-worker/issues/2728)) ([4bb02ef](https://github.com/adobe/spacecat-audit-worker/commit/4bb02ef6d9c4fe8fe2e9fa9bade94a770eb761cd))
+
+# [1.490.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.489.0...v1.490.0) (2026-06-24)
+
+
+### Features
+
+* **reddit-youtube:** Slack summary reports UI visibility + hallucina… ([#2730](https://github.com/adobe/spacecat-audit-worker/issues/2730)) ([dbce09d](https://github.com/adobe/spacecat-audit-worker/commit/dbce09d4d3400a0954254683fbe1bba6889b8f52))
+
+# [1.489.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.4...v1.489.0) (2026-06-24)
+
+
+### Features
+
+* **cited-analysis:** Slack summary reports UI visibility + hallucina… ([#2729](https://github.com/adobe/spacecat-audit-worker/issues/2729)) ([6137779](https://github.com/adobe/spacecat-audit-worker/commit/613777980478009757bf7b46bb93b4ae99f82cb7))
+
 ## [1.488.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.3...v1.488.4) (2026-06-24)
 
 

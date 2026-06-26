@@ -58,8 +58,17 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
+const getDomainWidePathPattern = (baseUrl) => {
+  const pathname = toPathname(baseUrl);
+  return pathname.length > 1 ? `${pathname}/*` : '/*';
+};
+
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
-const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
+const getDomainWideSuggestionUrl = (baseUrl) => {
+  const pathPattern = getDomainWidePathPattern(baseUrl);
+  const label = pathPattern === '/*' ? 'All Domain URLs' : 'All Subpath URLs';
+  return `${baseUrl.replace(/\/$/, '')}/* (${label})`;
+};
 
 /** Skip re-scraping when status.json records a confirmed sticky block within this window. */
 const DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000;
@@ -771,10 +780,11 @@ async function prepareDomainWideAggregateSuggestion(
   );
 
   // Create domain-wide path pattern(s) for allowList
-  // The allowList in metaconfig expects glob patterns (e.g., "/*")
-  const allowedRegexPatterns = ['/*'];
+  // The allowList in metaconfig expects glob patterns (e.g., "/*" or "/kings/*")
+  const pathPattern = getDomainWidePathPattern(baseUrl);
+  const allowedRegexPatterns = [pathPattern];
 
-  // This applies to ALL URLs in the domain
+  // This applies to ALL URLs under sites base url
   // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
     url: getDomainWideSuggestionUrl(baseUrl),
@@ -785,10 +795,10 @@ async function prepareDomainWideAggregateSuggestion(
     // Domain-wide configuration metadata
     isDomainWide: true,
     allowedRegexPatterns,
-    pathPattern: '/*',
+    pathPattern,
   };
 
-  log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
+  log.info(`${LOG_PREFIX} Prepared domain-wide aggregate suggestion for scope ${pathPattern} with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
   return {
     key: DOMAIN_WIDE_SUGGESTION_KEY,
