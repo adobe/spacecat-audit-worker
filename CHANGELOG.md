@@ -1,3 +1,10 @@
+## [1.491.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.1...v1.491.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** warn when raw logs aggregate to zero rows (wrong format) ([#2736](https://github.com/adobe/spacecat-audit-worker/issues/2736)) ([633b7f4](https://github.com/adobe/spacecat-audit-worker/commit/633b7f43d2a0e82fd42bebdec5eb574e18f15e08))
+
 ## [1.491.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.0...v1.491.1) (2026-06-26)
 
 
