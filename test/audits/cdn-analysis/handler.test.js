@@ -320,6 +320,74 @@ describe('CDN Analysis Handler', () => {
       );
     });
 
+    it('warns when raw logs are present but aggregation produced no rows (wrong log format)', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-akamai');
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+      };
+
+      // Default mock returns empty Contents for any 'aggregated' prefix, so the output
+      // partition is empty after the inserts -> the wrong-format warning should fire.
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['byocdn-akamai']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/\[cdn-logs-analysis\] empty aggregation despite raw logs/)
+          .and(sinon.match(/serviceProvider=byocdn-akamai/))
+          .and(sinon.match(/cdnType=akamai/)),
+      );
+    });
+
+    it('does not warn when the aggregation produced rows (output partition has data)', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-akamai');
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10, forceReprocess: true,
+      };
+
+      // Output partition has data after the inserts (forceReprocess bypasses the
+      // idempotency skip) -> no wrong-format warning.
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}part-0.parquet` }] });
+          }
+          if (Prefix === 'test-ims-org-id/raw/') {
+            return Promise.resolve({
+              Contents: [],
+              CommonPrefixes: [{ Prefix: 'test-ims-org-id/raw/byocdn-akamai/' }],
+            });
+          }
+          return Promise.resolve({ Contents: [{ Key: `${Prefix}file1.log` }] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(context.log.warn).to.not.have.been.calledWith(
+        sinon.match(/empty aggregation despite raw logs/),
+      );
+    });
+
     it('filters legacy discovered CDN providers using the configured service-provider mapping', async () => {
       const mockedHandler = await loadMockedHandler('byocdn-fastly');
       const auditContext = {
