@@ -58,6 +58,30 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
+/**
+ * Applies the site-scope filter and surfaces observability around it: returns the number of
+ * URLs removed by scope filtering, and emits a warning when a non-empty candidate set is reduced
+ * to empty. The empty-set case is the symptom of a hostname mismatch between the rebase target
+ * (preferredBase) and the scope base (siteBaseUrl) - URLs are rebased onto preferredBase's host
+ * but scope-checked against siteBaseUrl's host, so divergent hosts silently drop every URL and
+ * produce submittedUrls=0 with no other signal.
+ *
+ * @param {string[]} urls - candidate URLs (already rebased onto preferredBase)
+ * @param {string} siteBaseUrl - scope base (site.getBaseURL())
+ * @param {string} preferredBase - rebase target the URLs carry
+ * @param {string} siteId - for log correlation
+ * @param {Object} log - logger
+ * @returns {{ scoped: string[], scopeFilteredCount: number }}
+ */
+function applySiteScopeFilter(urls, siteBaseUrl, preferredBase, siteId, log) {
+  const scoped = filterBySiteScope(urls, siteBaseUrl);
+  const scopeFilteredCount = urls.length - scoped.length;
+  if (urls.length > 0 && scoped.length === 0) {
+    log.warn(`${LOG_PREFIX} site-scope filter removed all ${urls.length} candidate URLs - possible hostname mismatch between rebase target and site scope. preferredBase=${preferredBase}, siteBaseUrl=${siteBaseUrl}, siteId=${siteId}`);
+  }
+  return { scoped, scopeFilteredCount };
+}
+
 const getDomainWidePathPattern = (baseUrl) => {
   const pathname = toPathname(baseUrl);
   return pathname.length > 1 ? `${pathname}/*` : '/*';
@@ -547,7 +571,13 @@ export async function submitForScraping(context) {
       rebasedCsvUrls,
       { includeQueryParams: true },
     );
-    const explicitUrls = filterBySiteScope(mergedCsvUrls, site.getBaseURL());
+    const { scoped: explicitUrls, scopeFilteredCount } = applySiteScopeFilter(
+      mergedCsvUrls,
+      site.getBaseURL(),
+      preferredBase,
+      siteId,
+      log,
+    );
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -556,6 +586,7 @@ export async function submitForScraping(context) {
     topPagesUrls=0,
     includedURLs=0,
     filteredOutUrls=${filteredCount},
+    scopeFilteredUrls=${scopeFilteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},
     csvUrls=${auditContext.urls.length},`);
@@ -595,6 +626,7 @@ export async function submitForScraping(context) {
 
   let finalUrls;
   let filteredCount;
+  let scopeFilteredCount = 0;
   let agenticUrlsCount = 0;
   let currentAgentic = 0;
   let currentOrganic;
@@ -618,7 +650,15 @@ export async function submitForScraping(context) {
       { includeQueryParams: true },
     );
     // Single site-scope filter on the merged candidate set (scoped here, not per-source).
-    finalUrls = filterBySiteScope(crossSlackDeduped, site.getBaseURL());
+    const slackScoped = applySiteScopeFilter(
+      crossSlackDeduped,
+      site.getBaseURL(),
+      preferredBase,
+      siteId,
+      log,
+    );
+    finalUrls = slackScoped.scoped;
+    scopeFilteredCount = slackScoped.scopeFilteredCount;
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
@@ -666,8 +706,15 @@ export async function submitForScraping(context) {
     );
     // Single site-scope filter on the merged candidate set, applied before the daily-batch
     // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
-    const scopedUrls = filterBySiteScope(crossDeduped, site.getBaseURL());
-    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
+    const nonSlackScoped = applySiteScopeFilter(
+      crossDeduped,
+      site.getBaseURL(),
+      preferredBase,
+      siteId,
+      log,
+    );
+    scopeFilteredCount = nonSlackScoped.scopeFilteredCount;
+    const batchedUrls = nonSlackScoped.scoped.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
@@ -686,6 +733,7 @@ export async function submitForScraping(context) {
     topPagesUrls=${rebasedTopPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
+    scopeFilteredUrls=${scopeFilteredCount},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},

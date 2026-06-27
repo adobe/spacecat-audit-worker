@@ -1739,6 +1739,77 @@ describe('Prerender Audit', () => {
           expect(submittedUrls).to.not.include('https://bulk.com/fr/agentic-2');
         });
 
+        it('warns when site-scope filtering removes all CSV URLs', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://bulk.com/uk',
+            },
+          });
+
+          const log = { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() };
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+            },
+            auditContext: {
+              urls: [
+                'https://bulk.com/fr/page-1',
+                'https://bulk.com/de/page-2',
+              ],
+            },
+            finalUrl: 'https://bulk.com/uk',
+            log,
+            env: {},
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls).to.deep.equal([]);
+          expect(log.warn).to.have.been.calledWithMatch(
+            /site-scope filter removed all 2 candidate URLs/,
+          );
+        });
+
+        it('warns when the rebase-target host diverges from the site scope host, dropping all URLs', async () => {
+          // preferredBase host (other.com) differs from site.getBaseURL() host (bulk.com), so every
+          // rebased URL fails the hostname check in isWithinSiteScope - the silent-drop scenario.
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://other.com/uk',
+            },
+          });
+
+          const log = { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() };
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://bulk.com/uk',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://bulk.com/uk/organic-1' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            finalUrl: 'https://bulk.com/uk',
+            log,
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls).to.deep.equal([]);
+          expect(log.warn).to.have.been.calledWithMatch(
+            /possible hostname mismatch between rebase target and site scope/,
+          );
+        });
+
         it('filters scrape result URLs to site scope before suggestion creation', async () => {
           const context = {
             site: {
