@@ -1271,10 +1271,18 @@ export async function processContentAndGenerateOpportunities(context) {
       if (scrapeResultPaths?.size > 0) {
         // Defensive re-filter: scrape result paths should already be in-scope (submitForScraping
         // scoped them before submission), but a stale scrape job could carry out-of-scope paths.
-        urlsToCheck = filterBySiteScope(
-          Array.from(context.scrapeResultPaths.keys()),
+        // Routed through applySiteScopeFilter so any drop here is observable, same as submission.
+        const { scoped, scopeFilteredCount } = applySiteScopeFilter(
+          Array.from(scrapeResultPaths.keys()),
           site.getBaseURL(),
+          'n/a (defensive re-filter)',
+          siteId,
+          log,
         );
+        urlsToCheck = scoped;
+        if (scopeFilteredCount > 0) {
+          log.info(`${LOG_PREFIX} Defensive scope re-filter dropped ${scopeFilteredCount} out-of-scope path(s) from stale scrape results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+        }
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
         // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.

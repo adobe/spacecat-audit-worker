@@ -1835,6 +1835,10 @@ describe('Prerender Audit', () => {
           const result = await processContentAndGenerateOpportunities(context);
           // Only the 2 in-scope URLs (uk) should be compared; the out-of-scope (fr) is dropped
           expect(result.auditResult.totalUrlsChecked).to.equal(2);
+          // The defensive re-filter must log the drop so the removal is not silent
+          expect(context.log.info).to.have.been.calledWithMatch(
+            /Defensive scope re-filter dropped 1 out-of-scope path/,
+          );
         });
       });
 
