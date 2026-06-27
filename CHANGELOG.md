@@ -1,3 +1,17 @@
+## [1.492.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.0...v1.492.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2738](https://github.com/adobe/spacecat-audit-worker/issues/2738)) ([6954881](https://github.com/adobe/spacecat-audit-worker/commit/69548814cbd236ea0ac187218ee3fb43a3f912f2))
+
+# [1.492.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.2...v1.492.0) (2026-06-26)
+
+
+### Features
+
+* **sqs:** propagate organizationId to Mystique-bound messages ([#2693](https://github.com/adobe/spacecat-audit-worker/issues/2693)) ([d3f6867](https://github.com/adobe/spacecat-audit-worker/commit/d3f68674857981e636c4e130e77f385e073f7fe2))
+
 ## [1.491.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.1...v1.491.2) (2026-06-26)
 
 
