@@ -12,7 +12,7 @@
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
+import { detectBotBlocker, filterBySiteScope } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -41,7 +41,6 @@ import {
 import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
-import { filterBySiteScope } from './utils/site-scope.js';
 
 function rebaseUrl(url, preferredBase, log) {
   try {
