@@ -18,6 +18,6 @@ export {
   markSuggestionsAsCoveredByPaths,
   refreshPreservedPathMetrics,
   mergePathSuggestionData,
-} from './path-suggestions.js';
+} from './main.js';
 
 export { createRcvQualifier } from './strategies/qualifier.js';
