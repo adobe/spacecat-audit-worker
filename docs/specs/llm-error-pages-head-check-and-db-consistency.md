@@ -1,4 +1,4 @@
-# LLM Error Pages: HEAD-Check & Excel↔DB Consistency
+# LLM Error Pages: HEAD-Check & DB Persistence
 
 ## Problem
 
@@ -10,11 +10,9 @@ Two independent issues converged into customer-visible bugs in the
    not HEAD-verify the survivors against the live site. The audit-worker
    was persisting suggestions that returned `404` on click, which
    damaged user trust in the audit output.
-2. A long-standing "skip empty-suggestion rows" gate dropped rows from
-   the Excel report when Mystique returned no replacement URL, while
-   the DB suggestion rows for the same opportunity were still written.
-   Excel and the DB diverged on the same audit run, making operator
-   triage unreliable.
+2. A long-standing "skip empty-suggestion rows" gate dropped rows when
+   Mystique returned no replacement URL, leaving the opportunity's
+   suggestion set incomplete and making operator triage unreliable.
 
 ## Solution
 
@@ -32,11 +30,12 @@ Two independent issues converged into customer-visible bugs in the
   outbound HEAD as part of the audit's trace.
 - **`head-check-summary` structured log** is emitted on every invocation
   with counts of kept / dropped / inconclusive URLs for dashboarding.
-- **Excel↔DB consistency**: the empty-suggestion skip-gate is removed.
-  Empty-suggestion rows are now persisted in both Excel and the DB. The
-  HEAD-check pass clears `aiRationale` on rows whose only
-  `suggested_urls` failed the probe, so the surfaced report remains
-  internally consistent (no orphan rationale text).
+- **Complete DB persistence**: the empty-suggestion skip-gate is removed
+  so every row is persisted to the DB, which is the single persistence
+  surface (the legacy SharePoint xlsx export/upload has since been
+  removed entirely). The HEAD-check pass clears `aiRationale`
+  on rows whose only `suggested_urls` failed the probe, so the surfaced
+  suggestion remains internally consistent (no orphan rationale text).
 
 ## Key Decisions
 
@@ -50,11 +49,11 @@ Two independent issues converged into customer-visible bugs in the
 | File | Change |
 |------|--------|
 | `src/llm-error-pages/url-health-check.js` | **NEW** — HEAD-reachability filter with per-host / global concurrency caps, fail-open on inconclusive results |
-| `src/llm-error-pages/guidance-handler.js` | Calls `filterOutConfirmedBrokenUrls`; removes the empty-suggestion skip gate; clears `aiRationale` when all suggestions filter out |
+| `src/llm-error-pages/guidance-handler.js` | Calls `filterOutConfirmedBrokenUrls`; removes the empty-suggestion skip gate; clears `aiRationale` when all suggestions filter out; persists Mystique enrichment to DB suggestions only (SharePoint xlsx read-modify-write removed) |
 | `src/support/url-safety.js` | **NEW** — canonical SSRF guard helpers shared across audits |
 | `src/site-detection/handler.js` | Pointer comment to the new canonical helpers |
 | `test/audits/llm-error-pages/url-health-check.test.js` | **NEW** — covers reachability matrix, SSRF guard, per-host cap, fail-open |
-| `test/audits/llm-error-pages/guidance-handler.test.js` | Updated to cover the new HEAD-check integration and the Excel↔DB persistence parity |
+| `test/audits/llm-error-pages/guidance-handler.test.js` | Updated to cover the new HEAD-check integration and the DB-only persistence path |
 
 ## Known Risks (Accepted)
 
