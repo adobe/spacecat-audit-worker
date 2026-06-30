@@ -380,7 +380,7 @@ describe('Path Suggestions', function () {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
 
       expect(results).to.have.length(2);
-      expect(results[0].data.score).to.be.at.least(results[1].data.score);
+      expect(results[0].data.pathScore).to.be.at.least(results[1].data.pathScore);
       expect(results[0].data.allowedRegexPatterns).to.deep.equal(['/products/*']);
     });
 
@@ -423,7 +423,7 @@ describe('Path Suggestions', function () {
 
       expect(results).to.have.length(1);
       // Score should be higher than pure contentGainRatio since agentic traffic is nonzero
-      expect(results[0].data.score).to.be.greaterThan(1);
+      expect(results[0].data.pathScore).to.be.greaterThan(1);
     });
 
     it('returns correct suggestion shape for a qualifying path', async () => {
@@ -444,7 +444,7 @@ describe('Path Suggestions', function () {
       expect(data.pathType).to.be.undefined;
       expect(data.url).to.equal(`${BASE_URL}/products/*`);
       expect(data.allowedRegexPatterns).to.deep.equal(['/products/*']);
-      expect(data.score).to.be.a('number');
+      expect(data.pathScore).to.be.a('number');
       expect(data.contentGainRatio).to.equal(2);
       expect(data.wordCountBefore).to.equal(1000);
       expect(data.wordCountAfter).to.equal(2000);
@@ -467,7 +467,7 @@ describe('Path Suggestions', function () {
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
       expect(results).to.have.length(1);
       // With minValuablePct=0 and all default-true valuable, should qualify
-      expect(results[0].data.score).to.be.a('number');
+      expect(results[0].data.pathScore).to.be.a('number');
     });
 
     it('uses valuable field from DB suggestion when present (null → treated as false)', async () => {
@@ -484,7 +484,7 @@ describe('Path Suggestions', function () {
       // null ?? true = true, so valuable=true → qualifies
       const results = await buildPathTypeSuggestions(preRender, opportunity, site, context, { qualify });
       expect(results).to.have.length(1);
-      expect(results[0].data.score).to.be.a('number');
+      expect(results[0].data.pathScore).to.be.a('number');
     });
 
     it('handles undefined wordCountBefore/After gracefully via || 0 fallback', async () => {
@@ -773,10 +773,10 @@ describe('Path Suggestions', function () {
       const existing = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], score: 0.5, contentGainRatio: 1.0 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.5, contentGainRatio: 1.0 },
       });
       const preservableByPattern = new Map([['/products/*', existing]]);
-      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 } }];
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.9, contentGainRatio: 2.5 } }];
 
       await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
 
@@ -784,7 +784,7 @@ describe('Path Suggestions', function () {
       expect(ctx.log.info.calledWith(sinon.match(/Refreshing metrics for preserved path \/products\/\*/))).to.be.true;
       expect(ctx.log.info.calledWith(sinon.match(/Metrics refreshed on 1\/1/))).to.be.true;
       expect(saveManyStub.calledOnce).to.be.true;
-      expect(existing.getData().score).to.equal(0.9);
+      expect(existing.getData().pathScore).to.equal(0.9);
       expect(existing.getData().contentGainRatio).to.equal(2.5);
     });
 
@@ -792,10 +792,10 @@ describe('Path Suggestions', function () {
       const existing = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.9, contentGainRatio: 2.5 },
       });
       const preservableByPattern = new Map([['/products/*', existing]]);
-      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9, contentGainRatio: 2.5 } }];
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.9, contentGainRatio: 2.5 } }];
 
       await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
 
@@ -808,10 +808,10 @@ describe('Path Suggestions', function () {
       const existing = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], score: 0.5 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.5 },
       });
       const preservableByPattern = new Map([['/products/*', existing]]);
-      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/blog/*'], score: 0.9 } }];
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/blog/*'], pathScore: 0.9 } }];
 
       await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
 
@@ -823,10 +823,10 @@ describe('Path Suggestions', function () {
       const existing = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
-        data: { allowedRegexPatterns: ['/products/*'], score: 0.5 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.5 },
       });
       const preservableByPattern = new Map([['/products/*', existing]]);
-      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], score: 0.9 } }];
+      const builtSuggestions = [{ data: { allowedRegexPatterns: ['/products/*'], pathScore: 0.9 } }];
       saveManyStub.rejects(new Error('DB write failed'));
 
       await refreshPreservedPathMetrics(builtSuggestions, preservableByPattern, ctx);
@@ -949,6 +949,11 @@ describe('Path Suggestions', function () {
     it('also sets coveredByPattern when suggestion already has coveredByDomainWide', async () => {
       // Both fields are independent — a per-URL suggestion should hold both locks
       // so rollback of either deployment alone does not prematurely resurface it.
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true, edgeDeployed: true },
+      });
       const pathSuggestion = makeSuggestion({
         id: 'path-1',
         status: 'NEW',
@@ -959,11 +964,10 @@ describe('Path Suggestions', function () {
         status: 'NEW',
         data: { url: `${BASE_URL}/products/item-1`, coveredByDomainWide: 'dw-1' },
       });
-      const opportunity = makeOpportunity([pathSuggestion, urlSuggestion]);
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion, urlSuggestion]);
 
       await markSuggestionsAsCoveredByPaths(opportunity, ctx);
 
-      expect(saveManyStub.calledOnce).to.be.true;
       expect(urlSuggestion.getData().coveredByPattern).to.equal('path-1');
       expect(urlSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
     });
@@ -1002,6 +1006,56 @@ describe('Path Suggestions', function () {
 
       expect(saveManyStub.calledOnce).to.be.true;
       expect(urlSuggestion.getData().coveredByPattern).to.be.undefined;
+    });
+
+    it('self-heals: clears stale coveredByDomainWide refs when domain-wide is not deployed', async () => {
+      // Path suggestion with a stale coveredByDomainWide pointing to a domain-wide that is gone
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], coveredByDomainWide: 'dw-old' },
+      });
+      // No domain-wide suggestion exists (it was removed/undeploted)
+      const opportunity = makeOpportunity([pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(pathSuggestion.getData().coveredByDomainWide).to.be.undefined;
+    });
+
+    it('self-heals: clears coveredByDomainWide refs when domain-wide suggestion is undeployed', async () => {
+      // Domain-wide exists but has no edgeDeployed — stale refs should be cleared
+      const domainWideSuggestion = makeSuggestion({
+        id: 'dw-1',
+        status: 'NEW',
+        data: { isDomainWide: true },
+      });
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], coveredByDomainWide: 'dw-1' },
+      });
+      const opportunity = makeOpportunity([domainWideSuggestion, pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(pathSuggestion.getData().coveredByDomainWide).to.be.undefined;
+    });
+
+    it('logs error when saveMany fails during stale coveredByDomainWide cleanup', async () => {
+      saveManyStub.rejects(new Error('DB error'));
+      const pathSuggestion = makeSuggestion({
+        id: 'path-1',
+        status: 'NEW',
+        data: { allowedRegexPatterns: ['/products/*'], coveredByDomainWide: 'dw-gone' },
+      });
+      const opportunity = makeOpportunity([pathSuggestion]);
+
+      await markSuggestionsAsCoveredByPaths(opportunity, ctx);
+
+      expect(ctx.log.error.calledWith(sinon.match(/Failed to clear.*stale coveredByDomainWide/))).to.be.true;
     });
 
     it('does not modify suggestions when no path suggestions are deployed', async () => {
@@ -1311,16 +1365,16 @@ describe('Path Suggestions', function () {
 
     it('returns newData when existingData has no deployment fields', () => {
       const result = mergePathSuggestionData(
-        { score: 1 },
-        { url: 'https://example.com/products/*', score: 2 },
+        { pathScore: 1 },
+        { url: 'https://example.com/products/*', pathScore: 2 },
       );
-      expect(result).to.deep.equal({ url: 'https://example.com/products/*', score: 2 });
+      expect(result).to.deep.equal({ url: 'https://example.com/products/*', pathScore: 2 });
     });
 
     it('preserves edgeDeployed from existingData', () => {
       const result = mergePathSuggestionData(
         { edgeDeployed: 1234567890 },
-        { url: 'https://example.com/products/*', score: 2 },
+        { url: 'https://example.com/products/*', pathScore: 2 },
       );
       expect(result.edgeDeployed).to.equal(1234567890);
       expect(result.url).to.equal('https://example.com/products/*');
@@ -1329,7 +1383,7 @@ describe('Path Suggestions', function () {
     it('preserves coveredByDomainWide from existingData', () => {
       const result = mergePathSuggestionData(
         { coveredByDomainWide: 'dw-1' },
-        { url: 'https://example.com/products/*', score: 2 },
+        { url: 'https://example.com/products/*', pathScore: 2 },
       );
       expect(result.coveredByDomainWide).to.equal('dw-1');
     });
@@ -1337,21 +1391,21 @@ describe('Path Suggestions', function () {
     it('preserves both edgeDeployed and coveredByDomainWide when both are set', () => {
       const result = mergePathSuggestionData(
         { edgeDeployed: 999, coveredByDomainWide: 'dw-2' },
-        { url: 'https://example.com/blog/*', score: 3 },
+        { url: 'https://example.com/blog/*', pathScore: 3 },
       );
       expect(result.edgeDeployed).to.equal(999);
       expect(result.coveredByDomainWide).to.equal('dw-2');
-      expect(result.score).to.equal(3);
+      expect(result.pathScore).to.equal(3);
     });
 
     it('does not propagate edgeDeployed when existingData is undefined', () => {
       const result = mergePathSuggestionData(
         undefined,
-        { url: 'https://example.com/blog/*', score: 3 },
+        { url: 'https://example.com/blog/*', pathScore: 3 },
       );
       expect(result.edgeDeployed).to.be.undefined;
       expect(result.coveredByDomainWide).to.be.undefined;
-      expect(result.score).to.equal(3);
+      expect(result.pathScore).to.equal(3);
     });
   });
 

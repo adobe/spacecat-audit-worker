@@ -30,5 +30,5 @@ export const PATH_TYPE_MIN_URLS = 10;
 export const PATH_TYPE_MIN_VALUABLE_PCT = 33;
 export const PATH_TYPE_SCORE_THRESHOLD = 2;
 export const PATH_TYPE_METRICS_FIELDS = [
-  'score', 'contentGainRatio', 'wordCountBefore', 'wordCountAfter', 'aiReadablePercent',
+  'pathScore', 'contentGainRatio', 'wordCountBefore', 'wordCountAfter', 'aiReadablePercent',
 ];

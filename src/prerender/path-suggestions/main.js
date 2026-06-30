@@ -136,19 +136,19 @@ export async function buildPathTypeSuggestions(
   for (const [pathPattern, urls] of groups) {
     const result = qualify(pathPattern, urls);
     if (result.qualifies) {
-      const { score, contentGainRatio } = result;
+      const { score: pathScore, contentGainRatio } = result;
       const wordCountBefore = urls.reduce((sum, u) => sum + (u.wordCountBefore || 0), 0);
       const wordCountAfter = urls.reduce((sum, u) => sum + (u.wordCountAfter || 0), 0);
       const aiReadableCount = urls.filter((u) => u.aiReadable === true).length;
       const aiReadablePercent = parseFloat(((aiReadableCount / urls.length) * 100).toFixed(1));
 
-      log.debug(`${LOG_PREFIX} Qualified path: ${pathPattern}, urls=${urls.length}, score=${score}`);
+      log.debug(`${LOG_PREFIX} Qualified path: ${pathPattern}, urls=${urls.length}, score=${pathScore}`);
       results.push({
         key: `${pathPattern}|prerender`,
         data: {
           url: `${origin}${pathPattern}`,
           allowedRegexPatterns: [pathPattern],
-          score,
+          pathScore,
           contentGainRatio,
           wordCountBefore,
           wordCountAfter,
@@ -160,9 +160,43 @@ export async function buildPathTypeSuggestions(
     }
   }
 
-  results.sort((a, b) => b.data.score - a.data.score);
+  results.sort((a, b) => b.data.pathScore - a.data.pathScore);
   log.info(`${LOG_PREFIX} Built ${results.length} path suggestions`);
   return results;
+}
+
+/**
+ * Clears a stale coverage field from suggestions whose referenced ID is no longer valid.
+ *
+ * @param {Array} suggestions - All suggestions for the opportunity
+ * @param {string} field - Coverage field name (e.g. 'coveredByPattern', 'coveredByDomainWide')
+ * @param {Set<string>} validIds - IDs of currently deployed suggestions for this field
+ * @param {Object} dataAccess - Data-access layer (for bulk saves)
+ * @param {Object} log - Logger
+ * @returns {Promise<void>}
+ */
+async function clearStaleCoverageRefs(suggestions, field, validIds, dataAccess, log) {
+  const stale = suggestions.filter((s) => {
+    const covId = s.getData()?.[field];
+    return covId && !validIds.has(covId);
+  });
+
+  if (stale.length === 0) {
+    return;
+  }
+
+  stale.forEach((s) => {
+    const d = { ...s.getData() };
+    delete d[field];
+    s.setData(d);
+  });
+
+  try {
+    await dataAccess.Suggestion.saveMany(stale);
+    log.info(`${LOG_PREFIX} Cleared ${stale.length} stale ${field} references`);
+  } catch (e) {
+    log.error(`${LOG_PREFIX} Failed to clear ${stale.length} stale ${field} refs: ${e.message}`);
+  }
 }
 
 /**
@@ -176,6 +210,7 @@ export async function buildPathTypeSuggestions(
  *
  * Also marks NEW path suggestions as `coveredByDomainWide` when a domain-wide suggestion
  * is deployed — path-level rules are redundant while domain-wide (/*) is active.
+ * Self-heals stale `coveredByDomainWide` refs when domain-wide is no longer deployed.
  *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} context - Audit context (must include dataAccess for bulk saves)
@@ -185,33 +220,23 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
   const { log, dataAccess } = context;
   const suggestions = await opportunity.getSuggestions();
 
-  // Find deployed path suggestions
+  // Find deployed path suggestions and domain-wide suggestion
   const deployedPaths = suggestions.filter((s) => {
     const d = s.getData();
     return isPathSuggestionData(d) && !!d?.edgeDeployed && s.getStatus() !== 'OUTDATED';
   });
+  const deployedDomainWide = suggestions.find(
+    (s) => isDomainWideSuggestionData(s.getData()) && !!s.getData().edgeDeployed,
+  );
 
   const deployedPathIds = new Set(deployedPaths.map((s) => s.getId()));
+  const deployedDomainWideIds = deployedDomainWide
+    ? new Set([deployedDomainWide.getId()])
+    : new Set();
 
-  // Self-heal: clear stale coveredByPattern references pointing to undeployed paths
-  const stale = suggestions.filter((s) => {
-    const covId = s.getData()?.coveredByPattern;
-    return covId && !deployedPathIds.has(covId);
-  });
-
-  if (stale.length > 0) {
-    stale.forEach((s) => {
-      const d = { ...s.getData() };
-      delete d.coveredByPattern;
-      s.setData(d);
-    });
-    try {
-      await dataAccess.Suggestion.saveMany(stale);
-      log.info(`${LOG_PREFIX} Cleared ${stale.length} stale coveredByPattern references`);
-    } catch (e) {
-      log.error(`${LOG_PREFIX} Failed to clear ${stale.length} stale coveredByPattern refs: ${e.message}`);
-    }
-  }
+  // Self-heal: clear stale coverage refs for both fields
+  await clearStaleCoverageRefs(suggestions, 'coveredByPattern', deployedPathIds, dataAccess, log);
+  await clearStaleCoverageRefs(suggestions, 'coveredByDomainWide', deployedDomainWideIds, dataAccess, log);
 
   // Mark per-URL suggestions covered by each deployed path suggestion
   if (deployedPaths.length > 0) {
@@ -261,9 +286,6 @@ export async function markSuggestionsAsCoveredByPaths(opportunity, context) {
 
   // Mark NEW path suggestions as coveredByDomainWide when domain-wide is deployed.
   // Path-level rules are redundant while the domain-wide /* rule is active.
-  const deployedDomainWide = suggestions.find(
-    (s) => isDomainWideSuggestionData(s.getData()) && !!s.getData().edgeDeployed,
-  );
   if (!deployedDomainWide) {
     return;
   }

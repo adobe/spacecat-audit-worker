@@ -4838,7 +4838,7 @@ describe('Prerender Audit', () => {
         data: {
           url: 'https://example.com/products/*',
           allowedRegexPatterns: ['/products/*'],
-          score: 2.5,
+          pathScore: 2.5,
           contentGainRatio: 2,
           wordCountBefore: 1000,
           wordCountAfter: 2000,
@@ -4908,11 +4908,11 @@ describe('Prerender Audit', () => {
       const preservedPath = {
         getId: () => 'path-sug-1',
         getStatus: () => 'NEW',
-        getData: () => ({ allowedRegexPatterns: ['/products/*'], score: 1, edgeDeployed: true }),
+        getData: () => ({ allowedRegexPatterns: ['/products/*'], pathScore: 1, edgeDeployed: true }),
       };
       const newPathSuggestion = {
         key: '/blog/*|prerender',
-        data: { allowedRegexPatterns: ['/blog/*'], score: 3, contentGainRatio: 2 },
+        data: { allowedRegexPatterns: ['/blog/*'], pathScore: 3, contentGainRatio: 2 },
       };
 
       const mockOpportunity = {
@@ -8965,7 +8965,7 @@ describe('Prerender Audit', () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newSuggestion1 = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
       const newSuggestion2 = buildSuggestionWithSetData('s2', { url: 'https://example.com/page1' });
-      const pathSuggestion = buildSuggestionWithSetData('ps1', { allowedRegexPatterns: ['/products/*'], score: 2.5 });
+      const pathSuggestion = buildSuggestionWithSetData('ps1', { allowedRegexPatterns: ['/products/*'], pathScore: 2.5 });
 
       const saveManyStub = sandbox.stub().resolves();
       const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2, pathSuggestion]);
@@ -9267,11 +9267,11 @@ describe('Prerender Audit', () => {
     it('should exclude path suggestions with edgeDeployed or coveredByDomainWide from pathSuggestionsToCover', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       // Path suggestion already deployed at edge — must be excluded
-      const pathWithEdgeDeployed = buildSuggestionWithSetData('ps-edge', { allowedRegexPatterns: ['/products/*'], score: 2, edgeDeployed: true });
+      const pathWithEdgeDeployed = buildSuggestionWithSetData('ps-edge', { allowedRegexPatterns: ['/products/*'], pathScore: 2, edgeDeployed: true });
       // Path suggestion already covered by domain-wide — must be excluded
-      const pathAlreadyCovered = buildSuggestionWithSetData('ps-covered', { allowedRegexPatterns: ['/blog/*'], score: 2, coveredByDomainWide: 'dw-old' });
+      const pathAlreadyCovered = buildSuggestionWithSetData('ps-covered', { allowedRegexPatterns: ['/blog/*'], pathScore: 2, coveredByDomainWide: 'dw-old' });
       // Plain path suggestion with no special flags — must be included
-      const pathUncovered = buildSuggestionWithSetData('ps-plain', { allowedRegexPatterns: ['/news/*'], score: 2 });
+      const pathUncovered = buildSuggestionWithSetData('ps-plain', { allowedRegexPatterns: ['/news/*'], pathScore: 2 });
 
       const saveManyStub = sandbox.stub().resolves();
       const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([
@@ -9875,13 +9875,13 @@ describe('Prerender Audit', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = {
         edgeDeployed: true,
-        score: 1.0,
+        pathScore: 1.0,
       };
       const newDataItem = {
         key: '/products/*|prerender',
         data: {
           allowedRegexPatterns: ['/products/*'],
-          score: 2.5,
+          pathScore: 2.5,
           contentGainRatio: 1.8,
         },
       };
@@ -9889,7 +9889,7 @@ describe('Prerender Audit', () => {
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.allowedRegexPatterns).to.deep.equal(['/products/*']);
-      expect(result.score).to.equal(2.5);
+      expect(result.pathScore).to.equal(2.5);
       expect(result.contentGainRatio).to.equal(1.8);
       expect(result.edgeDeployed).to.be.true;
     });
@@ -9898,28 +9898,28 @@ describe('Prerender Audit', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = {
         coveredByDomainWide: 'dw-1',
-        score: 1.0,
+        pathScore: 1.0,
       };
       const newDataItem = {
         key: '/products/*|prerender',
         data: {
           allowedRegexPatterns: ['/products/*'],
-          score: 2.5,
+          pathScore: 2.5,
         },
       };
 
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.coveredByDomainWide).to.equal('dw-1');
-      expect(result.score).to.equal(2.5);
+      expect(result.pathScore).to.equal(2.5);
     });
 
     it('does not inject coveredByDomainWide when not present on existing data', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
-      const existingData = { score: 1.0 };
+      const existingData = { pathScore: 1.0 };
       const newDataItem = {
         key: '/products/*|prerender',
-        data: { allowedRegexPatterns: ['/products/*'], score: 2.0 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 2.0 },
       };
 
       const result = mergeFn(existingData, newDataItem);
@@ -9929,10 +9929,10 @@ describe('Prerender Audit', () => {
 
     it('does not inject edgeDeployed when not present on existing data for path-type', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
-      const existingData = { score: 1.0 };
+      const existingData = { pathScore: 1.0 };
       const newDataItem = {
         key: '/products/*|prerender',
-        data: { allowedRegexPatterns: ['/products/*'], score: 2.0 },
+        data: { allowedRegexPatterns: ['/products/*'], pathScore: 2.0 },
       };
 
       const result = mergeFn(existingData, newDataItem);
@@ -9975,12 +9975,12 @@ describe('Prerender Audit', () => {
     it('merges mapped data onto existing data for individual suggestions', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = { url: 'https://example.com/page', preserved: true };
-      const newDataItem = { url: 'https://example.com/page', score: 3.5 };
+      const newDataItem = { url: 'https://example.com/page', pathScore: 3.5 };
 
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.url).to.equal('https://example.com/page');
-      expect(result.score).to.equal(3.5);
+      expect(result.pathScore).to.equal(3.5);
       expect(result.preserved).to.be.true;
     });
   });
