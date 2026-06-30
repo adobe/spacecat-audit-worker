@@ -31,11 +31,10 @@ const LOG_PREFIX = '[prerender][path-suggestions]';
  *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} log - Logger
- * @param {Array} [suggestions] - Pre-fetched suggestions (avoids redundant DB call)
  * @returns {Promise<Array>}
  */
-export async function findPreservablePathSuggestions(opportunity, log, suggestions) {
-  const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
+export async function findPreservablePathSuggestions(opportunity, log) {
+  const existingSuggestions = await opportunity.getSuggestions();
   const preservable = existingSuggestions.filter((s) => {
     const d = s.getData();
     return isPathSuggestionData(d) && shouldPreservePathSuggestion(s);
