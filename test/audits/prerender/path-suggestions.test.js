@@ -1272,7 +1272,6 @@ describe('Path Suggestions', function () {
         opportunity,
         site,
         context: ctx,
-        cachedSuggestions: [],
         auditUrl: BASE_URL,
         siteId: 'site-1',
       });
@@ -1291,7 +1290,6 @@ describe('Path Suggestions', function () {
         opportunity,
         site,
         context: ctx,
-        cachedSuggestions: [],
         auditUrl: BASE_URL,
         siteId: 'site-1',
       });
@@ -1303,10 +1301,10 @@ describe('Path Suggestions', function () {
 
     it('returns new path suggestions when enabled and no preserved paths', async () => {
       const urls = Array.from({ length: 5 }, (_, i) => `${BASE_URL}/products/item-${i}`);
-      const cachedSuggestions = urls.map((url, i) => makeSuggestion({
+      const suggestions = urls.map((url, i) => makeSuggestion({
         id: `s-${i}`, status: 'NEW', data: { url, valuable: true },
       }));
-      const opportunity = makeOpportunity(cachedSuggestions);
+      const opportunity = makeOpportunity(suggestions);
       const preRenderSuggestions = urls.map((url) => ({
         url, contentGainRatio: 2, wordCountBefore: 100, wordCountAfter: 200,
       }));
@@ -1318,7 +1316,6 @@ describe('Path Suggestions', function () {
         opportunity,
         site,
         context: ctx,
-        cachedSuggestions,
         auditUrl: BASE_URL,
         siteId: 'site-1',
       });
@@ -1334,8 +1331,7 @@ describe('Path Suggestions', function () {
         status: 'NEW',
         data: { allowedRegexPatterns: ['/products/*'], edgeDeployed: true },
       });
-      const cachedSuggestions = [preserved];
-      const opportunity = makeOpportunity(cachedSuggestions);
+      const opportunity = makeOpportunity([preserved]);
 
       const result = await resolvePathSuggestions({
         pathSuggestionsEnabled: true,
@@ -1344,7 +1340,6 @@ describe('Path Suggestions', function () {
         opportunity,
         site,
         context: ctx,
-        cachedSuggestions,
         auditUrl: BASE_URL,
         siteId: 'site-1',
       });

@@ -9975,12 +9975,12 @@ describe('Prerender Audit', () => {
     it('merges mapped data onto existing data for individual suggestions', () => {
       const mergeFn = buildMergeDataFunction(mapSuggestionDataFn);
       const existingData = { url: 'https://example.com/page', preserved: true };
-      const newDataItem = { url: 'https://example.com/page', pathScore: 3.5 };
+      const newDataItem = { url: 'https://example.com/page', score: 3.5 };
 
       const result = mergeFn(existingData, newDataItem);
 
       expect(result.url).to.equal('https://example.com/page');
-      expect(result.pathScore).to.equal(3.5);
+      expect(result.score).to.equal(3.5);
       expect(result.preserved).to.be.true;
     });
   });

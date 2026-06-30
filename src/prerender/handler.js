@@ -893,11 +893,11 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  // Pre-fetch suggestions once to avoid redundant DB round-trips.
-  // markSuggestionsAsCoveredByPaths (post-sync) fetches its own fresh copy.
-  const cachedSuggestions = await opportunity.getSuggestions();
-
-  const existingPreservable = findPreservableDomainWideSuggestion(cachedSuggestions, log);
+  const suggestions = await opportunity.getSuggestions();
+  const existingPreservable = findPreservableDomainWideSuggestion(suggestions, log);
+  const domainWideDeployed = suggestions.some(
+    (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
+  );
 
   let domainWideSuggestion = null;
   if (existingPreservable) {
@@ -909,11 +909,6 @@ export async function processOpportunityAndSuggestions(
       context,
     );
   }
-
-  // Skip path suggestions if domain-wide is deployed — they're redundant under /*
-  const domainWideDeployed = cachedSuggestions.some(
-    (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
-  );
 
   // Fetch agentic hits map once here and pass it into resolvePathSuggestions so
   // buildPathTypeSuggestions does not issue a redundant second Athena query.
@@ -932,7 +927,6 @@ export async function processOpportunityAndSuggestions(
     opportunity,
     site,
     context,
-    cachedSuggestions,
     auditUrl,
     siteId: auditData.siteId,
     agenticHitsMap,

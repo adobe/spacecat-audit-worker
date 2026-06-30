@@ -370,7 +370,6 @@ export async function refreshPreservedPathMetrics(builtSuggestions, preservableB
  * @param {Object} params.opportunity - SpaceCat opportunity entity
  * @param {Object} params.site - SpaceCat site entity
  * @param {Object} params.context - Audit context (log, dataAccess, etc.)
- * @param {Array} params.cachedSuggestions - Pre-fetched suggestions
  * @param {string} params.auditUrl - Audit URL (for logging)
  * @param {string} params.siteId - Site ID (for logging)
  * @param {Map} [params.agenticHitsMap] - Pre-fetched pathname→hits map; avoids a second Athena
@@ -384,7 +383,6 @@ export async function resolvePathSuggestions({
   opportunity,
   site,
   context,
-  cachedSuggestions,
   auditUrl,
   siteId,
   agenticHitsMap,
@@ -397,8 +395,7 @@ export async function resolvePathSuggestions({
     return { preservablePaths: [], newPathSuggestions: [] };
   }
 
-  // eslint-disable-next-line max-len
-  const preservablePaths = await findPreservablePathSuggestions(opportunity, log, cachedSuggestions);
+  const preservablePaths = await findPreservablePathSuggestions(opportunity, log);
   const preservableByPattern = new Map(
     preservablePaths.map((s) => [s.getData().allowedRegexPatterns?.[0], s]),
   );
@@ -408,7 +405,7 @@ export async function resolvePathSuggestions({
     opportunity,
     site,
     context,
-    { suggestions: cachedSuggestions, agenticHitsMap },
+    { agenticHitsMap },
   );
 
   // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
