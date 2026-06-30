@@ -904,18 +904,199 @@ export async function syncSuggestionsWithPublishDetection({
     });
   }
 
-  // Step 3: Delegate to base syncSuggestions, passing pre-fetched suggestions to avoid double query
-  await syncSuggestions({
+  // Step 3: Update existing suggestions with FIXED skip logic
+  // (inline instead of delegating to base syncSuggestions to add FIXED-specific behavior)
+  const { Suggestion } = context.dataAccess;
+  const { isTBYB = false } = context;
+  const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
+  const toUpdate = [];
+
+  // Filter matched suggestions once to avoid redundant buildKey() calls
+  const matchedSuggestions = existingSuggestions.filter((existing) => {
+    const existingKey = buildKey(existing.getData());
+    return newDataKeys.has(existingKey);
+  });
+
+  matchedSuggestions.forEach((existing) => {
+    const existingData = existing.getData();
+    const existingKey = buildKey(existingData);
+
+    // Skip FIXED suggestions entirely - don't update their data
+    // This applies to both author-only and non-author-only opportunities
+    if (existing.getStatus() === SuggestionDataAccess.STATUSES.FIXED) {
+      log.debug(`Skipping FIXED suggestion ${existingKey} - FIXED suggestions are never updated`);
+      return; // Early exit
+    }
+
+    const newDataItem = newDataByKey.get(existingKey);
+
+    // Use default merge functions when not provided (matches base syncSuggestions behavior)
+    const effectiveMergeData = mergeDataFunction ?? defaultMergeDataFunction;
+    const effectiveMergeStatus = mergeStatusFunction ?? defaultMergeStatusFunction;
+
+    const mergedData = effectiveMergeData(existingData, newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+
+    const newStatus = effectiveMergeStatus(existing, newDataItem, { ...context, isTBYB });
+
+    // Only update if data or status changed
+    const dataChanged = !deepEqual(existingData, mergedData);
+    if (newStatus !== null || dataChanged) {
+      existing.setData(mergedData);
+      if (newStatus !== null) {
+        existing.setStatus(newStatus);
+      }
+      existing.setUpdatedBy('system');
+      toUpdate.push(existing);
+    } else {
+      log.debug(`Skipping update for suggestion ${existingKey} - no changes detected`);
+    }
+  });
+
+  if (toUpdate.length > 0) {
+    await Suggestion.saveMany(toUpdate);
+    log.info(`[syncSuggestionsWithPublishDetection] Updated ${toUpdate.length} suggestions with actual changes`);
+  } else {
+    log.info('[syncSuggestionsWithPublishDetection] No suggestions required updates');
+  }
+  log.debug(`Processed ${matchedSuggestions.length} matched suggestions, updated ${toUpdate.length}`);
+
+  // Step 4: Build set of FIXED suggestions eligible for regression detection
+  // Eligibility depends on opportunity type:
+  // - Author-only: ALL fix entities must be DEPLOYED (can't publish to production)
+  // - Non-author-only: ALL fix entities must be PUBLISHED (verified on production)
+  const fullyResolvedFixedKeys = new Set();
+  const fixedSuggestions = matchedSuggestions.filter(
+    (s) => s.getStatus() === SuggestionDataAccess.STATUSES.FIXED,
+  );
+
+  if (fixedSuggestions.length > 0) {
+    const requiredFixStatus = isAuthorOnly ? 'DEPLOYED' : 'PUBLISHED';
+    log.debug(`[syncSuggestionsWithPublishDetection] Checking ${fixedSuggestions.length} FIXED suggestions for regression (required status: ${requiredFixStatus})`);
+
+    let failedQueries = 0;
+
+    await limitConcurrencyAllSettled(
+      fixedSuggestions.map((suggestion) => async () => {
+        try {
+          const suggestionId = suggestion.getId();
+          if (!suggestionId) {
+            return;
+          }
+
+          const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
+            suggestionId,
+          );
+
+          // Only consider it fully resolved if:
+          // 1. Fix entities exist (not just marked FIXED with no fixes)
+          // 2. ALL fix entities have reached the required status
+          if (fixEntities.length > 0
+              && fixEntities.every((fe) => fe.getStatus() === requiredFixStatus)) {
+            const key = buildKey(suggestion.getData());
+            fullyResolvedFixedKeys.add(key);
+            log.debug(`FIXED suggestion ${suggestionId} is fully resolved (${requiredFixStatus}): ${key}`);
+          }
+        } catch (e) {
+          failedQueries += 1;
+          log.debug(`Failed to check fix entities for suggestion ${suggestion.getId()}: ${e.message}`);
+        }
+      }),
+      MAX_CONCURRENT_CHECKS,
+    );
+
+    // Escalate when ALL queries fail - indicates systematic DB/connectivity issue
+    if (failedQueries > 0 && failedQueries === fixedSuggestions.length) {
+      log.warn(`All ${failedQueries} fix entity checks failed - regression detection incomplete`);
+    }
+
+    log.info(`[syncSuggestionsWithPublishDetection] Found ${fullyResolvedFixedKeys.size} FIXED suggestions with all fixes ${requiredFixStatus}`);
+  }
+
+  // Step 5: Create new suggestions with regression detection
+  const existingSuggestionKeys = new Set(
+    existingSuggestions.map((existing) => buildKey(existing.getData())),
+  );
+
+  const { site } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+  const defaultNewSuggestionStatus = requiresValidation && !isTBYB
+    ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+    : SuggestionDataAccess.STATUSES.NEW;
+
+  const newSuggestions = newData
+    .filter((data) => {
+      const key = buildKey(data);
+
+      // If no existing suggestion with this key - allow creation
+      if (!existingSuggestionKeys.has(key)) {
+        return true;
+      }
+
+      // If existing suggestion is FIXED and all its fix entities are DEPLOYED/PUBLISHED
+      // This is a REGRESSION - the issue came back after being fully resolved
+      // Allow creation of a NEW suggestion to track the regression
+      if (fullyResolvedFixedKeys.has(key)) {
+        const statusType = isAuthorOnly ? 'DEPLOYED' : 'PUBLISHED';
+        log.warn(`[syncSuggestionsWithPublishDetection] Regression detected: FIXED+${statusType} suggestion found in audit. Creating new suggestion for key: ${key}`);
+        return true;
+      }
+
+      // Otherwise block: existing suggestion is NEW/PENDING_VALIDATION/IN_PROGRESS/FIXED-unresolved
+      return false;
+    })
+    .map((data) => {
+      const suggestion = mapNewSuggestion(data);
+      const result = {
+        ...suggestion,
+        status: suggestion.status ?? defaultNewSuggestionStatus,
+      };
+      if (result.data != null) {
+        warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      }
+      return result;
+    });
+
+  if (newSuggestions.length > 0) {
+    const siteId = opportunity.getSiteId?.() || 'unknown';
+    log.info(`[syncSuggestionsWithPublishDetection] Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
+
+    const suggestions = await opportunity.addSuggestions(newSuggestions);
+    log.debug(`New suggestions = ${suggestions.length}: ${safeStringify(suggestions)}`);
+
+    if (suggestions.errorItems?.length > 0) {
+      log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors out of ${newSuggestions.length} total`);
+
+      const errorsToLog = suggestions.errorItems.slice(0, 5);
+      errorsToLog.forEach((errorItem, index) => {
+        log.error(`Error ${index + 1}/${suggestions.errorItems.length}: ${errorItem.error}`);
+        log.error(`Failed item data: ${safeStringify(errorItem.item, 1)}`);
+      });
+
+      if (suggestions.errorItems.length > 5) {
+        log.error(`... and ${suggestions.errorItems.length - 5} more errors`);
+      }
+
+      if (suggestions.createdItems?.length <= 0) {
+        const sampleError = suggestions.errorItems[0]?.error || 'Unknown error';
+        log.error('[suggestions.errorItems]', suggestions.errorItems);
+        throw new Error(`Failed to create suggestions for siteId ${siteId}. Sample error: ${sampleError}`);
+      } else {
+        log.warn(`Partial success: Created ${suggestions.createdItems.length} suggestions, ${suggestions.errorItems.length} failed`);
+      }
+    } else {
+      log.debug(`Successfully created ${suggestions.createdItems?.length || suggestions.length} suggestions for siteId ${siteId}`);
+    }
+  }
+
+  // Step 6: Mark disappeared suggestions as OUTDATED
+  await handleOutdatedSuggestions({
     context,
-    opportunity,
-    newData,
+    existingSuggestions,
+    newDataKeys,
     buildKey,
-    mapNewSuggestion,
-    mergeDataFunction,
-    mergeStatusFunction,
     statusToSetForOutdated,
     scrapedUrlsSet,
-    existingSuggestions,
   });
 }
 

@@ -3454,6 +3454,584 @@ describe('data-access', () => {
       expect(mockLogger.warn).to.have.been.calledWith('Failed to check TBYB status', sinon.match.instanceOf(Error));
       expect(isIssueFixedStub).to.have.been.called;
     });
+
+    it('should not update FIXED suggestions when they reappear', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Old Title' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Old Title' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'New Title' }];
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(fixedSuggestion.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping FIXED suggestion.*FIXED suggestions are never updated/),
+      );
+    });
+
+    it('should create NEW suggestion when FIXED+PUBLISHED issue reappears (non-author-only)', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId = sinon.stub()
+        .resolves({
+          data: [
+            { getStatus: () => 'PUBLISHED' },
+            { getStatus: () => 'PUBLISHED' },
+          ],
+        });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/Regression detected: FIXED\+PUBLISHED/),
+      );
+    });
+
+    it('should create NEW suggestion when FIXED+DEPLOYED issue reappears (author-only)', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('security-permissions');
+
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId = sinon.stub()
+        .resolves({
+          data: [
+            { getStatus: () => 'DEPLOYED' },
+          ],
+        });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/Regression detected: FIXED\+DEPLOYED/),
+      );
+    });
+
+    it('should NOT create NEW suggestion when FIXED but not all fixes PUBLISHED', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId = sinon.stub()
+        .resolves({
+          data: [
+            { getStatus: () => 'PUBLISHED' },
+            { getStatus: () => 'DEPLOYED' }, // Not all PUBLISHED
+          ],
+        });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should handle suggestion creation errors gracefully', async () => {
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.getType.returns('broken-backlinks');
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [
+          { error: 'Validation failed', item: { url: '/page1' } },
+        ],
+        createdItems: [],
+        length: 0,
+      });
+
+      let error;
+      try {
+        await syncSuggestionsWithPublishDetection({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey: (d) => d.url,
+          mapNewSuggestion: (d) => ({ data: d }),
+          isIssueFixedWithAISuggestion: () => false,
+          buildFixEntityPayload: () => ({}),
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.exist;
+      expect(error.message).to.match(/Failed to create suggestions/);
+      expect(mockLogger.error).to.have.been.called;
+    });
+
+    it('should handle partial success when some suggestions fail', async () => {
+      const newData = [{ url: '/page1' }, { url: '/page2' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.getType.returns('broken-backlinks');
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [
+          { error: 'Validation failed', item: { url: '/page2' } },
+        ],
+        createdItems: [
+          { url: '/page1' },
+        ],
+        length: 2,
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/Partial success: Created 1 suggestions, 1 failed/),
+      );
+    });
+
+    it('should log all errors when more than 5 suggestion creation errors', async () => {
+      const newData = Array.from({ length: 10 }, (_, i) => ({ url: `/page${i}` }));
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.getType.returns('broken-backlinks');
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: Array.from({ length: 7 }, (_, i) => ({
+          error: `Error ${i}`,
+          item: { url: `/page${i}` },
+        })),
+        createdItems: [
+          { url: '/page7' },
+          { url: '/page8' },
+          { url: '/page9' },
+        ],
+        length: 10,
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      expect(mockLogger.error).to.have.been.calledWith(
+        sinon.match(/\.\.\. and 2 more errors/),
+      );
+    });
+
+    it('should handle FIXED suggestion with no ID gracefully', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => null, // No ID
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should not create regression since we can't check Fix entities without ID
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should handle getFixEntitiesBySuggestionId failure gracefully', async () => {
+      const fixedSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: () => ({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
+      };
+
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      // Simulate getFixEntitiesBySuggestionId throwing an error
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId = sinon.stub()
+        .rejects(new Error('Database connection failed'));
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should log the error and continue without creating regression
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Failed to check fix entities for suggestion suggestion-1/),
+      );
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
+    it('should update suggestion when status changes', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Title' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Title' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Title' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      // Create a merge status function that returns a new status
+      const mergeStatusFunction = sinon.stub().returns(
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+      );
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeStatusFunction,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should update because status changed (even though data is the same)
+      expect(existingSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
+    it('should skip update when neither data nor status changed', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Title' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Title' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Title' }]; // Same data
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      // Merge status function returns null (no status change)
+      const mergeStatusFunction = sinon.stub().returns(null);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeStatusFunction,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should not update because nothing changed
+      expect(existingSuggestion.setData).to.not.have.been.called;
+      expect(existingSuggestion.setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping update for suggestion.*no changes detected/),
+      );
+    });
+
+    it('should use custom merge when mergeDataFunction is provided', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Old', count: 5 },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Old', count: 5 }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'New', count: 3 }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      const customMerge = sinon.stub().callsFake((existing, newItem) => ({
+        ...existing,
+        ...newItem,
+        count: existing.count + newItem.count, // Custom merge logic
+      }));
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        mergeDataFunction: customMerge,
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should use custom merge function
+      expect(customMerge).to.have.been.calledOnce;
+      expect(existingSuggestion.setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
+    it('should use default merge when mergeDataFunction is not provided', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1', title: 'Old' },
+        getData: sinon.stub().returns({ url: '/page1', title: 'Old' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'New' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeDataFunction provided - should use default spread merge
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Should update using default merge ({ ...existingData, ...newDataItem })
+      expect(existingSuggestion.setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    });
+
+    it('should use default status function for OUTDATED suggestions', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.OUTDATED,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (OUTDATED → PENDING_VALIDATION/NEW)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function transitions OUTDATED to PENDING_VALIDATION or NEW
+      expect(existingSuggestion.setStatus).to.have.been.called;
+      const newStatus = existingSuggestion.setStatus.firstCall.args[0];
+      expect([
+        SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+        SuggestionDataAccess.STATUSES.NEW,
+      ]).to.include(newStatus);
+    });
+
+    it('should use default status function for ERROR suggestions', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.ERROR,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (ERROR → NEW)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function transitions ERROR to NEW
+      expect(existingSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+    });
+
+    it('should use default status function to keep REJECTED status', async () => {
+      const existingSuggestion = {
+        id: 'suggestion-1',
+        data: { url: '/page1' },
+        getData: sinon.stub().returns({ url: '/page1' }),
+        getId: () => 'suggestion-1',
+        getStatus: () => SuggestionDataAccess.STATUSES.REJECTED,
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const newData = [{ url: '/page1', title: 'Updated' }];
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey: (d) => d.url,
+        mapNewSuggestion: (d) => ({ data: d }),
+        // No mergeStatusFunction - should use default (REJECTED stays REJECTED)
+        isIssueFixedWithAISuggestion: () => false,
+        buildFixEntityPayload: () => ({}),
+      });
+
+      // Default status function keeps REJECTED status (returns null, no setStatus call)
+      // Status should not be changed when data is updated
+      expect(existingSuggestion.setData).to.have.been.called;
+      // setStatus should not be called for REJECTED (null return = keep status)
+      expect(existingSuggestion.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle error with no error message gracefully', async () => {
+      const newData = [{ url: '/page1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.getType.returns('broken-backlinks');
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [
+          { item: { url: '/page1' } }, // No error field
+        ],
+        createdItems: [],
+        length: 0,
+      });
+
+      let error;
+      try {
+        await syncSuggestionsWithPublishDetection({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey: (d) => d.url,
+          mapNewSuggestion: (d) => ({ data: d }),
+          isIssueFixedWithAISuggestion: () => false,
+          buildFixEntityPayload: () => ({}),
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.exist;
+      expect(error.message).to.include('Unknown error');
+    });
   });
 
   describe('warnOnInvalidSuggestionData', () => {
