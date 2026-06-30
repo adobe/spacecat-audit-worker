@@ -1300,4 +1300,59 @@ describe('Path Suggestions', function () {
     });
   });
 
+  // ─── mergePathSuggestionData ─────────────────────────────────────────────────
+
+  describe('mergePathSuggestionData', () => {
+    let mergePathSuggestionData;
+
+    beforeEach(() => {
+      ({ mergePathSuggestionData } = pathSuggestionsModule);
+    });
+
+    it('returns newData when existingData has no deployment fields', () => {
+      const result = mergePathSuggestionData(
+        { score: 1 },
+        { url: 'https://example.com/products/*', score: 2 },
+      );
+      expect(result).to.deep.equal({ url: 'https://example.com/products/*', score: 2 });
+    });
+
+    it('preserves edgeDeployed from existingData', () => {
+      const result = mergePathSuggestionData(
+        { edgeDeployed: 1234567890 },
+        { url: 'https://example.com/products/*', score: 2 },
+      );
+      expect(result.edgeDeployed).to.equal(1234567890);
+      expect(result.url).to.equal('https://example.com/products/*');
+    });
+
+    it('preserves coveredByDomainWide from existingData', () => {
+      const result = mergePathSuggestionData(
+        { coveredByDomainWide: 'dw-1' },
+        { url: 'https://example.com/products/*', score: 2 },
+      );
+      expect(result.coveredByDomainWide).to.equal('dw-1');
+    });
+
+    it('preserves both edgeDeployed and coveredByDomainWide when both are set', () => {
+      const result = mergePathSuggestionData(
+        { edgeDeployed: 999, coveredByDomainWide: 'dw-2' },
+        { url: 'https://example.com/blog/*', score: 3 },
+      );
+      expect(result.edgeDeployed).to.equal(999);
+      expect(result.coveredByDomainWide).to.equal('dw-2');
+      expect(result.score).to.equal(3);
+    });
+
+    it('does not propagate edgeDeployed when existingData is undefined', () => {
+      const result = mergePathSuggestionData(
+        undefined,
+        { url: 'https://example.com/blog/*', score: 3 },
+      );
+      expect(result.edgeDeployed).to.be.undefined;
+      expect(result.coveredByDomainWide).to.be.undefined;
+      expect(result.score).to.equal(3);
+    });
+  });
+
 });
