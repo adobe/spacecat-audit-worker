@@ -234,7 +234,7 @@ export async function getAgenticHitsMapFromAthena(
           const rawPath = row.url.startsWith('http://') || row.url.startsWith('https://')
             ? new URL(row.url).pathname
             : row.url;
-          const pathname = rawPath.replace(/\/$/, '') || '/';
+          const pathname = (rawPath.replace(/\/$/, '') || '/').toLowerCase();
           const hits = parseInt(row.total_hits, 10) || 0;
           hitsMap.set(pathname, (hitsMap.get(pathname) || 0) + hits);
         } catch {

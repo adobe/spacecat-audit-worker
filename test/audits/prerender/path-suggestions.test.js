@@ -63,7 +63,7 @@ describe('Path Suggestions', function () {
     mockGetAgenticHitsMapFromAthena = sandbox.stub().resolves(new Map());
 
     pathSuggestionsModule = await esmock(
-      '../../../src/prerender/features/path-suggestions/path-suggestions.js',
+      '../../../src/prerender/path-suggestions/path-suggestions.js',
       {
         '../../../src/utils/agentic-urls.js': {
           getAgenticHitsMapFromAthena: mockGetAgenticHitsMapFromAthena,

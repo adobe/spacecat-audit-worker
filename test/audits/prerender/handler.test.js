@@ -4748,7 +4748,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/features/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/index.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
@@ -4799,7 +4799,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/features/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/index.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
@@ -4862,7 +4862,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/features/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/index.js': {
           resolvePathSuggestions: sinon.stub().resolves({
             preservablePaths: [],
             newPathSuggestions: [pathSuggestion],
@@ -4931,7 +4931,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/features/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/index.js': {
           resolvePathSuggestions: sinon.stub().resolves({
             preservablePaths: [preservedPath],
             newPathSuggestions: [newPathSuggestion],
@@ -4985,7 +4985,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/features/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/index.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
@@ -9262,6 +9262,40 @@ describe('Prerender Audit', () => {
       // The invalid URL won't match any deployed pathname, so it should NOT be marked
       expect(saveManyStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
+    });
+
+    it('should exclude path suggestions with edgeDeployed or coveredByDomainWide from pathSuggestionsToCover', async () => {
+      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      // Path suggestion already deployed at edge — must be excluded
+      const pathWithEdgeDeployed = buildSuggestionWithSetData('ps-edge', { allowedRegexPatterns: ['/products/*'], score: 2, edgeDeployed: true });
+      // Path suggestion already covered by domain-wide — must be excluded
+      const pathAlreadyCovered = buildSuggestionWithSetData('ps-covered', { allowedRegexPatterns: ['/blog/*'], score: 2, coveredByDomainWide: 'dw-old' });
+      // Plain path suggestion with no special flags — must be included
+      const pathUncovered = buildSuggestionWithSetData('ps-plain', { allowedRegexPatterns: ['/news/*'], score: 2 });
+
+      const saveManyStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([
+        pathWithEdgeDeployed,
+        pathAlreadyCovered,
+        pathUncovered,
+      ]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // Only the plain path suggestion should be covered
+      expect(pathWithEdgeDeployed.getData().coveredByDomainWide).to.be.undefined;
+      expect(pathAlreadyCovered.getData().coveredByDomainWide).to.equal('dw-old'); // unchanged
+      expect(pathUncovered.getData().coveredByDomainWide).to.equal('dw-1');
+      expect(saveManyStub).to.have.been.calledOnceWith([pathUncovered]);
     });
 
     it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
