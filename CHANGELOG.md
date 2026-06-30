@@ -1,3 +1,10 @@
+# [1.493.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.2...v1.493.0) (2026-06-30)
+
+
+### Features
+
+* **summarization:** pass generatePrompts to Mystique for Impact Engine ([#2732](https://github.com/adobe/spacecat-audit-worker/issues/2732)) ([8f94fa8](https://github.com/adobe/spacecat-audit-worker/commit/8f94fa83672adc080fa5e97df119b1c887ceb177))
+
 ## [1.492.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.1...v1.492.2) (2026-06-27)
 
 
