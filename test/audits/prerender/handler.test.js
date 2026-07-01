@@ -4748,7 +4748,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
@@ -4799,7 +4799,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
@@ -4862,7 +4862,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: sinon.stub().resolves({
             preservablePaths: [],
             newPathSuggestions: [pathSuggestion],
@@ -4931,7 +4931,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: sinon.stub().resolves({
             preservablePaths: [preservedPath],
             newPathSuggestions: [newPathSuggestion],
@@ -4985,7 +4985,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
@@ -5034,7 +5034,7 @@ describe('Prerender Audit', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
         },
-        '../../../src/prerender/path-suggestions/index.js': {
+        '../../../src/prerender/path-suggestions/main.js': {
           resolvePathSuggestions: resolvePathSuggestionsStub,
           markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },

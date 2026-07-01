@@ -36,7 +36,7 @@ import {
   resolvePathSuggestions,
   markSuggestionsAsCoveredByPaths,
   mergePathSuggestionData,
-} from './path-suggestions/index.js';
+} from './path-suggestions/main.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
