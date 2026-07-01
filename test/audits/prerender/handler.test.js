@@ -5015,6 +5015,61 @@ describe('Prerender Audit', () => {
       expect(resolvePathSuggestionsStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
     });
+
+    it('logs a warning and falls back to empty map when getAgenticHitsMapFromAthena rejects', async () => {
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const resolvePathSuggestionsStub = sinon.stub().resolves({ preservablePaths: [], newPathSuggestions: [] });
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/path-suggestions/index.js': {
+          resolvePathSuggestions: resolvePathSuggestionsStub,
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
+        },
+        '../../../src/utils/agentic-urls.js': {
+          getAgenticHitsMapFromAthena: sinon.stub().rejects(new Error('Athena timeout')),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const warnStub = sinon.stub();
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: warnStub, error: sinon.stub() },
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getHandlerConfig: () => ({ pathSuggestionsEnabled: true }) }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(warnStub).to.have.been.calledWithMatch(/Failed to fetch agentic hits map: Athena timeout/);
+      expect(resolvePathSuggestionsStub).to.have.been.calledOnce;
+      expect(resolvePathSuggestionsStub.firstCall.args[0].agenticHitsMap).to.be.instanceOf(Map);
+      expect(resolvePathSuggestionsStub.firstCall.args[0].agenticHitsMap.size).to.equal(0);
+    });
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
