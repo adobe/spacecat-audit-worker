@@ -532,6 +532,16 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`);
 
+      // Raw logs were present but the aggregation wrote no rows. The usual cause is a
+      // wrong log format: the JSON SerDe runs with ignore.malformed.json=true, so
+      // unparseable lines become all-NULL rows, the LLM user-agent filter matches
+      // nothing, and the audit "succeeds" empty with no error. Emit one greppable line
+      // so it can be alerted/dashboarded instead of failing silently.
+      // eslint-disable-next-line no-await-in-loop
+      if (!await pathHasData(s3Client, paths.aggregatedOutput)) {
+        log.warn(`[cdn-logs-analysis] empty aggregation despite raw logs - possible wrong log format siteId=${siteId} host=${host} serviceProvider=${serviceProvider} cdnType=${cdnType} rawDataPath=${rawDataPath}`);
+      }
+
       log.info(`${auditType} processed logs for siteId=${siteId} with:
         serviceProvider=${serviceProvider}
         cdnType=${cdnType}

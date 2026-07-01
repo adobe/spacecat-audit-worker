@@ -1,3 +1,108 @@
+## [1.493.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.0...v1.493.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2740](https://github.com/adobe/spacecat-audit-worker/issues/2740)) ([db1803f](https://github.com/adobe/spacecat-audit-worker/commit/db1803f29380ea9b7f50d02316c83058dffeb047))
+
+# [1.493.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.2...v1.493.0) (2026-06-30)
+
+
+### Features
+
+* **summarization:** pass generatePrompts to Mystique for Impact Engine ([#2732](https://github.com/adobe/spacecat-audit-worker/issues/2732)) ([8f94fa8](https://github.com/adobe/spacecat-audit-worker/commit/8f94fa83672adc080fa5e97df119b1c887ceb177))
+
+## [1.492.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.1...v1.492.2) (2026-06-27)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2739](https://github.com/adobe/spacecat-audit-worker/issues/2739)) ([c4b501b](https://github.com/adobe/spacecat-audit-worker/commit/c4b501bb90b6754d4ddc7181c8feed7f662f1451))
+
+## [1.492.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.0...v1.492.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2738](https://github.com/adobe/spacecat-audit-worker/issues/2738)) ([6954881](https://github.com/adobe/spacecat-audit-worker/commit/69548814cbd236ea0ac187218ee3fb43a3f912f2))
+
+# [1.492.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.2...v1.492.0) (2026-06-26)
+
+
+### Features
+
+* **sqs:** propagate organizationId to Mystique-bound messages ([#2693](https://github.com/adobe/spacecat-audit-worker/issues/2693)) ([d3f6867](https://github.com/adobe/spacecat-audit-worker/commit/d3f68674857981e636c4e130e77f385e073f7fe2))
+
+## [1.491.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.1...v1.491.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** warn when raw logs aggregate to zero rows (wrong format) ([#2736](https://github.com/adobe/spacecat-audit-worker/issues/2736)) ([633b7f4](https://github.com/adobe/spacecat-audit-worker/commit/633b7f43d2a0e82fd42bebdec5eb574e18f15e08))
+
+## [1.491.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.491.0...v1.491.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.122.1 ([#2735](https://github.com/adobe/spacecat-audit-worker/issues/2735)) ([27fa4f3](https://github.com/adobe/spacecat-audit-worker/commit/27fa4f3e1e08679f2df54cbd3ade6ff8879d9ccd))
+
+# [1.491.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.3...v1.491.0) (2026-06-26)
+
+
+### Features
+
+* **prerender:** generate subpath-scoped domain wide suggestion for subpath sites (LLMO-5145) ([#2605](https://github.com/adobe/spacecat-audit-worker/issues/2605)) ([86d5425](https://github.com/adobe/spacecat-audit-worker/commit/86d5425a2fd897630f8f2053d03c841f00907752))
+
+## [1.490.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.2...v1.490.3) (2026-06-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2733](https://github.com/adobe/spacecat-audit-worker/issues/2733)) ([24916f8](https://github.com/adobe/spacecat-audit-worker/commit/24916f86068407c4e3b760ab0f5e36e751eec170))
+
+## [1.490.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.1...v1.490.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **toc:** cap scraping submissions at MAX_TOP_PAGES=200 (LLMO-5863) ([#2731](https://github.com/adobe/spacecat-audit-worker/issues/2731)) ([44e855c](https://github.com/adobe/spacecat-audit-worker/commit/44e855c99d2ce2921591fe9cd665fb8336dde182))
+
+## [1.490.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.490.0...v1.490.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2728](https://github.com/adobe/spacecat-audit-worker/issues/2728)) ([4bb02ef](https://github.com/adobe/spacecat-audit-worker/commit/4bb02ef6d9c4fe8fe2e9fa9bade94a770eb761cd))
+
+# [1.490.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.489.0...v1.490.0) (2026-06-24)
+
+
+### Features
+
+* **reddit-youtube:** Slack summary reports UI visibility + hallucina… ([#2730](https://github.com/adobe/spacecat-audit-worker/issues/2730)) ([dbce09d](https://github.com/adobe/spacecat-audit-worker/commit/dbce09d4d3400a0954254683fbe1bba6889b8f52))
+
+# [1.489.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.4...v1.489.0) (2026-06-24)
+
+
+### Features
+
+* **cited-analysis:** Slack summary reports UI visibility + hallucina… ([#2729](https://github.com/adobe/spacecat-audit-worker/issues/2729)) ([6137779](https://github.com/adobe/spacecat-audit-worker/commit/613777980478009757bf7b46bb93b4ae99f82cb7))
+
+## [1.488.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.3...v1.488.4) (2026-06-24)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** stop emitting citability score + deployed-at-edge (LLMO-5646) ([#2633](https://github.com/adobe/spacecat-audit-worker/issues/2633)) ([910ad1a](https://github.com/adobe/spacecat-audit-worker/commit/910ad1a652cffae69738871d2ebf2371ef85f1f6))
+
+## [1.488.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.2...v1.488.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* enable Bright Data URL validation by default and fix CDN-block false negatives ([#2723](https://github.com/adobe/spacecat-audit-worker/issues/2723)) ([d35d9b8](https://github.com/adobe/spacecat-audit-worker/commit/d35d9b8702cbd489a463c380ae26c09446cb20e3))
+
 ## [1.488.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.488.1...v1.488.2) (2026-06-24)
 
 

@@ -55,7 +55,7 @@ describe('agentic daily export', () => {
           url_path: '/docs/page',
           hits: 12,
           avg_ttfb_ms: 123.45,
-          dimensions: { citability_score: 82 },
+          dimensions: {},
           metrics: {},
           updated_by: 'audit-worker:agentic-daily-export',
         }],
@@ -304,6 +304,7 @@ describe('agentic daily export', () => {
 
     expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
     expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
+    expect(module.testHelpers.escapeCsvValue('a,"b"')).to.equal('"a,""b"""');
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {
