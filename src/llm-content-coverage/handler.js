@@ -10,25 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { fromJson, toJson } from '@bufbuild/protobuf';
-import { getGrpcClients } from '@adobe/mysticat-shared-semrush-ai-client';
-import { GAP_KIND_ENUM, COUNTRY_ENUM, LLM_ENUM } from '@quazar/ai-seo-ts/common/types_pb.js';
 import {
-  BrandTopicsRequestSchema,
-  BrandTopicsResponseSchema,
-} from '@quazar/ai-seo-ts/v2/topic/messages_pb.js';
-import {
-  GapPromptsRequestSchema,
-  GapPromptsResponseSchema,
-} from '@quazar/ai-seo-ts/v2/prompt/messages_pb.js';
+  getGrpcClients,
+  fetchTopicHashMap,
+  fetchGapPrompts,
+} from '@adobe/mysticat-shared-seo-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AUDIT_TYPE, createOpportunityData } from './opportunity-data-mapper.js';
-
-const PROTO_FROM_JSON = { ignoreUnknownFields: true };
-const PROTO_TO_JSON = { useProtoFieldName: false, alwaysEmitImplicit: true };
 
 const MAX_CANDIDATE_TOPICS = 10;
 const GAP_PROMPTS_LIMIT = 5;
@@ -105,69 +96,6 @@ async function fetchBrandTopics(postgrestClient, organizationId, log) {
   return data || [];
 }
 
-/**
- * Fetches all topics for a domain from Semrush and returns a Map from topic name → topicHash.
- *
- * @param {object} topicClient
- * @param {string} domain
- * @returns {Promise<Map<string, string>>}
- */
-async function fetchTopicHashMap(topicClient, domain) {
-  const request = fromJson(
-    BrandTopicsRequestSchema,
-    {
-      target: { domain, name: domain },
-      llm: LLM_ENUM.ALL,
-      country: COUNTRY_ENUM.WORLDWIDE,
-      range: { limit: 500, offset: 0 },
-    },
-    PROTO_FROM_JSON,
-  );
-
-  const response = await topicClient.brandTopics(request);
-  const json = /** @type {{ topics?: Array<{topic: string, topicHash: string}> }} */ (
-    toJson(BrandTopicsResponseSchema, response, PROTO_TO_JSON)
-  );
-
-  const hashMap = new Map();
-  for (const t of (json.topics ?? [])) {
-    if (t.topic && t.topicHash) {
-      hashMap.set(t.topic.toLowerCase(), t.topicHash);
-    }
-  }
-  return hashMap;
-}
-
-/**
- * Fetches gap prompts (prompts where competitors are cited but brand is absent)
- * for a given topicHash.
- *
- * @param {object} promptClient
- * @param {string} topicHash
- * @param {string} domain
- * @returns {Promise<Array>}
- */
-async function fetchGapPrompts(promptClient, topicHash, domain) {
-  const request = fromJson(
-    GapPromptsRequestSchema,
-    {
-      target: { domain, name: domain },
-      llm: LLM_ENUM.ALL,
-      country: COUNTRY_ENUM.WORLDWIDE,
-      kinds: [GAP_KIND_ENUM.MISSING],
-      topic_hash: topicHash,
-      range: { limit: GAP_PROMPTS_LIMIT, offset: 0 },
-    },
-    PROTO_FROM_JSON,
-  );
-
-  const response = await promptClient.gapPrompts(request);
-  const json = /** @type {{ prompts?: Array }} */ (
-    toJson(GapPromptsResponseSchema, response, PROTO_TO_JSON)
-  );
-  return json.prompts ?? [];
-}
-
 export async function auditRunner(auditUrl, context, site) {
   const { log, env, dataAccess } = context;
   const siteId = site.getId();
@@ -229,8 +157,9 @@ export async function auditRunner(auditUrl, context, site) {
           return;
         }
         try {
+          const opts = { limit: GAP_PROMPTS_LIMIT };
           // eslint-disable-next-line no-param-reassign
-          t.gapPrompts = await fetchGapPrompts(promptClient, topicHash, domain);
+          t.gapPrompts = await fetchGapPrompts(promptClient, topicHash, domain, opts);
         } catch (err) {
           log.warn(`${LOG_PREFIX} gapPrompts failed for "${t.topic}": ${err.message}`);
           // eslint-disable-next-line no-param-reassign

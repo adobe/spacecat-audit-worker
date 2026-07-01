@@ -25,7 +25,6 @@ export default defineConfig([
     'scripts/*',
     'test/*/fixtures/*',
     'test/audits/**/*.test.js',
-    'third-party/**',
   ]),
   {
     languageOptions: {
