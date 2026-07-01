@@ -18,18 +18,25 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
+import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl, getAgenticHitsMapFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   buildSuggestionKey,
   getS3Path,
+  isDomainWideSuggestionData,
+  isPathSuggestionData,
   isPaidLLMOCustomer,
   mergeAndGetUniqueHtmlUrls,
   normalizePathnameWithQuery,
   readSiteStatusJson,
   toPathname,
 } from './utils/utils.js';
+import {
+  resolvePathSuggestions,
+  markSuggestionsAsCoveredByPaths,
+  mergePathSuggestionData,
+} from './path-suggestions/main.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -100,15 +107,6 @@ function isStickyBotBlocked(status) {
     return false;
   }
   return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
-}
-
-/**
- * Checks if a suggestion's data represents a domain-wide suggestion.
- * @param {Object} data - The suggestion data object.
- * @returns {boolean} True if this is a domain-wide suggestion.
- */
-function isDomainWideSuggestionData(data) {
-  return !!data?.isDomainWide;
 }
 
 /**
@@ -208,24 +206,37 @@ async function markDeployedUrlSuggestionsAsCovered(
     return;
   }
 
-  const suggestionsToCover = deployedAtEdgePathnames?.size > 0
+  // Mark per-URL suggestions whose pathnames are confirmed deployed at edge.
+  // Path and domain-wide suggestions have no url field — guard before calling toPathname.
+  const urlSuggestionsToCover = deployedAtEdgePathnames?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
-      return deployedAtEdgePathnames.has(toPathname(data?.url)) && !data?.edgeDeployed;
+      if (!data?.url) {
+        return false;
+      }
+      return deployedAtEdgePathnames.has(toPathname(data.url)) && !data?.edgeDeployed;
     })
     : [];
 
-  if (suggestionsToCover.length === 0) {
-    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
+  // Mark path suggestions as covered by domain-wide (they're redundant while /* is active)
+  const pathSuggestionsToCover = newSuggestions.filter((s) => {
+    const data = s.getData();
+    return isPathSuggestionData(data) && !data?.edgeDeployed && !data?.coveredByDomainWide;
+  });
+
+  const allToCover = [...urlSuggestionsToCover, ...pathSuggestionsToCover];
+
+  if (allToCover.length === 0) {
+    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions to cover. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
 
-  suggestionsToCover.forEach((s) => {
+  allToCover.forEach((s) => {
     s.setData({ ...s.getData(), coveredByDomainWide: domainWideSuggestionId });
   });
 
-  log.info(`${LOG_PREFIX} All domain deployed: marking ${suggestionsToCover.length} NEW suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
-  await SuggestionDA.saveMany(suggestionsToCover);
+  log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
+  await SuggestionDA.saveMany(allToCover);
 }
 
 /**
@@ -254,12 +265,11 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeP
 
 /**
  * Finds an existing domain-wide suggestion that should be preserved.
- * @param {Object} opportunity - The opportunity object.
+ * @param {Array} existingSuggestions - Pre-fetched suggestions array.
  * @param {Object} log - Logger instance.
- * @returns {Promise<Object|null>} The existing suggestion to preserve, or null if none found.
+ * @returns {Object|null} The existing suggestion to preserve, or null if none found.
  */
-async function findPreservableDomainWideSuggestion(opportunity, log) {
-  const existingSuggestions = await opportunity.getSuggestions();
+function findPreservableDomainWideSuggestion(existingSuggestions, log) {
   const domainWideSuggestions = existingSuggestions.filter(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
@@ -802,6 +812,37 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
+ * Builds a merge function for syncSuggestions that handles three suggestion types:
+ * - Path-type: preserves edgeDeployed and coveredByDomainWide from existing data
+ * - Domain-wide: replaces data entirely (preserves edgeDeployed if already set)
+ * - Individual: merges new mapped data onto existing data
+ *
+ * @param {Function} mapSuggestionDataFn - Maps raw suggestion to stored data shape
+ * @returns {Function} (existingData, newDataItem) → merged data object
+ */
+export function buildMergeDataFunction(mapSuggestionDataFn) {
+  return (existingData, newDataItem) => {
+    // Path-type: preserve edgeDeployed and coveredByDomainWide across re-scoring
+    if (newDataItem.key && isPathSuggestionData(newDataItem.data)) {
+      return mergePathSuggestionData(existingData, newDataItem.data);
+    }
+    // Domain-wide: replace data, but preserve edgeDeployed if already set
+    if (newDataItem.key) {
+      const edgeDeployed = existingData?.edgeDeployed;
+      return {
+        ...newDataItem.data,
+        ...(edgeDeployed !== undefined && { edgeDeployed }),
+      };
+    }
+    // Individual suggestions: merge with existing
+    return {
+      ...existingData,
+      ...mapSuggestionDataFn(newDataItem),
+    };
+  };
+}
+
+/**
  * Processes opportunities and suggestions for prerender audit results.
  * Persists suggestions in the database so they can later be enriched
  * with AI guidance from Mystique.
@@ -818,7 +859,8 @@ export async function processOpportunityAndSuggestions(
   context,
   isPaid,
 ) {
-  const { log } = context;
+  const { log, site } = context;
+  const pathSuggestionsEnabled = site?.getConfig?.()?.getHandlerConfig?.('prerender')?.pathSuggestionsEnabled ?? false;
 
   const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
@@ -861,7 +903,11 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
+  const suggestions = await opportunity.getSuggestions();
+  const existingPreservable = findPreservableDomainWideSuggestion(suggestions, log);
+  const domainWideDeployed = suggestions.some(
+    (s) => isDomainWideSuggestionData(s.getData()) && s.getData().edgeDeployed,
+  );
 
   let domainWideSuggestion = null;
   if (existingPreservable) {
@@ -873,6 +919,50 @@ export async function processOpportunityAndSuggestions(
       context,
     );
   }
+
+  // Fetch agentic hits map once here and pass it into resolvePathSuggestions so
+  // buildPathTypeSuggestions does not issue a redundant second Athena query.
+  let agenticHitsMap = new Map();
+  if (pathSuggestionsEnabled && !domainWideDeployed) {
+    agenticHitsMap = await getAgenticHitsMapFromAthena(site, context).catch((e) => {
+      log.warn(`${LOG_PREFIX} Failed to fetch agentic hits map: ${e.message}. baseUrl=${auditUrl}`);
+      return new Map();
+    });
+  }
+
+  const { preservablePaths, newPathSuggestions } = await resolvePathSuggestions({
+    pathSuggestionsEnabled,
+    domainWideDeployed,
+    preRenderSuggestions,
+    opportunity,
+    site,
+    context,
+    auditUrl,
+    siteId: auditData.siteId,
+    agenticHitsMap,
+  });
+
+  // Build key function that handles individual, path, and domain-wide suggestions.
+  // Must produce the same key for both new wrapper objects ({ key, data }) and existing
+  // DB suggestion data (s.getData()) so syncSuggestions can match them correctly.
+  const buildKey = (data) => {
+    // New wrapper objects carry an explicit key field (path and domain-wide suggestions)
+    if (data.key) {
+      return data.key;
+    }
+    // Existing path suggestion stored in DB — reconstruct the key from allowedRegexPatterns
+    // so it matches the wrapper key used when the suggestion was first created.
+    if (isPathSuggestionData(data)) {
+      const pattern = data.allowedRegexPatterns?.[0];
+      if (pattern) {
+        return `${pattern}|prerender`;
+      }
+    }
+    // Individual and domain-wide suggestions: delegate to buildSuggestionKey which handles
+    // isDomainWide flag and normalizes pathname+search for individual URLs (query-param
+    // variants like /page?filter=a vs /page?filter=b are treated as distinct pages).
+    return buildSuggestionKey(data);
+  };
 
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
@@ -898,15 +988,24 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = domainWideSuggestion
-    ? [...preRenderSuggestions, domainWideSuggestion]
-    : [...preRenderSuggestions];
+  // Convert preserved path entities to { key, data } shape so buildKey/mergeDataFunction work
+  const preservedPathsForSync = preservablePaths.map((s) => ({
+    key: `${s.getData().allowedRegexPatterns?.[0]}|prerender`,
+    data: s.getData(),
+  }));
+
+  const allSuggestions = [
+    ...preRenderSuggestions,
+    ...(domainWideSuggestion ? [domainWideSuggestion] : []),
+    ...preservedPathsForSync,
+    ...newPathSuggestions,
+  ];
 
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
     context,
-    buildKey: buildSuggestionKey,
+    buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
@@ -914,20 +1013,13 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
-    // Custom merge function: handle both types
-    mergeDataFunction: (existingData, newDataItem) => {
-      // Domain-wide suggestion: replace with new data
-      if (newDataItem.key) {
-        return { ...newDataItem.data };
-      }
-      /* c8 ignore next 5 - Individual suggestion merge logic, difficult to test in isolation */
-      // Individual suggestions: merge with existing
-      return {
-        ...existingData,
-        ...mapSuggestionData(newDataItem),
-      };
-    },
+    mergeDataFunction: buildMergeDataFunction(mapSuggestionData),
   });
+
+  // Mark per-URL suggestions covered by deployed path suggestions
+  if (pathSuggestionsEnabled) {
+    await markSuggestionsAsCoveredByPaths(opportunity, context);
+  }
 
   log.info(`${LOG_PREFIX}
     prerender_suggestions_sync_metrics:

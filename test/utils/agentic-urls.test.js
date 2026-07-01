@@ -27,6 +27,7 @@ describe('agentic-urls', () => {
   let getTopAgenticUrlsFromAthena;
   let getTopAgenticLiveUrlsFromAthena;
   let getPreferredBaseUrl;
+  let getAgenticHitsMapFromAthena;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -61,6 +62,7 @@ describe('agentic-urls', () => {
 
     mockWeeklyBreakdownQueries = {
       createTopUrlsQueryWithLimit: sandbox.stub().resolves('SELECT * FROM test'),
+      createTopUrlsWithHitsQuery: sandbox.stub().resolves('SELECT url, total_hits FROM test'),
     };
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
@@ -79,6 +81,8 @@ describe('agentic-urls', () => {
     getTopAgenticUrlsFromAthena = module.getTopAgenticUrlsFromAthena;
     getTopAgenticLiveUrlsFromAthena = module.getTopAgenticLiveUrlsFromAthena;
     getPreferredBaseUrl = module.getPreferredBaseUrl;
+    // eslint-disable-next-line prefer-destructuring
+    getAgenticHitsMapFromAthena = module.getAgenticHitsMapFromAthena;
   });
 
   afterEach(() => {
@@ -177,7 +181,7 @@ describe('agentic-urls', () => {
         'https://www.example.com/page3',
       ]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://www.example.com',
       );
       expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
@@ -200,7 +204,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site site-123',
+        'Agentic URLs - Skipping Top Agentic URLs because cdn-logs-analysis is disabled for site site-123',
       );
       expect(mockGetCdnAwsRuntime).to.not.have.been.called;
       expect(mockGetS3Config).to.not.have.been.called;
@@ -217,7 +221,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Skipping Athena query because no configuration was found for site site-123',
+        'Agentic URLs - Skipping Top Agentic URLs because no configuration was found for site site-123',
       );
       expect(mockGetCdnAwsRuntime).to.not.have.been.called;
       expect(mockGetS3Config).to.not.have.been.called;
@@ -235,7 +239,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no rows for Top Agentic URLs. baseUrl=https://www.example.com',
       );
     });
 
@@ -249,7 +253,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no rows for Top Agentic URLs. baseUrl=https://www.example.com',
       );
     });
 
@@ -263,7 +267,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://www.example.com',
+        'Agentic URLs - Top Agentic URLs failed: Athena connection failed. baseUrl=https://www.example.com',
       );
     });
 
@@ -450,7 +454,7 @@ describe('agentic-urls', () => {
       // Should use finalUrl as-is without double-prepending https://
       expect(result).to.deep.equal(['https://www.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://www.example.com',
       );
     });
 
@@ -540,7 +544,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal(['https://override.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
+        'Agentic URLs - Executing Top Agentic URLs... baseUrl=https://override.example.com',
       );
     });
 
@@ -625,6 +629,189 @@ describe('agentic-urls', () => {
       const result = await getTopAgenticLiveUrlsFromAthena(site, context);
 
       expect(result).to.deep.equal([]);
+    });
+  });
+
+  describe('getAgenticHitsMapFromAthena', () => {
+    it('returns a Map of pathname to total hits', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/products/shoes', total_hits: '120' },
+        { url: '/products/hats', total_hits: '80' },
+        { url: 'https://www.example.com/blog/post-1', total_hits: '50' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.get('/products/shoes')).to.equal(120);
+      expect(result.get('/products/hats')).to.equal(80);
+      expect(result.get('/blog/post-1')).to.equal(50);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Executing Agentic Hits Map/),
+      );
+    });
+
+    it('aggregates hits for duplicate pathnames across rows', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/products/shoes', total_hits: '100' },
+        { url: '/products/shoes', total_hits: '50' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result.get('/products/shoes')).to.equal(150);
+    });
+
+    it('handles absolute URL rows from Athena by extracting pathname', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: 'https://www.example.com/products/shoes/', total_hits: '60' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      // Trailing slash stripped
+      expect(result.get('/products/shoes')).to.equal(60);
+    });
+
+    it('skips rows with empty or non-string url', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '', total_hits: '10' },
+        { url: null, total_hits: '20' },
+        { url: '/valid', total_hits: '30' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result.size).to.equal(1);
+      expect(result.get('/valid')).to.equal(30);
+    });
+
+    it('returns empty Map when Athena returns no rows', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/no rows for Agentic Hits Map/),
+      );
+    });
+
+    it('returns empty Map when cdn-logs-analysis is disabled', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      });
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(0);
+    });
+
+    it('returns empty Map when Configuration.findLatest returns null', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+      context.dataAccess.Configuration.findLatest.resolves(null);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(0);
+    });
+
+    it('returns empty Map and logs warning when Athena query throws', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.rejects(new Error('Athena connection failed'));
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Agentic Hits Map failed/),
+      );
+    });
+
+    it('uses 4-week window when building the query', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([{ url: '/test', total_hits: '10' }]);
+
+      await getAgenticHitsMapFromAthena(site, context);
+
+      // generateReportingPeriods called twice (offsets -4 and -1)
+      expect(mockGenerateReportingPeriods.callCount).to.equal(2);
+      expect(mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery).to.have.been.calledOnce;
+      const callArgs = mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery.firstCall.args[0];
+      expect(callArgs).to.have.property('startDate');
+      expect(callArgs).to.have.property('endDate');
+    });
+
+    it('normalises root path rows to "/" key', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/', total_hits: '25' },
+        { url: 'https://www.example.com/', total_hits: '15' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result.get('/')).to.equal(40);
+    });
+
+    it('stores 0 hits when total_hits parses to zero or NaN (|| 0 branch)', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/zero-hits', total_hits: '0' },
+        { url: '/nan-hits', total_hits: 'not-a-number' },
+        { url: '/valid', total_hits: '42' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      // '0' parses to 0 → || 0 → 0; 'not-a-number' parses to NaN → || 0 → 0; both stored
+      expect(result.get('/zero-hits')).to.equal(0);
+      expect(result.get('/nan-hits')).to.equal(0);
+      expect(result.get('/valid')).to.equal(42);
+    });
+
+    it('gracefully skips rows where URL parsing throws', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: 'http://[invalid', total_hits: '100' },
+        { url: '/valid/path', total_hits: '30' },
+      ]);
+
+      const result = await getAgenticHitsMapFromAthena(site, context);
+
+      expect(result.get('/valid/path')).to.equal(30);
     });
   });
 });
