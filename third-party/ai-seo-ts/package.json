@@ -1,0 +1,1 @@
+{"name":"@quazar/ai-seo-ts","version":"v0.101.3-gen2.7.0","description":"Quazar-generated Protobuf types for ai-seo-ts api, version v0.101.3-gen2.7.0","dependencies":{"@bufbuild/protobuf":"2.7.0"},"type":"module"}
