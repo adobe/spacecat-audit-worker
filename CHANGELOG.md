@@ -1,3 +1,10 @@
+# [1.494.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.4...v1.494.0) (2026-07-02)
+
+
+### Features
+
+* **prerender:** filter URLs by site scope at audit([#2724](https://github.com/adobe/spacecat-audit-worker/issues/2724)) ([b423193](https://github.com/adobe/spacecat-audit-worker/commit/b4231939066179ba7f50e05a9796b2f903182e12))
+
 ## [1.493.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.3...v1.493.4) (2026-07-02)
 
 
