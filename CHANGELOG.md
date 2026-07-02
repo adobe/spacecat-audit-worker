@@ -1,3 +1,31 @@
+## [1.493.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.1...v1.493.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2743](https://github.com/adobe/spacecat-audit-worker/issues/2743)) ([1b13e9b](https://github.com/adobe/spacecat-audit-worker/commit/1b13e9bc5e08221d6a77aed224357e569a2496ad))
+
+## [1.493.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.0...v1.493.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2740](https://github.com/adobe/spacecat-audit-worker/issues/2740)) ([db1803f](https://github.com/adobe/spacecat-audit-worker/commit/db1803f29380ea9b7f50d02316c83058dffeb047))
+
+# [1.493.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.2...v1.493.0) (2026-06-30)
+
+
+### Features
+
+* **summarization:** pass generatePrompts to Mystique for Impact Engine ([#2732](https://github.com/adobe/spacecat-audit-worker/issues/2732)) ([8f94fa8](https://github.com/adobe/spacecat-audit-worker/commit/8f94fa83672adc080fa5e97df119b1c887ceb177))
+
+## [1.492.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.1...v1.492.2) (2026-06-27)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2739](https://github.com/adobe/spacecat-audit-worker/issues/2739)) ([c4b501b](https://github.com/adobe/spacecat-audit-worker/commit/c4b501bb90b6754d4ddc7181c8feed7f662f1451))
+
 ## [1.492.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.492.0...v1.492.1) (2026-06-26)
 
 
