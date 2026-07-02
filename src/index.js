@@ -91,6 +91,7 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
 import toc from './toc/handler.js';
+import tocGuidance from './toc/guidance-handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
@@ -198,6 +199,7 @@ const HANDLERS = {
   hreflang,
   headings,
   toc,
+  'guidance:table-of-contents': tocGuidance,
   prerender,
   'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
