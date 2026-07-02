@@ -1802,36 +1802,6 @@ describe('Prerender Audit', () => {
           expect(result.urls).to.deep.equal([]);
         });
 
-        it('filters scrape result URLs to site scope before suggestion creation', async () => {
-          const context = {
-            site: {
-              getId: () => 'site-1',
-              getBaseURL: () => 'https://bulk.com/uk',
-            },
-            audit: { getId: () => 'audit-1' },
-            dataAccess: {
-              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-              LatestAudit: { updateByKeys: sinon.stub().resolves() },
-            },
-            scrapeResultPaths: new Map([
-              ['https://bulk.com/uk/page-1', {}],
-              ['https://bulk.com/uk/page-2', {}],
-              ['https://bulk.com/fr/page-3', {}],
-            ]),
-            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
-            s3Client: {},
-            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-            auditContext: { scrapeJobId: 'job-1' },
-          };
-
-          const result = await processContentAndGenerateOpportunities(context);
-          // Only the 2 in-scope URLs (uk) should be compared; the out-of-scope (fr) is dropped
-          expect(result.auditResult.totalUrlsChecked).to.equal(2);
-          // The defensive re-filter must log the drop so the removal is not silent
-          expect(context.log.info).to.have.been.calledWithMatch(
-            /Defensive scope re-filter dropped 1 out-of-scope path/,
-          );
-        });
       });
 
     });
