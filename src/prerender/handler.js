@@ -57,30 +57,6 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
-/**
- * Applies the site-scope filter and surfaces observability around it: returns the number of
- * URLs removed by scope filtering, and emits a warning when a non-empty candidate set is reduced
- * to empty. The empty-set case is the symptom of a hostname mismatch between the rebase target
- * (preferredBase) and the scope base (siteBaseUrl) - URLs are rebased onto preferredBase's host
- * but scope-checked against siteBaseUrl's host, so divergent hosts silently drop every URL and
- * produce submittedUrls=0 with no other signal.
- *
- * @param {string[]} urls - candidate URLs (already rebased onto preferredBase)
- * @param {string} siteBaseUrl - scope base (site.getBaseURL())
- * @param {string} preferredBase - rebase target the URLs carry
- * @param {string} siteId - for log correlation
- * @param {Object} log - logger
- * @returns {{ scoped: string[], scopeFilteredCount: number }}
- */
-function applySiteScopeFilter(urls, siteBaseUrl, preferredBase, siteId, log) {
-  const scoped = filterBySiteScope(urls, siteBaseUrl);
-  const scopeFilteredCount = urls.length - scoped.length;
-  if (urls.length > 0 && scoped.length === 0) {
-    log.warn(`${LOG_PREFIX} site-scope filter removed all ${urls.length} candidate URLs - possible hostname mismatch between rebase target and site scope. preferredBase=${preferredBase}, siteBaseUrl=${siteBaseUrl}, siteId=${siteId}`);
-  }
-  return { scoped, scopeFilteredCount };
-}
-
 const getDomainWidePathPattern = (baseUrl) => {
   const pathname = toPathname(baseUrl);
   return pathname.length > 1 ? `${pathname}/*` : '/*';
@@ -563,6 +539,7 @@ export async function submitForScraping(context) {
   const siteId = site.getId();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
   const preferredBase = getPreferredBaseUrl(site, context);
+  const siteBaseUrl = site.getBaseURL();
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
@@ -570,13 +547,8 @@ export async function submitForScraping(context) {
       rebasedCsvUrls,
       { includeQueryParams: true },
     );
-    const { scoped: explicitUrls, scopeFilteredCount } = applySiteScopeFilter(
-      mergedCsvUrls,
-      site.getBaseURL(),
-      preferredBase,
-      siteId,
-      log,
-    );
+    const explicitUrls = filterBySiteScope(mergedCsvUrls, siteBaseUrl);
+    const scopeFilteredCount = mergedCsvUrls.length - explicitUrls.length;
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -649,15 +621,8 @@ export async function submitForScraping(context) {
       { includeQueryParams: true },
     );
     // Single site-scope filter on the merged candidate set (scoped here, not per-source).
-    const slackScoped = applySiteScopeFilter(
-      crossSlackDeduped,
-      site.getBaseURL(),
-      preferredBase,
-      siteId,
-      log,
-    );
-    finalUrls = slackScoped.scoped;
-    scopeFilteredCount = slackScoped.scopeFilteredCount;
+    finalUrls = filterBySiteScope(crossSlackDeduped, siteBaseUrl);
+    scopeFilteredCount = crossSlackDeduped.length - finalUrls.length;
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
@@ -705,15 +670,9 @@ export async function submitForScraping(context) {
     );
     // Single site-scope filter on the merged candidate set, applied before the daily-batch
     // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
-    const nonSlackScoped = applySiteScopeFilter(
-      crossDeduped,
-      site.getBaseURL(),
-      preferredBase,
-      siteId,
-      log,
-    );
-    scopeFilteredCount = nonSlackScoped.scopeFilteredCount;
-    const batchedUrls = nonSlackScoped.scoped.slice(0, DAILY_BATCH_SIZE);
+    const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
+    scopeFilteredCount = crossDeduped.length - scopedUrls.length;
+    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
