@@ -121,7 +121,7 @@ async function runAudit(sandbox, existingSuggestions, auditUrl = BASE_URL) {
   return { addSuggestionsStub, context };
 }
 
-describe('Prerender domain-wide suggestion deduplication (behavior)', () => {
+describe('Prerender domain-wide suggestion deduplication (behaviour)', () => {
   const sandbox = sinon.createSandbox();
 
   afterEach(() => sandbox.restore());
