@@ -72,7 +72,6 @@ import triggerA11yCodefix from './accessibility/trigger-codefix-handler.js';
 import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
-import cdnReportsBulkPublish from './cdn-reports-bulk-publish/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
@@ -123,6 +122,7 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import offsiteBrandPresenceDrsStatus from './offsite-brand-presence/drs-status-handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
@@ -184,7 +184,6 @@ const HANDLERS = {
   preflight,
   'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
-  'cdn-reports-bulk-publish': cdnReportsBulkPublish,
   'analytics-report': analyticsReport,
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
@@ -230,6 +229,10 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  // Utility handler (not an AuditBuilder audit): polls DRS job status and posts a
+  // Slack summary. It produces no audit result, so it intentionally skips the audit
+  // framework, like the drs:prompt_generation_base_url handler above.
+  'offsite-brand-presence-drs-status': offsiteBrandPresenceDrsStatus,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   'rum-config-refresh': rumConfigRefresh,

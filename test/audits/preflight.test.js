@@ -23,6 +23,7 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
+  PREFLIGHT_META_TAGS_WAIT_MS,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
@@ -536,6 +537,7 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication: true,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
     });
@@ -568,8 +570,26 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication,
           screenshotTypes: [],
+          waitTimeoutForMetaTags: PREFLIGHT_META_TAGS_WAIT_MS,
         },
       });
+    });
+
+    it('sets waitTimeoutForMetaTags so slow-rendering SPA pages are captured after hydration', async () => {
+      const context = {
+        site: { getId: () => 'site-123', getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE },
+        job: {
+          getMetadata: () => ({
+            payload: {
+              step: PREFLIGHT_STEP_IDENTIFY,
+              urls: ['https://main--example--page.aem.page'],
+            },
+          }),
+        },
+      };
+      const result = await scrapePages(context);
+      expect(result.options.waitTimeoutForMetaTags).to.equal(PREFLIGHT_META_TAGS_WAIT_MS);
+      expect(PREFLIGHT_META_TAGS_WAIT_MS).to.equal(5000);
     });
 
     it('includes promiseToken in options if context.promiseToken exists', async () => {
@@ -4849,63 +4869,6 @@ describe('Preflight Audit', () => {
         urls: ['https://main--example--page.aem.page/page1'],
         enableAuthentication: false,
       });
-      expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
-      expect(jobEntity.save).to.have.been.called;
-    });
-
-    it('narrows enabled checks to intersection with payload.checks when provided', async () => {
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      const jobWithChecks = {
-        getMetadata: () => ({
-          payload: {
-            step: PREFLIGHT_STEP_IDENTIFY,
-            urls: ['https://main--example--page.aem.page/page1'],
-            enableAuthentication: false,
-            checks: [AUDIT_BODY_SIZE, 'h1-count'],
-          },
-        }),
-        getStatus: () => 'IN_PROGRESS',
-        getId: () => 'job-123',
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
-        setResult: sinon.stub(),
-        setEndedAt: sinon.stub(),
-        setError: sinon.stub(),
-        save: sinon.stub().resolves(),
-      };
-
-      const jobEntity = {
-        getMetadata: sinon.stub().returns(jobWithChecks.getMetadata()),
-        setMetadata: sinon.stub(),
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
-        setResult: sinon.stub(),
-        setEndedAt: sinon.stub(),
-        setError: sinon.stub(),
-        save: sinon.stub().resolves(),
-      };
-
-      const context = new MockContextBuilder()
-        .withSandbox(sinon.createSandbox())
-        .withOverrides({
-          job: jobWithChecks,
-          site,
-          s3Client,
-          func: { version: 'test' },
-        })
-        .build();
-
-      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
-      context.dataAccess.Configuration.findLatest.resolves(configuration);
-      context.dataAccess.AsyncJob.findById = sinon.stub().resolves(jobEntity);
-
-      await preflightAuditFunction(context);
-
-      expect(jobEntity.setMetadata).to.have.been.calledOnce;
-      const metadataArg = jobEntity.setMetadata.getCall(0).args[0];
       expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
       expect(jobEntity.save).to.have.been.called;
     });

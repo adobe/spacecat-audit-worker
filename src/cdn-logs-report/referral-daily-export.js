@@ -15,7 +15,7 @@ import { createHash } from 'crypto';
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
-import { loadSql } from './utils/report-utils.js';
+import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
@@ -142,7 +142,6 @@ export const testHelpers = {
 
 export async function runDailyReferralExport({
   athenaClient,
-  s3Client,
   s3Config,
   site,
   context,
@@ -215,6 +214,8 @@ export async function runDailyReferralExport({
   }
 
   const messageGroupId = `referral_traffic_cdn:${siteId}`;
+  // Importer bucket is us-east-1, not the site's CDN region; reusing the CDN client 301s.
+  const s3Client = getImporterS3Client();
 
   try {
     await s3Client.send(new PutObjectCommand({

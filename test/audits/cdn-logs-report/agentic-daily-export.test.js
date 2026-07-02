@@ -55,7 +55,7 @@ describe('agentic daily export', () => {
           url_path: '/docs/page',
           hits: 12,
           avg_ttfb_ms: 123.45,
-          dimensions: { citability_score: 82 },
+          dimensions: {},
           metrics: {},
           updated_by: 'audit-worker:agentic-daily-export',
         }],
@@ -71,9 +71,14 @@ describe('agentic daily export', () => {
       }),
     };
 
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE IF NOT EXISTS test_db'),
+        getImporterS3Client: () => s3Client,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: queryBuilder,
@@ -87,9 +92,6 @@ describe('agentic daily export', () => {
     const athenaClient = {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([{ raw: true }]),
-    };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
     };
     const context = {
       env: {
@@ -118,7 +120,6 @@ describe('agentic daily export', () => {
 
     const result = await module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'spacecat-dev-cdn-logs-aggregates-us-east-1',
         databaseName: 'cdn_logs_example',
@@ -303,6 +304,7 @@ describe('agentic daily export', () => {
 
     expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
     expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
+    expect(module.testHelpers.escapeCsvValue('a,"b"')).to.equal('"a,""b"""');
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {
@@ -379,9 +381,11 @@ describe('agentic daily export', () => {
   });
 
   it('fails before Athena or S3 work when the analytics queue is missing', async () => {
+    const getImporterS3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+        getImporterS3Client: getImporterS3ClientStub,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: {
@@ -400,13 +404,9 @@ describe('agentic daily export', () => {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([]),
     };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
 
     await expect(module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -445,13 +445,18 @@ describe('agentic daily export', () => {
 
     expect(athenaClient.execute).to.not.have.been.called;
     expect(athenaClient.query).to.not.have.been.called;
-    expect(s3Client.send).to.not.have.been.called;
+    expect(getImporterS3ClientStub).to.not.have.been.called;
   });
 
   it('cleans up uploaded files when analytics dispatch fails', async () => {
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+        getImporterS3Client: () => s3Client,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: {
@@ -490,16 +495,11 @@ describe('agentic daily export', () => {
       },
     });
 
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
-
     await expect(module.runDailyAgenticExport({
       athenaClient: {
         execute: sandbox.stub().resolves(),
         query: sandbox.stub().resolves([]),
       },
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -540,9 +540,17 @@ describe('agentic daily export', () => {
   });
 
   it('cleans up uploaded files when an S3 upload fails', async () => {
+    const s3Client = {
+      send: sandbox.stub(),
+    };
+    s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
+    s3Client.send.onCall(1).resolves({});
+    s3Client.send.onCall(2).resolves({});
+
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+        getImporterS3Client: () => s3Client,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: {
@@ -581,19 +589,11 @@ describe('agentic daily export', () => {
       },
     });
 
-    const s3Client = {
-      send: sandbox.stub(),
-    };
-    s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
-    s3Client.send.onCall(1).resolves({});
-    s3Client.send.onCall(2).resolves({});
-
     await expect(module.runDailyAgenticExport({
       athenaClient: {
         execute: sandbox.stub().resolves(),
         query: sandbox.stub().resolves([]),
       },
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -634,9 +634,11 @@ describe('agentic daily export', () => {
   });
 
   it('propagates Athena database setup failures without touching S3', async () => {
+    const getImporterS3ClientStub = sandbox.stub().returns({ send: sandbox.stub().resolves({}) });
     const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
         loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+        getImporterS3Client: getImporterS3ClientStub,
       },
       '../../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: {
@@ -655,13 +657,9 @@ describe('agentic daily export', () => {
       execute: sandbox.stub().rejects(new Error('Athena unavailable')),
       query: sandbox.stub().resolves([]),
     };
-    const s3Client = {
-      send: sandbox.stub().resolves({}),
-    };
 
     await expect(module.runDailyAgenticExport({
       athenaClient,
-      s3Client,
       s3Config: {
         bucket: 'bucket',
         databaseName: 'db',
@@ -697,6 +695,6 @@ describe('agentic daily export', () => {
     })).to.be.rejectedWith('Athena unavailable');
 
     expect(athenaClient.query).to.not.have.been.called;
-    expect(s3Client.send).to.not.have.been.called;
+    expect(getImporterS3ClientStub).to.not.have.been.called;
   });
 });

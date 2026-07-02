@@ -19,7 +19,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  compareConfigs, areCategoryNamesDifferent,
+  compareConfigs,
 } from './utils.js';
 import {
   isBrandalfEnabled,
@@ -220,28 +220,6 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const siteId = site.getSiteId();
-
-  log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
-
-  // first send with categoriesUpdated flag for last week
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: 'cdn-logs-report',
-    siteId,
-    auditContext: {
-      weekOffset: -1,
-      categoriesUpdated: true,
-      refreshAgenticDailyExport: true,
-    },
-  });
-
-  log.info('Successfully triggered cdn-logs-report audit');
-}
-
 async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
@@ -318,7 +296,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       log,
     });
     if (orgId) {
-      const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
+      const isV2 = onboardingMode !== 'v1'
+        && await isBrandalfEnabled(orgId, context.dataAccess?.services?.postgrestClient, log);
       if (isV2) {
         organizationId = orgId;
         const brand = await findActiveBrandForSite(context, { orgId, siteId });
@@ -399,8 +378,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
-  const hasCdnLogsChanges = changes.categories
-    && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
   if (changes.cdnBucketConfig) {
     try {
@@ -428,12 +405,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     } catch (error) {
       log.error(`Error processing CDN bucket configuration changes for siteId: ${siteId}`, error);
     }
-  }
-
-  if (hasCdnLogsChanges) {
-    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-    await triggerCdnLogsReport(context, site);
-    triggeredSteps.push('cdn-logs-report');
   }
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;

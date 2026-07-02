@@ -30,7 +30,9 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('YouTube Analysis Handler', () => {
+describe('YouTube Analysis Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -39,6 +41,7 @@ describe('YouTube Analysis Handler', () => {
   let mockComputeTopicsFromBrandPresence;
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
+  let mockPostMessageOptional;
   let youtubeAnalysisHandler;
   let StoreEmptyError;
 
@@ -107,6 +110,8 @@ describe('YouTube Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockDrsClient),
     };
 
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+
     youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
       '@adobe/spacecat-shared-drs-client': {
         default: mockDrsClientClass,
@@ -128,6 +133,9 @@ describe('YouTube Analysis Handler', () => {
       },
       '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
+      },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     });
 
@@ -168,7 +176,11 @@ describe('YouTube Analysis Handler', () => {
             findById: sandbox.stub().resolves(mockSite),
           },
           Configuration: {
-            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
+            findLatest: sandbox.stub().resolves({
+              isHandlerEnabledForSite: sandbox.stub().returns(true),
+              getHandlers: sandbox.stub().returns({}),
+              getQueues: sandbox.stub().returns({ audits: 'audits-queue-url' }),
+            }),
           },
         },
       })
@@ -249,14 +261,35 @@ describe('YouTube Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[YouTube] Retrieved 0 guidelines');
     });
 
-    it('should return error when DRS has no available content', async () => {
+    it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
       mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
 
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence');
+      expect(msg.siteId).to.equal(siteId);
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com' });
+    });
+
+    it('returns error without re-scraping when scrape was already requested', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await youtubeAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { drsScrapeRequested: true },
+      );
+
+      expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('no content');
-      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available after scraping/);
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -384,6 +417,12 @@ describe('YouTube Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: '1700000000.123456' },
+      );
     });
 
     it('should not include slackContext in auditResult when not provided', async () => {
@@ -391,6 +430,13 @@ describe('YouTube Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+      // postMessageOptional is still invoked but with no channel/thread, so it no-ops.
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        undefined,
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: undefined },
+      );
     });
   });
 

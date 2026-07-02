@@ -13,7 +13,6 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { promises as fs } from 'fs';
 import { weeklyBreakdownQueries } from '../../../src/cdn-logs-report/utils/query-builder.js';
 
 use(sinonChai);
@@ -21,68 +20,10 @@ use(sinonChai);
 describe('CDN Logs Query Builder (Referral)', () => {
   const sandbox = sinon.createSandbox();
 
-  const { createReferralReportQuery, createReferralDailyReportQuery } = weeklyBreakdownQueries;
-  const options = {
-    periods: {
-      weeks: [
-        {
-          startDate: new Date('2025-08-18T00:00:00.000Z'),
-          endDate: new Date('2025-08-24T23:59:59.999Z'),
-          weekNumber: 34,
-          year: 2025,
-          weekLabel: 'Week 34',
-        },
-      ],
-      columns: [
-        'Week 34',
-      ],
-    },
-    databaseName: 'cdn_logs_database',
-    tableName: 'aggregated_referral_logs',
-    site: {
-      getConfig: () => ({
-        getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        getLlmoCdnlogsFilter: () => [
-          {
-            type: 'exclude',
-            value: [
-              'preprod',
-              'stag',
-              'catalog',
-              'test',
-            ],
-            key: 'host',
-          }, {
-            value: [
-              'www.another.com',
-            ],
-            key: 'host',
-          },
-        ],
-      }),
-    },
-  };
+  const { createReferralDailyReportQuery } = weeklyBreakdownQueries;
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  it('creates agentic report query with ChatGPT and Perplexity filtering', async () => {
-    const expectedQuery = await fs.readFile('./test/audits/cdn-logs-report/queries/referral-traffic-report.sql', { encoding: 'utf8' });
-
-    const query = await createReferralReportQuery(options);
-
-    expect(query).to.equal(expectedQuery);
-  });
-
-  it('handles llmo cdn logs site filters correctly', async () => {
-    options.site.getConfig = () => ({
-      getLlmoCdnlogsFilter: () => ([{ value: ['test'], key: 'url' }]
-      ),
-    });
-
-    const query = await createReferralReportQuery(options);
-    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
   });
 
   it('creates referral daily report query with single-day partition filter', async () => {

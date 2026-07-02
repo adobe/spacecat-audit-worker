@@ -14,6 +14,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
+import sitemapAudit from '../../src/sitemap/handler.js';
 import {
   sitemapAuditRunner,
   opportunityAndSuggestions,
@@ -22,6 +23,11 @@ import {
   getPagesWithIssues,
   getSitemapsWithIssues,
   mergeSitemapSuggestionData,
+  buildSitemapSuggestionKey,
+  buildSitemapErrorSuggestionKey,
+  buildErrorSuggestionFromReason,
+  buildErrorSuggestionsFromReasons,
+  normalizeString,
 } from '../../src/sitemap/handler.js';
 import {
   ERROR_CODES,
@@ -46,10 +52,12 @@ import {
   formatUrlProbeErrorDetail,
   pathnameKey,
   HTTP_AND_HTTPS_PROTOCOLS,
-  suggestedUrlMatchesCanonicalUrlWithoutSuffix,
+  secondUrlIsBetterChoiceThanFirstUrl,
   extractCanonicalHrefFromHtml,
-  httpsDocumentUrlForCanonicalRefinement,
-  fetchHtmlForCanonicalRefinement,
+  better,
+  readHtmlBody,
+  refineSuggestedUrl,
+  refineResponsePayload,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -63,6 +71,11 @@ const sandbox = sinon.createSandbox();
 const HTML_PROBE_EMPTY = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body></body></html>';
 
 describe('Sitemap Audit', () => {
+  it('exports default runner audit with post-processors', () => {
+    expect(sitemapAudit).to.exist;
+    expect(sitemapAudit.postProcessors).to.be.an('array').with.lengthOf(2);
+  });
+
   let context;
   const url = 'https://some-domain.adobe';
   const { protocol, domain } = extractDomainAndProtocol(url);
@@ -129,8 +142,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -161,8 +174,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -201,8 +214,8 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+            sitemapErrors: [],
           },
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -228,12 +241,12 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
-          success: false,
+          url,
         },
         fullAuditRef: url,
         url,
@@ -255,12 +268,12 @@ describe('Sitemap Audit', () => {
         auditResult: {
           reasons: [
             {
-              error: ERROR_CODES.FETCH_ERROR,
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
               value:
                 'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
             },
           ],
-          success: false,
+          url,
         },
         fullAuditRef: url,
         url,
@@ -323,7 +336,10 @@ describe('Sitemap Audit', () => {
 
       const { paths, reasons } = await checkRobotsForSitemap(protocol, domain);
       expect(paths).to.eql([]);
-      expect(reasons).to.deep.equal([ERROR_CODES.NO_SITEMAP_IN_ROBOTS]);
+      expect(reasons).to.deep.equal([{
+        value: `${protocol}://${domain}/robots.txt`,
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+      }]);
     });
 
     it('should return error when unable to fetch robots.txt', async () => {
@@ -400,17 +416,24 @@ describe('Sitemap Audit', () => {
     it('should return SITEMAP_NOT_FOUND when the sitemap does not exist', async () => {
       nock(url).get('/sitemap.xml').reply(404);
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_NOT_FOUND);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
 
-    it('should return FETCH_ERROR when there is a network error', async () => {
+    it('should return CANNOT_READ_SITEMAP when there is a network error', async () => {
       nock(url).get('/sitemap.xml').replyWithError('Network error');
 
-      const resp = await checkSitemap();
+      const resp = await checkSitemap(`${url}/sitemap.xml`);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.FETCH_ERROR);
+      expect(resp.reasons).to.deep.equal([{
+        value: `${url}/sitemap.xml`,
+        error: ERROR_CODES.CANNOT_READ_SITEMAP,
+      }]);
     });
 
     it('checkSitemap returns INVALID_SITEMAP_FORMAT when sitemap is not valid xml', async () => {
@@ -418,17 +441,25 @@ describe('Sitemap Audit', () => {
         .get('/sitemap.xml')
         .reply(200, 'Not valid XML', { 'content-type': 'invalid' });
 
-      const resp = await checkSitemap(`${url}/sitemap.xml`);
+      const sitemapUrl = `${url}/sitemap.xml`;
+      const resp = await checkSitemap(sitemapUrl);
       expect(resp.existsAndIsValid).to.equal(false);
-      expect(resp.reasons).to.include(ERROR_CODES.SITEMAP_FORMAT);
+      expect(resp.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.INVALID_SITEMAP_FORMAT,
+      }]);
     });
 
     it('checkSitemap returns invalid result for non-existing sitemap', async () => {
       nock(url).get('/non-existent-sitemap.xml').reply(404);
 
-      const result = await checkSitemap(`${url}/non-existent-sitemap.xml`);
+      const sitemapUrl = `${url}/non-existent-sitemap.xml`;
+      const result = await checkSitemap(sitemapUrl);
       expect(result.existsAndIsValid).to.equal(false);
-      expect(result.reasons).to.deep.equal([ERROR_CODES.SITEMAP_NOT_FOUND]);
+      expect(result.reasons).to.deep.equal([{
+        value: sitemapUrl,
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+      }]);
     });
   });
 
@@ -445,9 +476,10 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return all pages from sitemap that have the same base url variant', async () => {
@@ -457,12 +489,13 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${protocol}://www.${domain}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${protocol}://www.${domain}/sitemap.xml`]: [
           `${url}/foo`,
           `${url}/bar`,
         ],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return all pages from sitemap that include www', async () => {
@@ -470,12 +503,13 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [
           `${protocol}://www.${domain}/foo`,
           `${protocol}://www.${domain}/bar`,
         ],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should return nothing when sitemap does not contain urls', async () => {
@@ -493,7 +527,8 @@ describe('Sitemap Audit', () => {
       const resp = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(resp).to.deep.equal({});
+      expect(resp.pagesBySitemap).to.deep.equal({});
+      expect(resp.sitemapErrors).to.deep.equal([]);
     });
 
     it('should skip already processed sitemap URLs', async () => {
@@ -502,9 +537,10 @@ describe('Sitemap Audit', () => {
 
       // Pass the same sitemap URL twice
       const result = await getBaseUrlPagesFromSitemaps(url, [sitemapUrl, sitemapUrl]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [sitemapUrl]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
 
     it('should handle URLs with whitespace in sitemap XML (ex: crucial.com)', async () => {
@@ -519,9 +555,56 @@ describe('Sitemap Audit', () => {
       const result = await getBaseUrlPagesFromSitemaps(url, [
         `${url}/sitemap.xml`,
       ]);
-      expect(result).to.deep.equal({
+      expect(result.pagesBySitemap).to.deep.equal({
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
+    });
+
+    it('should record per-sitemap errors while still extracting pages from other sitemaps', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+      const validSitemapUrl = `${url}/sitemap.xml`;
+
+      nock(url).get('/sitemap-missing.xml').reply(404);
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemapMoreUrls);
+
+      const result = await getBaseUrlPagesFromSitemaps(url, [
+        brokenSitemapUrl,
+        validSitemapUrl,
+      ]);
+
+      expect(result.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+      expect(result.pagesBySitemap).to.deep.equal({
+        [validSitemapUrl]: [`${url}/foo`, `${url}/bar`],
+      });
+    });
+
+    it('should warn and skip valid off-domain sitemap URLs', async () => {
+      const offDomainSitemapUrl = 'https://cdn.other-domain.test/sitemap.xml';
+      const mockLog = {
+        info: sandbox.spy(),
+        debug: sandbox.spy(),
+        warn: sandbox.spy(),
+      };
+
+      nock('https://cdn.other-domain.test')
+        .get('/sitemap.xml')
+        .reply(200, sampleSitemapMoreUrls);
+
+      const result = await getBaseUrlPagesFromSitemaps(
+        url,
+        [offDomainSitemapUrl],
+        mockLog,
+      );
+
+      expect(result.pagesBySitemap).to.deep.equal({});
+      expect(result.sitemapErrors).to.deep.equal([]);
+      expect(mockLog.warn).to.have.been.calledOnceWith(
+        `Sitemap: off-domain sitemap — skipping valid sitemap URL outside audit scope for ${url}: ${offDomainSitemapUrl}`,
+      );
     });
 
     it('should add delay between batches when processing multiple sitemaps', async () => {
@@ -550,21 +633,22 @@ describe('Sitemap Audit', () => {
         `${url}/sitemap_index.xml`,
       ]);
 
-      expect(Object.keys(result)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
+      expect(Object.keys(result.pagesBySitemap)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
       sitemapIndexUrls.forEach((sitemapUrl, i) => {
-        expect(result[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
+        expect(result.pagesBySitemap[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
       });
+      expect(result.sitemapErrors).to.deep.equal([]);
     });
   });
 
   describe('findSitemap', () => {
     it('should return error when URL is invalid', async () => {
       const result = await findSitemap('not a valid url');
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         {
-          error: ERROR_CODES.INVALID_URL,
-          value: 'not a valid url',
+          error: ERROR_CODES.GENERAL_ERROR,
+          value: 'Invalid URL provided: not a valid url',
         },
       ]);
     });
@@ -577,7 +661,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
 
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         {
           error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
@@ -587,14 +671,15 @@ describe('Sitemap Audit', () => {
       expect(result.paths).to.be.undefined;
     });
 
-    it('should return success when sitemap is found in robots.txt', async () => {
+    it('should return checked result when sitemap is found in robots.txt', async () => {
       nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
       nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
       nock(url).head('/foo').reply(200);
       nock(url).head('/bar').reply(200);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
     it('should fail when sitemap contents have a different URL than the base domain (regardless of www. or not)', async () => {
@@ -611,14 +696,16 @@ describe('Sitemap Audit', () => {
         );
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should fail when robots points to an empty string instead of an actual URI', async () => {
       nock(url).get('/robots.txt').reply(200, 'Sitemap: ');
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should fail when sitemap is empty (', async () => {
@@ -628,10 +715,11 @@ describe('Sitemap Audit', () => {
         .reply(200, () => undefined);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
-    it('should return success when sitemap.xml is found', async () => {
+    it('should return checked result when sitemap.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(200);
       nock(url).head('/sitemap_index.xml').reply(404);
@@ -662,10 +750,11 @@ describe('Sitemap Audit', () => {
         info: () => {},
         debug: () => {},
       });
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
-    it('should return success when sitemap_index.xml is found', async () => {
+    it('should return checked result when sitemap_index.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(404);
       nock(url).head('/sitemap_index.xml').reply(200);
@@ -678,10 +767,11 @@ describe('Sitemap Audit', () => {
       nock(url).head('/cux').reply(200);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
-    it('should return success when sitemap paths have www', async () => {
+    it('should return checked result when sitemap paths have www', async () => {
       nock(`${protocol}://www.${domain}`)
         .get('/robots.txt')
         .reply(200, `Sitemap: ${url}/sitemap.xml`);
@@ -690,7 +780,8 @@ describe('Sitemap Audit', () => {
       nock(`${protocol}://www.${domain}`).head('/bar').reply(200);
 
       const result = await findSitemap(`${protocol}://www.${domain}`);
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
     });
 
     it('should return error when no sitemap is found', async () => {
@@ -699,7 +790,8 @@ describe('Sitemap Audit', () => {
       nock(url).head('/sitemap_index.xml').reply(404);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_SITEMAP_IN_ROBOTS);
     });
 
     it('should return error when no valid paths where extracted from sitemap', async () => {
@@ -713,7 +805,8 @@ describe('Sitemap Audit', () => {
       nock(url).get('/sitemap.xml').reply(200, sitemapInvalidPaths);
 
       const result = await findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
     it('should handle missing details properties with fallback defaults', async () => {
@@ -773,7 +866,7 @@ describe('Sitemap Audit', () => {
       });
 
       const result = await mockedSitemapHandler.findSitemap(url);
-      expect(result.success).to.equal(false);
+      expect(result).to.not.have.property('success');
       expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
 
@@ -802,13 +895,90 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(subpathUrl);
 
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
       expect(result.reasons).to.deep.equal([
         { value: 'Sitemaps found and checked.' },
       ]);
 
       // Verify the audit result details
       expect(result.details.issues).to.deep.equal({});
+      expect(result.details.sitemapErrors).to.deep.equal([]);
+    });
+
+    it('should record per-sitemap errors and page issues when one sitemap fails and another is probed', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+      const validSitemapUrl = `${url}/sitemap.xml`;
+
+      nock(url)
+        .get('/robots.txt')
+        .reply(
+          200,
+          `Sitemap: ${brokenSitemapUrl}\nSitemap: ${validSitemapUrl}`,
+        );
+      nock(url).get('/sitemap-missing.xml').reply(404);
+      nock(url).get('/sitemap.xml').reply(200, sampleSitemap);
+      nock(url).head('/foo').reply(404);
+      nock(url).head('/bar').reply(200);
+
+      const auditResult = await findSitemap(url);
+      expect(auditResult).to.not.have.property('success');
+      expect(auditResult.reasons).to.deep.equal([{ value: 'Sitemaps found and checked.' }]);
+      expect(auditResult.details.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+      expect(auditResult.details.issues[validSitemapUrl]).to.deep.equal([{
+        url: `${url}/foo`,
+        statusCode: 404,
+        urlsSuggested: '',
+      }]);
+
+      const withSuggestions = generateSuggestions(url, { auditResult }, context);
+      expect(withSuggestions.suggestions).to.have.lengthOf(2);
+      expect(withSuggestions.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: brokenSitemapUrl,
+      });
+      expect(withSuggestions.suggestions[1]).to.deep.include({
+        type: 'url',
+        sitemapUrl: validSitemapUrl,
+        pageUrl: `${url}/foo`,
+        statusCode: 404,
+      });
+    });
+
+    it('should emit distinct error suggestions when a single broken sitemap triggers both NO_VALID_PATHS_EXTRACTED and sitemapErrors', async () => {
+      const brokenSitemapUrl = `${url}/sitemap-missing.xml`;
+
+      nock(url)
+        .get('/robots.txt')
+        .reply(200, `Sitemap: ${brokenSitemapUrl}`);
+      nock(url).get('/sitemap-missing.xml').reply(404);
+
+      const auditResult = await findSitemap(url);
+      expect(auditResult).to.not.have.property('success');
+      expect(auditResult.reasons).to.deep.equal([{
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: brokenSitemapUrl,
+      }]);
+      expect(auditResult.details.sitemapErrors).to.deep.equal([{
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: brokenSitemapUrl,
+      }]);
+
+      const withSuggestions = generateSuggestions(url, { auditResult }, context);
+      expect(withSuggestions.suggestions).to.have.lengthOf(2);
+      expect(withSuggestions.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: brokenSitemapUrl,
+      });
+      expect(withSuggestions.suggestions[1]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: brokenSitemapUrl,
+      });
     });
 
     it('should process root sitemap for subpath URL and filter correctly', async () => {
@@ -833,7 +1003,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(subpathUrl);
 
-      expect(result.success).to.equal(true);
+      expect(result).to.not.have.property('success');
       // The URLs from /en/ca and /fr should be filtered out, not audited
     });
 
@@ -893,7 +1063,7 @@ describe('Sitemap Audit', () => {
         const result = await findSitemapMocked(url, {
           info: () => {}, debug: () => {}, warn: () => {},
         });
-        expect(result.success).to.equal(true);
+        expect(result).to.not.have.property('success');
         expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.firstCall.args[3]).to.equal(null);
@@ -1171,7 +1341,6 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       auditId: 'audit-id',
       auditResult: {
-        success: true,
         reasons: [
           {
             value: 'Sitemaps found and checked.',
@@ -1194,12 +1363,11 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value:
               'Fetch error for https://maidenform.com/robots.txt Status: 403',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         scores: {},
@@ -1210,11 +1378,10 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value: 'https://some-domain.adobe/sitemap.xml',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
           },
         ],
         url: 'https://some-domain.adobe',
@@ -1228,11 +1395,10 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: false,
         reasons: [
           {
             value: 'https://some-domain.adobe/robots.txt',
-            error: 'NO SITEMAP FOUND IN ROBOTS',
+            error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
           },
         ],
         details: {
@@ -1252,7 +1418,6 @@ describe('Sitemap Audit', () => {
       siteId: 'site-id',
       id: 'audit-id',
       auditResult: {
-        success: true,
         reasons: [
           {
             value: 'Sitemaps found and checked.',
@@ -1299,8 +1464,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+            recommendedAction: '',
           },
         ],
       });
@@ -1323,8 +1488,8 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
@@ -1343,14 +1508,113 @@ describe('Sitemap Audit', () => {
           {
             type: 'error',
             error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
-            recommendedAction:
-              'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+            sitemapUrl: '',
+            recommendedAction: '',
           },
         ],
       });
     });
 
-    it('should present a suggestion even if the audit is successful as long as there are pages with issues', async () => {
+    it('should generate error suggestions from details.sitemapErrors when reasons have no error', () => {
+      const auditData = {
+        auditResult: {
+          reasons: [{ value: 'Sitemaps found and checked.' }],
+          details: {
+            issues: {},
+            sitemapErrors: [{
+              error: ERROR_CODES.SITEMAP_NOT_FOUND,
+              value: 'https://some-domain.adobe/sitemap-missing.xml',
+            }],
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://some-domain.adobe/sitemap-missing.xml',
+      });
+    });
+
+    it('buildErrorSuggestionsFromReasons dedupes identical reason entries', () => {
+      const duplicateReason = {
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: 'https://some-domain.adobe/sitemap-missing.xml',
+      };
+      const suggestions = buildErrorSuggestionsFromReasons([
+        duplicateReason,
+        duplicateReason,
+      ]);
+      expect(suggestions).to.have.lengthOf(1);
+    });
+
+    it('should dedupe identical error suggestions when merging reasons and sitemapErrors via generateSuggestions', () => {
+      const duplicateReason = {
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        value: 'https://some-domain.adobe/sitemap-missing.xml',
+      };
+      const auditData = {
+        auditResult: {
+          reasons: [duplicateReason],
+          details: {
+            issues: {},
+            sitemapErrors: [duplicateReason],
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(1);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://some-domain.adobe/sitemap-missing.xml',
+      });
+    });
+
+    it('should generate both error and url suggestions from the same audit result', () => {
+      const auditData = {
+        siteId: 'site-id',
+        id: 'audit-id',
+        auditResult: {
+          reasons: [
+            {
+              value: 'https://some-domain.adobe/sitemap.xml',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+            },
+          ],
+          url: 'https://some-domain.adobe',
+          details: {
+            issues: {
+              'https://some-domain.adobe/sitemap.xml': [
+                {
+                  url: 'https://some-domain.adobe/foo',
+                  statusCode: 404,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const response = generateSuggestions(url, auditData, context);
+      expect(response.suggestions).to.have.lengthOf(2);
+      expect(response.suggestions[0]).to.deep.include({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+      });
+      expect(response.suggestions[1]).to.deep.include({
+        type: 'url',
+        sitemapUrl: 'https://some-domain.adobe/sitemap.xml',
+        pageUrl: 'https://some-domain.adobe/foo',
+        statusCode: 404,
+      });
+    });
+
+    it('should present a suggestion when there are pages with issues', async () => {
       const sitemap = Object.keys(
         auditPartiallySuccessfulOnePageNetworkError.auditResult.paths,
       )[0];
@@ -1390,7 +1654,6 @@ describe('Sitemap Audit', () => {
         siteId: 'site-id',
         id: 'audit-id',
         auditResult: {
-          success: true,
           reasons: [{ value: 'Sitemaps found and checked.' }],
           details: {
             issues: {
@@ -1419,6 +1682,123 @@ describe('Sitemap Audit', () => {
         statusCode: 301,
         urlsSuggested: 'https://example.com/new-page',
         recommendedAction: 'use this URL instead: https://example.com/new-page',
+      });
+    });
+  });
+
+  describe('buildSitemapSuggestionKey', () => {
+    it('builds url-type keys from sitemapUrl and pageUrl', () => {
+      expect(buildSitemapSuggestionKey({
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+      })).to.equal('https://example.com/sitemap.xml|https://example.com/page');
+    });
+
+    it('builds error-type keys with three normalized segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        type: 'error',
+        error: ERROR_CODES.SITEMAP_NOT_FOUND,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      })).to.equal(`${ERROR_CODES.SITEMAP_NOT_FOUND}|https://example.com/sitemap.xml|`);
+    });
+
+    it('normalizes missing optional error fields to empty strings', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+
+      expect(buildSitemapErrorSuggestionKey({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: null,
+        recommendedAction: undefined,
+      })).to.equal(`${ERROR_CODES.CANNOT_READ_ROBOTS}||`);
+    });
+
+    it('normalizeString ignores non-string values and trims strings', () => {
+      expect(normalizeString(null)).to.equal('');
+      expect(normalizeString(undefined)).to.equal('');
+      expect(normalizeString(0)).to.equal('');
+      expect(normalizeString(`  ${ERROR_CODES.CANNOT_READ_ROBOTS}  `)).to.equal(ERROR_CODES.CANNOT_READ_ROBOTS);
+      expect(normalizeString('  https://example.com/sitemap.xml  ')).to.equal('https://example.com/sitemap.xml');
+    });
+
+    it('buildSitemapErrorSuggestionKey trims all segments', () => {
+      expect(buildSitemapErrorSuggestionKey({
+        error: `  ${ERROR_CODES.GENERAL_ERROR}  `,
+        sitemapUrl: '  https://example.com/sitemap.xml  ',
+        recommendedAction: '  details  ',
+      })).to.equal(`${ERROR_CODES.GENERAL_ERROR}|https://example.com/sitemap.xml|details`);
+    });
+  });
+
+  describe('buildErrorSuggestionFromReason', () => {
+    it('maps robots-only error codes to empty detail fields', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        value: 'network failure',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.CANNOT_READ_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        value: 'https://example.com/robots.txt',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+    });
+
+    it('maps general-error to trimmed recommendedAction from reason value', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.GENERAL_ERROR,
+        value: '  not-a-valid-url  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.GENERAL_ERROR,
+        sitemapUrl: '',
+        recommendedAction: 'not-a-valid-url',
+      });
+    });
+
+    it('maps sitemap URL error codes when value is an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '  https://example.com/sitemap.xml  ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        recommendedAction: '',
+      });
+    });
+
+    it('leaves sitemapUrl empty when reason value is not an absolute URL with a path', () => {
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: 'Fetch error for https://example.com/robots.txt Status: 403',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
+      });
+
+      expect(buildErrorSuggestionFromReason({
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        value: '   ',
+      })).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
+        sitemapUrl: '',
+        recommendedAction: '',
       });
     });
   });
@@ -1477,7 +1857,7 @@ describe('Sitemap Audit', () => {
     });
 
     it('shallow-merges type error without stripping error string', () => {
-      const existing = { type: 'error', error: ERROR_CODES.FETCH_ERROR, extra: 1 };
+      const existing = { type: 'error', error: ERROR_CODES.CANNOT_READ_SITEMAP, extra: 1 };
       const newData = {
         type: 'error',
         error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
@@ -1646,11 +2026,10 @@ describe('Sitemap Audit', () => {
         siteId: 'site-id',
         id: 'audit-id',
         auditResult: {
-          success: false,
           reasons: [
             {
               value: 'https://some-domain.adobe/sitemap.xml',
-              error: 'NO VALID URLs FOUND IN SITEMAP',
+              error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             },
           ],
           url: 'https://some-domain.adobe',
@@ -1672,7 +2051,7 @@ describe('Sitemap Audit', () => {
         suggestions: [
           {
             type: 'error',
-            error: 'NO VALID URLs FOUND IN SITEMAP',
+            error: ERROR_CODES.NO_VALID_PATHS_EXTRACTED,
             recommendedAction:
               'remove_page_from_sitemap_or_fix_page_redirect_or_make_it_accessible',
           },
@@ -1695,19 +2074,12 @@ describe('Sitemap Audit', () => {
         ],
       };
 
-      auditDataWithSuggestions = {
-        ...JSON.parse(JSON.stringify(auditDataFailure)),
-        auditResult: {
-          ...JSON.parse(JSON.stringify(auditDataFailure.auditResult)),
-          success: true,
-        },
-      };
+      auditDataWithSuggestions = JSON.parse(JSON.stringify(auditDataFailure));
 
       auditDataSuccess = {
         siteId: 'site-id',
         auditId: 'audit-id',
         auditResult: {
-          success: true,
           reasons: [
             {
               value: 'Sitemaps found and checked.',
@@ -1732,10 +2104,22 @@ describe('Sitemap Audit', () => {
       sandbox.restore();
     });
 
-    it('should skip opportunity creation when audit result success is false', async () => {
-      if (context.dataAccess.Opportunity.create.resetHistory) {
-        context.dataAccess.Opportunity.create.resetHistory();
-      }
+    it('should sync error and url suggestions when findings exist', async () => {
+      const opptyId = 'oppty-id';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([
+        context.dataAccess.Opportunity,
+      ]);
+      context.dataAccess.Opportunity.getType.returns('sitemap');
+      context.dataAccess.Opportunity.getId.returns(opptyId);
+      context.dataAccess.Opportunity.save.resolves();
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.addSuggestions.resolves({
+        createdItems: auditDataFailure.suggestions,
+      });
+      context.site = { requiresValidation: true };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      });
 
       await opportunityAndSuggestions(
         'https://example.com',
@@ -1743,12 +2127,13 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.log.error).to.have.been.calledWith(
-        'Sitemap audit failed, skipping opportunity and suggestions creation',
-      );
-      // Check that the existing stubs weren't called
-      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
+      const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+      expect(addSuggestionsCall.args[0]).to.have.lengthOf(3);
+      expect(addSuggestionsCall.args[0][0].data.type).to.equal('error');
+      expect(addSuggestionsCall.args[0][1].data.type).to.equal('url');
+      expect(addSuggestionsCall.args[0][2].data.type).to.equal('url');
     });
 
     it('should handle errors when creating opportunity', async () => {
@@ -2490,6 +2875,29 @@ describe('filterValidUrls with redirect handling', () => {
     expect(result.notOk).to.be.empty;
   });
 
+  it('keeps terminal urlsSuggested when refine GET returns redirect with invalid Location', async () => {
+    const probed = 'https://example.com/r-invalid-loc';
+    const terminal = 'https://example.com/terminal-invalid-loc';
+
+    nock('https://example.com')
+      .head('/r-invalid-loc')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/terminal-invalid-loc').reply(200);
+    nock('https://example.com')
+      .get('/terminal-invalid-loc')
+      .reply(301, '', { Location: 'http://' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: terminal,
+      },
+    ]);
+    expect(nock.isDone()).to.be.true;
+  });
+
   it('uses canonical href for urlsSuggested when same path as planned terminal (tracking stripped)', async () => {
     const probed = 'https://example.com/r';
     const terminalWithQuery = 'https://example.com/p?x=1';
@@ -2507,6 +2915,7 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(200, html, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls([probed], log);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/refining the terminal URL/));
     expect(result.notOk).to.deep.equal([
       {
         url: probed,
@@ -2514,13 +2923,13 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: canonicalClean,
       },
     ]);
-    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
   });
 
-  it('does not replace urlsSuggested when canonical points to a different path', async () => {
+  it('uses canonical href when canonical points to a different path than terminal', async () => {
     const probed = 'https://example.com/r2';
     const terminal = 'https://example.com/terminal';
-    const html = '<!DOCTYPE html><html><head><link rel="canonical" href="https://example.com/other" /></head><body></body></html>';
+    const canonicalOther = 'https://example.com/other';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalOther}" /></head><body></body></html>`;
 
     nock('https://example.com')
       .head('/r2')
@@ -2535,7 +2944,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: probed,
         statusCode: 301,
-        urlsSuggested: terminal,
+        urlsSuggested: canonicalOther,
       },
     ]);
   });
@@ -2545,7 +2954,6 @@ describe('filterValidUrls with redirect handling', () => {
     const terminal = 'https://example.com/support/contact-us.page';
     const canonicalClean = 'https://example.com/support/contact-us';
     const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
-    const log = { debug: sandbox.spy() };
 
     nock('https://example.com')
       .head('/r-dot')
@@ -2555,7 +2963,7 @@ describe('filterValidUrls with redirect handling', () => {
       .get('/support/contact-us.page')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
-    const result = await filterValidUrls([probed], log);
+    const result = await filterValidUrls([probed]);
     expect(result.notOk).to.deep.equal([
       {
         url: probed,
@@ -2563,7 +2971,6 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: canonicalClean,
       },
     ]);
-    expect(log.debug).to.have.been.calledWith(sinon.match(/terminal path extends canonical by dot suffix/));
   });
 
   it('GET for canonical uses non-HTML response without changing redirect notOk', async () => {
@@ -2747,11 +3154,12 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
-  it('promotes redirect to ok when canonical matches probed URL with trailing slash', async () => {
+  it('keeps notOk when canonical path matches probed but href differs by trailing slash', async () => {
     const probed = 'https://example.com/probed-trailing/';
     const finalPage = 'https://example.com/final-ts';
+    const canonicalWithoutSlash = 'https://example.com/probed-trailing';
     const html = '<!DOCTYPE html><html><head>'
-      + '<link rel="canonical" href="https://example.com/probed-trailing" />'
+      + `<link rel="canonical" href="${canonicalWithoutSlash}" />`
       + '</head><body></body></html>';
 
     nock('https://example.com')
@@ -2763,45 +3171,81 @@ describe('filterValidUrls with redirect handling', () => {
       .reply(200, html, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls([probed]);
-    expect(result.ok).to.deep.equal([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalWithoutSlash,
+      },
+    ]);
   });
 
-  it('promotes redirect to ok when canonical is http but matches probed https path', async () => {
+  it('keeps notOk when canonical is http but probed URL is https', async () => {
     const probed = 'https://example.com/probed-http-canonical';
     const terminal = 'http://example.com/terminal-http';
+    const httpCanonical = 'http://example.com/probed-http-canonical';
     const html = '<!DOCTYPE html><html><head>'
-      + '<link rel="canonical" href="http://example.com/probed-http-canonical" />'
+      + `<link rel="canonical" href="${httpCanonical}" />`
       + '</head><body></body></html>';
 
     nock('https://example.com')
       .head('/probed-http-canonical')
       .reply(301, '', { Location: terminal });
     nock('http://example.com').head('/terminal-http').reply(200);
-    nock('https://example.com')
+    nock('http://example.com')
       .get('/terminal-http')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
     const result = await filterValidUrls([probed]);
-    expect(result.ok).to.deep.equal([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: httpCanonical,
+      },
+    ]);
   });
 
-  it('uses https document fetch first when probed https redirects to http Location', async () => {
+  it('keeps notOk with https urlsSuggested when probed URL is http', async () => {
+    const probed = 'http://www.example.com/page1.html';
+    const httpsSuggested = 'https://www.example.com/page1.html';
+
+    nock('http://www.example.com')
+      .head('/page1.html')
+      .reply(301, '', { Location: httpsSuggested });
+    nock('https://www.example.com').head('/page1.html').reply(200);
+    nock('https://www.example.com')
+      .get('/page1.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed]);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: httpsSuggested,
+      },
+    ]);
+  });
+
+  it('uses https Location when refine GETs http suggested URL', async () => {
     const probed = 'https://example.com/old-https-to-http';
     const httpTerminal = 'http://example.com/dest-page';
     const canonicalHttps = 'https://example.com/dest-page';
     const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalHttps}" /></head><body></body></html>`;
-    const log = { debug: sandbox.spy() };
 
     nock('https://example.com')
       .head('/old-https-to-http')
       .reply(301, '', { Location: httpTerminal });
     nock('http://example.com').head('/dest-page').reply(403);
-    nock('http://example.com').get('/dest-page').reply(403);
+    nock('http://example.com')
+      .get('/dest-page')
+      .reply(301, '', { Location: canonicalHttps });
     nock('https://example.com')
       .get('/dest-page')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
-    const result = await filterValidUrls([probed], log);
+    const result = await filterValidUrls([probed]);
     expect(result.notOk).to.deep.equal([
       {
         url: probed,
@@ -2809,10 +3253,9 @@ describe('filterValidUrls with redirect handling', () => {
         urlsSuggested: canonicalHttps,
       },
     ]);
-    expect(log.debug).to.have.been.calledWith(sinon.match(/using the canonical URL/));
   });
 
-  it('falls back to http document fetch when https variant returns no HTML', async () => {
+  it('refines http suggested URL to https via Location then canonical', async () => {
     const probed = 'https://example.com/fallback-http-get';
     const httpTerminal = 'http://example.com/http-only-page';
     const canonicalHttps = 'https://example.com/http-only-page';
@@ -2822,10 +3265,10 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/fallback-http-get')
       .reply(301, '', { Location: httpTerminal });
     nock('http://example.com').head('/http-only-page').reply(200);
-    nock('https://example.com')
+    nock('http://example.com')
       .get('/http-only-page')
       .reply(301, '', { Location: canonicalHttps });
-    nock('http://example.com')
+    nock('https://example.com')
       .get('/http-only-page')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
@@ -2840,159 +3283,301 @@ describe('filterValidUrls with redirect handling', () => {
   });
 });
 
-describe('httpsDocumentUrlForCanonicalRefinement', () => {
-  it('returns https variant when document is http and probed was https', () => {
-    expect(httpsDocumentUrlForCanonicalRefinement(
-      'http://example.com/path',
-      'https://example.com/other',
-    )).to.equal('https://example.com/path');
+describe('better', () => {
+  it('returns null when both inputs are null', () => {
+    expect(better(null, null)).to.be.null;
   });
 
-  it('returns null when document is already https', () => {
-    expect(httpsDocumentUrlForCanonicalRefinement(
-      'https://example.com/path',
-      'https://example.com/other',
-    )).to.equal(null);
+  it('returns null when URLs are not similar', () => {
+    expect(better(
+      'https://example.com/a.page',
+      'https://example.com/b',
+    )).to.be.null;
   });
 
-  it('returns null when probed was http', () => {
-    expect(httpsDocumentUrlForCanonicalRefinement(
-      'http://example.com/path',
-      'http://example.com/other',
-    )).to.equal(null);
+  it('prefers https when paths match under pathnameKey', () => {
+    expect(better(
+      'http://example.com/foo',
+      'https://example.com/foo',
+    )).to.equal('https://example.com/foo');
   });
 
-  it('returns null when document is https and probed was http', () => {
-    expect(httpsDocumentUrlForCanonicalRefinement(
-      'https://example.com/path',
-      'http://example.com/other',
-    )).to.equal(null);
+  it('returns shorter URL for dot-suffix relationship', () => {
+    expect(better(
+      'https://example.com/dir/name.page',
+      'https://example.com/dir/name',
+    )).to.equal('https://example.com/dir/name');
+  });
+
+  it('prefers URL without query when pathnameKey matches', () => {
+    expect(better(
+      'https://example.com/p?x=1',
+      'https://example.com/p',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('returns urlB when urlA is empty and urlB is set', () => {
+    expect(better('', 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when urlB is null', () => {
+    expect(better('https://example.com/p', null)).to.equal('https://example.com/p');
+  });
+
+  it('returns null when urlA is null and urlB is set', () => {
+    expect(better(null, 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlB when urlA is undefined and urlB is set', () => {
+    expect(better(undefined, 'https://example.com/p')).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when urlB is undefined', () => {
+    expect(better('https://example.com/p', undefined)).to.equal('https://example.com/p');
+  });
+
+  it('returns null when URL parsing fails during better after urlsAreSimilar', () => {
+    expect(better('not-a-url', 'not-a-url')).to.be.null;
+  });
+
+  it('returns null when URL parsing fails during better', () => {
+    expect(better('not-a-url', 'https://example.com/p')).to.be.null;
+  });
+
+  it('returns urlA when secondUrl is better in reverse argument order', () => {
+    expect(better(
+      'https://example.com/name',
+      'https://example.com/name.page',
+    )).to.equal('https://example.com/name');
+  });
+
+  it('prefers urlA when urlB has query and urlA does not', () => {
+    expect(better(
+      'https://example.com/p',
+      'https://example.com/p?q=1',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('prefers urlB when urlA has query and urlB does not', () => {
+    expect(better(
+      'https://example.com/p?q=1',
+      'https://example.com/p',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('strips both query strings when pathnameKey matches and both have search', () => {
+    expect(better(
+      'https://example.com/p?a=1',
+      'https://example.com/p?b=2',
+    )).to.equal('https://example.com/p');
+  });
+
+  it('returns urlA when preferUrl URL parsing throws inside better', () => {
+    const OriginalURL = globalThis.URL;
+    let urlCalls = 0;
+    sandbox.stub(globalThis, 'URL').callsFake((input, base) => {
+      urlCalls += 1;
+      if (urlCalls >= 13 && urlCalls <= 15) {
+        throw new TypeError('Invalid URL');
+      }
+      return new OriginalURL(input, base);
+    });
+    expect(better(
+      'https://example.com/p?a=1',
+      'https://example.com/p?b=2',
+    )).to.equal('https://example.com/p?a=1');
+  });
+
+  it('returns shorter href when pathnameKey matches and neither has search', () => {
+    expect(better(
+      'https://example.com/foo/',
+      'https://example.com/foo',
+    )).to.equal('https://example.com/foo');
   });
 });
 
-describe('fetchHtmlForCanonicalRefinement', () => {
+describe('readHtmlBody', () => {
+  it('returns null when response is not ok', async () => {
+    const result = await readHtmlBody({
+      ok: false,
+      headers: { get: () => '' },
+      text: async () => '',
+    });
+    expect(result).to.be.null;
+  });
+
+  it('returns null when response is ok but body is not HTML', async () => {
+    const result = await readHtmlBody({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      text: async () => '{"not":"html"}',
+    });
+    expect(result).to.be.null;
+  });
+});
+
+describe('refineSuggestedUrl', () => {
   beforeEach(() => {
     nock.cleanAll();
   });
 
-  it('returns https HTML without calling http when https fetch succeeds', async () => {
-    const html = '<html><head><link rel="canonical" href="https://example.com/p" /></head></html>';
+  it('returns canonical from 200 HTML response', async () => {
+    const suggested = 'https://example.com/page';
+    const canonical = 'https://example.com/canonical-page';
+    const html = `<html><head><link rel="canonical" href="${canonical}" /></head></html>`;
     nock('https://example.com')
-      .get('/p')
+      .get('/page')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
-    const result = await fetchHtmlForCanonicalRefinement(
-      'http://example.com/p',
-      'https://example.com/probed',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
-    expect(result).to.deep.equal({
-      html,
-      documentUrl: 'https://example.com/p',
-    });
-    expect(nock.isDone()).to.be.true;
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(canonical);
   });
 
-  it('falls back to http when https fetch returns no HTML', async () => {
-    const html = '<html><head></head></html>';
-    nock('https://example.com').get('/p2').reply(301, '', { Location: 'https://example.com/p2' });
+  it('uses better with Location when suggested URL redirects', async () => {
+    const log = { debug: sandbox.spy() };
     nock('http://example.com')
-      .get('/p2')
-      .reply(200, html, { 'Content-Type': 'text/html' });
+      .get('/only-http')
+      .reply(301, '', { Location: 'https://example.com/only-http' });
 
-    const result = await fetchHtmlForCanonicalRefinement(
-      'http://example.com/p2',
-      'https://example.com/probed',
-      null,
-      PAGE_URL_TIMEOUT_MS,
+    const suggested = 'http://example.com/only-http';
+    const result = await refineSuggestedUrl(suggested, { log });
+    expect(result).to.equal('https://example.com/only-http');
+    expect(log.debug).to.have.been.calledWith(
+      sinon.match(/refineSuggestedUrl redirect Location picked/),
     );
-    expect(result).to.deep.equal({
-      html,
-      documentUrl: 'http://example.com/p2',
-    });
   });
 
-  it('fetches documentUrl once when probed was not https (https document, http probed)', async () => {
-    const html = '<html></html>';
+  it('does not log when redirect Location picks the same URL as suggested', async () => {
+    const suggested = 'https://example.com/same-path';
+    const log = { debug: sandbox.spy() };
     nock('https://example.com')
-      .get('/only')
-      .reply(200, html, { 'Content-Type': 'text/html' });
+      .get('/same-path')
+      .reply(301, '', { Location: suggested });
 
-    const result = await fetchHtmlForCanonicalRefinement(
-      'https://example.com/only',
-      'http://example.com/probed',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
-    expect(result).to.deep.equal({
-      html,
-      documentUrl: 'https://example.com/only',
-    });
-    expect(nock.isDone()).to.be.true;
+    const result = await refineSuggestedUrl(suggested, { log });
+    expect(result).to.equal(suggested);
+    expect(log.debug).not.to.have.been.called;
   });
 
-  it('fetches https document once when both document and probed use https', async () => {
-    const html = '<html><head></head></html>';
+  it('returns suggestedUrl when redirect has no Location header', async () => {
+    const suggested = 'https://example.com/no-loc';
+    nock('https://example.com').get('/no-loc').reply(302, '');
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when Location URL constructor throws', async () => {
+    const esmock = (await import('esmock')).default;
+    const suggested = 'https://example.com/refine-direct-loc';
+    const { refineResponsePayload: refinePayloadMocked } = await esmock(
+      '../../src/sitemap/common.js',
+      {
+        '@adobe/spacecat-shared-utils': {
+          tracingFetch: async () => ({
+            status: 301,
+            ok: false,
+            headers: {
+              get: (name) => (String(name).toLowerCase() === 'location' ? 'http://' : null),
+            },
+            text: async () => '',
+          }),
+        },
+      },
+    );
+
+    const result = await refinePayloadMocked({
+      probedUrl: 'https://example.com/other-page',
+      notOkPayload: {
+        type: 'notOk',
+        url: 'https://example.com/probed',
+        statusCode: 301,
+        urlsSuggested: suggested,
+      },
+    });
+    expect(result.urlsSuggested).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when redirect Location yields better null', async () => {
+    const suggested = 'https://example.com/a.page';
     nock('https://example.com')
-      .get('/both-https')
+      .get('/a.page')
+      .reply(301, '', { Location: 'https://example.com/entirely/other-path' });
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns empty string for null suggestedUrl', async () => {
+    expect(await refineSuggestedUrl(null)).to.equal('');
+  });
+
+  it('returns empty string for undefined suggestedUrl', async () => {
+    expect(await refineSuggestedUrl(undefined)).to.equal('');
+  });
+
+  it('returns suggestedUrl when redirect Location targets auth', async () => {
+    const suggested = 'https://example.com/to-auth';
+    nock('https://example.com')
+      .get('/to-auth')
+      .reply(301, '', { Location: 'https://example.com/login' });
+
+    const result = await refineSuggestedUrl(suggested);
+    expect(result).to.equal(suggested);
+  });
+
+  it('returns suggestedUrl when fetch fails', async () => {
+    nock('https://example.com').get('/net-fail').replyWithError('ECONNRESET');
+
+    const result = await refineSuggestedUrl('https://example.com/net-fail');
+    expect(result).to.equal('https://example.com/net-fail');
+  });
+});
+
+describe('refineResponsePayload', () => {
+  it('returns notOk unchanged when urlsSuggested is empty', async () => {
+    const row = { type: 'notOk', url: 'https://example.com/x', statusCode: 301, urlsSuggested: '' };
+    const result = await refineResponsePayload({
+      probedUrl: 'https://example.com/x',
+      notOkPayload: row,
+    });
+    expect(result).to.equal(row);
+  });
+
+  it('promotes to ok when refined suggested URL equals probed exactly', async () => {
+    const probed = 'https://example.com/exact-probed';
+    const suggested = 'https://example.com/final';
+    const html = `<html><head><link rel="canonical" href="${probed}" /></head></html>`;
+    const log = { info: sandbox.spy(), debug: sandbox.spy() };
+    nock('https://example.com')
+      .get('/final')
       .reply(200, html, { 'Content-Type': 'text/html' });
 
-    const result = await fetchHtmlForCanonicalRefinement(
-      'https://example.com/both-https',
-      'https://example.com/probed-both-https',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
-    expect(result).to.deep.equal({
-      html,
-      documentUrl: 'https://example.com/both-https',
+    const result = await refineResponsePayload({
+      probedUrl: probed,
+      notOkPayload: { type: 'notOk', url: probed, statusCode: 301, urlsSuggested: suggested },
+      log,
     });
-    expect(nock.isDone()).to.be.true;
+    expect(result).to.deep.equal({ type: 'ok', url: probed });
+    expect(log.info).to.have.been.calledWith(sinon.match(/marking OK/));
   });
 
-  it('fetches http document once when both document and probed use http', async () => {
-    const html = '<html><head></head></html>';
-    nock('http://example.com')
-      .get('/both-http')
-      .reply(200, html, { 'Content-Type': 'text/html' });
+  it('keeps notOk when refined URL differs from probed only by scheme', async () => {
+    const probed = 'http://www.example.com/page1.html';
+    const suggested = 'https://www.example.com/page1.html';
+    nock('https://www.example.com')
+      .get('/page1.html')
+      .reply(200, HTML_PROBE_EMPTY, { 'Content-Type': 'text/html' });
 
-    const result = await fetchHtmlForCanonicalRefinement(
-      'http://example.com/both-http',
-      'http://example.com/probed-both-http',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
-    expect(result).to.deep.equal({
-      html,
-      documentUrl: 'http://example.com/both-http',
+    const result = await refineResponsePayload({
+      probedUrl: probed,
+      notOkPayload: { type: 'notOk', url: probed, statusCode: 301, urlsSuggested: suggested },
     });
-    expect(nock.isDone()).to.be.true;
-  });
-
-  it('returns null html when documentUrl is empty', async () => {
-    const result = await fetchHtmlForCanonicalRefinement(
-      '',
-      'https://example.com/probed',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
-    expect(result).to.deep.equal({ html: null, documentUrl: '' });
-  });
-
-  it('returns null when both https and http canonical fetches fail', async () => {
-    nock('https://example.com').get('/empty').reply(403);
-    nock('http://example.com').get('/empty').reply(403);
-
-    const result = await fetchHtmlForCanonicalRefinement(
-      'http://example.com/empty',
-      'https://example.com/probed',
-      null,
-      PAGE_URL_TIMEOUT_MS,
-    );
     expect(result).to.deep.equal({
-      html: null,
-      documentUrl: 'http://example.com/empty',
+      type: 'notOk',
+      url: probed,
+      statusCode: 301,
+      urlsSuggested: suggested,
     });
   });
 });
@@ -3018,105 +3603,105 @@ describe('pathnameKey', () => {
   });
 });
 
-describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
+describe('secondUrlIsBetterChoiceThanFirstUrl', () => {
   it('treats http and https as compatible for dot-suffix matching', () => {
     expect(HTTP_AND_HTTPS_PROTOCOLS).to.deep.equal(['http:', 'https:']);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'http://www.example.com/dir/name.page',
       'https://www.example.com/dir/name',
     )).to.equal(true);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://www.example.com/dir/name.page',
       'http://www.example.com/dir/name',
     )).to.equal(true);
   });
 
   it('returns true when terminal path is canonical path plus dot suffix (e.g. .page)', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://www.ups.com/us/en/support/contact-us.page',
       'https://www.ups.com/us/en/support/contact-us',
     )).to.equal(true);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://Example.COM/a/b.html',
       'https://example.com/a/b',
     )).to.equal(true);
   });
 
   it('returns true when trailing slashes normalize to the same dot-suffix relationship', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/dir/name.page/',
       'https://example.com/dir/name/',
     )).to.equal(true);
   });
 
   it('returns false when extra segment would be another path level', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/foo/bar',
       'https://example.com/foo',
     )).to.equal(false);
   });
 
   it('returns false when suggested pathname does not start with canonical pathname', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/a/c.page',
       'https://example.com/a/b',
     )).to.equal(false);
   });
 
   it('returns false when dot-suffix segment contains a slash', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/can./more',
       'https://example.com/can',
     )).to.equal(false);
   });
 
   it('returns false when rest is only a dot (no suffix segment)', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/foo.',
       'https://example.com/foo',
     )).to.equal(false);
   });
 
   it('returns false when paths share a string prefix but not a dot boundary (e.g. /blog vs /blogging)', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/blogging',
       'https://example.com/blog',
     )).to.equal(false);
   });
 
   it('returns false for invalid URLs, mismatched host, or non-web protocol vs https', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix('', 'https://example.com/a')).to.equal(false);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl('', 'https://example.com/a')).to.equal(false);
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'not-a-url',
       'https://example.com/a',
     )).to.equal(false);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/a.page',
       'not-a-url',
     )).to.equal(false);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://other.com/a.page',
       'https://example.com/a',
     )).to.equal(false);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'ftp://example.com/a.page',
       'https://example.com/a',
     )).to.equal(false);
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/a.page',
       'ftp://example.com/a',
     )).to.equal(false);
   });
 
   it('returns false when paths are identical (not a dot-suffix extension)', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/p',
       'https://example.com/p',
     )).to.equal(false);
   });
 
   it('returns false when suggested pathname is shorter than canonical pathname', () => {
-    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+    expect(secondUrlIsBetterChoiceThanFirstUrl(
       'https://example.com/foo',
       'https://example.com/foo/bar',
     )).to.equal(false);

@@ -15,6 +15,8 @@ import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/space
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 import { persistAuditStatusWithFreshRead } from './handler.js';
 import { ALT_TEXT_PROCESSING_ERROR_TAG } from './constants.js';
+import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
+import { checkSiteRequiresValidation } from '../utils/site-validation.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -25,7 +27,11 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Array} Array of suggestion DTOs ready for addition
  */
 
-function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId) {
+function mapMystiqueSuggestionsToSuggestionDTOs(
+  mystiquesuggestions,
+  opportunityId,
+  requiresValidation,
+) {
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
@@ -50,6 +56,9 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
     return {
       opportunityId,
       type: SuggestionModel.TYPES.CONTENT_UPDATE,
+      status: requiresValidation
+        ? SuggestionModel.STATUSES.PENDING_VALIDATION
+        : SuggestionModel.STATUSES.NEW,
       data: {
         recommendations: [recommendation],
       },
@@ -78,10 +87,6 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
 ) {
   const existingSuggestions = await opportunity.getSuggestions();
   const pageUrlSet = new Set(pageUrls);
-  /**
-  * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
-  * instead of current approach. This will enable handling of PENDING_VALIDATION status.
-  */
   // Find suggestions to remove, do not remove those that are manually edited
   const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
     const rec = suggestion.getData()?.recommendations?.[0];
@@ -151,6 +156,7 @@ export default async function handler(message, context) {
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
+  const requiresValidation = await checkSiteRequiresValidation(site, context, AUDIT_TYPE);
 
   let altTextOppty;
   try {
@@ -202,6 +208,7 @@ export default async function handler(message, context) {
       const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
         suggestions,
         altTextOppty.getId(),
+        requiresValidation,
       );
       await addAltTextSuggestions({
         opportunity: altTextOppty,
@@ -254,6 +261,19 @@ export default async function handler(message, context) {
       >= updatedOpportunityData.mystiqueResponsesExpected) {
       altTextOppty.setLastAuditedAt(new Date().toISOString());
       log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Setting lastAuditedAt.`);
+
+      // Count all outstanding NEW suggestions after the final Mystique batch completes.
+      // Outdated images (removed from current pages) were cleared earlier in this handler.
+      // This reflects the PLG customer's current dashboard view across all audit batches.
+      // Re-fetch from DB to get a fresh suggestion list — the in-memory object was loaded
+      // before this and earlier batch responses wrote their suggestions.
+      const freshOppty = await Opportunity.findById(altTextOppty.getId());
+      const allSuggestions = await freshOppty.getSuggestions();
+      log.info(`[${AUDIT_TYPE}]: Found ${allSuggestions.length} suggestions after re-fetching`);
+      const newSuggestionCount = allSuggestions.filter(
+        (s) => s.getStatus?.() === SuggestionModel.STATUSES.NEW,
+      ).length;
+      await sendLowSuggestionCountAlert(site, AUDIT_TYPE, newSuggestionCount, context);
     }
 
     await altTextOppty.save();

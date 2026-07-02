@@ -704,4 +704,297 @@ describe('preflight/links-checks - runLinksChecks', () => {
       ]);
     });
   });
+
+  // ── cq-LinkChecker broken link detection ──────────────────────────────────
+  describe('cq-LinkChecker broken link detection', () => {
+    it('reports a same-origin cq-LinkChecker--invalid image as a broken internal link without probing', async () => {
+      const html = `
+        <p>
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/missing.html">
+          Missing page
+          <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+        </p>
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(result.auditResult.brokenInternalLinks[0].status).to.equal(404);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    });
+
+    it('reports a cross-origin cq-LinkChecker--invalid image as a broken external link', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: https://external.example.com/gone">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/gone');
+      expect(result.auditResult.brokenExternalLinks[0].status).to.equal(404);
+    });
+
+    it('resolves a bare relative href correctly against pageUrl', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: microt.com">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/microt.com');
+    });
+
+    it('resolves an absolute content path against pageUrl origin', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/this-page-does-not-exist.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/this-page-does-not-exist.html');
+    });
+
+    it('reports both a probed broken link and a cq-LinkChecker broken link on the same page', async () => {
+      fetchStub.resolves(makeResponse(404));
+      const html = `
+        <a href="https://external.example.com/probe-me">probe this</a>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/aem-broken.html">
+        <img class="cq-LinkChecker cq-LinkChecker--suffix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external.example.com/probe-me');
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/aem-broken.html');
+    });
+
+    it('ignores cq-LinkChecker--prefix image that does not have cq-LinkChecker--invalid class', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('ignores cq-LinkChecker--invalid image whose alt does not match the expected pattern', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="some other text">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('does not report a cq-LinkChecker--invalid image inside an excludedElementClasses subtree', async () => {
+      const html = `
+        <div class="skip-me">
+          <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+               alt="invalid link: /content/site/en/excluded.html">
+        </div>
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/included.html">
+      `;
+      const result = await runLinksChecks(
+        [pageUrl],
+        makeScrapedObjects(html),
+        context,
+        { excludedElementClasses: ['skip-me'] },
+      );
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/included.html');
+    });
+
+    it('makes no fetch calls for cq-LinkChecker-sourced broken links', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/a.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/b.html">
+      `;
+      await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('silently skips a cq-LinkChecker--invalid image whose alt contains an unparseable URL', async () => {
+      // http://[invalid triggers a URL parse error (malformed IPv6 literal)
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: http://[invalid">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/valid.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/valid.html');
+    });
+
+    it('skips non-HTTP schemes (mailto:, tel:) to match the checkLinkStatus protocol guard', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: mailto:noreply@example.com">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: tel:+15550001234">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/real-broken.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/real-broken.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+
+    it('deduplicates multiple cq-LinkChecker images pointing to the same URL', async () => {
+      const html = `
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+        <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
+             alt="invalid link: /content/site/en/missing.html">
+      `;
+      const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      expect(fetchStub.callCount).to.equal(0);
+    });
+  });
+});
+
+describe('preflight/links-checks - probe concurrency (SITES-46696)', () => {
+  let sandbox;
+  let fetchStub;
+  let runLinksChecks;
+  let createConcurrencyLimiter;
+  let DEFAULT_LINK_CHECK_CONCURRENCY;
+  let context;
+  const pageUrl = 'https://www.example.com/page';
+
+  const makeScrapedObjects = (html, finalUrl = pageUrl) => [{
+    data: { finalUrl, scrapeResult: { rawBody: html } },
+  }];
+
+  const makeResponse = (status) => ({
+    status,
+    statusText: String(status),
+    headers: { get: () => null },
+  });
+
+  const manyExternalLinks = (n) => {
+    let html = '';
+    for (let i = 0; i < n; i += 1) {
+      html += `<a href="https://other-${i}.com/x">l</a>`;
+    }
+    return html;
+  };
+
+  // Tracks the peak number of concurrently in-flight fetches.
+  const makeTracker = () => {
+    let active = 0;
+    let max = 0;
+    const fetchImpl = () => new Promise((resolve) => {
+      active += 1;
+      if (active > max) {
+        max = active;
+      }
+      setTimeout(() => {
+        active -= 1;
+        resolve(makeResponse(200));
+      }, 5);
+    });
+    return { fetchImpl, getMax: () => max };
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    fetchStub = sandbox.stub();
+    ({
+      runLinksChecks,
+      createConcurrencyLimiter,
+      DEFAULT_LINK_CHECK_CONCURRENCY,
+    } = await esmock('../../src/preflight/links-checks.js', {
+      '@adobe/spacecat-shared-utils': {
+        stripTrailingSlash: (url) => url.replace(/\/$/, ''),
+        tracingFetch: fetchStub,
+      },
+    }));
+    context = {
+      log: {
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+      },
+    };
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('createConcurrencyLimiter runs all tasks and returns their results', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const results = await Promise.all(
+      [1, 2, 3].map((nVal) => limit(() => Promise.resolve(nVal * 2))),
+    );
+    expect(results).to.deep.equal([2, 4, 6]);
+  });
+
+  it('createConcurrencyLimiter never exceeds the limit', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 6 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('createConcurrencyLimiter propagates task rejection', async () => {
+    const limit = createConcurrencyLimiter(1);
+    let err;
+    try {
+      await limit(() => Promise.reject(new Error('boom')));
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an('error').with.property('message', 'boom');
+  });
+
+  it('createConcurrencyLimiter falls back to serial for invalid max', async () => {
+    const limit = createConcurrencyLimiter(0);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 3 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(1);
+  });
+
+  it('bounds concurrent probes to options.linkCheckConcurrency', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(manyExternalLinks(10)),
+      context,
+      { pageAuthToken: null, linkCheckConcurrency: 3 },
+    );
+    expect(tracker.getMax()).to.equal(3);
+  });
+
+  it('reads concurrency from env when the option is absent', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    context.env = { PREFLIGHT_LINK_CHECK_CONCURRENCY: '2' };
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(8)), context);
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('defaults to DEFAULT_LINK_CHECK_CONCURRENCY when no option or env is set', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(12)), context);
+    expect(tracker.getMax()).to.equal(DEFAULT_LINK_CHECK_CONCURRENCY);
+  });
 });

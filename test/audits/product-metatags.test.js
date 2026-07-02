@@ -2832,7 +2832,7 @@ describe('Product MetaTags', () => {
       expect(result).to.have.property('detectedTags');
       expect(result).to.have.property('extractedTags');
       expect(Object.keys(result.extractedTags)).to.have.length(0);
-      expect(logStub.error.getCalls().some((call) => call.args[0].includes('Failed to extract tags from scraped content'))).to.be.true;
+      expect(logStub.warn.getCalls().some((call) => call.args[0].includes('Failed to extract tags from scraped content'))).to.be.true;
     });
 
     it('should filter and process only matching pages', async () => {
@@ -2955,12 +2955,12 @@ describe('Product MetaTags', () => {
       }
     });
 
-    it('should log error when no tags are extracted', async () => {
+    it('should log warn when no tags are extracted', async () => {
       mockS3Client.getObjectKeysUsingPrefix = sinon.stub().resolves([]);
 
       await productMetatagsAutoDetect(mockSite, pagesSet, mockContext);
 
-      expect(logStub.error).to.have.been.calledWith(
+      expect(logStub.warn).to.have.been.calledWith(
         '[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site123/',
       );
     });
@@ -3438,7 +3438,7 @@ describe('Product MetaTags', () => {
 
         // Verify that null metadata was handled properly
         expect(result.extractedTags).to.deep.equal({});
-        expect(testLogStub.error).to.have.been.calledWith(
+        expect(testLogStub.warn).to.have.been.calledWith(
           '[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site123/',
         );
       },

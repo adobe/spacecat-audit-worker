@@ -16,6 +16,48 @@ import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js
 import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
 
 /**
+ * Default number of link probes performed concurrently. Kept low so the audit
+ * does not overwhelm a slow author environment: firing every link at once makes
+ * authenticated author renders queue past the per-request timeout, which the
+ * audit then records as Status 0 / broken (false positives — see SITES-46696).
+ * Override per run via options.linkCheckConcurrency or env
+ * PREFLIGHT_LINK_CHECK_CONCURRENCY.
+ */
+export const DEFAULT_LINK_CHECK_CONCURRENCY = 5;
+
+/**
+ * Minimal promise concurrency limiter. Returns a scheduler that runs at most
+ * `max` tasks at a time and resolves with each task's result. Falls back to
+ * serial (1) for invalid input.
+ *
+ * @param {number} max - maximum number of concurrently running tasks
+ * @returns {(task: () => Promise<*>) => Promise<*>} scheduler function
+ */
+export function createConcurrencyLimiter(max) {
+  const limit = Number.isFinite(max) && max >= 1 ? Math.floor(max) : 1;
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= limit || queue.length === 0) {
+      return;
+    }
+    active += 1;
+    const { task, resolve, reject } = queue.shift();
+    Promise.resolve()
+      .then(task)
+      .then(resolve, reject)
+      .finally(() => {
+        active -= 1;
+        next();
+      });
+  };
+  return (task) => new Promise((resolve, reject) => {
+    queue.push({ task, resolve, reject });
+    next();
+  });
+}
+
+/**
  * Removes subtrees rooted at elements whose `class` contains an excluded token.
  * Deepest nodes are removed first so nested excluded wrappers are safe. Mirrors
  * the broken-internal-links crawl filter introduced in PR #2455 so site authors
@@ -198,6 +240,14 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
   const urlSet = new Set(urls);
 
+  // Bound how many link probes run at once. Unbounded probing overwhelms slow
+  // author environments, making renders queue past the per-request timeout,
+  // which the audit then reports as broken (false positives — SITES-46696).
+  const concurrency = Number(options.linkCheckConcurrency)
+    || Number(context.env?.PREFLIGHT_LINK_CHECK_CONCURRENCY)
+    || DEFAULT_LINK_CHECK_CONCURRENCY;
+  const limit = createConcurrencyLimiter(concurrency);
+
   await Promise.all(
     scrapedObjects
       .filter(({ data }) => urlSet.has(stripTrailingSlash(data.finalUrl)))
@@ -244,32 +294,77 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         log.debug('[preflight-audit] Found internal links:', internalLinks);
         log.debug('[preflight-audit] Found external links:', externalLinks);
 
+        // AEM's server-side cq-LinkChecker rewrites broken <a> tags to <img> elements
+        // before the HTML is served, removing the anchor entirely. The broken URL is
+        // preserved in the alt attribute as "invalid link: <url>". Extract these directly
+        // without HTTP probing — AEM has already validated them as broken (404).
+        const seenCqUrls = new Set();
+        $('img.cq-LinkChecker--prefix.cq-LinkChecker--invalid').each((i, img) => {
+          const alt = $(img).attr('alt') || '';
+          const match = alt.match(/^invalid link:\s*(.+)$/);
+          if (!match) {
+            return;
+          }
+          try {
+            const parsed = new URL(match[1].trim(), pageUrl);
+            // Mirror the protocol guard in checkLinkStatus — non-web schemes
+            // (mailto:, tel:, javascript:, etc.) are not navigable links.
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+              return;
+            }
+            const abs = parsed.toString();
+            // Deduplicate: same URL may appear in multiple cq-LinkChecker images.
+            if (seenCqUrls.has(abs)) {
+              return;
+            }
+            seenCqUrls.add(abs);
+            const selector = getDomElementSelector(img);
+            const result = {
+              urlTo: abs,
+              href: pageUrl,
+              status: 404,
+              ...toElementTargets([selector].filter(Boolean)),
+            };
+            if (parsed.origin === pageOrigin) {
+              brokenInternalLinks.push(result);
+            } else {
+              brokenExternalLinks.push(result);
+            }
+          } catch {
+            // skip unparseable URLs
+          }
+        });
+
         // Check internal links
         const internalResults = await Promise.all(
-          Array.from(internalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
-            href,
-            pageUrl,
-            context,
-            {
-              ...options,
-              selectors: [...selectorSet],
-              isInternal: true,
-            },
-          )),
+          Array.from(internalLinks.entries()).map(
+            ([href, selectorSet]) => limit(() => checkLinkStatus(
+              href,
+              pageUrl,
+              context,
+              {
+                ...options,
+                selectors: [...selectorSet],
+                isInternal: true,
+              },
+            )),
+          ),
         );
 
         // Check external links
         const externalResults = await Promise.all(
-          Array.from(externalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
-            href,
-            pageUrl,
-            context,
-            {
-              ...options,
-              selectors: [...selectorSet],
-              isInternal: false,
-            },
-          )),
+          Array.from(externalLinks.entries()).map(
+            ([href, selectorSet]) => limit(() => checkLinkStatus(
+              href,
+              pageUrl,
+              context,
+              {
+                ...options,
+                selectors: [...selectorSet],
+                isInternal: false,
+              },
+            )),
+          ),
         );
 
         // Filter out null results and add to respective arrays

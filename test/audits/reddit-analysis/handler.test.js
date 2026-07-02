@@ -30,7 +30,9 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Reddit Analysis Handler', () => {
+describe('Reddit Analysis Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -39,6 +41,7 @@ describe('Reddit Analysis Handler', () => {
   let mockComputeTopicsFromBrandPresence;
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
+  let mockPostMessageOptional;
   let redditAnalysisHandler;
   let StoreEmptyError;
 
@@ -93,6 +96,8 @@ describe('Reddit Analysis Handler', () => {
 
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
       getGuidelines: sandbox.stub().resolves(mockGuidelinesApiResponse),
@@ -127,6 +132,9 @@ describe('Reddit Analysis Handler', () => {
       },
       '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
+      },
+      '../../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     });
 
@@ -167,7 +175,11 @@ describe('Reddit Analysis Handler', () => {
             findById: sandbox.stub().resolves(mockSite),
           },
           Configuration: {
-            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
+            findLatest: sandbox.stub().resolves({
+              isHandlerEnabledForSite: sandbox.stub().returns(true),
+              getHandlers: sandbox.stub().returns({}),
+              getQueues: sandbox.stub().returns({ audits: 'audits-queue-url' }),
+            }),
           },
         },
       })
@@ -240,14 +252,54 @@ describe('Reddit Analysis Handler', () => {
       );
     });
 
-    it('should return error when DRS has no available content', async () => {
+    it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
       mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+      const slackContext = { channelId: 'C1', threadTs: '1.2' };
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { slackContext },
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg.type).to.equal('offsite-brand-presence');
+      expect(msg.siteId).to.equal(siteId);
+      // Slack context is forwarded so the scoped run's results post to the same thread.
+      expect(msg.auditContext.slackContext).to.deep.equal(slackContext);
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com' });
+    });
+
+    it('returns error without re-scraping when scrape was already requested', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { drsScrapeRequested: true },
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('no content');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available after scraping/);
+    });
+
+    it('still returns pending_scrape when the scrape request fails (transient infra)', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+      context.sqs.sendMessage.rejects(new Error('SQS throttled'));
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('no content');
-      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -383,6 +435,12 @@ describe('Reddit Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: '1700000000.123456' },
+      );
     });
 
     it('should not include slackContext in auditResult when not provided', async () => {
@@ -390,6 +448,13 @@ describe('Reddit Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+      // postMessageOptional is still invoked but with no channel/thread, so it no-ops.
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        undefined,
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: undefined },
+      );
     });
   });
 

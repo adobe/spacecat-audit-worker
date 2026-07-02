@@ -37,7 +37,9 @@ describe('Index Tests', () => {
     };
     context = {
       dataAccess: {},
-      env: {},
+      env: {
+        POSTGREST_URL: 'https://data-svc.test',
+      },
       log: console,
       runtime: {
         region: 'us-east-1',

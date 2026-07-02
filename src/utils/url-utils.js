@@ -173,7 +173,13 @@ export function isPreviewPage(url) {
   return urlObj.hostname.endsWith('.page');
 }
 
-export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+export async function filterBrokenSuggestedUrls(
+  suggestedUrls,
+  baseURL,
+  timeoutMs = 5000,
+  fetchFn = fetch,
+  log = null,
+) {
   // Strip www from both sides for consistent domain comparison
   const baseDomain = stripWWW(new URL(baseURL).hostname);
   const checks = suggestedUrls.map(async (suggestedUrl) => {
@@ -182,14 +188,21 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
       const suggestedURLObj = new URL(schemaPrependedUrl);
       const suggestedDomain = stripWWW(suggestedURLObj.hostname);
       if (suggestedDomain === baseDomain) {
-        const response = await fetch(schemaPrependedUrl);
-        if (response.ok) {
-          return suggestedUrl;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetchFn(schemaPrependedUrl, { signal: controller.signal });
+          // Only filter confirmed 404s — CDN blocks (403, 429, 5xx) may be valid pages
+          if (response.status !== 404) {
+            return suggestedUrl;
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
       }
       return null;
-      // eslint-disable-next-line no-unused-vars
     } catch (error) {
+      log?.warn(`Backlinks: failed to validate suggested URL ${suggestedUrl}: ${error.message}`);
       return null;
     }
   });
@@ -364,6 +377,65 @@ export function joinBaseAndPath(baseURL, path) {
 
     return `${normalizedBase}${normalizedPath}`;
   }
+}
+
+/**
+ * Returns true when a Content-Type value indicates an HTML document.
+ * Matches text/html and application/xhtml+xml (with optional charset suffix).
+ *
+ * @param {string} contentType - The Content-Type header value.
+ * @returns {boolean}
+ */
+export function isHtmlContentType(contentType) {
+  /* c8 ignore next - Defensive fallback for null/undefined contentType */
+  return /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+}
+
+/**
+ * Returns true when the stripped body text of a 200 response matches known soft-404 patterns.
+ * Strips <script>, <style> and all other HTML tags before matching so inline JS/CSS text
+ * cannot produce false positives. Checks the first 12 000 characters of the cleaned text.
+ * Patterns cover English and several other languages (DE, FR, ES, IT, PT, NL, JA).
+ *
+ * @param {string} bodyText - Raw HTML body (or plain text) of the response.
+ * @returns {boolean}
+ */
+export function isSoft404Body(bodyText) {
+  /* c8 ignore next - Defensive fallback for null/undefined bodyText */
+  const text = String(bodyText || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  const normalizedText = text.slice(0, 12000);
+
+  return [
+    /404 not found/,
+    /page not found/,
+    /not found/,
+    /the page you (requested|are looking for).{0,40}(could not be found|does not exist|is unavailable)/,
+    /sorry[, ]+we (couldn'?t|can'?t) find/,
+    /sorry[, ]+the page.{0,40}(could not be found|does not exist|is unavailable)/,
+    /we can'?t seem to find the page/,
+    /this page no longer exists/,
+    /the requested url was not found/,
+    /error 404/,
+    /seite nicht gefunden/,
+    /page introuvable/,
+    /page non trouv[ée]e/,
+    /p[áa]gina no encontrada/,
+    /pagina non trovata/,
+    /p[áa]gina n[ãa]o encontrada/,
+    /pagina niet gevonden/,
+    /ページが見つかりません/,
+  ].some((pattern) => pattern.test(normalizedText));
 }
 
 /**

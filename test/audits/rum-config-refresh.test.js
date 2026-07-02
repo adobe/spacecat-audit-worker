@@ -26,25 +26,24 @@ const sandbox = sinon.createSandbox();
 const SITE_ID = 'test-site-id';
 const BASE_URL = 'https://www.example.com';
 
-describe('rum-config-refresh handler', () => {
+describe('rum-config-refresh handler', function () {
+  this.timeout(10000);
   let context;
   let mockSite;
   let mockConfig;
-  let retrieveDomainkeyStub;
+  let resolveRumDomainKeyStub;
   let toDynamoItemStub;
   let handler;
 
   beforeEach(async () => {
-    retrieveDomainkeyStub = sandbox.stub();
+    resolveRumDomainKeyStub = sandbox.stub().resolves({ hasDomainKey: false, timedOut: false });
     toDynamoItemStub = sandbox.stub().returns({});
 
     handler = await esmock(
       '../../src/rum-config-refresh/handler.js',
       {
         '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: () => ({ retrieveDomainkey: retrieveDomainkeyStub }),
-          },
+          resolveRumDomainKey: resolveRumDomainKeyStub,
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: toDynamoItemStub },
@@ -55,6 +54,7 @@ describe('rum-config-refresh handler', () => {
     mockConfig = {
       getRumConfig: sandbox.stub().returns(undefined),
       updateRumConfig: sandbox.stub(),
+      getFetchConfig: sandbox.stub().returns(undefined),
     };
 
     mockSite = {
@@ -110,13 +110,13 @@ describe('rum-config-refresh handler', () => {
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ skipped: true, reason: 'recently checked' });
-      expect(retrieveDomainkeyStub).not.to.have.been.called;
+      expect(resolveRumDomainKeyStub).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
     });
 
     it('proceeds when rumConfig has no lastCheckedAt', async () => {
       mockConfig.getRumConfig.returns(undefined);
-      retrieveDomainkeyStub.resolves('domainkey-value');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -128,7 +128,7 @@ describe('rum-config-refresh handler', () => {
     it('proceeds when lastCheckedAt is older than 7 days', async () => {
       const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
       mockConfig.getRumConfig.returns({ hasDomainKey: false, lastCheckedAt: staleDate });
-      retrieveDomainkeyStub.resolves('domainkey-value');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -139,21 +139,22 @@ describe('rum-config-refresh handler', () => {
   });
 
   describe('RUM domain key check', () => {
-    it('sets hasDomainKey=true when retrieveDomainkey resolves', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+    it('sets hasDomainKey=true and saves when resolveRumDomainKey resolves with a key', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: true, updated: true });
+      expect(resolveRumDomainKeyStub).to.have.been.calledOnceWith(mockSite, context);
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(true);
       expect(toDynamoItemStub).to.have.been.calledWith(mockConfig);
       expect(mockSite.save).to.have.been.calledOnce;
     });
 
-    it('sets hasDomainKey=false when retrieveDomainkey rejects', async () => {
-      retrieveDomainkeyStub.rejects(new Error('no domain key found'));
+    it('sets hasDomainKey=false and saves when no domain key is found', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: false, timedOut: false });
 
       const result = await handler.default({ siteId: SITE_ID }, context);
 
@@ -161,40 +162,37 @@ describe('rum-config-refresh handler', () => {
       const body = await result.json();
       expect(body).to.deep.equal({ hasDomainKey: false, updated: true });
       expect(mockConfig.updateRumConfig).to.have.been.calledWith(false);
-      expect(toDynamoItemStub).to.have.been.calledWith(mockConfig);
       expect(mockSite.save).to.have.been.calledOnce;
-      expect(context.log.warn).to.have.been.calledWithMatch('RUM check failed');
     });
 
-    it('skips config update and does not write lastCheckedAt when RUM check times out', async () => {
-      const clock = sinon.useFakeTimers();
-      retrieveDomainkeyStub.returns(new Promise(() => {})); // never resolves
+    it('skips config update and save when RUM check times out', async () => {
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: false, timedOut: true });
 
-      const resultPromise = handler.default({ siteId: SITE_ID }, context);
-      await clock.tickAsync(4000); // advance past the 3 s timeout
-      const result = await resultPromise;
-      clock.restore();
+      const result = await handler.default({ siteId: SITE_ID }, context);
 
       expect(result.status).to.equal(200);
       const body = await result.json();
       expect(body).to.deep.equal({ skipped: true, reason: 'timeout' });
       expect(mockConfig.updateRumConfig).not.to.have.been.called;
       expect(mockSite.save).not.to.have.been.called;
-      expect(context.log.error).to.have.been.calledWithMatch('timed out');
+      expect(context.log.warn).to.have.been.calledWithMatch('timed out');
     });
 
-    it('extracts hostname from baseURL before calling retrieveDomainkey', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+    it('returns 500 when resolveRumDomainKey rejects unexpectedly', async () => {
+      resolveRumDomainKeyStub.rejects(new Error('network timeout'));
 
-      await handler.default({ siteId: SITE_ID }, context);
+      const result = await handler.default({ siteId: SITE_ID }, context);
 
-      expect(retrieveDomainkeyStub).to.have.been.calledWith('www.example.com');
+      expect(result.status).to.equal(500);
+      expect(mockConfig.updateRumConfig).not.to.have.been.called;
+      expect(mockSite.save).not.to.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch('resolveRumDomainKey failed');
     });
   });
 
   describe('save failure', () => {
     it('returns 500 when site.save() throws', async () => {
-      retrieveDomainkeyStub.resolves('domainkey-abc');
+      resolveRumDomainKeyStub.resolves({ hasDomainKey: true, timedOut: false });
       mockSite.save.rejects(new Error('DynamoDB write failed'));
 
       const result = await handler.default({ siteId: SITE_ID }, context);

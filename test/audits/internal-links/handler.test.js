@@ -4676,4 +4676,94 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     );
     expect(mockLog.error).to.have.been.calledWith(sinon.match(/MANUAL ACTION REQUIRED: Resume audit audit-123/));
   });
+
+  it('should send continuation immediately when detectBrokenLinksFromCrawlBatch returns earlyExit=true', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const smallScrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape/page1.json'],
+      ['https://example.com/page2', 'scrape/page2.json'],
+    ]);
+
+    const noSuchKeyError = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
+    const mockS3Send = sandbox.stub().callsFake(async (command) => {
+      const commandName = command.constructor.name;
+      if (commandName === 'GetObjectCommand') {
+        const { Key } = command.input;
+        if (Key.includes('/cache/')) {
+          return {
+            Body: { transformToString: async () => JSON.stringify({ broken: [], working: [] }) },
+            ETag: '"cache-etag"',
+          };
+        }
+        if (Key.includes('/completed.json')) {
+          throw noSuchKeyError;
+        }
+        throw noSuchKeyError;
+      }
+      if (commandName === 'ListObjectsV2Command') {
+        return { Contents: [] };
+      }
+      return { ETag: '"mock-etag"' };
+    });
+
+    const sqsSendStub = sandbox.stub().resolves();
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site-early',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-early',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-early',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {},
+      sqs: { sendMessage: sqsSendStub },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: { send: mockS3Send },
+      scrapeResultPaths: smallScrapeResultPaths,
+      scrapeJobId: 'scrape-early',
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      },
+    };
+
+    const module = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/crawl-detection.js': {
+        detectBrokenLinksFromCrawlBatch: async () => ({
+          results: [],
+          brokenUrlsCache: [],
+          workingUrlsCache: [],
+          pagesProcessed: 1,
+          pagesSkipped: 0,
+          hasMorePages: true,
+          earlyExit: true,
+          nextBatchStartIndex: 1,
+          stats: { linksChecked: 0, linksSkipped: 0, brokenLinksFound: 0 },
+        }),
+      },
+    });
+
+    const result = await module.runCrawlDetectionBatch(mockContext);
+
+    expect(result.status).to.equal('batch-continuation');
+    expect(sqsSendStub).to.have.been.called;
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Early exit detected, sending continuation from index 0/));
+  });
 });

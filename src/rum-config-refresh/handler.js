@@ -10,13 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { resolveRumDomainKey } from '@adobe/spacecat-shared-rum-api-client';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 
 const STALENESS_DAYS = 7;
 const STALENESS_MS = STALENESS_DAYS * 24 * 60 * 60 * 1000;
-const RUM_CHECK_TIMEOUT_MS = 3000;
 
 /**
  * Periodic refresh handler for site RUM domain key availability.
@@ -42,7 +41,8 @@ export default async function rumConfigRefresh(message, context) {
     return ok({ skipped: true, reason: 'site not found' });
   }
 
-  const rumConfig = site.getConfig().getRumConfig();
+  const siteConfig = site.getConfig();
+  const rumConfig = siteConfig.getRumConfig();
   if (rumConfig?.lastCheckedAt) {
     const age = Date.now() - new Date(rumConfig.lastCheckedAt).getTime();
     if (age < STALENESS_MS) {
@@ -51,35 +51,21 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const domain = new URL(site.getBaseURL()).hostname;
-  let hasDomainKey = false;
-  let timeoutId;
-  let timedOut = false;
-
+  let hasDomainKey;
+  let timedOut;
   try {
-    const rumApiClient = RUMAPIClient.createFrom(context);
-    await Promise.race([
-      rumApiClient.retrieveDomainkey(domain),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-          timedOut = true;
-          reject(new Error('RUM check timed out'));
-        }, RUM_CHECK_TIMEOUT_MS);
-      }),
-    ]);
-    hasDomainKey = true;
+    ({ hasDomainKey, timedOut } = await resolveRumDomainKey(site, context));
   } catch (e) {
-    if (timedOut) {
-      log.error(`[rum-config-refresh] RUM check timed out for ${domain}, skipping config update`);
-      return ok({ skipped: true, reason: 'timeout' });
-    }
-    log.warn(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
-  } finally {
-    clearTimeout(timeoutId);
+    log.error(`[rum-config-refresh] resolveRumDomainKey failed for site ${siteId}: ${e.message}`);
+    return internalServerError(`RUM domain key check failed: ${e.message}`);
+  }
+
+  if (timedOut) {
+    log.warn(`[rum-config-refresh] RUM domain key check timed out for site ${siteId}, skipping config update`);
+    return ok({ skipped: true, reason: 'timeout' });
   }
 
   try {
-    const siteConfig = site.getConfig();
     siteConfig.updateRumConfig(hasDomainKey);
     site.setConfig(Config.toDynamoItem(siteConfig));
     await site.save();

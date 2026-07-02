@@ -121,7 +121,7 @@ describe('Audit Utils Tests', () => {
       expect(context.log.error).to.have.been.calledWith('Handler test-handler has no product codes');
     });
 
-    it('returns false when handler has productCodes but no site enrollment', async () => {
+    it('returns false and logs info when handler has productCodes but no site enrollment', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
@@ -136,6 +136,10 @@ describe('Audit Utils Tests', () => {
 
       const result = await isAuditEnabledForSite('test-handler', site, context);
       expect(result).to.be.false;
+      expect(context.log.info).to.have.been.calledWith(
+        'No valid site enrollment for handler test-handler with product codes ASO,LLMO for site site-123',
+      );
+      expect(context.log.error).to.not.have.been.called;
     });
 
     it('returns true when handler has productCodes and site enrollment', async () => {
