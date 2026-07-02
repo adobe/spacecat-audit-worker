@@ -1,3 +1,10 @@
+## [1.494.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.1...v1.494.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* create brand-presence schedule via shared drs-client helper | LLMO-5605 ([#2737](https://github.com/adobe/spacecat-audit-worker/issues/2737)) ([d74b3c3](https://github.com/adobe/spacecat-audit-worker/commit/d74b3c3ffe5a672781737191d50abefc323f725c))
+
 ## [1.494.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.0...v1.494.1) (2026-07-02)
 
 
