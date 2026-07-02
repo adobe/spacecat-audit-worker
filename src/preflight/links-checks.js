@@ -118,6 +118,33 @@ function isBrokenStatus(status) {
 }
 
 /**
+ * Returns true only for a DNS-resolution failure — the one network-level error that
+ * definitively indicates a broken link.
+ *
+ * A DNS-resolution failure (`ENOTFOUND` — getaddrinfo cannot resolve the hostname) means the
+ * domain does not exist, so the link is unambiguously broken (SITES-40919: nonexistent domains
+ * and intranet hosts that fail DNS must surface as status 0).
+ *
+ * Every other thrown error — connection reset, HTTP/2 stream errors, TLS failures, connection
+ * refused, request timeouts — means the host resolves and is reachable but did not return a
+ * usable HTTP response. That is indistinguishable from a valid page that blocks crawlers at the
+ * connection level (e.g. ups.com resets the HTTP/2 stream with NGHTTP2_INTERNAL_ERROR), so these
+ * must NOT be reported as broken (SITES-47125).
+ *
+ * Node's DNS resolver reliably sets `err.code === 'ENOTFOUND'`, which is the primary signal. The
+ * message check is a narrow fallback for wrappers that strip `.code`: it only fires when no code
+ * is present and matches the canonical `getaddrinfo ENOTFOUND` format — not any message that
+ * merely contains the substring, which would re-introduce false positives (PR #2727 review).
+ *
+ * @param {Error} err
+ * @returns {boolean}
+ */
+function isDnsResolutionFailure(err) {
+  return err.code === 'ENOTFOUND'
+    || (err.code == null && /getaddrinfo ENOTFOUND/.test(err.message));
+}
+
+/**
  * Helper function to check if a link is broken
  * @param {string} href - The URL to check
  * @param {string} pageUrl - The source page URL
@@ -203,16 +230,24 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 
     return null;
   } catch (finalErr) {
-    // Network-level failure (DNS, timeout, unsupported protocol) — the link is
-    // unreachable, which is a broken-link condition. status: 0 is the sentinel
-    // for "no HTTP response received".
-    log.info(`[preflight-audit] ${linkType} link ${href} unreachable (${finalErr.message}) — reporting as broken`);
-    return {
-      urlTo: href,
-      href: pageUrl,
-      status: 0,
-      ...toElementTargets(selectors),
-    };
+    // Only a DNS-resolution failure (ENOTFOUND) is a definitive broken-link condition: the
+    // domain does not exist. status: 0 is the sentinel for "no HTTP response received".
+    if (isDnsResolutionFailure(finalErr)) {
+      log.info(`[preflight-audit] ${linkType} link ${href} unreachable — DNS does not resolve (${finalErr.message}) — reporting as broken`);
+      return {
+        urlTo: href,
+        href: pageUrl,
+        status: 0,
+        ...toElementTargets(selectors),
+      };
+    }
+
+    // Any other network-level failure (connection reset, HTTP/2 stream error, TLS, timeout)
+    // means the host is reachable but did not return a usable response — indistinguishable
+    // from a valid page that blocks bots at the connection level. Do NOT report as broken
+    // (SITES-47125: ups.com and similar bot-protected sites were false-flagged as Status 0).
+    log.info(`[preflight-audit] ${linkType} link ${href} probe inconclusive (${finalErr.message}) — not reporting as broken`);
+    return null;
   }
 }
 
