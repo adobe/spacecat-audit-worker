@@ -681,7 +681,7 @@ export async function submitForScraping(context) {
       .filter((url) => isNotRecentUrl(url, recentPathnames))
       .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
-    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
+    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
@@ -729,7 +729,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${rebasedTopPagesUrls.length},
+    topPagesUrls=${topPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     scopeFilteredUrls=${scopeFilteredCount},
@@ -1269,20 +1269,7 @@ export async function processContentAndGenerateOpportunities(context) {
     // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
     if (!isDomainBlocked) {
       if (scrapeResultPaths?.size > 0) {
-        // Defensive re-filter: scrape result paths should already be in-scope (submitForScraping
-        // scoped them before submission), but a stale scrape job could carry out-of-scope paths.
-        // Routed through applySiteScopeFilter so any drop here is observable, same as submission.
-        const { scoped, scopeFilteredCount } = applySiteScopeFilter(
-          Array.from(scrapeResultPaths.keys()),
-          site.getBaseURL(),
-          'n/a (defensive re-filter)',
-          siteId,
-          log,
-        );
-        urlsToCheck = scoped;
-        if (scopeFilteredCount > 0) {
-          log.info(`${LOG_PREFIX} Defensive scope re-filter dropped ${scopeFilteredCount} out-of-scope path(s) from stale scrape results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-        }
+        urlsToCheck = Array.from(context.scrapeResultPaths.keys());
         log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
       } else {
         // scrapeResultPaths is empty — all submitted URLs had FAILED status in the scraper.
