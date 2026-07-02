@@ -1,3 +1,10 @@
+## [1.494.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.0...v1.494.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **prerender:** propagate tri-state valuable (true/false/null) from mystique ([#2745](https://github.com/adobe/spacecat-audit-worker/issues/2745)) ([802587f](https://github.com/adobe/spacecat-audit-worker/commit/802587f029e70edefb9150179cb1c39100327d11))
+
 # [1.494.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.4...v1.494.0) (2026-07-02)
 
 
