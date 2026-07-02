@@ -19,6 +19,10 @@ import { hasText } from '@adobe/spacecat-shared-utils';
  * @param {object} context - context object for trace ID propagation
  */
 class SQS {
+  // Per-invocation cache of resolved organization IDs, keyed by siteId, so a handler
+  // that emits many Mystique messages for the same site only pays the DB lookup once.
+  #organizationIdCache = new Map();
+
   constructor(region, log, context) {
     this.sqsClient = new SQSClient({ region });
     this.log = log;
@@ -27,6 +31,35 @@ class SQS {
 
   static #isFifoQueue(queueUrl) {
     return hasText(queueUrl) && queueUrl.toLowerCase().endsWith('.fifo');
+  }
+
+  /**
+   * Resolves the organization ID for a site, caching only successful resolutions
+   * (including a genuine null) per siteId. Never throws — a failed lookup must not
+   * block the message send, and a transient failure is left uncached so later
+   * sends for the same site can retry.
+   *
+   * @param {string} siteId - The site ID carried on the message.
+   * @returns {Promise<string|null>} The organization ID, or null if it can't be resolved.
+   */
+  async #resolveOrganizationId(siteId) {
+    if (this.#organizationIdCache.has(siteId)) {
+      return this.#organizationIdCache.get(siteId);
+    }
+
+    try {
+      const { Site } = this.context?.dataAccess ?? {};
+      const site = await Site?.findById(siteId);
+      const organizationId = site?.getOrganizationId?.() ?? null;
+      // Cache only on success. A transient Site.findById failure (timeout/throttle)
+      // must NOT be cached as a permanent null — that would suppress the org ID for
+      // every subsequent message for this site within the invocation.
+      this.#organizationIdCache.set(siteId, organizationId);
+      return organizationId;
+    } catch (e) {
+      this.log.warn(`Failed to resolve organizationId for Mystique message (siteId: ${siteId}): ${e.message}`);
+      return null;
+    }
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0, msgDedupId = undefined) {
@@ -39,6 +72,22 @@ class SQS {
     // This maintains trace continuity across service boundaries (e.g., SpaceCat → Mystique)
     if (!('traceId' in body) && this.context?.traceId) {
       body.traceId = this.context.traceId;
+    }
+
+    // Auto-add the organization ID to Mystique-bound messages so org identity propagates
+    // across the SpaceCat → Mystique boundary (mirrors the traceId propagation above).
+    // Scoped to the Mystique queue only and skipped when already set on the message.
+    const mystiqueQueueUrl = this.context?.env?.QUEUE_SPACECAT_TO_MYSTIQUE;
+    if (
+      hasText(mystiqueQueueUrl)
+      && queueUrl === mystiqueQueueUrl
+      && !('organizationId' in body)
+      && hasText(body.siteId)
+    ) {
+      const organizationId = await this.#resolveOrganizationId(body.siteId);
+      if (organizationId) {
+        body.organizationId = organizationId;
+      }
     }
 
     // Auto-extract MessageGroupId from message for SQS fair queuing.

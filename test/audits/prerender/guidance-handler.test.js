@@ -220,7 +220,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(savedSuggestions).to.have.lengthOf(2); // Only 2 non-OUTDATED suggestions
     });
 
-    it('should handle valuable flag correctly (defaults to true if not provided)', async () => {
+    it('should set valuable to null when not provided (indeterminate — not a confirmed verdict)', async () => {
       const s3Data = {
         opportunityId: 'opportunity-123',
         siteId: 'site-123',
@@ -231,7 +231,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
             suggestionId: 'suggestion-1',
             url: 'https://example.com/page1',
             aiSummary: 'Summary without valuable flag',
-            // valuable: undefined (not provided)
+            // valuable: undefined — mystique did not provide a verdict (e.g. analysis error)
           },
         ],
       };
@@ -251,7 +251,42 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       expect(mockSuggestions[0].setData).to.have.been.called;
       const updatedData = mockSuggestions[0].setData.getCall(0).args[0];
-      expect(updatedData.valuable).to.equal(true); // Default to true
+      // null = indeterminate: analysis error/failure, not a confirmed content gain
+      expect(updatedData.valuable).to.equal(null);
+    });
+
+    it('should set valuable to null when explicitly null (indeterminate)', async () => {
+      const s3Data = {
+        opportunityId: 'opportunity-123',
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        timestamp: '2025-01-15T12:00:00Z',
+        suggestions: [
+          {
+            suggestionId: 'suggestion-1',
+            url: 'https://example.com/page1',
+            aiSummary: '',
+            valuable: null, // explicit indeterminate from mystique (analysis failed)
+          },
+        ],
+      };
+
+      mockFetchSuccess(s3Data);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.called;
+      const updatedData = mockSuggestions[0].setData.getCall(0).args[0];
+      expect(updatedData.valuable).to.equal(null);
     });
 
     it('should respect explicit false for valuable flag', async () => {
@@ -839,8 +874,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       );
     });
 
-    it('should default valuable to true when field is missing and track paid customer status', async () => {
-      // Test with missing 'valuable' field - should default to true
+    it('should set valuable to null when field is missing and track paid customer status', async () => {
+      // Test with missing 'valuable' field - should be null (indeterminate), not true
       mockFetchSuccess({
         opportunityId: 'opportunity-123',
         suggestions: [
@@ -870,11 +905,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
-      // First suggestion should have valuable=true (defaulted)
+      // First suggestion should have valuable=null (indeterminate — not a confirmed verdict)
       expect(savedSuggestions[0].setData).to.have.been.calledWith(
-        sinon.match({ 
+        sinon.match({
           aiSummary: 'Valid summary without valuable field',
-          valuable: true,
+          valuable: null,
         }),
       );
       
@@ -886,12 +921,14 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         }),
       );
 
-      // Verify log includes paid customer flag and correct counts
+      // Verify log includes paid customer flag and correct counts.
+      // valuableSuggestions=0: neither suggestion has a confirmed true verdict
+      // (first is null/indeterminate, second is false).
       expect(log.info).to.have.been.calledWith(
         sinon.match(/prerender_ai_summary_metrics/)
           .and(sinon.match(/isPaidLLMOCustomer=true/))
           .and(sinon.match(/totalSuggestions=2/))
-          .and(sinon.match(/valuableSuggestions=1/))
+          .and(sinon.match(/valuableSuggestions=0/))
           .and(sinon.match(/validAiSummaryCount=2/)),
       );
     });
