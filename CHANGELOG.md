@@ -1,3 +1,10 @@
+## [1.493.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.2...v1.493.3) (2026-07-02)
+
+
+### Bug Fixes
+
+* only audit completed ISO weeks ([#2464](https://github.com/adobe/spacecat-audit-worker/issues/2464)) ([7d2fd36](https://github.com/adobe/spacecat-audit-worker/commit/7d2fd363bbd5665ae9548a5896ead84374aa51f8))
+
 ## [1.493.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.1...v1.493.2) (2026-07-02)
 
 
