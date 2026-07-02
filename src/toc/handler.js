@@ -11,7 +11,7 @@
  */
 
 import { getPrompt } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -408,6 +408,123 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions };
 }
 
+/**
+ * Recursively collect text node values from a HAST node tree.
+ * @param {Object|Array} node - HAST node or array of nodes
+ * @returns {string[]} Array of text strings found in the tree
+ */
+function extractHeadingTextsFromHast(node) {
+  if (!node) {
+    return [];
+  }
+  if (Array.isArray(node)) {
+    return node.flatMap((child) => extractHeadingTextsFromHast(child));
+  }
+  if (node.type === 'text' && typeof node.value === 'string') {
+    return [node.value];
+  }
+  if (node.children && Array.isArray(node.children)) {
+    return node.children.flatMap((child) => extractHeadingTextsFromHast(child));
+  }
+  return [];
+}
+
+/**
+ * Sends a guidance:table-of-contents message to Mystique so that prompts can be
+ * generated for each TOC suggestion (required for the Impact Engine geo-experiment flow).
+ * @param {string} auditUrl - Audited base URL
+ * @param {Object} opportunity - The TOC opportunity entity
+ * @param {Object} context - Audit context
+ * @returns {Promise<number>} Number of suggestions sent to Mystique
+ */
+async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn(`[TOC] SQS or Mystique queue not configured, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
+    return 0;
+  }
+
+  if (!opportunity || !opportunity.getId) {
+    log.warn(`[TOC] Opportunity entity not available, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
+    return 0;
+  }
+
+  const opportunityId = opportunity.getId();
+
+  try {
+    const existingSuggestions = await opportunity.getSuggestions();
+
+    if (!existingSuggestions || existingSuggestions.length === 0) {
+      log.debug(`[TOC] No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${auditUrl}`);
+      return 0;
+    }
+
+    const candidates = [];
+
+    existingSuggestions.forEach((s) => {
+      const data = s.getData();
+      const status = s.getStatus();
+
+      // Skip FIXED, OUTDATED, SKIPPED suggestions
+      if (
+        status === Suggestion.STATUSES.FIXED
+        || status === Suggestion.STATUSES.OUTDATED
+        || status === Suggestion.STATUSES.SKIPPED
+      ) {
+        return;
+      }
+
+      // Skip suggestions that already have prompts
+      if (data?.hasPrompts === true && data?.prompts?.length > 0) {
+        return;
+      }
+
+      const suggestionId = s.getId();
+      const hastNodes = data?.transformRules?.value;
+      const headings = Array.isArray(hastNodes)
+        ? extractHeadingTextsFromHast(hastNodes)
+        : [];
+
+      candidates.push({
+        suggestionId,
+        url: data?.url || '',
+        title: data?.title || '',
+        headings,
+        hasPrompts: !!(data?.hasPrompts || (data?.prompts?.length > 0)),
+      });
+    });
+
+    if (candidates.length === 0) {
+      log.info(`[TOC] No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${auditUrl}`);
+      return 0;
+    }
+
+    const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
+    const time = new Date().toISOString();
+
+    await sqs.sendMessage(queue, {
+      type: 'guidance:table-of-contents',
+      url: auditUrl,
+      time,
+      data: {
+        opportunityId,
+        suggestions: candidates,
+        generatePrompts: true,
+        siteRegion: site.getRegion?.() ?? '',
+      },
+    });
+
+    log.info(`[TOC] Queued guidance:table-of-contents message to Mystique for baseUrl=${auditUrl}, opportunityId=${opportunityId}, suggestions=${candidates.length}`);
+    return candidates.length;
+  } catch (error) {
+    log.error(`[TOC] Failed to send guidance:table-of-contents message to Mystique for opportunityId=${opportunityId}, baseUrl=${auditUrl}: ${error.message}`, error);
+    return 0;
+  }
+}
+
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   const tocSuggestions = auditData.suggestions?.toc || [];
@@ -470,6 +587,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         recommendedAction: suggestion.recommendedAction,
         checkTitle: suggestion.checkTitle,
         isAISuggested: suggestion.isAISuggested,
+        prompts: [],
+        hasPrompts: false,
         ...(suggestion.transformRules && {
           transformRules: {
             ...suggestion.transformRules,
@@ -482,6 +601,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     mergeDataFunction,
     log,
   });
+
+  await sendTocGuidanceRequestToMystique(auditUrl, opportunity, context);
 
   log.info(`TOC opportunity created for Site Optimizer and ${tocSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
