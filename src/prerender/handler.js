@@ -646,7 +646,7 @@ export async function submitForScraping(context) {
       .filter((url) => isNotRecentUrl(url, recentPathnames))
       .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
-    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
+    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
@@ -688,7 +688,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${topPagesUrls.length},
+    topPagesUrls=${rebasedTopPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     scopeFilteredUrls=${scopeFilteredCount},
