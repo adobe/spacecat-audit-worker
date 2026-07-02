@@ -12,7 +12,7 @@
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
+import { detectBotBlocker, filterBySiteScope } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -548,14 +548,17 @@ export async function submitForScraping(context) {
 
   const siteId = site.getId();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+  const preferredBase = getPreferredBaseUrl(site, context);
+  const siteBaseUrl = site.getBaseURL();
 
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+    const { urls: mergedCsvUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
       rebasedCsvUrls,
       { includeQueryParams: true },
     );
+    const explicitUrls = filterBySiteScope(mergedCsvUrls, siteBaseUrl);
+    const scopeFilteredCount = mergedCsvUrls.length - explicitUrls.length;
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -564,6 +567,7 @@ export async function submitForScraping(context) {
     topPagesUrls=0,
     includedURLs=0,
     filteredOutUrls=${filteredCount},
+    scopeFilteredUrls=${scopeFilteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},
     csvUrls=${auditContext.urls.length},`);
@@ -597,13 +601,13 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));
 
   let finalUrls;
   let filteredCount;
+  let scopeFilteredCount = 0;
   let agenticUrlsCount = 0;
   let currentAgentic = 0;
   let currentOrganic;
@@ -626,7 +630,9 @@ export async function submitForScraping(context) {
       [...organicSlackDeduped, ...includedSlackDeduped],
       { includeQueryParams: true },
     );
-    finalUrls = crossSlackDeduped;
+    // Single site-scope filter on the merged candidate set (scoped here, not per-source).
+    finalUrls = filterBySiteScope(crossSlackDeduped, siteBaseUrl);
+    scopeFilteredCount = crossSlackDeduped.length - finalUrls.length;
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
@@ -650,7 +656,7 @@ export async function submitForScraping(context) {
       .filter((url) => isNotRecentUrl(url, recentPathnames))
       .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
-    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
+    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
     agenticNewThisCycle = filteredAgenticUrls.length;
 
@@ -672,7 +678,11 @@ export async function submitForScraping(context) {
       [...organicDeduped, ...includedDeduped, ...agenticDeduped],
       { includeQueryParams: true },
     );
-    const batchedUrls = crossDeduped.slice(0, DAILY_BATCH_SIZE);
+    // Single site-scope filter on the merged candidate set, applied before the daily-batch
+    // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
+    const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
+    scopeFilteredCount = crossDeduped.length - scopedUrls.length;
+    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
@@ -688,9 +698,10 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${topPagesUrls.length},
+    topPagesUrls=${rebasedTopPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
+    scopeFilteredUrls=${scopeFilteredCount},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},
