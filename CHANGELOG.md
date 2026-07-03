@@ -1,3 +1,17 @@
+## [1.494.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.1...v1.494.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* create brand-presence schedule via shared drs-client helper | LLMO-5605 ([#2737](https://github.com/adobe/spacecat-audit-worker/issues/2737)) ([d74b3c3](https://github.com/adobe/spacecat-audit-worker/commit/d74b3c3ffe5a672781737191d50abefc323f725c))
+
+## [1.494.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.0...v1.494.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **prerender:** propagate tri-state valuable (true/false/null) from mystique ([#2745](https://github.com/adobe/spacecat-audit-worker/issues/2745)) ([802587f](https://github.com/adobe/spacecat-audit-worker/commit/802587f029e70edefb9150179cb1c39100327d11))
+
 # [1.494.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.493.4...v1.494.0) (2026-07-02)
 
 
