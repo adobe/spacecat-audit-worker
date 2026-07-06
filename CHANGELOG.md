@@ -1,3 +1,10 @@
+# [1.496.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.495.1...v1.496.0) (2026-07-06)
+
+
+### Features
+
+* generate path-level prerender suggestions in audit worker ([#2500](https://github.com/adobe/spacecat-audit-worker/issues/2500)) ([0f7600b](https://github.com/adobe/spacecat-audit-worker/commit/0f7600b8419466494a46c5ad510711ece0d75ffc))
+
 ## [1.495.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.495.0...v1.495.1) (2026-07-04)
 
 
