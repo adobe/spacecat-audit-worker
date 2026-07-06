@@ -64,6 +64,8 @@ async function fetchBrandTopics(postgrestClient, organizationId, log) {
   const endDate = now.toISOString().slice(0, 10);
   const startDate = new Date(now.setDate(now.getDate() - 90)).toISOString().slice(0, 10);
 
+  log.info(`${LOG_PREFIX} Calling rpc_brand_presence_topics org=${organizationId} range=${startDate} to ${endDate}`);
+
   const { data, error } = await postgrestClient.rpc('rpc_brand_presence_topics', {
     p_organization_id: organizationId,
     p_start_date: startDate,
@@ -83,10 +85,11 @@ async function fetchBrandTopics(postgrestClient, organizationId, log) {
   });
 
   if (error) {
-    log.error(`${LOG_PREFIX} rpc_brand_presence_topics error: ${error.message}`);
+    log.error(`${LOG_PREFIX} rpc_brand_presence_topics failed: ${JSON.stringify(error)}`);
     return [];
   }
 
+  log.info(`${LOG_PREFIX} rpc_brand_presence_topics returned ${data?.length ?? 0} rows`);
   return data || [];
 }
 
@@ -96,23 +99,32 @@ export async function auditRunner(auditUrl, context, site) {
   const organizationId = site.getOrganizationId();
   const domain = extractDomain(site.getBaseURL());
 
-  log.info(`${LOG_PREFIX} Starting content coverage audit for ${domain} (org: ${organizationId})`);
+  log.info(`${LOG_PREFIX} ===== START siteId=${siteId} org=${organizationId} domain=${domain} =====`);
 
+  // Check postgrestClient
   const postgrestClient = dataAccess?.services?.postgrestClient;
   if (!postgrestClient) {
-    log.error(`${LOG_PREFIX} No postgrestClient available in dataAccess.services`);
+    log.error(`${LOG_PREFIX} No postgrestClient in dataAccess.services — aborting`);
     return { auditResult: { topics: [], topicCount: 0 }, fullAuditRef: auditUrl };
   }
+  log.info(`${LOG_PREFIX} postgrestClient available`);
+
+  // Check Semrush credentials
+  const hasSeoCredentials = !!(env?.SEO_CLIENT_ID && env?.SEO_CLIENT_SECRET);
+  log.info(`${LOG_PREFIX} Semrush credentials present: ${hasSeoCredentials} (SEO_CLIENT_ID=${env?.SEO_CLIENT_ID ? 'set' : 'MISSING'})`);
 
   // Step 1: Fetch brand topics from PostgREST
+  log.info(`${LOG_PREFIX} Step 1: Fetching brand topics from rpc_brand_presence_topics`);
   const rows = await fetchBrandTopics(postgrestClient, organizationId, log);
   if (rows.length === 0) {
-    log.info(`${LOG_PREFIX} No brand topics found for org ${organizationId}`);
+    log.info(`${LOG_PREFIX} Step 1: No brand topics found — nothing to process`);
     return { auditResult: { topics: [], topicCount: 0 }, fullAuditRef: auditUrl };
   }
+  log.info(`${LOG_PREFIX} Step 1: Got ${rows.length} topics. Sample: ${JSON.stringify(rows.slice(0, 3).map((r) => ({ topic: r.topic, prompt_count: r.prompt_count, brand_citations: r.brand_citations })))}`);
 
   // Step 2: Score and rank topics by coverage gap, take top candidates
-  const scored = rows
+  log.info(`${LOG_PREFIX} Step 2: Scoring topics by gap score`);
+  const allScored = rows
     .map((row) => ({
       topic: row.topic,
       topicId: row.topic_id,
@@ -124,23 +136,34 @@ export async function auditRunner(auditUrl, context, site) {
     .map((t) => ({
       ...t,
       gapScore: computeGapScore(t.promptCount, t.brandCitations, t.brandMentions),
-    }))
-    .filter((t) => t.gapScore > 0)
+    }));
+
+  const withScore = allScored.filter((t) => t.gapScore > 0);
+  log.info(`${LOG_PREFIX} Step 2: ${withScore.length}/${allScored.length} topics have gapScore > 0`);
+
+  const scored = withScore
     .sort((a, b) => b.gapScore - a.gapScore)
     .slice(0, MAX_CANDIDATE_TOPICS);
 
   if (scored.length === 0) {
-    log.info(`${LOG_PREFIX} No topics with positive gap score found`);
+    log.info(`${LOG_PREFIX} Step 2: No topics with positive gap score — nothing to process`);
     return { auditResult: { topics: [], topicCount: 0 }, fullAuditRef: auditUrl };
   }
 
-  log.info(`${LOG_PREFIX} Top ${scored.length} gap topics identified, fetching fanout keywords`);
+  log.info(`${LOG_PREFIX} Step 2: Top ${scored.length} topics by gap score:`);
+  scored.forEach((t, i) => {
+    log.info(`${LOG_PREFIX}   [${i + 1}] "${t.topic}" gapScore=${t.gapScore.toFixed(1)} prompts=${t.promptCount} citations=${t.brandCitations} mentions=${t.brandMentions}`);
+  });
 
   // Step 3: Call FanoutService to find keywords where brand ranks but weakly (position > 5)
+  log.info(`${LOG_PREFIX} Step 3: Calling Semrush FanoutService for ${scored.length} topics on domain=${domain}`);
   try {
     const { fanoutClient } = getGrpcClients(env);
     const topicNames = scored.map((t) => t.topic);
+    log.info(`${LOG_PREFIX} Step 3: Topics sent to FanoutService: ${JSON.stringify(topicNames)}`);
+
     const fanoutByTopic = await fetchLowRankFanoutKeywords(fanoutClient, topicNames, domain);
+    log.info(`${LOG_PREFIX} Step 3: FanoutService returned data for ${fanoutByTopic.size}/${scored.length} topics`);
 
     for (const t of scored) {
       const fanout = fanoutByTopic.get(t.topic);
@@ -149,19 +172,27 @@ export async function auditRunner(auditUrl, context, site) {
         t.matchedTopicId = fanout.matchedTopicId;
         t.similarityScore = fanout.similarityScore;
         t.lowRankKeywords = fanout.lowRankKeywords;
+        log.info(`${LOG_PREFIX} Step 3: "${t.topic}" → matched="${fanout.matchedTopicName}" similarity=${fanout.similarityScore}% lowRankKeywords=${fanout.lowRankKeywords.length}`);
+        if (fanout.lowRankKeywords.length > 0) {
+          log.info(`${LOG_PREFIX}   Top keywords: ${JSON.stringify(fanout.lowRankKeywords.slice(0, 3))}`);
+        }
       } else {
         t.lowRankKeywords = [];
+        log.warn(`${LOG_PREFIX} Step 3: "${t.topic}" — no fanout match (below similarity threshold or not found)`);
       }
     }
   } catch (err) {
-    log.warn(`${LOG_PREFIX} Semrush FanoutService unavailable, skipping low-rank keywords: ${err.message}`);
+    log.error(`${LOG_PREFIX} Step 3: FanoutService call failed: ${err.message}`);
+    log.error(`${LOG_PREFIX} Step 3: Error stack: ${err.stack}`);
     for (const t of scored) {
       t.lowRankKeywords = [];
     }
   }
 
   const topicCount = scored.length;
-  log.info(`${LOG_PREFIX} Audit complete — ${topicCount} topics with low-rank keyword data`);
+  const topicsWithKeywords = scored.filter((t) => t.lowRankKeywords?.length > 0).length;
+  log.info(`${LOG_PREFIX} ===== DONE: ${topicCount} topics, ${topicsWithKeywords} with low-rank keywords =====`);
+  log.info(`${LOG_PREFIX} Final result: ${JSON.stringify(scored.map((t) => ({ topic: t.topic, gapScore: Math.round(t.gapScore), lowRankKeywords: t.lowRankKeywords?.length ?? 0 })))}`);
 
   return {
     auditResult: { topics: scored, topicCount },
