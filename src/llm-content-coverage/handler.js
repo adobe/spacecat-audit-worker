@@ -16,6 +16,9 @@ import {
 } from '@adobe/mysticat-shared-seo-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { createOpportunityData, AUDIT_TYPE } from './opportunity-data-mapper.js';
 
 const MAX_CANDIDATE_TOPICS = 10;
 const LOG_PREFIX = '[LlmContentCoverage]';
@@ -201,7 +204,72 @@ export async function auditRunner(auditUrl, context, site) {
   };
 }
 
+/**
+ * Post-processor: creates/updates the Opportunity and syncs keyword Suggestions.
+ * Runs after the audit is persisted, so auditData.id is available.
+ *
+ * @param {string} auditUrl
+ * @param {object} auditData - persisted audit data including id and siteId
+ * @param {object} context
+ */
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+  const scored = auditData.auditResult?.topics ?? [];
+  const domain = extractDomain(auditUrl);
+
+  if (scored.length === 0) {
+    log.info(`${LOG_PREFIX} Post-processor: no topics in audit result, skipping opportunity`);
+    return { ...auditData };
+  }
+
+  log.info(`${LOG_PREFIX} Post-processor: creating opportunity for ${scored.length} topics`);
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    AUDIT_TYPE,
+    { domain, topics: scored },
+  );
+  log.info(`${LOG_PREFIX} Post-processor: opportunity id=${opportunity.getId()}`);
+
+  const allKeywords = scored.flatMap((t) => (t.lowRankKeywords ?? []).map((k) => ({
+    topic: t.topic,
+    keyword: k.keyword,
+    volume: k.volume,
+    brandPosition: k.brandPosition,
+    gapScore: Math.round(t.gapScore),
+  })));
+
+  log.info(`${LOG_PREFIX} Post-processor: syncing ${allKeywords.length} keyword suggestion(s)`);
+
+  await syncSuggestions({
+    opportunity,
+    newData: allKeywords,
+    buildKey: (k) => `${k.topic}::${k.keyword}`,
+    context,
+    log,
+    mapNewSuggestion: (k) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CONTENT_UPDATE',
+      rank: k.volume,
+      data: {
+        topic: k.topic,
+        keyword: k.keyword,
+        volume: k.volume,
+        brandPosition: k.brandPosition,
+        gapScore: k.gapScore,
+      },
+    }),
+  });
+
+  log.info(`${LOG_PREFIX} Post-processor: suggestions synced successfully`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditRunner)
+  .withPostProcessors([opportunityAndSuggestions])
   .build();
