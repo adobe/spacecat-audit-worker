@@ -12,17 +12,12 @@
 
 import {
   getGrpcClients,
-  fetchTopicHashMap,
-  fetchGapPrompts,
+  fetchLowRankFanoutKeywords,
 } from '@adobe/mysticat-shared-seo-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { AUDIT_TYPE, createOpportunityData } from './opportunity-data-mapper.js';
 
 const MAX_CANDIDATE_TOPICS = 10;
-const GAP_PROMPTS_LIMIT = 5;
 const LOG_PREFIX = '[LlmContentCoverage]';
 
 /**
@@ -73,7 +68,6 @@ async function fetchBrandTopics(postgrestClient, organizationId, log) {
     p_organization_id: organizationId,
     p_start_date: startDate,
     p_end_date: endDate,
-    p_model: null,
     p_brand_id: null,
     p_site_id: null,
     p_category_id: null,
@@ -117,7 +111,7 @@ export async function auditRunner(auditUrl, context, site) {
     return { auditResult: { topics: [], topicCount: 0 }, fullAuditRef: auditUrl };
   }
 
-  // Step 2: Score and rank topics by coverage gap
+  // Step 2: Score and rank topics by coverage gap, take top candidates
   const scored = rows
     .map((row) => ({
       topic: row.topic,
@@ -140,38 +134,35 @@ export async function auditRunner(auditUrl, context, site) {
     return { auditResult: { topics: [], topicCount: 0 }, fullAuditRef: auditUrl };
   }
 
-  log.info(`${LOG_PREFIX} Top ${scored.length} gap topics identified`);
+  log.info(`${LOG_PREFIX} Top ${scored.length} gap topics identified, fetching fanout keywords`);
 
-  // Step 3: Fetch topicHash from Semrush for namespace bridge (UUID → uint64 hash)
-  let topicHashMap = new Map();
+  // Step 3: Call FanoutService to find keywords where brand ranks but weakly (position > 5)
   try {
-    const { topicClient, promptClient } = getGrpcClients(env);
-    topicHashMap = await fetchTopicHashMap(topicClient, domain);
+    const { fanoutClient } = getGrpcClients(env);
+    const topicNames = scored.map((t) => t.topic);
+    const fanoutByTopic = await fetchLowRankFanoutKeywords(fanoutClient, topicNames, domain);
 
-    // Step 4: Fan-out gapPrompts for each candidate topic in parallel
-    await Promise.all(
-      scored.map(async (t) => {
-        const topicHash = topicHashMap.get(t.topic.toLowerCase());
-        if (!topicHash) {
-          log.warn(`${LOG_PREFIX} No topicHash found for topic "${t.topic}", skipping gap prompts`);
-          return;
-        }
-        try {
-          const opts = { limit: GAP_PROMPTS_LIMIT };
-          // eslint-disable-next-line no-param-reassign
-          t.gapPrompts = await fetchGapPrompts(promptClient, topicHash, domain, opts);
-        } catch (err) {
-          log.warn(`${LOG_PREFIX} gapPrompts failed for "${t.topic}": ${err.message}`);
-          // eslint-disable-next-line no-param-reassign
-          t.gapPrompts = [];
-        }
-      }),
-    );
+    for (const t of scored) {
+      const fanout = fanoutByTopic.get(t.topic);
+      if (fanout) {
+        t.matchedTopicName = fanout.matchedTopicName;
+        t.matchedTopicId = fanout.matchedTopicId;
+        t.similarityScore = fanout.similarityScore;
+        t.lowRankKeywords = fanout.lowRankKeywords;
+      } else {
+        t.lowRankKeywords = [];
+      }
+    }
   } catch (err) {
-    log.warn(`${LOG_PREFIX} Semrush gRPC unavailable, skipping gap prompts: ${err.message}`);
+    log.warn(`${LOG_PREFIX} Semrush FanoutService unavailable, skipping low-rank keywords: ${err.message}`);
+    for (const t of scored) {
+      t.lowRankKeywords = [];
+    }
   }
 
   const topicCount = scored.length;
+  log.info(`${LOG_PREFIX} Audit complete — ${topicCount} topics with low-rank keyword data`);
+
   return {
     auditResult: { topics: scored, topicCount },
     fullAuditRef: auditUrl,
@@ -179,65 +170,7 @@ export async function auditRunner(auditUrl, context, site) {
   };
 }
 
-/**
- * Post-processor: persists the coverage gap opportunity and syncs suggestions.
- * Receives the standard PostProcessor signature from AuditBuilder.
- *
- * @param {string} auditUrl - Resolved base URL of the audited site
- * @param {object} auditData - Persisted audit data (has siteId, auditResult, id)
- * @param {object} context - Lambda context (log, dataAccess, audit set by framework)
- * @returns {Promise<object>} auditData unchanged
- */
-export async function persistOpportunity(auditUrl, auditData, context) {
-  const { log } = context;
-  const { auditResult } = auditData;
-  const { topics, topicCount } = auditResult;
-
-  if (!topicCount) {
-    log.info(`${LOG_PREFIX} No gap topics found, skipping opportunity creation`);
-    return auditData;
-  }
-
-  const domain = extractDomain(auditUrl);
-
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    { domain, topicCount },
-  );
-
-  await syncSuggestions({
-    opportunity,
-    newData: topics,
-    buildKey: (t) => t.topicId || t.topic,
-    context,
-    log,
-    mapNewSuggestion: (t) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: Math.round(t.gapScore),
-      data: {
-        topic: t.topic,
-        topicId: t.topicId,
-        promptCount: t.promptCount,
-        brandCitations: t.brandCitations,
-        brandMentions: t.brandMentions,
-        gapScore: t.gapScore,
-        popularityVolume: t.popularityVolume,
-        gapPrompts: t.gapPrompts || [],
-      },
-    }),
-  });
-
-  log.info(`${LOG_PREFIX} Created/updated opportunity with ${topicCount} suggestions`);
-  return auditData;
-}
-
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditRunner)
-  .withPostProcessors([persistOpportunity])
   .build();

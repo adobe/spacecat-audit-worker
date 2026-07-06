@@ -88,7 +88,7 @@
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
     "@adobe/helix-universal-logger": "3.0.29",
-    "@adobe/mysticat-shared-seo-client": "1.6.0",
+    "@adobe/mysticat-shared-seo-client": "https://gist.githubusercontent.com/anagarwa/f5c742e0321f0c4994aa014160373226/raw/fd6c1df48b92b1c44c82f76e28cbc5adc44b1e78/adobe-mysticat-shared-seo-client-1.6.0.tgz",
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-athena-client": "1.11.0",
     "@adobe/spacecat-shared-data-access": "3.79.1",
