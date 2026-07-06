@@ -1,3 +1,17 @@
+## [1.495.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.495.0...v1.495.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2747](https://github.com/adobe/spacecat-audit-worker/issues/2747)) ([89fa272](https://github.com/adobe/spacecat-audit-worker/commit/89fa27224185c25d736fc43bba0030e390c2facb))
+
+# [1.495.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.2...v1.495.0) (2026-07-03)
+
+
+### Features
+
+* **summarization:** persist Mystique prompts on suggestions ([#2742](https://github.com/adobe/spacecat-audit-worker/issues/2742)) ([1291bbc](https://github.com/adobe/spacecat-audit-worker/commit/1291bbc2292694dcf22484ec774bcc6647a01994)), closes [#2732](https://github.com/adobe/spacecat-audit-worker/issues/2732)
+
 ## [1.494.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.494.1...v1.494.2) (2026-07-02)
 
 

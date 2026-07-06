@@ -53,6 +53,12 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
     const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
     const contentHash = urlToContentHash[suggestion.pageUrl] ?? null;
 
+    // Mystique returns a prompt set per surface; each attaches to its own suggestion.
+    const summaryPrompts = Array.isArray(suggestion.summaryPrompts)
+      ? suggestion.summaryPrompts : [];
+    const keyPointsPrompts = Array.isArray(suggestion.keyPointsPrompts)
+      ? suggestion.keyPointsPrompts : [];
+
     // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
     const pageSummaryAlreadyPresent = suggestion.page_summary_present === true
@@ -68,6 +74,7 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         transformRules: pageTransformRules,
         scrapedAt,
         contentHash,
+        prompts: summaryPrompts,
       });
     }
 
@@ -86,6 +93,7 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         transformRules: pageTransformRules,
         scrapedAt,
         contentHash,
+        prompts: keyPointsPrompts,
       });
     }
   });
