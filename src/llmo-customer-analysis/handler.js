@@ -11,7 +11,7 @@
  */
 
 import {
-  getLastNumberOfWeeks, llmoConfig, tracingFetch as fetch,
+  getLastNumberOfWeeks, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
@@ -93,103 +93,44 @@ async function checkOptelData(domain, context) {
 }
 
 /**
- * Creates a brand presence schedule in DRS and triggers it immediately.
- * This is called during first-time onboarding so that brand presence data
- * collection starts right away instead of waiting for the next scheduled run.
+ * Creates and triggers the recurring brand-presence schedule for a first-time
+ * onboarded site, via the shared `createBrandPresenceSchedule` drs-client helper
+ * (LLMO-5605). That helper is the single definition of the brand-presence schedule:
+ * the self-serve activate-brand endpoint (spacecat-api-service) creates the same
+ * schedule through it, so the two paths can't drift (DRS dedups on the provider-set).
+ * Triggered immediately so collection starts right away instead of waiting for the
+ * next scheduled run.
  *
  * @param {object} context - Universal context with env and log
  * @param {string} siteId - SpaceCat site ID
- * @param {string} domain - Site domain for the schedule description
- * @param {object} [options]
- * @param {string} [options.brandId] - Brand UUID for v2 schedules (required for v2 scheduler)
- * @param {string} [options.organizationId] - SpaceCat org UUID for v2 schedules
+ * @param {string} domain - Site domain (used for the schedule description)
+ * @param {object} [opts]
+ * @param {string} [opts.brandId] - Brand UUID for v2 schedules (required for v2 dedup)
+ * @param {string} [opts.organizationId] - SpaceCat org UUID for v2 schedules
+ * @returns {Promise<string>} The created (or existing) schedule id
  */
 export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain, opts = {}) {
   const { brandId, organizationId } = opts;
-  const { env, log } = context;
-  const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
+  const { log } = context;
 
-  if (!drsApiUrl || !drsApiKey) {
+  const drsClient = DrsClient.createFrom(context);
+  if (!drsClient.isConfigured()) {
     throw new Error('DRS API URL or key not configured; skipping brand presence schedule creation');
   }
 
-  // Strip trailing slashes from the API URL
-  let baseUrl = drsApiUrl;
-  while (baseUrl.endsWith('/')) {
-    baseUrl = baseUrl.slice(0, -1);
-  }
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': drsApiKey,
-  };
-
-  const schedulePayload = {
-    site_id: siteId,
-    ...(brandId && { brand_id: brandId }),
-    ...(organizationId && { spacecat_org_id: organizationId }),
-    frequency: 'weekly',
-    cron_expression: 'auto',
-    description: `Onboarding brand presence: ${domain} (${siteId})`,
-    job_config: {
-      provider_ids: ['brightdata', 'google_ai_overviews', 'openai_web_search'],
-      priority: 'LOW',
-      enable_brand_presence: true,
-      cadence: 'weekly',
-      provider_parameters: {
-        brightdata: {
-          siteId,
-          metadata: { site: siteId },
-          dataset_id: 'chatgpt_free,perplexity,gemini,copilot,aimode',
-          platforms: ['chatgpt_free', 'perplexity', 'gemini', 'copilot', 'aimode'],
-        },
-        google_ai_overviews: {
-          siteId,
-          metadata: { site: siteId },
-        },
-        openai_web_search: {
-          siteId,
-          metadata: { site: siteId },
-        },
-      },
-    },
-  };
-
-  // Step 1: Create the schedule
   log.info(`Creating brand presence schedule for site ${siteId}`);
-  const createResponse = await fetch(`${baseUrl}/schedules`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(schedulePayload),
+  const { scheduleId, alreadyExisted } = await drsClient.createBrandPresenceSchedule({
+    siteId,
+    brandId,
+    orgId: organizationId,
+    description: `Onboarding brand presence: ${domain} (${siteId})`,
+    triggerImmediately: true,
   });
 
-  if (!createResponse.ok) {
-    const errorText = await createResponse.text();
-    throw new Error(`Failed to create brand presence schedule: ${createResponse.status} - ${errorText}`);
-  }
-
-  const schedule = await createResponse.json();
-  const scheduleId = schedule.schedule_id || schedule.id;
-
-  if (!scheduleId) {
-    throw new Error('DRS schedule creation succeeded but no schedule_id returned');
-  }
-
-  log.info(`Brand presence schedule created: ${scheduleId} for site ${siteId}`);
-
-  // Step 2: Trigger the schedule immediately
-  log.info(`Triggering brand presence schedule ${scheduleId} for site ${siteId}`);
-  const triggerResponse = await fetch(`${baseUrl}/schedules/${siteId}/${scheduleId}/trigger`, {
-    method: 'POST',
-    headers,
-  });
-
-  if (!triggerResponse.ok) {
-    const errorText = await triggerResponse.text();
-    throw new Error(`Failed to trigger brand presence schedule: ${triggerResponse.status} - ${errorText}`);
-  }
-
-  log.info(`Brand presence schedule ${scheduleId} triggered successfully for site ${siteId}`);
+  log.info(
+    `Brand presence schedule ${alreadyExisted ? 'already existed' : 'created'}: `
+    + `${scheduleId} for site ${siteId}${alreadyExisted ? '' : ' (triggered)'}`,
+  );
 
   return scheduleId;
 }

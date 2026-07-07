@@ -162,6 +162,100 @@ export function mergeAndGetUniqueHtmlUrls(...args) {
   };
 }
 
+// Statuses considered active/preservable for path suggestions
+const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
+// Statuses of per-URL suggestions eligible for path scoring.
+// FIXED is intentionally included: a FIXED URL was edge-deployed individually.
+// Scoring over both NEW and FIXED lets us suggest a path rule (e.g. /products/*)
+// that consolidates those individual deployments into a single pattern, reducing
+// operational overhead and ensuring new URLs under the same path are covered
+// automatically — even when many of the contributing URLs are already resolved.
+const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
+
+/**
+ * Detects a path-level suggestion by the presence of allowedRegexPatterns
+ * without isDomainWide.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isPathSuggestionData(data) {
+  return Array.isArray(data?.allowedRegexPatterns) && !data?.isDomainWide;
+}
+
+/**
+ * Checks if a suggestion's data represents a domain-wide suggestion.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isDomainWideSuggestionData(data) {
+  return !!data?.isDomainWide;
+}
+
+/**
+ * Extracts the first-segment path pattern from a URL, relative to the site's base URL.
+ *
+ * When a baseUrl with a path prefix is provided, the prefix is stripped before
+ * determining the first meaningful segment. The returned pattern is always absolute
+ * (relative to the origin), so it can be used directly as a CDN path rule.
+ *
+ * Examples (baseUrl = 'https://nba.com/kings'):
+ *   https://nba.com/kings/products/shoes  →  /kings/products/*
+ *   https://nba.com/kings/                →  null  (root of base, no further segment)
+ *
+ * Examples (no baseUrl):
+ *   https://example.com/products/shoes    →  /products/*
+ *   https://example.com/                  →  null
+ *
+ * @param {string} url
+ * @param {string} [baseUrl=''] - Site base URL; its pathname prefix is stripped before
+ *   extracting the first segment.
+ * @returns {string|null}
+ */
+export function extractPathType(url, baseUrl = '') {
+  try {
+    const { pathname } = new URL(url);
+    let basePath = '';
+    if (baseUrl) {
+      const basePathname = new URL(baseUrl).pathname;
+      basePath = basePathname === '/' ? '' : basePathname.replace(/\/$/, '');
+    }
+    const relative = basePath && (pathname === basePath || pathname.startsWith(`${basePath}/`))
+      ? pathname.slice(basePath.length) || '/'
+      : pathname;
+    const parts = relative.split('/').filter(Boolean);
+    if (parts.length === 0) {
+      return null;
+    }
+    return `${basePath}/${parts[0]}/*`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Determines if an existing path suggestion should be preserved across re-audits.
+ *
+ * @param {Object} suggestion - Suggestion entity
+ * @returns {boolean}
+ */
+export function shouldPreservePathSuggestion(suggestion) {
+  const status = suggestion.getStatus();
+  const data = suggestion.getData();
+  return PRESERVABLE_STATUSES.includes(status) || !!data?.edgeDeployed;
+}
+
+/**
+ * Checks if a suggestion has an eligible status for path scoring.
+ *
+ * @param {string} status
+ * @returns {boolean}
+ */
+export function isEligibleStatus(status) {
+  return ELIGIBLE_STATUSES.has(status);
+}
+
 /**
  * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log

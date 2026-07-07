@@ -212,14 +212,20 @@ function buildStatusFilter(statuses) {
 
 async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [], statuses = [],
+    periods, startDate, endDate, databaseName, tableName, site, limit,
+    excludedUrlSuffixes = [], statuses = [],
   } = options;
+
+  if (!startDate && !periods?.weeks?.length) {
+    throw new Error('createTopUrlsQueryWithLimit: either periods or startDate/endDate is required');
+  }
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters, site);
-  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const start = startDate ?? periods.weeks[periods.weeks.length - 1].startDate;
+  const end = endDate ?? periods.weeks[periods.weeks.length - 1].endDate;
   const whereClause = buildWhereClause(
-    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    [buildDateFilter(start, end)],
     siteFilters,
   );
 
@@ -245,9 +251,28 @@ async function createTopUrlsQueryWithLimit(options) {
   });
 }
 
+/**
+ * Builds a SQL query that returns url + total_hits over a custom date window.
+ * Delegates to createTopUrlsQueryWithLimit with explicit startDate/endDate.
+ *
+ * @param {Object} options
+ * @param {Object} options.startDate - Earliest date of the window (inclusive)
+ * @param {Object} options.endDate - Latest date of the window (inclusive)
+ * @param {string} options.databaseName
+ * @param {string} options.tableName
+ * @param {Object} options.site
+ * @param {number} options.limit
+ * @param {Array<string>} [options.excludedUrlSuffixes]
+ * @returns {Promise<string>} SQL query string
+ */
+function createTopUrlsWithHitsQuery(options) {
+  return createTopUrlsQueryWithLimit(options);
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticDailyReportQuery,
   createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
+  createTopUrlsWithHitsQuery,
 };

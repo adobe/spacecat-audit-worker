@@ -3735,6 +3735,22 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
+
+    it('caps submitted URLs at MAX_TOP_PAGES (200) when topPages exceeds the limit', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      const pages = Array.from({ length: 250 }, (_, i) => `https://example.com/page-${i}`);
+      context.audit = { getAuditResult: () => ({ success: true, topPages: pages }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.have.lengthOf(200);
+      expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-0' });
+      expect(result.urls[199]).to.deep.equal({ url: 'https://example.com/page-199' });
+      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 200 URLs for scraping');
+    });
   });
 });
 
