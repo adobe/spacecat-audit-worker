@@ -448,7 +448,7 @@ function extractHeadingTextsFromHast(node) {
  */
 async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) {
   const {
-    log, sqs, env, site,
+    log, sqs, env, site, audit,
   } = context;
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
@@ -512,6 +512,8 @@ async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) 
     await sqs.sendMessage(queue, {
       type: 'guidance:table-of-contents',
       url: auditUrl,
+      siteId: site.getId(),
+      auditId: audit.getId(),
       time,
       data: {
         opportunityId,

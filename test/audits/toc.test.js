@@ -952,6 +952,121 @@ describe('TOC (Table of Contents) Audit', () => {
     });
   });
 
+  describe('sendTocGuidanceRequestToMystique (outbound guidance:table-of-contents message)', () => {
+    const makeExistingSuggestion = (data, status = 'NEW') => ({
+      getId: () => 'suggestion-1',
+      getStatus: () => status,
+      getData: () => data,
+    });
+
+    const setupMystiqueContext = (existingSuggestions) => {
+      context.sqs = { sendMessage: sinon.stub().resolves() };
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = 'test-mystique-queue';
+      context.audit = { getId: () => 'audit-1' };
+      context.site = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getRegion: () => 'US',
+      };
+      return sinon.stub().resolves({
+        getId: () => 'test-toc-opportunity-id',
+        getSuggestions: sinon.stub().resolves(existingSuggestions),
+      });
+    };
+
+    it('includes siteId and auditId at the top level, matching the guidance:prerender/summarization contract', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: [{
+              type: 'element',
+              tagName: 'a',
+              properties: { 'data-selector': 'h1#intro' },
+              children: [{ type: 'text', value: 'Introduction' }],
+            }],
+          },
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+            explanation: 'TOC missing',
+            recommendedAction: 'Add TOC',
+            transformRules: {
+              action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }], valueFormat: 'html',
+            },
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queue, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(queue).to.equal('test-mystique-queue');
+      expect(message).to.include({
+        type: 'guidance:table-of-contents',
+        url: auditUrl,
+        siteId: 'site-1',
+        auditId: 'audit-1',
+      });
+      expect(message.data).to.include({
+        opportunityId: 'test-toc-opportunity-id',
+        generatePrompts: true,
+        siteRegion: 'US',
+      });
+      expect(message.data.suggestions).to.have.length(1);
+      expect(message.data.suggestions[0]).to.include({
+        url: 'https://example.com/page1',
+        title: 'Page 1',
+      });
+      expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
+    });
+
+    it('skips FIXED/OUTDATED/SKIPPED suggestions and ones that already have prompts', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/fixed' }, 'FIXED'),
+        makeExistingSuggestion({ url: 'https://example.com/outdated' }, 'OUTDATED'),
+        makeExistingSuggestion({ url: 'https://example.com/skipped' }, 'SKIPPED'),
+        makeExistingSuggestion({
+          url: 'https://example.com/already-has-prompts',
+          hasPrompts: true,
+          prompts: [{ id: 'p1' }],
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/fixed', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+  });
+
   describe('TOC custom persister (slimmed audit vs full post-processor data)', () => {
     it('slimTocAuditResult strips transformRules from urls for persistence', () => {
       const auditResult = {
