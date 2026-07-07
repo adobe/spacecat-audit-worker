@@ -1871,6 +1871,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     const payload = JSON.parse(enrichmentCall.args[1].body);
     expect(payload).to.deep.include({
       siteId: 'site-1',
+      auditId: 'audit-13',
       imsOrgId: 'ims-org-1@AdobeOrg',
       storeViewUrl: 'https://example.com',
     });
