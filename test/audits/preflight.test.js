@@ -145,7 +145,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
-      expect(context.log.info).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/blocked probe inconclusive/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/blocked probe inconclusive/);
     });
 
     it('handles HEAD failure with GET fallback success', async () => {
@@ -165,7 +165,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
     });
 
     it('handles HEAD failure with GET fallback returning 404', async () => {
@@ -192,7 +192,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {
@@ -398,7 +398,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
-      expect(context.log.info).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/blocked probe inconclusive/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/blocked probe inconclusive/);
     });
 
     it('handles external HEAD failure with GET fallback success', async () => {
@@ -418,7 +418,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
     });
 
     it('handles external HEAD failure with GET fallback returning 404', async () => {
@@ -445,7 +445,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
 
     it('processes both internal and external links correctly', async () => {
