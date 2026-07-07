@@ -1,3 +1,10 @@
+# [1.497.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.496.0...v1.497.0) (2026-07-07)
+
+
+### Features
+
+* **AGENTCOM-775:** send auditId in catalog enrichment payload ([#2651](https://github.com/adobe/spacecat-audit-worker/issues/2651)) ([21a2e96](https://github.com/adobe/spacecat-audit-worker/commit/21a2e963186b17445d37c60c983de1432c9549ca))
+
 # [1.496.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.495.1...v1.496.0) (2026-07-06)
 
 
