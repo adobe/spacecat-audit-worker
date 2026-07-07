@@ -19,6 +19,7 @@ import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityDataForTOC } from './opportunity-data-mapper.js';
+import { isEligibleTocSuggestion } from './eligibility-utils.js';
 import {
   extractTocData,
   tocArrayToHast,
@@ -408,9 +409,13 @@ export function generateSuggestions(auditUrl, auditData, context) {
 }
 
 /**
- * Recursively collect text node values from a HAST node tree.
+ * Recursively collect heading text from a HAST node tree. TOC transformRules render each
+ * heading as `li > a[data-selector] > text` (see tocArrayToHast) — walking every text node
+ * indiscriminately would also pick up insignificant whitespace text nodes and non-heading
+ * content from HTML-round-tripped (isEdited) trees, so this targets anchors carrying a
+ * `data-selector` (the heading link) specifically.
  * @param {Object|Array} node - HAST node or array of nodes
- * @returns {string[]} Array of text strings found in the tree
+ * @returns {string[]} Array of heading text strings found in the tree
  */
 function extractHeadingTextsFromHast(node) {
   if (!node) {
@@ -419,8 +424,13 @@ function extractHeadingTextsFromHast(node) {
   if (Array.isArray(node)) {
     return node.flatMap((child) => extractHeadingTextsFromHast(child));
   }
-  if (node.type === 'text' && typeof node.value === 'string') {
-    return [node.value];
+  if (node.type === 'element' && node.tagName === 'a' && node.properties?.['data-selector']) {
+    const text = (node.children || [])
+      .filter((child) => child.type === 'text' && typeof child.value === 'string')
+      .map((child) => child.value)
+      .join('')
+      .trim();
+    return text ? [text] : [];
   }
   if (node.children && Array.isArray(node.children)) {
     return node.children.flatMap((child) => extractHeadingTextsFromHast(child));
@@ -465,14 +475,9 @@ async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) 
 
     existingSuggestions.forEach((s) => {
       const data = s.getData();
-      const status = s.getStatus();
 
       // Skip FIXED, OUTDATED, SKIPPED suggestions
-      if (
-        status === Suggestion.STATUSES.FIXED
-        || status === Suggestion.STATUSES.OUTDATED
-        || status === Suggestion.STATUSES.SKIPPED
-      ) {
+      if (!isEligibleTocSuggestion(s, Suggestion)) {
         return;
       }
 
@@ -484,7 +489,7 @@ async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) 
       const suggestionId = s.getId();
       const hastNodes = data?.transformRules?.value;
       const headings = Array.isArray(hastNodes)
-        ? extractHeadingTextsFromHast(hastNodes)
+        ? [...new Set(extractHeadingTextsFromHast(hastNodes))]
         : [];
 
       candidates.push({
@@ -558,6 +563,14 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       ...existingSuggestion,
       ...converted,
     };
+    // Preserve Mystique-persisted prompts across re-audits. mapNewSuggestion always seeds
+    // new items with prompts:[]/hasPrompts:false — without this, every re-audit would
+    // overwrite already-generated prompts and force sendTocGuidanceRequestToMystique to
+    // re-request them from Mystique.
+    if (!converted.prompts?.length && existingSuggestion.prompts?.length) {
+      mergedSuggestion.prompts = existingSuggestion.prompts;
+      mergedSuggestion.hasPrompts = existingSuggestion.hasPrompts;
+    }
     if (existingSuggestion.isEdited && existingSuggestion.transformRules?.value !== undefined) {
       const existingValue = existingSuggestion.transformRules.value;
       mergedSuggestion.transformRules.value = Array.isArray(existingValue)

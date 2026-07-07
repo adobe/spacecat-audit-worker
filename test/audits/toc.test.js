@@ -55,7 +55,9 @@ describe('TOC (Table of Contents) Audit', () => {
   let s3Client;
 
   beforeEach(() => {
-    log = { info: console.log, error: console.error, debug: console.debug };
+    log = {
+      info: console.log, error: console.error, debug: console.debug, warn: console.warn,
+    };
     context = {
       log,
       env: {
@@ -2243,7 +2245,9 @@ describe('TOC (Table of Contents) Audit', () => {
     it('covers line 73: fallback to empty string when pageTags.title is falsy', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
       context.log = logSpy;
 
       const mockClient = {

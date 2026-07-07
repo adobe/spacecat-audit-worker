@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { isEligibleTocSuggestion } from './eligibility-utils.js';
 
 /**
  * Mystique's guidance:table-of-contents reply carries prompts keyed by page URL, not by
@@ -26,12 +27,7 @@ import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 function groupEligibleSuggestionsByUrl(suggestions, Suggestion) {
   const byUrl = new Map();
   suggestions.forEach((suggestion) => {
-    const status = suggestion.getStatus();
-    if (
-      status === Suggestion.STATUSES.FIXED
-      || status === Suggestion.STATUSES.OUTDATED
-      || status === Suggestion.STATUSES.SKIPPED
-    ) {
+    if (!isEligibleTocSuggestion(suggestion, Suggestion)) {
       return;
     }
     const { url } = suggestion.getData() || {};
