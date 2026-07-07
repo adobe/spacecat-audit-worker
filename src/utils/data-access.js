@@ -277,6 +277,14 @@ export const handleOutdatedSuggestions = async ({
         || data?.edgeDeployed
         || data?.coveredByDomainWide
         || data?.isDomainWide
+        // Preserve externally / manually-authored suggestions. Records published
+        // through the backoffice write path (e.g. cwv-workbench guidance) live on
+        // the shared audit-owned opportunity but are NOT part of THIS audit's
+        // generated set, so keyed stale-page cleanup must not age them out
+        // (SITES-47557 / cwv-workbench ADR-0018). `authoredBy` identifies a
+        // non-audit producer; the audit's own suggestions carry no `provenance`
+        // (or `authoredBy: 'cwv-audit'`), so legitimate self-pruning is unaffected.
+        || (data?.provenance?.authoredBy && data.provenance.authoredBy !== 'cwv-audit')
       );
     })
     .filter((existing) => {
