@@ -1,3 +1,10 @@
+## [1.497.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.0...v1.497.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* preserve externally-authored suggestions from stale-page OUTDATE sweep (SITES-47557) ([#2751](https://github.com/adobe/spacecat-audit-worker/issues/2751)) ([986a567](https://github.com/adobe/spacecat-audit-worker/commit/986a5678e4b872cd2f29df3ff25cae6812dbea49))
+
 # [1.497.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.496.0...v1.497.0) (2026-07-07)
 
 
