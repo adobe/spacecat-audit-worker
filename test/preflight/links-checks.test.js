@@ -297,7 +297,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
     );
 
     expect(fetchStub.callCount).to.equal(2);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/HEAD request failed/));
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/HEAD request failed/));
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
@@ -340,6 +340,9 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
     expect(context.log.error).to.not.have.been.called;
+    // Assert the inconclusive branch actually ran, not just that nothing was flagged — a refactor
+    // that exited before reaching isDnsResolutionFailure would still pass the two checks above.
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
   });
 
   it('does NOT flag as broken when both HEAD and GET fail with a generic (non-DNS) network error', async () => {
@@ -354,6 +357,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
     expect(context.log.error).to.not.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
   });
 
   it('does NOT flag as broken when a non-DNS error message merely contains the substring "ENOTFOUND"', async () => {
@@ -372,6 +376,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
     expect(context.log.error).to.not.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
   });
 
   // Message-fallback branch: error carries the canonical "getaddrinfo ENOTFOUND" message but no

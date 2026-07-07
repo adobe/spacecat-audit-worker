@@ -199,7 +199,11 @@ async function checkLinkStatus(href, pageUrl, context, options = {
       return null;
     }
   } catch (err) {
-    log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
+    // DEBUG, not WARN: a thrown HEAD is expected and self-correcting here — we always retry with
+    // GET, and on bot-protected hosts (which reset the connection) every probe throws HEAD first
+    // yet ends up correctly not-broken. Logging that at WARN produced high-volume, non-actionable
+    // noise that also looked like a failure for links we then skip (SITES-47125 review).
+    log.debug(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
   }
 
   // GET fallback — HEAD was inconclusive (broken status, fallback status, or network error).
@@ -246,7 +250,10 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     // means the host is reachable but did not return a usable response — indistinguishable
     // from a valid page that blocks bots at the connection level. Do NOT report as broken
     // (SITES-47125: ups.com and similar bot-protected sites were false-flagged as Status 0).
-    log.info(`[preflight-audit] ${linkType} link ${href} probe inconclusive (${finalErr.message}) — not reporting as broken`);
+    // DEBUG, not INFO: on a page with many bot-blocked external links this is the common,
+    // non-actionable path and at INFO it floods the logs. The DNS-failure branch above stays at
+    // INFO because that is the actionable "reporting as broken" case (SITES-47125 review).
+    log.debug(`[preflight-audit] ${linkType} link ${href} probe inconclusive (${finalErr.message}) — not reporting as broken`);
     return null;
   }
 }
