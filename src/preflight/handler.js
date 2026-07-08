@@ -130,6 +130,8 @@ export const preflightAudit = async (context) => {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();
 
+  log.info(`Processing preflight audit for ${site}`);
+
   if (!(await isAuditEnabledForSite('preflight', site, context))) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. Preflight is disabled for this site.`);
     throw new Error(`[preflight-audit] site: ${site.getId()}. Preflight handler is disabled for this site.`);
