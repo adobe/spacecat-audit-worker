@@ -130,6 +130,11 @@ export const preflightAudit = async (context) => {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();
 
+  if (!(await isAuditEnabledForSite('preflight', site, context))) {
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. Preflight is disabled for this site.`);
+    throw new Error(`[preflight-audit] site: ${site.getId()}. Preflight handler is disabled for this site.`);
+  }
+
   const jobMetadata = job.getMetadata();
   /**
    * @type {{
@@ -151,7 +156,7 @@ export const preflightAudit = async (context) => {
     return stripTrailingSlash(url);
   });
 
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -168,7 +173,7 @@ export const preflightAudit = async (context) => {
       }),
     )).filter(Boolean);
 
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
@@ -333,7 +338,7 @@ export const preflightAudit = async (context) => {
       const domEndTime = Date.now();
       const domEndTimestamp = new Date().toISOString();
       const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'dom',

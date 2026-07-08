@@ -726,6 +726,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -739,6 +740,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 
       // Ensure entitlement checks pass for tests; avoid double-stubbing across tests
@@ -1408,6 +1410,15 @@ describe('Preflight Audit', () => {
       await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
+    it('throws and logs if the preflight handler is disabled for the site', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Preflight handler is disabled for this site.');
+
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123. Preflight is disabled for this site.');
+    });
+
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
@@ -1787,6 +1798,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
         }),
@@ -1865,6 +1877,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
@@ -4791,6 +4804,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -4804,6 +4818,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
