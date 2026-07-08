@@ -1,3 +1,10 @@
+## [1.497.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.1...v1.497.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* **cwv:** dispatch guidance for PENDING_VALIDATION suggestions (SITES-47558) ([#2752](https://github.com/adobe/spacecat-audit-worker/issues/2752)) ([5339771](https://github.com/adobe/spacecat-audit-worker/commit/5339771ea3af7b1631d6a7211ac1ea6626b1f378))
+
 ## [1.497.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.0...v1.497.1) (2026-07-07)
 
 
