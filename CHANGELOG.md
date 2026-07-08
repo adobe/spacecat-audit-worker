@@ -1,3 +1,10 @@
+## [1.497.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.2...v1.497.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **preflight:** only report DNS failures as broken external links (SITES-47125) ([#2727](https://github.com/adobe/spacecat-audit-worker/issues/2727)) ([6dd95c3](https://github.com/adobe/spacecat-audit-worker/commit/6dd95c3caa19ef78dd57e704619be37517c44d86))
+
 ## [1.497.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.1...v1.497.2) (2026-07-08)
 
 
