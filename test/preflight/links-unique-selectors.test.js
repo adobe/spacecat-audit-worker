@@ -120,6 +120,7 @@ describe('Preflight Links - Unique Selector Tests', () => {
     configuration = {
       isHandlerEnabledForSite: sinon.stub().returns(true),
       getHandlers: sinon.stub().returns({
+        preflight: { productCodes: ['aem-sites'] },
         'links-preflight': { productCodes: ['aem-sites'] },
       }),
     };
