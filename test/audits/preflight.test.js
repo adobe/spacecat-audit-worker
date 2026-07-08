@@ -106,13 +106,14 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('handles fetch errors', async () => {
+    it('reports a DNS-resolution failure (ENOTFOUND) as a broken internal link', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      const dnsError = () => Object.assign(new Error('getaddrinfo ENOTFOUND main--example--page.aem.page'), { code: 'ENOTFOUND' });
       nock('https://main--example--page.aem.page')
         .head('/fail')
-        .replyWithError('network fail')
+        .replyWithError(dnsError())
         .get('/fail')
-        .replyWithError('network fail');
+        .replyWithError(dnsError());
 
       const scrapedObjects = [{
         data: {
@@ -125,6 +126,26 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
       expect(context.log.info).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/fail unreachable/);
+    });
+
+    it('does NOT report a connection-level (non-DNS) failure as a broken internal link (SITES-47125)', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/blocked')
+        .replyWithError('socket hang up')
+        .get('/blocked')
+        .replyWithError('socket hang up');
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/blocked">blocked</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/blocked probe inconclusive/);
     });
 
     it('handles HEAD failure with GET fallback success', async () => {
@@ -144,7 +165,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
     });
 
     it('handles HEAD failure with GET fallback returning 404', async () => {
@@ -171,7 +192,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {
@@ -335,13 +356,14 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('handles external link fetch errors', async () => {
+    it('reports a DNS-resolution failure (ENOTFOUND) as a broken external link', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      const dnsError = () => Object.assign(new Error('getaddrinfo ENOTFOUND external-site.com'), { code: 'ENOTFOUND' });
       nock('https://external-site.com')
         .head('/fail')
-        .replyWithError('network fail')
+        .replyWithError(dnsError())
         .get('/fail')
-        .replyWithError('network fail');
+        .replyWithError(dnsError());
 
       const scrapedObjects = [{
         data: {
@@ -355,6 +377,28 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
       expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external-site.com/fail');
       expect(context.log.info).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/fail unreachable/);
+    });
+
+    it('does NOT report a bot-blocking connection-level failure as a broken external link (SITES-47125)', async () => {
+      // ups.com pattern: DNS resolves, but the server resets the HTTP/2 stream to block bots.
+      const urls = ['https://main--example--page.aem.page/page1'];
+      const http2Error = () => Object.assign(new Error('Stream closed with error code NGHTTP2_INTERNAL_ERROR'), { code: 'ERR_HTTP2_STREAM_ERROR' });
+      nock('https://external-site.com')
+        .head('/blocked')
+        .replyWithError(http2Error())
+        .get('/blocked')
+        .replyWithError(http2Error());
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/blocked">external blocked</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/blocked probe inconclusive/);
     });
 
     it('handles external HEAD failure with GET fallback success', async () => {
@@ -374,7 +418,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
     });
 
     it('handles external HEAD failure with GET fallback returning 404', async () => {
@@ -401,7 +445,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
 
     it('processes both internal and external links correctly', async () => {
