@@ -719,6 +719,7 @@ describe('Preflight Audit', () => {
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
+        setMetadata: sinon.stub(),
         setEndedAt: sinon.stub(),
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -1410,13 +1411,25 @@ describe('Preflight Audit', () => {
       await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
-    it('throws and logs if the preflight handler is disabled for the site', async () => {
+    it('cancels the job and logs when the preflight handler is disabled for the site', async () => {
       configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
       configuration.isHandlerEnabledForSite.returns(true);
 
-      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Preflight handler is disabled for this site.');
+      await preflightAuditFunction(context);
 
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123. Preflight is disabled for this site.');
+      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123. preflight audits disabled for site site-123, skipping');
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('CANCELLED');
+      expect(finalJobEntity.setMetadata).to.have.been.calledWith({
+        payload: {
+          siteId: 'site-123',
+          reason: 'preflight audits disabled for site site-123',
+        },
+      });
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
     });
 
     it('throws if the provided urls are invalid', async () => {

@@ -130,11 +130,23 @@ export const preflightAudit = async (context) => {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();
 
-  log.info(`Processing preflight audit for ${site}`);
+  log.info(`Processing preflight audit for ${site.getId()}`);
 
   if (!(await isAuditEnabledForSite('preflight', site, context))) {
-    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. Preflight is disabled for this site.`);
-    throw new Error(`[preflight-audit] site: ${site.getId()}. Preflight handler is disabled for this site.`);
+    const reason = `preflight audits disabled for site ${site.getId()}`;
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. ${reason}, skipping`);
+
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    jobEntity.setStatus(AsyncJob.Status.CANCELLED);
+    jobEntity.setMetadata({
+      payload: {
+        siteId: site.getId(),
+        reason,
+      },
+    });
+    jobEntity.setEndedAt(new Date().toISOString());
+    await jobEntity.save();
+    return;
   }
 
   const jobMetadata = job.getMetadata();
