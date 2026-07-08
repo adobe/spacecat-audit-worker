@@ -1463,6 +1463,71 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
+    it('should not mark externally-authored (data.provenance) suggestions as OUTDATED', async () => {
+      // SITES-47557 / cwv-workbench ADR-0018: a suggestion published through the
+      // backoffice write path carries data.provenance.authoredBy. It lives on the
+      // shared audit-owned opportunity but is not part of this audit's generated
+      // set, so a keyed stale-page sweep must not age it out. A record carrying the
+      // audit's OWN provenance ('cwv-audit') is still pruned normally.
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
+
+      const workbenchSuggestion = {
+        id: 'workbench',
+        data: {
+          url: 'https://example.com/savings',
+          provenance: { authoredBy: 'cwv-workbench' },
+        },
+        getId: sinon.stub().returns('workbench'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/savings',
+          provenance: { authoredBy: 'cwv-workbench' },
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const auditOwnedSuggestion = {
+        id: 'audit-owned',
+        data: {
+          url: 'https://example.com/old',
+          provenance: { authoredBy: 'cwv-audit' },
+        },
+        getId: sinon.stub().returns('audit-owned'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/old',
+          provenance: { authoredBy: 'cwv-audit' },
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const normalSuggestion = {
+        id: 'normal',
+        data: { url: 'https://example.com/page2', key: 'page2' },
+        getId: sinon.stub().returns('normal'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      mockOpportunity.getSuggestions.resolves([
+        workbenchSuggestion,
+        auditOwnedSuggestion,
+        normalSuggestion,
+      ]);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+      });
+
+      // Only the audit-owned + plain stale records are OUTDATED; the
+      // workbench-authored suggestion is preserved.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [auditOwnedSuggestion, normalSuggestion],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },

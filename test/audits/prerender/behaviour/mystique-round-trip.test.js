@@ -699,6 +699,105 @@ describe('Prerender behaviour — Mystique round-trip (inbound: guidance-handler
     expect(updatedData).to.have.property('valuable', true);
   });
 
+  it('valuable=null (analysis failed) → stored as null, not coerced to true', async () => {
+    // Mystique signals an analysis error by sending valuable=null (indeterminate).
+    // The handler must persist null — not coerce to true — so downstream consumers
+    // can distinguish "confirmed valuable" from "analysis failed".
+    const siteId = 'site-inbound-null-verdict';
+    const oppId = 'opp-null-1';
+    const url = 'https://example.com/page-null';
+
+    const suggestion = buildSuggestion(sandbox, {
+      id: 'sug-null',
+      status: 'NEW',
+      data: { url, aiSummary: '', valuable: null },
+    });
+    suggestion.setData = sandbox.stub();
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId,
+      siteId,
+      suggestions: [suggestion],
+    });
+
+    fetchAnalysisStub.resolves({
+      suggestions: [{ url, aiSummary: 'Some content found.', valuable: null }],
+    });
+
+    const ctx = buildGuidanceCtx({ siteId, opportunity });
+    await guidanceHandler(buildMessage(siteId, oppId), ctx);
+
+    const [updatedData] = suggestion.setData.firstCall.args;
+    expect(updatedData).to.have.property('aiSummary', 'Some content found.');
+    expect(updatedData).to.have.property('valuable', null);
+  });
+
+  it('valuable missing from response → stored as null (indeterminate), not coerced to true', async () => {
+    // Mystique may omit the valuable field entirely (older payload or partial failure).
+    // The handler must treat absence as null, not default to true.
+    const siteId = 'site-inbound-missing-verdict';
+    const oppId = 'opp-missing-1';
+    const url = 'https://example.com/page-missing-verdict';
+
+    const suggestion = buildSuggestion(sandbox, {
+      id: 'sug-missing',
+      status: 'NEW',
+      data: { url, aiSummary: '', valuable: null },
+    });
+    suggestion.setData = sandbox.stub();
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId,
+      siteId,
+      suggestions: [suggestion],
+    });
+
+    fetchAnalysisStub.resolves({
+      // valuable field intentionally absent
+      suggestions: [{ url, aiSummary: 'Content added by JS.' }],
+    });
+
+    const ctx = buildGuidanceCtx({ siteId, opportunity });
+    await guidanceHandler(buildMessage(siteId, oppId), ctx);
+
+    const [updatedData] = suggestion.setData.firstCall.args;
+    expect(updatedData).to.have.property('aiSummary', 'Content added by JS.');
+    expect(updatedData).to.have.property('valuable', null);
+  });
+
+  it('aiSummary invalid + existing valuable=null → null preserved (not overwritten)', async () => {
+    // When aiSummary is invalid and the stored valuable is null, the fallback
+    // must keep null — not default to true via the ?? operator.
+    const siteId = 'site-inbound-preserve-null';
+    const oppId = 'opp-preserve-null-1';
+    const url = 'https://example.com/page-preserve-null';
+
+    const suggestion = buildSuggestion(sandbox, {
+      id: 'sug-preserve-null',
+      status: 'NEW',
+      data: { url, aiSummary: 'Previous summary', valuable: null },
+    });
+    suggestion.setData = sandbox.stub();
+
+    const opportunity = buildOpportunity(sandbox, {
+      id: oppId,
+      siteId,
+      suggestions: [suggestion],
+    });
+
+    fetchAnalysisStub.resolves({
+      suggestions: [{ url, aiSummary: 'Not Available', valuable: true }],
+    });
+
+    const ctx = buildGuidanceCtx({ siteId, opportunity });
+    await guidanceHandler(buildMessage(siteId, oppId), ctx);
+
+    const [updatedData] = suggestion.setData.firstCall.args;
+    // aiSummary preserved (invalid response); valuable stays null (not overwritten)
+    expect(updatedData).to.have.property('aiSummary', 'Previous summary');
+    expect(updatedData).to.have.property('valuable', null);
+  });
+
   // ─── Filtering ────────────────────────────────────────────────────────────
 
   it('OUTDATED suggestion is excluded from update even when URL matches', async () => {
