@@ -708,6 +708,33 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.suggestionStatus).to.equal('NEW');
     });
 
+    it('does NOT dispatch for PENDING_VALIDATION suggestions that already have granular guidance — no weekly re-spam (SITES-47558)', async () => {
+      // Guards the no-re-dispatch path at the SQS-send boundary (processAutoSuggest),
+      // not just via the shouldSendAutoSuggestForSuggestion helper: a PENDING_VALIDATION
+      // suggestion whose issues already carry source_index (granular guidance) must not
+      // be re-sent to Mystique on every weekly audit while it awaits SME review.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'PENDING_VALIDATION',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500 }],
+            issues: [{ type: 'lcp', value: '# LCP Optimization...', source_index: 0 }],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+    });
+
     it('should skip suggestions whose metrics are all green (defense-in-depth)', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
