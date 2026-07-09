@@ -770,7 +770,7 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         mockSuggestions,
-        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.OUTDATED,
       );
     });
 
@@ -969,7 +969,7 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         mockSuggestions,
-        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.OUTDATED,
       );
     });
 
