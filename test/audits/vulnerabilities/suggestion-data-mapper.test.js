@@ -144,6 +144,20 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       expect(result.data.cves).to.deep.equal([]);
     });
 
+    it('should handle null and undefined dependencyTree', () => {
+      const testCases = [
+        { name: 'null dependencyTree', dependencyTree: null },
+        { name: 'undefined dependencyTree', dependencyTree: undefined },
+      ];
+
+      testCases.forEach(({ dependencyTree }) => {
+        const vulnerability = createVulnerability({ dependencyTree });
+        const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
+
+        expect(result.data.dependency_tree).to.deep.equal([]);
+      });
+    });
+
     it('should handle missing optional fields and various score formats', () => {
       const vulnerability = createVulnerability({
         name: 'test-library',

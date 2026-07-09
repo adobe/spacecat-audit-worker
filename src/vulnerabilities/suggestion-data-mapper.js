@@ -63,7 +63,7 @@ export function toSuggestionData(component) {
       summary: vuln.description,
       url: vuln.url || '',
     })),
-    dependency_tree: dependencyTree,
+    dependency_tree: dependencyTree || [],
   };
 }
 

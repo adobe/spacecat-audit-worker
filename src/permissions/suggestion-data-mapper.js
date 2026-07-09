@@ -39,7 +39,7 @@ export function toTooStrongSuggestionData(tooStrongPermission) {
     path,
     principal,
     permissions,
-    recommended_permissions: ['jcr:read', 'jcr:write '],
+    recommended_permissions: ['jcr:read', 'jcr:write'],
     rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
   };
 }

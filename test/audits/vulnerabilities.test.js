@@ -849,7 +849,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       });
     });
 
-    it('defaults cves to an empty array when vulnerabilities is missing', () => {
+    it('defaults cves and dependency_tree to empty arrays when both are missing', () => {
       const component = { name: 'lib-x', version: '1.0.0' };
 
       expect(toSuggestionData(component)).to.deep.equal({
@@ -857,8 +857,18 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         current_version: '1.0.0',
         recommended_version: undefined,
         cves: [],
-        dependency_tree: undefined,
+        dependency_tree: [],
       });
+    });
+
+    it('defaults dependency_tree to an empty array when dependencyTree is null', () => {
+      // Same scanner reports ignoredVulnerabilities: null elsewhere, so a null
+      // dependencyTree is a plausible upstream shape, not just a hypothetical.
+      const component = { name: 'x', version: '1', dependencyTree: null };
+
+      expect(toSuggestionData(component).dependency_tree).to.deep.equal([]);
+      // Must not throw - a bare destructuring default only covers undefined, not null.
+      expect(() => buildKey(toSuggestionData(component))).to.not.throw();
     });
 
     it('formats a zero score as "0" instead of "0.0"', () => {
