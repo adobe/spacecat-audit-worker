@@ -14,7 +14,9 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { mapVulnerabilityToSuggestion } from '../../../src/vulnerabilities/suggestion-data-mapper.js';
+import {
+  mapVulnerabilityToSuggestion, toSuggestionData,
+} from '../../../src/vulnerabilities/suggestion-data-mapper.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -70,7 +72,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
   describe('mapVulnerabilityToSuggestion', () => {
     it('should map vulnerability to suggestion with single vulnerability', () => {
       const vulnerability = createVulnerability();
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
       expect(result).to.deep.equal({
         opportunityId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
@@ -106,7 +108,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
       expect(result.rank).to.equal(9.5);
       expect(result.data.cves).to.have.lengthOf(3);
@@ -127,7 +129,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
 
       testCases.forEach(({ vulnerabilities }) => {
         const vulnerability = createVulnerability({ vulnerabilities });
-        const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+        const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
         expect(result.rank).to.equal(0);
         expect(result.data.cves).to.deep.equal([]);
@@ -136,7 +138,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
 
     it('should default to rank 0 when vulnerabilities are missing', () => {
       const { vulnerabilities, ...baseVulnerability } = mockVulnerability;
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, baseVulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(baseVulnerability));
 
       expect(result.rank).to.equal(0);
       expect(result.data.cves).to.deep.equal([]);
@@ -155,7 +157,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
       expect(result.data.library).to.equal('test-library');
       expect(result.data.current_version).to.equal('1.0.0');
@@ -180,7 +182,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
       expect(result.rank).to.equal(7.5);
       expect(result.data.cves).to.have.lengthOf(3);
@@ -217,7 +219,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ],
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, toSuggestionData(vulnerability));
 
       expect(result.data.cves).to.have.lengthOf(3);
       expect(result.data.cves[0].url).to.equal('https://example.com/cve');
