@@ -31,7 +31,7 @@ export const PreflightErrorClassification = Object.freeze({
 export const PreflightError = Object.freeze({
   PREFLIGHT_DISABLED: Object.freeze({
     code: 'PREFLIGHT-100',
-    message: 'Preflight audits are not enabled for this site.',
+    message: 'The Preflight audit is not enabled for this site.',
     description: 'The preflight handler is disabled in the site configuration.',
     classification: PreflightErrorClassification.CONFIG_ERROR,
   }),

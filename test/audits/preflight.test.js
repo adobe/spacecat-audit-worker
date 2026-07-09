@@ -1469,7 +1469,7 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setMetadata).to.have.been.calledWith({
         payload: {
           siteId: 'site-123',
-          reason: 'preflight audits disabled for site site-123',
+          reason: 'The Preflight audit is not enabled for this site.',
           errorCode: 'PREFLIGHT-100',
         },
       });

@@ -142,7 +142,7 @@ export const preflightAudit = async (context) => {
     jobEntity.setMetadata({
       payload: {
         siteId: site.getId(),
-        reason,
+        reason: PreflightError.PREFLIGHT_DISABLED.message,
         errorCode: PreflightError.PREFLIGHT_DISABLED.code,
       },
     });
