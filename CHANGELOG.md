@@ -1,3 +1,10 @@
+# [1.498.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.4...v1.498.0) (2026-07-09)
+
+
+### Features
+
+* **toc:** wire TOC opportunity into Impact Engine prompt generation (LLMO-5611) ([#2659](https://github.com/adobe/spacecat-audit-worker/issues/2659)) ([429d3e1](https://github.com/adobe/spacecat-audit-worker/commit/429d3e15c8e1549fa5643c290d7125308521cc99))
+
 ## [1.497.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.3...v1.497.4) (2026-07-09)
 
 
