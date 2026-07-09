@@ -17,8 +17,8 @@ import {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
-  handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
+import { handleAiOnlyMode } from '../../../src/prerender/ai-only-handler.js';
 
 use(sinonChai);
 
@@ -617,6 +617,11 @@ describe('Prerender AI-Only Mode', () => {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(true),
           mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+        },
+        '../../../src/prerender/path-suggestions/main.js': {
+          findPreservablePathSuggestions: sinon.stub().resolves([]),
+          buildPathTypeSuggestions: sinon.stub().resolves([]),
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
         },
       });
 

@@ -434,6 +434,233 @@ describe('sqs', () => {
     expect(logSpy).to.have.been.calledWith('Success, message sent. Queue: unknown, Type: unknown, MessageID: message-id');
   });
 
+  describe('organizationId propagation for Mystique-bound messages', () => {
+    const mystiqueQueueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/spacecat-to-mystique';
+    let siteFindByIdStub;
+
+    const setupMystiqueContext = ({
+      organizationId = '4854e75e-894b-4a74-92bf-d674abad1423',
+      withDataAccess = true,
+    } = {}) => {
+      context.env = { QUEUE_SPACECAT_TO_MYSTIQUE: mystiqueQueueUrl };
+      if (!withDataAccess) {
+        return;
+      }
+      const site = {
+        getOrganizationId: () => organizationId,
+      };
+      siteFindByIdStub = sandbox.stub().resolves(site);
+      context.dataAccess = {
+        Site: { findById: siteFindByIdStub },
+      };
+    };
+
+    const nockSend = (assertFn) => nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        if (assertFn) {
+          assertFn(JSON.parse(MessageBody));
+        }
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    it('adds the resolved organizationId to a Mystique-bound message', async () => {
+      setupMystiqueContext();
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.equal('4854e75e-894b-4a74-92bf-d674abad1423');
+        expect(parsed.siteId).to.equal('site-1');
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+    });
+
+    it('omits organizationId when it cannot be resolved (site has none)', async () => {
+      setupMystiqueContext({ organizationId: null });
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+    });
+
+    it('omits organizationId when the site cannot be found', async () => {
+      setupMystiqueContext();
+      siteFindByIdStub.resolves(undefined);
+      const message = { type: 'guidance:metatags', siteId: 'missing-site' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+    });
+
+    it('does not resolve or add organizationId for non-Mystique queues', async () => {
+      setupMystiqueContext();
+      const otherQueue = 'https://sqs.us-east-1.amazonaws.com/123456789/some-other-queue';
+      const message = { type: 'audit', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(otherQueue, message);
+      }).with(sqsWrapper)({}, context);
+
+      expect(siteFindByIdStub).to.not.have.been.called;
+    });
+
+    it('skips organizationId resolution when QUEUE_SPACECAT_TO_MYSTIQUE is not configured', async () => {
+      setupMystiqueContext();
+      context.env = {};
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+
+      expect(siteFindByIdStub).to.not.have.been.called;
+    });
+
+    it('does not overwrite an organizationId already present on the message', async () => {
+      setupMystiqueContext();
+      const message = { type: 'guidance:metatags', siteId: 'site-1', organizationId: 'existing-org-id' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.equal('existing-org-id');
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+
+      expect(siteFindByIdStub).to.not.have.been.called;
+    });
+
+    it('skips organizationId resolution when the message has no siteId', async () => {
+      setupMystiqueContext();
+      const message = { type: 'guidance:metatags' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+
+      expect(siteFindByIdStub).to.not.have.been.called;
+    });
+
+    it('caches the resolved organizationId across sends for the same siteId', async () => {
+      setupMystiqueContext();
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nock('https://sqs.us-east-1.amazonaws.com')
+        .post('/')
+        .times(2)
+        .reply(200, (_, body) => {
+          const { MessageBody } = JSON.parse(body);
+          expect(JSON.parse(MessageBody).organizationId).to.equal('4854e75e-894b-4a74-92bf-d674abad1423');
+          return {
+            MessageId: 'message-id',
+            MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+          };
+        });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+      }).with(sqsWrapper)({}, context);
+
+      expect(siteFindByIdStub).to.have.been.calledOnce;
+    });
+
+    it('sends without organizationId (and logs a warning) when resolution throws', async () => {
+      setupMystiqueContext();
+      siteFindByIdStub.rejects(new Error('db down'));
+      const warnSpy = sandbox.spy(context.log, 'warn');
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+        expect(parsed.siteId).to.equal('site-1');
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+
+      expect(warnSpy).to.have.been.calledWith(
+        'Failed to resolve organizationId for Mystique message (siteId: site-1): db down',
+      );
+    });
+
+    it('does not cache a transient resolution failure (retries on the next send)', async () => {
+      setupMystiqueContext();
+      // First lookup throws (transient throttle/timeout); the default stub
+      // resolves the site on the second call.
+      siteFindByIdStub.onFirstCall().rejects(new Error('throttled'));
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      const seen = [];
+      nock('https://sqs.us-east-1.amazonaws.com')
+        .post('/')
+        .times(2)
+        .reply(200, (_, body) => {
+          const { MessageBody } = JSON.parse(body);
+          seen.push(JSON.parse(MessageBody).organizationId);
+          return {
+            MessageId: 'message-id',
+            MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+          };
+        });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, { ...message });
+      }).with(sqsWrapper)({}, context);
+
+      // Transient failure → no org id and NOT cached, so the second send retries
+      // the lookup and resolves it (cache wasn't poisoned with a permanent null).
+      expect(seen[0]).to.be.undefined;
+      expect(seen[1]).to.equal('4854e75e-894b-4a74-92bf-d674abad1423');
+      expect(siteFindByIdStub).to.have.been.calledTwice;
+    });
+
+    it('sends without organizationId when dataAccess is unavailable on context', async () => {
+      setupMystiqueContext({ withDataAccess: false });
+      const message = { type: 'guidance:metatags', siteId: 'site-1' };
+
+      nockSend((parsed) => {
+        expect(parsed.organizationId).to.be.undefined;
+      });
+
+      await wrap(async (req, ctx) => {
+        await ctx.sqs.sendMessage(mystiqueQueueUrl, message);
+      }).with(sqsWrapper)({}, context);
+    });
+  });
+
   it('uses unknown as fallback when queueUrl is undefined', async () => {
     const message = { key: 'value' };
     const logSpy = sandbox.spy(context.log, 'info');

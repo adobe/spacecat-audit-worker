@@ -352,9 +352,10 @@ export async function submitForScraping(context) {
     return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
   }
 
-  log.info(`[TOC] Submitting ${topPages.length} URLs for scraping`);
+  const pagesToScrape = topPages.slice(0, MAX_TOP_PAGES);
+  log.info(`[TOC] Submitting ${pagesToScrape.length} URLs for scraping`);
   return {
-    urls: topPages.map((url) => ({ url })),
+    urls: pagesToScrape.map((url) => ({ url })),
     siteId: site.getId(),
     maxScrapeAge: 24,
   };

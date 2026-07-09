@@ -51,7 +51,8 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  *
  * CWV suggestion structure:
  * {
- *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR' | 'REJECTED',
+ *   status: 'NEW' | 'PENDING_VALIDATION' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR'
+ *     | 'REJECTED',
  *   data: {
  *     type: 'url' | 'group',
  *     url?: string,                  // Present for type: 'url'
@@ -59,16 +60,27 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  *     metrics: [{...}],
  *     isCodeChangeAvailable?: boolean, // Set by autofix-worker when a patch lands
  *     issues?: [                     // Auto-suggest guidance stored here
- *       { type: 'lcp' | 'cls' | 'inp', value: string, patchContent?: string }
+ *       { type: 'lcp' | 'cls' | 'inp', value: string, source_index?: number,
+ *         patchContent?: string }
  *     ]
  *   }
  * }
  *
- * Dispatches when the suggestion is NEW and no code patch has been produced yet
+ * On paid-tier ASO sites, CWV suggestions are created as PENDING_VALIDATION and an
+ * SME reviews the generated guidance before approving them to NEW. Guidance is
+ * therefore dispatched for both statuses — without it for PENDING_VALIDATION there
+ * is nothing for the SME to review and the suggestion can never be approved.
+ *
+ * For NEW, we dispatch whenever no code patch has been produced yet
  * (`data.isCodeChangeAvailable !== true`). We deliberately ignore
  * `issues[*].value` here — text guidance being present is not proof that a code
  * patch ran successfully, and `mergeCwvData` preserves that field across every
  * re-audit, which used to silently block retries forever.
+ *
+ * For PENDING_VALIDATION, re-dispatch is gated on the existing guidance being
+ * missing or in the legacy aggregated format (no per-issue `source_index`), so a
+ * suggestion that already has granular guidance isn't re-sent (and regenerated)
+ * on every weekly audit while it's awaiting SME review.
  *
  * Group filtering and "page is all-green" filtering happen in `processAutoSuggest`.
  *
@@ -76,12 +88,19 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
 export function shouldSendAutoSuggestForSuggestion(suggestion) {
-  if (suggestion.getStatus() !== 'NEW') {
+  const status = suggestion.getStatus();
+  if (status !== 'NEW' && status !== 'PENDING_VALIDATION') {
     return false;
   }
   const data = suggestion.getData() || {};
   if (data.isCodeChangeAvailable === true) {
     return false;
+  }
+  if (status === 'PENDING_VALIDATION') {
+    const { issues } = data;
+    const hasGranularGuidance = Array.isArray(issues) && issues.length > 0
+      && issues.some((i) => Number.isInteger(i.source_index));
+    return !hasGranularGuidance;
   }
   return true;
 }
@@ -90,7 +109,8 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
  * Processes CWV auto-suggest for eligible suggestions.
  * Checks if auto-suggest is enabled, filters suggestions that need guidance,
  * and sends messages to Mystique for AI-powered guidance generation.
- * Sends one message per suggestion that needs auto-suggest (NEW status, no guidance)
+ * Sends one message per suggestion that needs auto-suggest (NEW or PENDING_VALIDATION
+ * status, no guidance yet — see `shouldSendAutoSuggestForSuggestion`)
  * Includes code repository information (codeBucket, codePath) if auto-fix feature is enabled
  *
  * @param {Object} context - Context object containing log, sqs, env, s3Client
@@ -178,6 +198,10 @@ export async function processAutoSuggest(context, opportunity, site) {
           url,
           opportunityId,
           suggestionId,
+          // Current suggestion status so Mystique can gate code-fix generation on
+          // SME approval (PENDING_VALIDATION → guidance only, NEW → approved for
+          // code-fix generation).
+          suggestionStatus: suggestion.getStatus(),
           device_type: firstMetrics.deviceType || 'mobile',
           // Metrics flagged as failing in RUM — Mystique must only generate guidance
           // for these metrics, keeping the identify and suggest steps consistent.

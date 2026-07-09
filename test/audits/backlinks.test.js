@@ -1283,6 +1283,8 @@ describe('Backlinks Tests', function () {
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
 
+      nock('https://example.com').get('/suggested-page').reply(200);
+
       await mockedGenerateSuggestionData(context);
 
       expect(mockSuggestion.setData).to.have.been.calledOnce;
@@ -1618,6 +1620,8 @@ describe('Backlinks Tests', function () {
       // Return null for findById to simulate missing suggestion
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(null);
 
+      nock('https://example.com').get('/suggested-page').reply(200);
+
       await mockedGenerateSuggestionData(context);
 
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/suggestion not found/));
@@ -1750,6 +1754,8 @@ describe('Backlinks Tests', function () {
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      nock('https://example.com').get('/suggested-page').reply(200);
 
       const result = await mockedGenerateSuggestionData(context);
 

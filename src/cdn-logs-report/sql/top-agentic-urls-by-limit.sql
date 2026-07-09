@@ -16,7 +16,8 @@ aggregated AS (
   GROUP BY url
 )
 SELECT
-  url
+  url,
+  total_hits
 FROM aggregated
 ORDER BY total_hits DESC
 LIMIT {{limit}}

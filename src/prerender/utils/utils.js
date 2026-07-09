@@ -14,9 +14,13 @@
  * General utilities for the Prerender audit.
  */
 
-import { Entitlement } from '@adobe/spacecat-shared-data-access';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { DOMAIN_WIDE_SUGGESTION_KEY } from './constants.js';
+
+const LOG_PREFIX = 'Prerender -';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 
 /**
  * Common non-HTML file extensions that should be filtered out
@@ -158,6 +162,100 @@ export function mergeAndGetUniqueHtmlUrls(...args) {
   };
 }
 
+// Statuses considered active/preservable for path suggestions
+const PRESERVABLE_STATUSES = ['NEW', 'FIXED', 'PENDING_VALIDATION', 'SKIPPED'];
+// Statuses of per-URL suggestions eligible for path scoring.
+// FIXED is intentionally included: a FIXED URL was edge-deployed individually.
+// Scoring over both NEW and FIXED lets us suggest a path rule (e.g. /products/*)
+// that consolidates those individual deployments into a single pattern, reducing
+// operational overhead and ensuring new URLs under the same path are covered
+// automatically — even when many of the contributing URLs are already resolved.
+const ELIGIBLE_STATUSES = new Set(['NEW', 'FIXED']);
+
+/**
+ * Detects a path-level suggestion by the presence of allowedRegexPatterns
+ * without isDomainWide.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isPathSuggestionData(data) {
+  return Array.isArray(data?.allowedRegexPatterns) && !data?.isDomainWide;
+}
+
+/**
+ * Checks if a suggestion's data represents a domain-wide suggestion.
+ *
+ * @param {Object} data - Suggestion data object
+ * @returns {boolean}
+ */
+export function isDomainWideSuggestionData(data) {
+  return !!data?.isDomainWide;
+}
+
+/**
+ * Extracts the first-segment path pattern from a URL, relative to the site's base URL.
+ *
+ * When a baseUrl with a path prefix is provided, the prefix is stripped before
+ * determining the first meaningful segment. The returned pattern is always absolute
+ * (relative to the origin), so it can be used directly as a CDN path rule.
+ *
+ * Examples (baseUrl = 'https://nba.com/kings'):
+ *   https://nba.com/kings/products/shoes  →  /kings/products/*
+ *   https://nba.com/kings/                →  null  (root of base, no further segment)
+ *
+ * Examples (no baseUrl):
+ *   https://example.com/products/shoes    →  /products/*
+ *   https://example.com/                  →  null
+ *
+ * @param {string} url
+ * @param {string} [baseUrl=''] - Site base URL; its pathname prefix is stripped before
+ *   extracting the first segment.
+ * @returns {string|null}
+ */
+export function extractPathType(url, baseUrl = '') {
+  try {
+    const { pathname } = new URL(url);
+    let basePath = '';
+    if (baseUrl) {
+      const basePathname = new URL(baseUrl).pathname;
+      basePath = basePathname === '/' ? '' : basePathname.replace(/\/$/, '');
+    }
+    const relative = basePath && (pathname === basePath || pathname.startsWith(`${basePath}/`))
+      ? pathname.slice(basePath.length) || '/'
+      : pathname;
+    const parts = relative.split('/').filter(Boolean);
+    if (parts.length === 0) {
+      return null;
+    }
+    return `${basePath}/${parts[0]}/*`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Determines if an existing path suggestion should be preserved across re-audits.
+ *
+ * @param {Object} suggestion - Suggestion entity
+ * @returns {boolean}
+ */
+export function shouldPreservePathSuggestion(suggestion) {
+  const status = suggestion.getStatus();
+  const data = suggestion.getData();
+  return PRESERVABLE_STATUSES.includes(status) || !!data?.edgeDeployed;
+}
+
+/**
+ * Checks if a suggestion has an eligible status for path scoring.
+ *
+ * @param {string} status
+ * @returns {boolean}
+ */
+export function isEligibleStatus(status) {
+  return ELIGIBLE_STATUSES.has(status);
+}
+
 /**
  * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log
@@ -182,4 +280,78 @@ export async function isPaidLLMOCustomer(context) {
     log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
   }
+}
+
+/**
+ * Sanitizes the import path by replacing special characters with hyphens
+ * @param {string} importPath - The path to sanitize
+ * @returns {string} The sanitized path
+ */
+function sanitizeImportPath(importPath) {
+  return importPath
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[/._?=&]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+* Transforms a URL into an S3 path for a given identifier and file type.
+* The identifier can be either a scrape job id or a site id.
+* @param {string} url - The URL to transform
+* @param {string} id - The identifier - scrapeJobId
+* @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
+* 'client-side.html')
+* @returns {string} The S3 path to the file
+*/
+export function getS3Path(url, id, fileName) {
+  const { pathname, search } = new URL(url);
+  const sanitizedImportPath = sanitizeImportPath(pathname + search);
+  const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
+  return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
+}
+
+/**
+ * Reads and parses the site's status.json from S3.
+ * Returns {} when S3 is not configured, the file does not exist, or any read error occurs.
+ * Logs a warning for unexpected errors (non-NoSuchKey).
+ * @param {string} siteId
+ * @param {Object} context
+ * @returns {Promise<Object>}
+ */
+export async function readSiteStatusJson(siteId, context) {
+  const { s3Client, env, log } = context;
+  if (!env?.S3_SCRAPER_BUCKET_NAME || !s3Client) {
+    return {};
+  }
+  const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({ Bucket: env.S3_SCRAPER_BUCKET_NAME, Key: statusKey }),
+    );
+    return JSON.parse(await response.Body.transformToString());
+  } catch (e) {
+    if (e.name !== 'NoSuchKey') {
+      log?.warn?.(`${LOG_PREFIX} Could not read status.json: ${e.message}. siteId=${siteId}`);
+    }
+    return {};
+  }
+}
+
+/**
+ * Fetches the latest scrapeJobId from the status.json file in S3
+ * @param {string} siteId - The site ID
+ * @param {Object} context - Audit context with s3Client and env
+ * @returns {Promise<string|null>} - The scrapeJobId or null if not found
+ */
+export async function fetchLatestScrapeJobId(siteId, context) {
+  const { log } = context;
+  log.info(`${LOG_PREFIX} ai-only: Fetching status.json for siteId=${siteId}`);
+  const statusData = await readSiteStatusJson(siteId, context);
+  if (statusData.scrapeJobId) {
+    log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
+    return statusData.scrapeJobId;
+  }
+  log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
+  return null;
 }
