@@ -1643,8 +1643,9 @@ describe('Permissions Handler Tests', () => {
 
       const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
 
+      // REJECTED is frozen upstream in syncSuggestions before mergeStatusFunction is called;
+      // if somehow reached directly, defaultMergeStatusFunction returns null (keep status).
       expect(result).to.be.null;
-      expect(mockContext.log.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
     });
 
     it('should return null when existing suggestion is PENDING_VALIDATION', () => {
@@ -1856,8 +1857,10 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockRejectedSuggestion.setStatus).to.not.have.been.called;
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
-      expect(context.log.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(context.log.debug).to.have.been.calledWith(
+        'Skipping REJECTED suggestion admin1@/content/admin1#7d4700c5 - terminal status suggestions are never updated',
+      );
     });
 
     it('should create unique keys based on permission hash for same principal and path', async () => {

@@ -341,13 +341,15 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 /**
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
- * - REJECTED suggestions remain REJECTED
  * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
  * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
  *   Recovers any suggestion that errored due to a transient or codefix-side bug
  *   once the underlying fix has shipped; pages that fail every run keep
  *   re-dispatching but the audit cadence (weekly for CWV) bounds the cost.
  * - Other statuses remain unchanged
+ *
+ * Note: SKIPPED and REJECTED suggestions never reach this function — they are
+ * frozen upstream in syncSuggestions before mergeStatusFunction is called.
  *
  * @param {Object} existing - The existing suggestion object.
  * @param {Object} newDataItem - The new data item being merged.
@@ -357,12 +359,6 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   const { log, site } = context;
   const currentStatus = existing.getStatus();
-
-  if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
-    // Keep REJECTED status when same suggestion appears again in audit
-    log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
-    return null; // Keep existing status
-  }
 
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
