@@ -1,3 +1,10 @@
+## [1.497.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.3...v1.497.4) (2026-07-09)
+
+
+### Bug Fixes
+
+* remove Excel storing for llm error pages ([#2711](https://github.com/adobe/spacecat-audit-worker/issues/2711)) ([8f6a70b](https://github.com/adobe/spacecat-audit-worker/commit/8f6a70b5b68c05101b8650455a7d67016d18835a))
+
 ## [1.497.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.2...v1.497.3) (2026-07-08)
 
 
