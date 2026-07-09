@@ -1114,6 +1114,12 @@ describe('extractCodeInfo', () => {
       expect(buildKey({ library: 'lib-x', current_version: '1.0.0' })).to.equal('lib-x@1.0.0');
     });
 
+    it('handles a null dependency_tree (as persisted by the database) without throwing', () => {
+      expect(buildKey({
+        library: 'lib-x', current_version: '1.0.0', dependency_tree: null,
+      })).to.equal('lib-x@1.0.0');
+    });
+
     it('handles empty dependency_tree array', () => {
       expect(buildKey({ library: 'lib-x', current_version: '1.0.0', dependency_tree: [] })).to.equal('lib-x@1.0.0');
     });

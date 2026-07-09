@@ -190,9 +190,9 @@ export async function extractCodeBucket(context) {
  * @returns {string} - A stable key derived from library name/version and dependency tree.
  */
 export const buildKey = ({
-  library, current_version: currentVersion, dependency_tree: tree = [],
+  library, current_version: currentVersion, dependency_tree: tree,
 }) => {
-  const parts = tree
+  const parts = (tree || [])
     .filter((entry) => entry !== '[root]')
     .map((entry) => entry.replace(/@[^@]*$/, ''));
   return [`${library}@${currentVersion}`, ...parts].join('-');
