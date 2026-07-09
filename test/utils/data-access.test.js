@@ -1093,7 +1093,9 @@ describe('data-access', () => {
       });
 
       // FIXED is NOT frozen — custom mergeStatusFunction can transition it to NEW
-      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
     });
 
