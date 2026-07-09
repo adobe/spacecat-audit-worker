@@ -1,3 +1,11 @@
+## [1.498.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.0...v1.498.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **SITES-47741:** mark suggestions OUTDATED, not FIXED, when no leftover items are found ([#2756](https://github.com/adobe/spacecat-audit-worker/issues/2756)) ([e48fb7c](https://github.com/adobe/spacecat-audit-worker/commit/e48fb7ccabe7cda6ce97f09ef38156223911f2ae))
+* transform suggestion data before syncSuggestions to prevent stale merge fields ([#2755](https://github.com/adobe/spacecat-audit-worker/issues/2755)) ([b13a18a](https://github.com/adobe/spacecat-audit-worker/commit/b13a18a752451075c01c5435de0ee988e4874bce))
+
 # [1.498.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.4...v1.498.0) (2026-07-09)
 
 
