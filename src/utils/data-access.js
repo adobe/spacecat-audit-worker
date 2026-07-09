@@ -507,9 +507,25 @@ export async function syncSuggestions({
     return newDataKeys.has(existingKey);
   });
 
+  // SKIPPED and REJECTED suggestions are operator decisions that must not be
+  // overwritten by subsequent scans — their updatedAt must reflect the moment
+  // the operator acted. FIXED is intentionally excluded: some audits implement
+  // regression detection by transitioning FIXED → NEW via a custom
+  // mergeStatusFunction (e.g. permissions/suggestion-data-mapper.js).
+  const FROZEN_STATUSES = [
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+  ];
+
   matchedSuggestions.forEach((existing) => {
     const existingData = existing.getData();
     const existingKey = buildKey(existingData);
+
+    if (FROZEN_STATUSES.includes(existing.getStatus())) {
+      log.debug(`Skipping ${existing.getStatus()} suggestion ${existingKey} - terminal status suggestions are never updated`);
+      return;
+    }
+
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly
