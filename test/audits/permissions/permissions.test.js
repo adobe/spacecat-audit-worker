@@ -35,6 +35,8 @@ import {
   mapTooStrongSuggestion,
   mapAdminSuggestion,
   mergeSuggestionStatus,
+  toTooStrongSuggestionData,
+  toAdminSuggestionData,
 } from '../../../src/permissions/suggestion-data-mapper.js';
 import { fetchPermissionsReport } from '../../../src/permissions/common.js';
 
@@ -1471,51 +1473,114 @@ describe('Permissions Handler Tests', () => {
   });
 
   describe('Suggestion Data Mapper Tests', () => {
-    describe('mapTooStrongSuggestion', () => {
-      it('should map too strong permission to suggestion', () => {
-        const opportunity = { getId: () => 'opp-123' };
+    describe('toTooStrongSuggestionData', () => {
+      it('should transform a too strong permission entry into canonical suggestion data', () => {
         const tooStrongPermission = {
           principal: 'everyone',
           path: '/content/page',
           permissions: ['jcr:all'],
         };
 
-        const result = mapTooStrongSuggestion(opportunity, tooStrongPermission);
+        const result = toTooStrongSuggestionData(tooStrongPermission);
 
-        expect(result).to.have.property('opportunityId', 'opp-123');
-        expect(result).to.have.property('type', 'CONTENT_UPDATE');
-        expect(result.data).to.have.property('issue', 'Insecure');
-        expect(result.data).to.have.property('path', '/content/page');
-        expect(result.data).to.have.property('principal', 'everyone');
-        expect(result.data).to.have.property('permissions').that.deep.equals(['jcr:all']);
-        expect(result.data).to.have.property('recommended_permissions').that.deep.equals(['jcr:read', 'jcr:write ']);
-        expect(result.data).to.have.property('rationale').that.includes('Granting jcr:all permissions');
+        expect(result).to.deep.equal({
+          issue: 'Insecure',
+          path: '/content/page',
+          principal: 'everyone',
+          permissions: ['jcr:all'],
+          recommended_permissions: ['jcr:read', 'jcr:write '],
+          rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
+        });
+      });
+
+      it('should drop raw fields that are not part of the canonical shape', () => {
+        const tooStrongPermission = {
+          principal: 'everyone',
+          path: '/content/page',
+          permissions: ['jcr:all'],
+          acl: ['jcr:all'],
+          otherPermissions: [],
+        };
+
+        const result = toTooStrongSuggestionData(tooStrongPermission);
+
+        expect(result).to.not.have.property('acl');
+        expect(result).to.not.have.property('otherPermissions');
       });
     });
 
-    describe('mapAdminSuggestion', () => {
-      it('should map admin permission to suggestion', () => {
-        const opportunity = { getId: () => 'opp-456' };
+    describe('mapTooStrongSuggestion', () => {
+      it('should wrap already-transformed suggestion data 1:1, without further transformation', () => {
+        const opportunity = { getId: () => 'opp-123' };
+        const suggestionData = toTooStrongSuggestionData({
+          principal: 'everyone',
+          path: '/content/page',
+          permissions: ['jcr:all'],
+        });
+
+        const result = mapTooStrongSuggestion(opportunity, suggestionData);
+
+        expect(result).to.deep.equal({
+          opportunityId: 'opp-123',
+          type: 'CONTENT_UPDATE',
+          rank: 0,
+          data: suggestionData,
+        });
+      });
+    });
+
+    describe('toAdminSuggestionData', () => {
+      it('should transform an admin permission entry into canonical suggestion data', () => {
         const adminPermission = {
           principal: 'admin-user',
           path: '/content/admin',
           permissions: ['jcr:all'],
         };
 
-        const result = mapAdminSuggestion(opportunity, adminPermission);
+        const result = toAdminSuggestionData(adminPermission);
+
+        expect(result).to.deep.equal({
+          issue: 'Redundant',
+          path: '/content/admin',
+          principal: 'admin-user',
+          permissions: ['jcr:all'],
+          recommended_permissions: ['Remove'],
+          rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
+        });
+      });
+
+      it('should drop raw fields that are not part of the canonical shape', () => {
+        const adminPermission = {
+          principal: 'admin-user',
+          path: '/content/admin',
+          permissions: ['jcr:all'],
+          allow: true,
+          privileges: ['jcr:all'],
+        };
+
+        const result = toAdminSuggestionData(adminPermission);
+
+        expect(result).to.not.have.property('allow');
+        expect(result).to.not.have.property('privileges');
+      });
+    });
+
+    describe('mapAdminSuggestion', () => {
+      it('should wrap already-transformed suggestion data 1:1, without further transformation', () => {
+        const opportunity = { getId: () => 'opp-456' };
+        const suggestionData = toAdminSuggestionData({
+          principal: 'admin-user',
+          path: '/content/admin',
+          permissions: ['jcr:all'],
+        });
+
+        const result = mapAdminSuggestion(opportunity, suggestionData);
 
         expect(result).to.deep.equal({
           opportunityId: 'opp-456',
           type: 'CONTENT_UPDATE',
           rank: 0,
-          data: {
-            issue: 'Redundant',
-            path: '/content/admin',
-            principal: 'admin-user',
-            permissions: ['jcr:all'],
-            recommended_permissions: ['Remove'],
-            rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
-          },
+          data: suggestionData,
         });
       });
     });
