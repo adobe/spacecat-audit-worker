@@ -24,9 +24,14 @@ import {
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
   VULNERABILITY_REPORT_ALL_IGNORED,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
+import VULNERABILITY_REPORT_OLD_SCAN from '../fixtures/vulnerabilities/vulnerability-report-old-scan.json' with { type: 'json' };
+import VULNERABILITY_REPORT_NEW_SCAN from '../fixtures/vulnerabilities/vulnerability-report-new-scan.json' with { type: 'json' };
 import {
   vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
 } from '../../src/vulnerabilities/handler.js';
+import {
+  toSuggestionData, mapVulnerabilityToSuggestion,
+} from '../../src/vulnerabilities/suggestion-data-mapper.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -568,6 +573,87 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(springSuggestion.data.cves[1].score).to.equal(5.5);
     });
 
+    it('should mark a suggestion as OUTDATED when its component drops out of a later scan', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      // Build one existing suggestion per component reported in the older scan.
+      const existingSuggestions = VULNERABILITY_REPORT_OLD_SCAN.vulnerableComponents.map(
+        (component) => ({
+          getId: () => `suggestion-${component.name}`,
+          getData: () => ({
+            library: component.name,
+            current_version: component.version,
+            recommended_version: component.recommendedVersion,
+            cves: (component.vulnerabilities || []).map((vuln) => ({
+              cve_id: vuln.id,
+              score: vuln.score,
+            })),
+            dependency_tree: component.dependencyTree,
+          }),
+          getStatus: () => 'NEW',
+          setStatus: sandbox.stub(),
+          setData: sandbox.stub(),
+          setRank: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+        }),
+      );
+
+      const existingOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        setAuditId: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NEW_SCAN,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+
+      const [outdatedSuggestions, outdatedStatus] = context.dataAccess.Suggestion
+        .bulkUpdateStatus.getCall(0).args;
+      expect(outdatedStatus).to.equal('OUTDATED');
+      expect(outdatedSuggestions).to.have.lengthOf(1);
+      expect(outdatedSuggestions[0].getId()).to.equal(
+        'suggestion-org.apache.httpcomponents:httpclient',
+      );
+
+      // Matched suggestions (component present in both scans) must have their
+      // dependency_tree refreshed to the new scan's tree, with no leftover/duplicate
+      // raw fields from the merge.
+      const jettySuggestion = existingSuggestions.find(
+        (s) => s.getId() === 'suggestion-org.eclipse.jetty:jetty-util-ajax',
+      );
+      const newJettyComponent = VULNERABILITY_REPORT_NEW_SCAN.vulnerableComponents.find(
+        (c) => c.name === 'org.eclipse.jetty:jetty-util-ajax',
+      );
+      expect(jettySuggestion.setData).to.have.been.calledOnce;
+      const updatedData = jettySuggestion.setData.getCall(0).args[0];
+      expect(Object.keys(updatedData)).to.deep.equal([
+        'library', 'current_version', 'recommended_version', 'cves', 'dependency_tree',
+      ]);
+      expect(updatedData.dependency_tree).to.deep.equal(newJettyComponent.dependencyTree);
+    });
+
     it('should skip starfish-auto-code when auto suggest is disabled', async () => {
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
@@ -737,6 +823,93 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       }
     });
   });
+
+  describe('toSuggestionData', () => {
+    it('transforms a raw component into the canonical suggestion data shape', () => {
+      const component = {
+        name: 'com.fasterxml.jackson.core:jackson-databind',
+        version: '2.12.3',
+        recommendedVersion: '2.12.6.1',
+        vulnerabilities: [
+          { id: 'CVE-A', score: 5.5, severity: 'Medium', description: 'desc-a', url: 'https://a' },
+          { id: 'CVE-B', score: 7.5, severity: 'High', description: 'desc-b' },
+        ],
+        dependencyTree: ['[root]', 'parent@1.0.0'],
+      };
+
+      expect(toSuggestionData(component)).to.deep.equal({
+        library: 'com.fasterxml.jackson.core:jackson-databind',
+        current_version: '2.12.3',
+        recommended_version: '2.12.6.1',
+        cves: [
+          { cve_id: 'CVE-B', score: 7.5, score_text: '7.5 High', summary: 'desc-b', url: '' },
+          { cve_id: 'CVE-A', score: 5.5, score_text: '5.5 Medium', summary: 'desc-a', url: 'https://a' },
+        ],
+        dependency_tree: ['[root]', 'parent@1.0.0'],
+      });
+    });
+
+    it('defaults cves and dependency_tree to empty arrays when both are missing', () => {
+      const component = { name: 'lib-x', version: '1.0.0' };
+
+      expect(toSuggestionData(component)).to.deep.equal({
+        library: 'lib-x',
+        current_version: '1.0.0',
+        recommended_version: undefined,
+        cves: [],
+        dependency_tree: [],
+      });
+    });
+
+    it('defaults dependency_tree to an empty array when dependencyTree is null', () => {
+      // Same scanner reports ignoredVulnerabilities: null elsewhere, so a null
+      // dependencyTree is a plausible upstream shape, not just a hypothetical.
+      const component = { name: 'x', version: '1', dependencyTree: null };
+
+      expect(toSuggestionData(component).dependency_tree).to.deep.equal([]);
+      // Must not throw - a bare destructuring default only covers undefined, not null.
+      expect(() => buildKey(toSuggestionData(component))).to.not.throw();
+    });
+
+    it('formats a zero score as "0" instead of "0.0"', () => {
+      const component = {
+        name: 'lib-x',
+        version: '1.0.0',
+        vulnerabilities: [{ id: 'CVE-A', score: 0, severity: 'Low', description: 'desc' }],
+      };
+
+      expect(toSuggestionData(component).cves[0]).to.have.property('score_text', '0 Low');
+    });
+  });
+
+  describe('mapVulnerabilityToSuggestion', () => {
+    it('wraps already-transformed suggestion data 1:1, ranked by highest CVE score', () => {
+      const opportunity = { getId: () => 'opp-123' };
+      const suggestionData = toSuggestionData({
+        name: 'lib-x',
+        version: '1.0.0',
+        vulnerabilities: [{ id: 'CVE-A', score: 3.1, severity: 'Low' }],
+      });
+
+      const result = mapVulnerabilityToSuggestion(opportunity, suggestionData);
+
+      expect(result).to.deep.equal({
+        opportunityId: 'opp-123',
+        type: 'CODE_CHANGE',
+        rank: 3.1,
+        data: suggestionData,
+      });
+    });
+
+    it('ranks a suggestion with no CVEs as 0', () => {
+      const opportunity = { getId: () => 'opp-456' };
+      const suggestionData = toSuggestionData({ name: 'lib-x', version: '1.0.0' });
+
+      const result = mapVulnerabilityToSuggestion(opportunity, suggestionData);
+
+      expect(result.rank).to.equal(0);
+    });
+  });
 });
 
 describe('extractCodeInfo', () => {
@@ -861,9 +1034,9 @@ describe('extractCodeInfo', () => {
   describe('buildKey', () => {
     it('builds key from library@version and dependency tree, stripping [root] and parent @version', () => {
       const key = buildKey({
-        name: 'com.fasterxml.jackson.core:jackson-databind',
-        version: '2.12.3',
-        dependencyTree: [
+        library: 'com.fasterxml.jackson.core:jackson-databind',
+        current_version: '2.12.3',
+        dependency_tree: [
           '[root]',
           'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
         ],
@@ -875,19 +1048,19 @@ describe('extractCodeInfo', () => {
 
     it('distinguishes the same library at different versions', () => {
       const keyOld = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['[root]', 'parent-a@1.0.0'],
       });
       const keyNew = buildKey({
-        name: 'lib-x',
-        version: '1.0.1',
-        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+        library: 'lib-x',
+        current_version: '1.0.1',
+        dependency_tree: ['[root]', 'parent-a@1.0.0'],
       });
       expect(keyOld).to.not.equal(keyNew);
     });
 
-    it('produces identical keys for raw component and stored suggestion data shapes', () => {
+    it('produces identical keys before and after a round-trip through toSuggestionData', () => {
       const rawComponent = {
         name: 'com.fasterxml.jackson.core:jackson-databind',
         version: '2.12.3',
@@ -908,77 +1081,82 @@ describe('extractCodeInfo', () => {
           'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
         ],
       };
-      expect(buildKey(rawComponent)).to.equal(buildKey(storedData));
+      expect(buildKey(toSuggestionData(rawComponent))).to.equal(buildKey(storedData));
     });
 
     it('distinguishes same library reached via different dependency paths', () => {
       const keyA = buildKey({
-        name: 'lib-x',
-        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+        library: 'lib-x',
+        dependency_tree: ['[root]', 'parent-a@1.0.0'],
       });
       const keyB = buildKey({
-        name: 'lib-x',
-        dependencyTree: ['[root]', 'parent-b@1.0.0'],
+        library: 'lib-x',
+        dependency_tree: ['[root]', 'parent-b@1.0.0'],
       });
       expect(keyA).to.not.equal(keyB);
     });
 
     it('ignores transitive parent versions in the dependency tree', () => {
       const keyOld = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['[root]', 'parent-a@1.0.0'],
       });
       const keyNew = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['[root]', 'parent-a@2.5.9'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['[root]', 'parent-a@2.5.9'],
       });
       expect(keyOld).to.equal(keyNew);
     });
 
-    it('handles missing dependencyTree by falling back to library@version only', () => {
-      expect(buildKey({ name: 'lib-x', version: '1.0.0' })).to.equal('lib-x@1.0.0');
+    it('handles missing dependency_tree by falling back to library@version only', () => {
       expect(buildKey({ library: 'lib-x', current_version: '1.0.0' })).to.equal('lib-x@1.0.0');
     });
 
-    it('handles empty dependencyTree array', () => {
-      expect(buildKey({ name: 'lib-x', version: '1.0.0', dependencyTree: [] })).to.equal('lib-x@1.0.0');
+    it('handles a null dependency_tree (as persisted by the database) without throwing', () => {
+      expect(buildKey({
+        library: 'lib-x', current_version: '1.0.0', dependency_tree: null,
+      })).to.equal('lib-x@1.0.0');
+    });
+
+    it('handles empty dependency_tree array', () => {
+      expect(buildKey({ library: 'lib-x', current_version: '1.0.0', dependency_tree: [] })).to.equal('lib-x@1.0.0');
     });
 
     it('handles tree entries without any @version suffix', () => {
       const key = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['[root]', 'parent-with-no-version'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['[root]', 'parent-with-no-version'],
       });
       expect(key).to.equal('lib-x@1.0.0-parent-with-no-version');
     });
 
     it('strips only the trailing @version when entry contains multiple "@"', () => {
       const key = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['@scope/pkg@1.0.0'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['@scope/pkg@1.0.0'],
       });
       expect(key).to.equal('lib-x@1.0.0-@scope/pkg');
     });
 
     it('preserves dependency tree ordering in the key', () => {
       const keyAB = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['parent-a@1', 'parent-b@1'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['parent-a@1', 'parent-b@1'],
       });
       const keyBA = buildKey({
-        name: 'lib-x',
-        version: '1.0.0',
-        dependencyTree: ['parent-b@1', 'parent-a@1'],
+        library: 'lib-x',
+        current_version: '1.0.0',
+        dependency_tree: ['parent-b@1', 'parent-a@1'],
       });
       expect(keyAB).to.not.equal(keyBA);
     });
 
-    it('matches on a real fixture entry across raw and mapped shapes', () => {
+    it('matches on a real fixture entry once transformed by toSuggestionData', () => {
       const raw = VULNERABILITY_REPORT_WITH_VULNERABILITIES.vulnerableComponents[0];
       const mapped = {
         library: raw.name,
@@ -987,8 +1165,8 @@ describe('extractCodeInfo', () => {
         cves: [],
         dependency_tree: raw.dependencyTree,
       };
-      expect(buildKey(raw)).to.equal(buildKey(mapped));
-      expect(buildKey(raw)).to.include(`@${raw.version}`);
+      expect(buildKey(toSuggestionData(raw))).to.equal(buildKey(mapped));
+      expect(buildKey(toSuggestionData(raw))).to.include(`@${raw.version}`);
     });
   });
 });

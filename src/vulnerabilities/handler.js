@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
-import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
+import { mapVulnerabilityToSuggestion, toSuggestionData } from './suggestion-data-mapper.js';
 import { noopUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -178,25 +178,24 @@ export async function extractCodeBucket(context) {
 }
 
 /**
- * Builds a stable key for a vulnerable component used to match new audit data against
- * previously-stored suggestions. Works on both raw components
- * ({name, version, dependencyTree}) and stored suggestion data
- * ({library, current_version, dependency_tree}), since syncSuggestions calls buildKey
- * against both shapes. The key is "library@version" joined with each dependency-tree
- * entry (excluding "[root]" and stripped of its "@version" suffix — we don't key on
+ * Builds a stable key for a suggestion's data used to match new audit data against
+ * previously-stored suggestions. Both stored suggestion data and freshly-fetched audit
+ * data (once run through toSuggestionData) share the same canonical shape
+ * ({library, current_version, dependency_tree}), so buildKey only needs to support that
+ * one shape. The key is "library@version" joined with each dependency-tree entry
+ * (excluding "[root]" and stripped of its "@version" suffix — we don't key on
  * transitive parent versions, only on the vulnerable library's own version).
  *
- * @param {Object} item - Raw vulnerable component or stored suggestion data.
+ * @param {Object} data - Suggestion data in its canonical shape (see toSuggestionData).
  * @returns {string} - A stable key derived from library name/version and dependency tree.
  */
-export const buildKey = (item) => {
-  const libName = item.library ?? item.name;
-  const libVersion = item.current_version ?? item.version;
-  const tree = item.dependency_tree ?? item.dependencyTree ?? [];
-  const parts = tree
+export const buildKey = ({
+  library, current_version: currentVersion, dependency_tree: tree,
+}) => {
+  const parts = (tree || [])
     .filter((entry) => entry !== '[root]')
     .map((entry) => entry.replace(/@[^@]*$/, ''));
-  return [`${libName}@${libVersion}`, ...parts].join('-');
+  return [`${library}@${currentVersion}`, ...parts].join('-');
 };
 
 export const extractCodeInfo = (data) => {
@@ -299,10 +298,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
     createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
+  // Transform raw components into the canonical suggestion data shape before syncing,
+  // so both existing and new suggestion data share the same shape and merge cleanly.
+  const newData = actionableComponents.map(toSuggestionData);
+
   // Populate suggestions
   await syncSuggestions({
     opportunity,
-    newData: actionableComponents,
+    newData,
     context,
     buildKey,
     mapNewSuggestion:
