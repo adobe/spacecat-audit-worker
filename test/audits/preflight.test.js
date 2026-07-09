@@ -1477,6 +1477,52 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.save).to.have.been.called;
     });
 
+    it('does not cancel a job that is no longer in progress, even if preflight is disabled for the site', async () => {
+      job.getStatus.returns('COMPLETED');
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+
+      expect(context.dataAccess.AsyncJob.findById).to.not.have.been.called;
+    });
+
+    it('logs and propagates the error when AsyncJob.findById fails while cancelling a disabled job', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().rejects(new Error('db unavailable'));
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('db unavailable');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('logs and propagates the error when saving the cancelled job fails', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves({
+        setStatus: sinon.stub(),
+        setMetadata: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        save: sinon.stub().rejects(new Error('save failed')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('save failed');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('does not cancel the job and lets the error propagate when the entitlement check itself errors', async () => {
+      TierClient.createForSite.restore();
+      sinon.stub(TierClient, 'createForSite').returns({
+        checkValidEntitlement: sinon.stub().rejects(new Error('entitlement service unavailable')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('entitlement service unavailable');
+
+      expect(context.log.info).to.not.have.been.calledWithMatch(/disabled for site/);
+    });
+
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
