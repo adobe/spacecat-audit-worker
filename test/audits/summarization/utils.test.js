@@ -536,6 +536,86 @@ describe('summarization utils', () => {
       expect(result[1].contentHash).to.equal(hash);
     });
 
+    describe('prompts (Impact Engine opt-in)', () => {
+      it('should route summaryPrompts to the page-summary record and keyPointsPrompts to the key-points record', () => {
+        const summaryPrompts = [
+          { id: 's1', prompt: 'What is X?', type: 'Non-Branded' },
+          { id: 's2', prompt: 'How does Brand do X?', type: 'Branded' },
+        ];
+        const keyPointsPrompts = [
+          { id: 'k1', prompt: 'What are the key benefits of X?', type: 'Non-Branded' },
+        ];
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            summaryPrompts,
+            keyPointsPrompts,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: { formatted_items: ['Key 1', 'Key 2'] },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        // page-summary record gets summaryPrompts
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].prompts).to.deep.equal(summaryPrompts);
+        // key-points record gets keyPointsPrompts
+        expect(result[1].keyPoints).to.be.true;
+        expect(result[1].prompts).to.deep.equal(keyPointsPrompts);
+      });
+
+      it('should default each record\'s prompts to an empty array when Mystique omits them', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: { formatted_items: ['Key 1'] },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].prompts).to.deep.equal([]);
+        expect(result[1].prompts).to.deep.equal([]);
+      });
+
+      it('should default to empty arrays when the prompt fields are not arrays', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            summaryPrompts: 'not-an-array',
+            keyPointsPrompts: { bogus: true },
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: { formatted_items: ['Key 1'] },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].prompts).to.deep.equal([]);
+        expect(result[1].prompts).to.deep.equal([]);
+      });
+    });
+
     it('should set contentHash to null when url not in urlToContentHash (LLMO-4454)', () => {
       const suggestions = [
         {

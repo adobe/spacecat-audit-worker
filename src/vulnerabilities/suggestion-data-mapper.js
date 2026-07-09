@@ -32,38 +32,55 @@ function highestScore(vulnerabilities) {
 }
 
 /**
- * Maps a given vulnerability to a suggestion object that provides details
- * on updating vulnerable libraries to recommended versions and includes CVE information.
+ * Transforms a raw vulnerable component (as reported by the scan) into the canonical
+ * suggestion data shape. This is the single place where the raw report fields
+ * (name/version/dependencyTree/...) are renamed/reshaped into the fields a suggestion
+ * actually stores (library/current_version/dependency_tree/...). Running this
+ * transform on every incoming item *before* syncSuggestions means both the stored
+ * suggestion data and the freshly-fetched data are always in the same shape, so
+ * matching suggestions get properly overwritten on merge instead of accumulating
+ * stale/duplicate raw fields.
  *
- * @param {Object} opportunity - The opportunity object
- * @param {VulnerableComponent} vulnerability - The vulnerability object
- * @param {boolean} generateSuggestions - Whether to generate version recommendations
- * @return {Object} A suggestion object providing a structured representation of the vulnerability
+ * @param {VulnerableComponent} component - The raw vulnerable component from the report.
+ * @return {Object} The suggestion data in its canonical (stored) shape.
  */
-export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
+export function toSuggestionData(component) {
   const {
     name, version, recommendedVersion, vulnerabilities, dependencyTree,
-  } = vulnerability;
+  } = component;
 
   // Handle null/undefined vulnerabilities
   const safeVulnerabilities = vulnerabilities || [];
 
   return {
+    library: name,
+    current_version: version,
+    recommended_version: recommendedVersion,
+    cves: safeVulnerabilities.sort((a, b) => b.score - a.score).map((vuln) => ({
+      cve_id: vuln.id,
+      score: vuln.score,
+      score_text: `${vuln.score === 0 ? '0' : vuln.score.toFixed(1)} ${vuln.severity}`,
+      summary: vuln.description,
+      url: vuln.url || '',
+    })),
+    dependency_tree: dependencyTree || [],
+  };
+}
+
+/**
+ * Maps already-transformed suggestion data (see toSuggestionData) to a suggestion
+ * object. Performs no further data transformation - the data is passed through as-is.
+ *
+ * @param {Object} opportunity - The opportunity object
+ * @param {Object} suggestionData - Suggestion data in its canonical shape
+ * (see toSuggestionData)
+ * @return {Object} A suggestion object providing a structured representation of the vulnerability
+ */
+export function mapVulnerabilityToSuggestion(opportunity, suggestionData) {
+  return {
     opportunityId: opportunity.getId(),
     type: 'CODE_CHANGE',
-    rank: highestScore(safeVulnerabilities), // Used for sorting
-    data: {
-      library: name,
-      current_version: version,
-      recommended_version: recommendedVersion,
-      cves: safeVulnerabilities.sort((a, b) => b.score - a.score).map((vuln) => ({
-        cve_id: vuln.id,
-        score: vuln.score,
-        score_text: `${vuln.score === 0 ? '0' : vuln.score.toFixed(1)} ${vuln.severity}`,
-        summary: vuln.description,
-        url: vuln.url || '',
-      })),
-      dependency_tree: dependencyTree,
-    },
+    rank: highestScore(suggestionData.cves), // Used for sorting
+    data: { ...suggestionData },
   };
 }

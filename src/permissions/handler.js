@@ -23,7 +23,7 @@ import {
   createTooStrongMetrics,
 } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
-import { mapTooStrongSuggestion } from './suggestion-data-mapper.js';
+import { mapTooStrongSuggestion, toTooStrongSuggestionData } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
 import { noopUrlResolver } from '../common/index.js';
 
@@ -162,10 +162,14 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     return `${data.path}@${data.principal}#${hash}`;
   };
 
+  // Transform raw permissions into the canonical suggestion data shape before syncing,
+  // so both existing and new suggestion data share the same shape and merge cleanly.
+  const newData = flattenedPermissions.map(toTooStrongSuggestionData);
+
   await syncSuggestions({
     context,
     opportunity: tooStrongOpt,
-    newData: flattenedPermissions,
+    newData,
     buildKey: buildTooStrongSuggestionKey,
     mapNewSuggestion: (entry) => mapTooStrongSuggestion(tooStrongOpt, entry),
   });

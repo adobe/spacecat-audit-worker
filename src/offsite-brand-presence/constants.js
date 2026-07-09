@@ -80,3 +80,8 @@ export const DRS_SUCCESS_STATUSES = new Set([
   'COMPLETED',
   'COMPLETED_WITH_ERRORS',
 ]);
+
+// Minimum elapsed time before re-triggering the same analysis audit for a site.
+// Prevents duplicate analysis runs caused by SQS at-least-once redelivery of
+// the DRS status poll completion message.
+export const AUDIT_TRIGGER_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour

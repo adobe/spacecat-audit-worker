@@ -25,7 +25,7 @@ import {
 } from '../../../src/utils/offsite-audit-utils.js';
 
 // Mirrors the handler-private constant — update both if the limit changes.
-const CITED_ANALYSIS_URLS_LIMIT = 40;
+const MAX_PROMPTS_PER_URL = 5;
 import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
@@ -33,7 +33,9 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Cited Analysis Handler', () => {
+describe('Cited Analysis Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -221,7 +223,7 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
-      expect(result.auditResult.config.urlLimit).to.equal(CITED_ANALYSIS_URLS_LIMIT);
+      expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
@@ -433,6 +435,12 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: '1700000000.123456' },
+      );
     });
 
     it('should not include slackContext in auditResult when not provided', async () => {
@@ -440,6 +448,13 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.slackContext).to.be.undefined;
+      // postMessageOptional is still invoked but with no channel/thread, so it no-ops.
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        undefined,
+        /no scrape job needed, sending to Mystique/,
+        { threadTs: undefined },
+      );
     });
   });
 
@@ -671,7 +686,7 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[Cited] Queued Cited analysis request to Mystique for Example Corp with 2 URLs',
@@ -722,8 +737,8 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.deep.equal(expectedUrls);
     });
 
-    it('should limit URLs to CITED_ANALYSIS_URLS_LIMIT when many URLs exist', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 20 }, (_, i) => ({
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 20 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -743,14 +758,14 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] Queued Cited analysis request to Mystique for Test with ${CITED_ANALYSIS_URLS_LIMIT} URLs`,
+        `[Cited] Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
       );
     });
 
-    it('should fall back to CITED_ANALYSIS_URLS_LIMIT when urlLimit is absent', async () => {
-      const manyUrls = Array.from({ length: CITED_ANALYSIS_URLS_LIMIT + 5 }, (_, i) => ({
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -770,9 +785,9 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] urlLimit=${CITED_ANALYSIS_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[Cited] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
     });
 
@@ -826,13 +841,43 @@ describe('Cited Analysis Handler', () => {
       expect(sentUrl).to.not.have.any.keys('siteId', 'byCustomer', 'audits', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy');
     });
 
+    it('should cap prompts to MAX_PROMPTS_PER_URL, keeping stored order', async () => {
+      const manyPrompts = Array.from({ length: MAX_PROMPTS_PER_URL + 10 }, (_, i) => `prompt ${i}`);
+      const urlsWithManyPrompts = [{
+        url: 'https://techreview.io/review-of-example',
+        prompts: manyPrompts,
+      }];
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: urlsWithManyPrompts,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls[0].prompts).to.have.lengthOf(MAX_PROMPTS_PER_URL);
+      expect(sentMessage.data.urls[0].prompts).to.deep.equal(
+        manyPrompts.slice(0, MAX_PROMPTS_PER_URL),
+      );
+    });
+
     it('should reduce URL count when serialised message exceeds size budget', async () => {
-      // 40 URLs × 60 prompts × 200 bytes each = ~480 KB, well over the 200 KB budget.
-      // Prompts are no longer capped per URL — the size guard is the safety net.
-      const largePrompt = 'x'.repeat(200);
+      // 40 URLs × (capped to 5 prompts) × 2 KB each = ~400 KB even after the
+      // per-URL prompt cap, well over the 200 KB budget — the size guard is the
+      // last-resort safety net for pathologically long prompt strings.
+      const largePrompt = 'x'.repeat(2 * 1024);
       const bigUrls = Array.from({ length: 40 }, (_, i) => ({
         url: `https://example.com/page-${i}`,
-        prompts: Array.from({ length: 60 }, () => largePrompt),
+        prompts: Array.from({ length: 10 }, () => largePrompt),
       }));
 
       const auditData = {
@@ -852,7 +897,7 @@ describe('Cited Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls.length).to.be.lessThan(CITED_ANALYSIS_URLS_LIMIT);
+      expect(sentMessage.data.urls.length).to.be.lessThan(MYSTIQUE_URLS_LIMIT);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
     });

@@ -16,6 +16,48 @@ import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js
 import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
 
 /**
+ * Default number of link probes performed concurrently. Kept low so the audit
+ * does not overwhelm a slow author environment: firing every link at once makes
+ * authenticated author renders queue past the per-request timeout, which the
+ * audit then records as Status 0 / broken (false positives — see SITES-46696).
+ * Override per run via options.linkCheckConcurrency or env
+ * PREFLIGHT_LINK_CHECK_CONCURRENCY.
+ */
+export const DEFAULT_LINK_CHECK_CONCURRENCY = 5;
+
+/**
+ * Minimal promise concurrency limiter. Returns a scheduler that runs at most
+ * `max` tasks at a time and resolves with each task's result. Falls back to
+ * serial (1) for invalid input.
+ *
+ * @param {number} max - maximum number of concurrently running tasks
+ * @returns {(task: () => Promise<*>) => Promise<*>} scheduler function
+ */
+export function createConcurrencyLimiter(max) {
+  const limit = Number.isFinite(max) && max >= 1 ? Math.floor(max) : 1;
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= limit || queue.length === 0) {
+      return;
+    }
+    active += 1;
+    const { task, resolve, reject } = queue.shift();
+    Promise.resolve()
+      .then(task)
+      .then(resolve, reject)
+      .finally(() => {
+        active -= 1;
+        next();
+      });
+  };
+  return (task) => new Promise((resolve, reject) => {
+    queue.push({ task, resolve, reject });
+    next();
+  });
+}
+
+/**
  * Removes subtrees rooted at elements whose `class` contains an excluded token.
  * Deepest nodes are removed first so nested excluded wrappers are safe. Mirrors
  * the broken-internal-links crawl filter introduced in PR #2455 so site authors
@@ -76,6 +118,33 @@ function isBrokenStatus(status) {
 }
 
 /**
+ * Returns true only for a DNS-resolution failure — the one network-level error that
+ * definitively indicates a broken link.
+ *
+ * A DNS-resolution failure (`ENOTFOUND` — getaddrinfo cannot resolve the hostname) means the
+ * domain does not exist, so the link is unambiguously broken (SITES-40919: nonexistent domains
+ * and intranet hosts that fail DNS must surface as status 0).
+ *
+ * Every other thrown error — connection reset, HTTP/2 stream errors, TLS failures, connection
+ * refused, request timeouts — means the host resolves and is reachable but did not return a
+ * usable HTTP response. That is indistinguishable from a valid page that blocks crawlers at the
+ * connection level (e.g. ups.com resets the HTTP/2 stream with NGHTTP2_INTERNAL_ERROR), so these
+ * must NOT be reported as broken (SITES-47125).
+ *
+ * Node's DNS resolver reliably sets `err.code === 'ENOTFOUND'`, which is the primary signal. The
+ * message check is a narrow fallback for wrappers that strip `.code`: it only fires when no code
+ * is present and matches the canonical `getaddrinfo ENOTFOUND` format — not any message that
+ * merely contains the substring, which would re-introduce false positives (PR #2727 review).
+ *
+ * @param {Error} err
+ * @returns {boolean}
+ */
+function isDnsResolutionFailure(err) {
+  return err.code === 'ENOTFOUND'
+    || (err.code == null && /getaddrinfo ENOTFOUND/.test(err.message));
+}
+
+/**
  * Helper function to check if a link is broken
  * @param {string} href - The URL to check
  * @param {string} pageUrl - The source page URL
@@ -130,7 +199,11 @@ async function checkLinkStatus(href, pageUrl, context, options = {
       return null;
     }
   } catch (err) {
-    log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
+    // DEBUG, not WARN: a thrown HEAD is expected and self-correcting here — we always retry with
+    // GET, and on bot-protected hosts (which reset the connection) every probe throws HEAD first
+    // yet ends up correctly not-broken. Logging that at WARN produced high-volume, non-actionable
+    // noise that also looked like a failure for links we then skip (SITES-47125 review).
+    log.debug(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
   }
 
   // GET fallback — HEAD was inconclusive (broken status, fallback status, or network error).
@@ -161,16 +234,27 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 
     return null;
   } catch (finalErr) {
-    // Network-level failure (DNS, timeout, unsupported protocol) — the link is
-    // unreachable, which is a broken-link condition. status: 0 is the sentinel
-    // for "no HTTP response received".
-    log.info(`[preflight-audit] ${linkType} link ${href} unreachable (${finalErr.message}) — reporting as broken`);
-    return {
-      urlTo: href,
-      href: pageUrl,
-      status: 0,
-      ...toElementTargets(selectors),
-    };
+    // Only a DNS-resolution failure (ENOTFOUND) is a definitive broken-link condition: the
+    // domain does not exist. status: 0 is the sentinel for "no HTTP response received".
+    if (isDnsResolutionFailure(finalErr)) {
+      log.info(`[preflight-audit] ${linkType} link ${href} unreachable — DNS does not resolve (${finalErr.message}) — reporting as broken`);
+      return {
+        urlTo: href,
+        href: pageUrl,
+        status: 0,
+        ...toElementTargets(selectors),
+      };
+    }
+
+    // Any other network-level failure (connection reset, HTTP/2 stream error, TLS, timeout)
+    // means the host is reachable but did not return a usable response — indistinguishable
+    // from a valid page that blocks bots at the connection level. Do NOT report as broken
+    // (SITES-47125: ups.com and similar bot-protected sites were false-flagged as Status 0).
+    // DEBUG, not INFO: on a page with many bot-blocked external links this is the common,
+    // non-actionable path and at INFO it floods the logs. The DNS-failure branch above stays at
+    // INFO because that is the actionable "reporting as broken" case (SITES-47125 review).
+    log.debug(`[preflight-audit] ${linkType} link ${href} probe inconclusive (${finalErr.message}) — not reporting as broken`);
+    return null;
   }
 }
 
@@ -197,6 +281,14 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
   const brokenExternalLinks = [];
 
   const urlSet = new Set(urls);
+
+  // Bound how many link probes run at once. Unbounded probing overwhelms slow
+  // author environments, making renders queue past the per-request timeout,
+  // which the audit then reports as broken (false positives — SITES-46696).
+  const concurrency = Number(options.linkCheckConcurrency)
+    || Number(context.env?.PREFLIGHT_LINK_CHECK_CONCURRENCY)
+    || DEFAULT_LINK_CHECK_CONCURRENCY;
+  const limit = createConcurrencyLimiter(concurrency);
 
   await Promise.all(
     scrapedObjects
@@ -287,30 +379,34 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         // Check internal links
         const internalResults = await Promise.all(
-          Array.from(internalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
-            href,
-            pageUrl,
-            context,
-            {
-              ...options,
-              selectors: [...selectorSet],
-              isInternal: true,
-            },
-          )),
+          Array.from(internalLinks.entries()).map(
+            ([href, selectorSet]) => limit(() => checkLinkStatus(
+              href,
+              pageUrl,
+              context,
+              {
+                ...options,
+                selectors: [...selectorSet],
+                isInternal: true,
+              },
+            )),
+          ),
         );
 
         // Check external links
         const externalResults = await Promise.all(
-          Array.from(externalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
-            href,
-            pageUrl,
-            context,
-            {
-              ...options,
-              selectors: [...selectorSet],
-              isInternal: false,
-            },
-          )),
+          Array.from(externalLinks.entries()).map(
+            ([href, selectorSet]) => limit(() => checkLinkStatus(
+              href,
+              pageUrl,
+              context,
+              {
+                ...options,
+                selectors: [...selectorSet],
+                isInternal: false,
+              },
+            )),
+          ),
         );
 
         // Filter out null results and add to respective arrays

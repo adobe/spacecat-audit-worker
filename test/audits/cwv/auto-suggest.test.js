@@ -711,6 +711,83 @@ describe('CWV Auto-Suggest', () => {
       expect(sqsStub.firstCall.args[1].data.device_type).to.equal('mobile');
     });
 
+    it('dispatches guidance for PENDING_VALIDATION suggestions and stamps suggestionStatus (SITES-47558 regression)', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'PENDING_VALIDATION',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500 }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.suggestionStatus).to.equal('PENDING_VALIDATION');
+    });
+
+    it('stamps suggestionStatus as NEW on the outbound message for NEW suggestions', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.suggestionStatus).to.equal('NEW');
+    });
+
+    it('does NOT dispatch for PENDING_VALIDATION suggestions that already have granular guidance — no weekly re-spam (SITES-47558)', async () => {
+      // Guards the no-re-dispatch path at the SQS-send boundary (processAutoSuggest),
+      // not just via the shouldSendAutoSuggestForSuggestion helper: a PENDING_VALIDATION
+      // suggestion whose issues already carry source_index (granular guidance) must not
+      // be re-sent to Mystique on every weekly audit while it awaits SME review.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'PENDING_VALIDATION',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile', lcp: 3500 }],
+            issues: [{ type: 'lcp', value: '# LCP Optimization...', source_index: 0 }],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+    });
+
     it('should skip suggestions whose metrics are all green (defense-in-depth)', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
@@ -812,6 +889,49 @@ describe('CWV Auto-Suggest', () => {
 
       const result = shouldSendAutoSuggestForSuggestion(suggestion);
       expect(result).to.be.true;
+    });
+
+    it('returns true for PENDING_VALIDATION without guidance (SITES-47558)', () => {
+      const suggestion = {
+        getStatus: () => 'PENDING_VALIDATION',
+        getData: () => ({ issues: [] }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
+
+    it('returns true for PENDING_VALIDATION with legacy aggregated guidance lacking source_index (SITES-47558 upgrade)', () => {
+      const suggestion = {
+        getStatus: () => 'PENDING_VALIDATION',
+        getData: () => ({ issues: [{ type: 'lcp', value: 'x' }] }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
+
+    it('returns false for PENDING_VALIDATION that already has granular guidance (source_index) — no re-spam', () => {
+      const suggestion = {
+        getStatus: () => 'PENDING_VALIDATION',
+        getData: () => ({ issues: [{ type: 'lcp', value: 'x', source_index: 0 }] }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.false;
+    });
+
+    it('returns false for PENDING_VALIDATION when isCodeChangeAvailable is true', () => {
+      const suggestion = {
+        getStatus: () => 'PENDING_VALIDATION',
+        getData: () => ({
+          issues: [{ type: 'lcp', value: 'x', source_index: 0 }],
+          isCodeChangeAvailable: true,
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.false;
     });
   });
 });

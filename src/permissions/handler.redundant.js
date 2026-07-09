@@ -21,7 +21,9 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import {
   createAdminOpportunityData, createAdminMetrics,
 } from './opportunity-data-mapper.js';
-import { mapAdminSuggestion, mergeSuggestionStatus } from './suggestion-data-mapper.js';
+import {
+  mapAdminSuggestion, mergeSuggestionStatus, toAdminSuggestionData,
+} from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { noopUrlResolver } from '../common/index.js';
@@ -173,10 +175,14 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     return `${data.principal}@${data.path}#${hash}`;
   };
 
+  // Transform raw permissions into the canonical suggestion data shape before syncing,
+  // so both existing and new suggestion data share the same shape and merge cleanly.
+  const newData = flattenedPermissions.map(toAdminSuggestionData);
+
   await syncSuggestions({
     context,
     opportunity: adminOpt,
-    newData: flattenedPermissions,
+    newData,
     buildKey: buildAdminSuggestionKey,
     mergeStatusFunction: mergeSuggestionStatus,
     mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),

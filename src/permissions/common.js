@@ -112,7 +112,7 @@ export async function markOpportunityAsFixed(auditType, opportunity, site, conte
 
   // If there are suggestions, update their status to outdated
   if (isNonEmptyArray(suggestions)) {
-    await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
+    await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
   }
   opportunity.setUpdatedBy('system');
   await opportunity.save();

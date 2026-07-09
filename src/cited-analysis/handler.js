@@ -18,6 +18,7 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   DrsNoContentAvailableError,
+  MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   requestOffsiteScrape,
@@ -37,11 +38,11 @@ const LOG_PREFIX = '[Cited]';
 // safety budget so worst-case serialisation doesn't hit the hard reject.
 const SQS_MAX_SAFE_BYTES = 200 * 1024;
 
-// Cited-analysis-specific URL cap. Lower than the global MYSTIQUE_URLS_LIMIT
-// (50) because: (a) each URL requires a full DRS scrape — 50 URLs can take
-// 30-40 min; (b) 40 URLs with full prompts fits within the SQS budget after
-// field projection, removing the need for a per-URL prompts cap.
-const CITED_ANALYSIS_URLS_LIMIT = 40;
+// Max prompts kept per URL in the Mystique payload. The stored prompts array
+// can hold 100+ entries per URL; un-capped, 50 URLs of full prompts blow past
+// the SQS budget. Keeping the top 5 (stored order) keeps every URL in the
+// payload while staying far under budget (50 URLs x 5 prompts ~= 18 KB).
+const MAX_PROMPTS_PER_URL = 5;
 
 /**
  * Cited Analysis Audit Handler
@@ -268,13 +269,25 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
-
-    const urlLimit = Math.min(
-      resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX),
-      CITED_ANALYSIS_URLS_LIMIT,
+    log.info(
+      `${LOG_PREFIX} DRS content available for ${storeData.urls.length} URL(s) `
+        + '— no scrape job needed, proceeding to Mystique',
     );
 
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+
     const { slackContext } = auditContext;
+
+    // Manual Slack-triggered runs get a notification explaining that no DRS scrape
+    // job was needed (content already available). No-ops on scheduled runs where
+    // slackContext is absent.
+    await postMessageOptional(
+      context,
+      slackContext?.channelId,
+      `:mag: *cited-analysis* for *${site.getBaseURL()}* — DRS content already available `
+        + `(${storeData.urls.length} URL(s)); no scrape job needed, sending to Mystique.`,
+      { threadTs: slackContext?.threadTs },
+    );
 
     return {
       auditResult: {
@@ -358,25 +371,28 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? CITED_ANALYSIS_URLS_LIMIT;
+    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
     // timesCited). URL Store metadata (siteId, byCustomer, audits, timestamps)
     // is not needed downstream and contributes significant per-URL bloat.
-    // Full prompts are kept — CITED_ANALYSIS_URLS_LIMIT=40 keeps the payload
-    // within the SQS budget without capping per-URL prompts.
+    // Prompts are capped at MAX_PROMPTS_PER_URL (stored order) — the array can
+    // hold 100+ entries per URL, which would blow the SQS budget at 50 URLs.
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit)
       .map(({
         url: urlStr, categories, timesCited, prompts,
-      }) => ({
-        url: urlStr,
-        ...(categories?.length > 0 && { categories }),
-        ...(timesCited > 0 && { timesCited }),
-        ...(prompts?.length > 0 && { prompts }),
-      }));
+      }) => {
+        const cappedPrompts = prompts?.slice(0, MAX_PROMPTS_PER_URL);
+        return {
+          url: urlStr,
+          ...(categories?.length > 0 && { categories }),
+          ...(timesCited > 0 && { timesCited }),
+          ...(cappedPrompts?.length > 0 && { prompts: cappedPrompts }),
+        };
+      });
 
     const baseMessage = {
       type: 'guidance:cited-analysis',
@@ -407,9 +423,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Safety guard: if the serialised message still exceeds the budget after
     // per-URL projection, drop URLs from the tail until it fits rather than
     // letting SQS reject the send entirely. This re-serialises the message once
-    // per dropped URL (O(n)), which is fine while CITED_ANALYSIS_URLS_LIMIT
-    // stays small (40); switch to a binary search / byte-per-URL estimate if the
-    // cap ever grows large enough for the linear passes to matter.
+    // per dropped URL (O(n)), which is fine while MYSTIQUE_URLS_LIMIT
+    // stays small (50) and prompts are capped per URL; switch to a binary
+    // search / byte-per-URL estimate if the cap ever grows large enough for the
+    // linear passes to matter.
     let sentUrlCount = message.data.urls.length;
     while (sentUrlCount > 1) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');

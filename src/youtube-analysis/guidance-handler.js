@@ -140,13 +140,31 @@ export default async function handler(message, context) {
       const slackContext = audit?.getAuditResult()?.slackContext;
       if (slackContext) {
         const { channelId, threadTs } = slackContext;
-        await postMessageOptional(
-          context,
-          channelId,
-          `:white_check_mark: *youtube-analysis* audit finished for *${site.getBaseURL()}*\n`
-          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
-          { threadTs },
-        );
+
+        // Visibility is the QA gate's decision, carried on the opportunity status
+        // (NEW = customer-visible, IGNORED = suppressed). rateDetermined === false
+        // means there was real analysis but the rate couldn't be computed (gate
+        // failed open → visible); show "n/a" rather than a misleading 0%.
+        const isVisible = status !== 'IGNORED';
+        const verdict = opportunityData.qaVerdict;
+        let hallucinationNote = '';
+        if (verdict) {
+          if (verdict.rateDetermined === false) {
+            hallucinationNote = ' — hallucination rate n/a';
+          } else if (typeof verdict.rate === 'number') {
+            hallucinationNote = ` — hallucination ${Math.round(verdict.rate * 100)}%`;
+          }
+        }
+        const suggestionsLine = `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`;
+        const slackMessage = isVisible
+          ? `:white_check_mark: *youtube-analysis* audit finished for *${baseUrl}*\n`
+            + `${suggestionsLine}\n`
+            + `• :eye: Visible in the UI${hallucinationNote}`
+          : `:warning: *youtube-analysis* audit finished for *${baseUrl}*\n`
+            + `${suggestionsLine}\n`
+            + `• :see_no_evil: Not visible in the UI${hallucinationNote}`;
+
+        await postMessageOptional(context, channelId, slackMessage, { threadTs });
       }
     }
 

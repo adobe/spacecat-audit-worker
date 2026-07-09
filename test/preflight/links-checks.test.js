@@ -297,17 +297,23 @@ describe('preflight/links-checks - runLinksChecks', () => {
     );
 
     expect(fetchStub.callCount).to.equal(2);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/HEAD request failed/));
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/HEAD request failed/));
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
-  it('flags as broken (status 0) when both HEAD and GET throw network errors', async () => {
-    fetchStub.onFirstCall().rejects(new Error('network error'));
-    fetchStub.onSecondCall().rejects(new Error('still failing'));
+  // SITES-47125: only DNS-resolution failures (ENOTFOUND) are definitively broken.
+  // Other network-level failures (connection reset, HTTP/2 stream errors, TLS, timeout)
+  // mean the host exists but won't talk to our bot — these are indistinguishable from a
+  // valid page that blocks crawlers, so they must NOT be reported as broken.
+
+  it('flags as broken (status 0) when both HEAD and GET fail with a DNS-resolution error (ENOTFOUND)', async () => {
+    const dnsError = Object.assign(new Error('getaddrinfo ENOTFOUND www.brokenlinkbrokenlink.za'), { code: 'ENOTFOUND' });
+    fetchStub.onFirstCall().rejects(dnsError);
+    fetchStub.onSecondCall().rejects(dnsError);
 
     const result = await runLinksChecks(
       [pageUrl],
-      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      makeScrapedObjects('<a href="https://www.brokenlinkbrokenlink.za/page">link</a>'),
       context,
     );
 
@@ -317,7 +323,65 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(context.log.error).to.not.have.been.called;
   });
 
-  it('flags internal link as broken (status 0) when both HEAD and GET throw network errors', async () => {
+  it('does NOT flag as broken when a connection-level error blocks the bot (HTTP/2 reset — SITES-47125)', async () => {
+    // ups.com resolves fine but resets the HTTP/2 stream to block bots. Valid in a browser.
+    const http2Error = Object.assign(
+      new Error('Stream closed with error code NGHTTP2_INTERNAL_ERROR'),
+      { code: 'ERR_HTTP2_STREAM_ERROR' },
+    );
+    fetchStub.onFirstCall().rejects(http2Error);
+    fetchStub.onSecondCall().rejects(http2Error);
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://www.ups.com/ppwa/doWork?loc=en_US">link</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.error).to.not.have.been.called;
+    // Assert the inconclusive branch actually ran, not just that nothing was flagged — a refactor
+    // that exited before reaching isDnsResolutionFailure would still pass the two checks above.
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
+  });
+
+  it('does NOT flag as broken when both HEAD and GET fail with a generic (non-DNS) network error', async () => {
+    fetchStub.onFirstCall().rejects(new Error('network error'));
+    fetchStub.onSecondCall().rejects(new Error('still failing'));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.error).to.not.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
+  });
+
+  it('does NOT flag as broken when a non-DNS error message merely contains the substring "ENOTFOUND"', async () => {
+    // The message-fallback must only match the canonical Node format ("getaddrinfo ENOTFOUND"),
+    // not any message that happens to contain the substring — otherwise a wrapper error like this
+    // would re-introduce the false positives this fix removes (MysticatBot review on PR #2727).
+    const wrappedError = new Error('Retry after ENOTFOUND was cached'); // no .code, non-canonical
+    fetchStub.onFirstCall().rejects(wrappedError);
+    fetchStub.onSecondCall().rejects(wrappedError);
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(context.log.error).to.not.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/probe inconclusive/));
+  });
+
+  // Message-fallback branch: error carries the canonical "getaddrinfo ENOTFOUND" message but no
+  // .code (e.g. a fetch wrapper that strips the code). Still a definitive DNS failure → broken.
+  it('flags internal link as broken (status 0) on a DNS-resolution error message without a code', async () => {
     fetchStub.onFirstCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
     fetchStub.onSecondCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
 
@@ -866,5 +930,135 @@ describe('preflight/links-checks - runLinksChecks', () => {
       expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
       expect(fetchStub.callCount).to.equal(0);
     });
+  });
+});
+
+describe('preflight/links-checks - probe concurrency (SITES-46696)', () => {
+  let sandbox;
+  let fetchStub;
+  let runLinksChecks;
+  let createConcurrencyLimiter;
+  let DEFAULT_LINK_CHECK_CONCURRENCY;
+  let context;
+  const pageUrl = 'https://www.example.com/page';
+
+  const makeScrapedObjects = (html, finalUrl = pageUrl) => [{
+    data: { finalUrl, scrapeResult: { rawBody: html } },
+  }];
+
+  const makeResponse = (status) => ({
+    status,
+    statusText: String(status),
+    headers: { get: () => null },
+  });
+
+  const manyExternalLinks = (n) => {
+    let html = '';
+    for (let i = 0; i < n; i += 1) {
+      html += `<a href="https://other-${i}.com/x">l</a>`;
+    }
+    return html;
+  };
+
+  // Tracks the peak number of concurrently in-flight fetches.
+  const makeTracker = () => {
+    let active = 0;
+    let max = 0;
+    const fetchImpl = () => new Promise((resolve) => {
+      active += 1;
+      if (active > max) {
+        max = active;
+      }
+      setTimeout(() => {
+        active -= 1;
+        resolve(makeResponse(200));
+      }, 5);
+    });
+    return { fetchImpl, getMax: () => max };
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    fetchStub = sandbox.stub();
+    ({
+      runLinksChecks,
+      createConcurrencyLimiter,
+      DEFAULT_LINK_CHECK_CONCURRENCY,
+    } = await esmock('../../src/preflight/links-checks.js', {
+      '@adobe/spacecat-shared-utils': {
+        stripTrailingSlash: (url) => url.replace(/\/$/, ''),
+        tracingFetch: fetchStub,
+      },
+    }));
+    context = {
+      log: {
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+      },
+    };
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('createConcurrencyLimiter runs all tasks and returns their results', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const results = await Promise.all(
+      [1, 2, 3].map((nVal) => limit(() => Promise.resolve(nVal * 2))),
+    );
+    expect(results).to.deep.equal([2, 4, 6]);
+  });
+
+  it('createConcurrencyLimiter never exceeds the limit', async () => {
+    const limit = createConcurrencyLimiter(2);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 6 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('createConcurrencyLimiter propagates task rejection', async () => {
+    const limit = createConcurrencyLimiter(1);
+    let err;
+    try {
+      await limit(() => Promise.reject(new Error('boom')));
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an('error').with.property('message', 'boom');
+  });
+
+  it('createConcurrencyLimiter falls back to serial for invalid max', async () => {
+    const limit = createConcurrencyLimiter(0);
+    const tracker = makeTracker();
+    await Promise.all(Array.from({ length: 3 }, () => limit(tracker.fetchImpl)));
+    expect(tracker.getMax()).to.equal(1);
+  });
+
+  it('bounds concurrent probes to options.linkCheckConcurrency', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(manyExternalLinks(10)),
+      context,
+      { pageAuthToken: null, linkCheckConcurrency: 3 },
+    );
+    expect(tracker.getMax()).to.equal(3);
+  });
+
+  it('reads concurrency from env when the option is absent', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    context.env = { PREFLIGHT_LINK_CHECK_CONCURRENCY: '2' };
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(8)), context);
+    expect(tracker.getMax()).to.equal(2);
+  });
+
+  it('defaults to DEFAULT_LINK_CHECK_CONCURRENCY when no option or env is set', async () => {
+    const tracker = makeTracker();
+    fetchStub.callsFake(tracker.fetchImpl);
+    await runLinksChecks([pageUrl], makeScrapedObjects(manyExternalLinks(12)), context);
+    expect(tracker.getMax()).to.equal(DEFAULT_LINK_CHECK_CONCURRENCY);
   });
 });
