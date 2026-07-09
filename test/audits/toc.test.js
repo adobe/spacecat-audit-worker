@@ -4262,7 +4262,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
 
-    it('caps submitted URLs at MAX_TOP_PAGES (200) when topPages exceeds the limit', async () => {
+    it('submits the hardcoded validation URLs regardless of topPages (LLMO-4880)', async () => {
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
       context.site = site;
@@ -4272,10 +4272,9 @@ describe('TOC (Table of Contents) Audit', () => {
       const { submitForScraping } = await import('../../src/toc/handler.js');
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.have.lengthOf(200);
-      expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-0' });
-      expect(result.urls[199]).to.deep.equal({ url: 'https://example.com/page-199' });
-      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 200 URLs for scraping');
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls[0]).to.deep.equal({ url: 'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html' });
+      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 3 URLs for scraping (processingType=prerender)');
     });
   });
 });
