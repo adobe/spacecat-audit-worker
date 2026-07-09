@@ -395,7 +395,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         suggestions,
-        'FIXED',
+        'OUTDATED',
       );
       expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
       expect(mockOpportunity.save).to.have.been.calledOnce;
@@ -459,7 +459,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(staleOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(suggestions, 'FIXED');
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(suggestions, 'OUTDATED');
     });
 
     it('should process vulnerabilities and create opportunities with suggestions', async () => {
