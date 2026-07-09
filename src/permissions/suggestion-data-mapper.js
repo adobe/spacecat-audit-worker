@@ -19,56 +19,88 @@ import { defaultMergeStatusFunction } from '../utils/data-access.js';
  */
 
 /**
- * Maps a given vulnerability to a suggestion object that provides details
- * on updating vulnerable libraries to recommended versions and includes CVE information.
+ * Transforms a raw too-strong-permission entry into the canonical suggestion data
+ * shape. This is the single place where the raw scan fields get reshaped into the
+ * fields a suggestion actually stores. Running this transform on every incoming item
+ * *before* syncSuggestions means both the stored suggestion data and the
+ * freshly-fetched data are always in the same shape, so matching suggestions get
+ * properly overwritten on merge instead of accumulating stale/duplicate raw fields.
  *
- * @param {Object} opportunity - The opportunity object
- * @param {TooStrongPermission} tooStrongPermission - The vulnerability object
- * @return {Object} A suggestion object providing a structured representation of the vulnerability
+ * @param {TooStrongPermission} tooStrongPermission - The raw too-strong-permission entry.
+ * @return {Object} The suggestion data in its canonical (stored) shape.
  */
-export function mapTooStrongSuggestion(opportunity, tooStrongPermission) {
+export function toTooStrongSuggestionData(tooStrongPermission) {
   const {
     principal, path, permissions,
   } = tooStrongPermission;
 
   return {
-    opportunityId: opportunity.getId(),
-    type: 'CONTENT_UPDATE',
-    rank: 0,
-    data: {
-      issue: 'Insecure',
-      path,
-      principal,
-      permissions,
-      recommended_permissions: ['jcr:read', 'jcr:write '],
-      rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
-    },
+    issue: 'Insecure',
+    path,
+    principal,
+    permissions,
+    recommended_permissions: ['jcr:read', 'jcr:write'],
+    rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
   };
 }
 
 /**
- * Maps a given vulnerability to a suggestion object that provides details
- * @param opportunity
- * @param {AdminPermission} adminPermission
- * @returns {Suggestion} A suggestion object based on the admin scan result
+ * Maps already-transformed suggestion data (see toTooStrongSuggestionData) to a
+ * suggestion object. Performs no further data transformation - the data is passed
+ * through as-is.
+ *
+ * @param {Object} opportunity - The opportunity object
+ * @param {Object} suggestionData - Suggestion data in its canonical shape
+ * (see toTooStrongSuggestionData)
+ * @return {Object} A suggestion object providing a structured representation of the issue
  */
-export function mapAdminSuggestion(opportunity, adminPermission) {
+export function mapTooStrongSuggestion(opportunity, suggestionData) {
+  return {
+    opportunityId: opportunity.getId(),
+    type: 'CONTENT_UPDATE',
+    rank: 0,
+    data: { ...suggestionData },
+  };
+}
+
+/**
+ * Transforms a raw admin-permission entry into the canonical suggestion data shape.
+ * See toTooStrongSuggestionData for why this transform exists.
+ *
+ * @param {AdminPermission} adminPermission - The raw admin-permission entry.
+ * @return {Object} The suggestion data in its canonical (stored) shape.
+ */
+export function toAdminSuggestionData(adminPermission) {
   const {
     principal, path, permissions,
   } = adminPermission;
 
   return {
+    issue: 'Redundant',
+    path,
+    principal,
+    permissions,
+    recommended_permissions: ['Remove'],
+    rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
+  };
+}
+
+/**
+ * Maps already-transformed suggestion data (see toAdminSuggestionData) to a
+ * suggestion object. Performs no further data transformation - the data is passed
+ * through as-is.
+ *
+ * @param opportunity
+ * @param {Object} suggestionData - Suggestion data in its canonical shape
+ * (see toAdminSuggestionData)
+ * @returns {Suggestion} A suggestion object based on the admin scan result
+ */
+export function mapAdminSuggestion(opportunity, suggestionData) {
+  return {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
     rank: 0,
-    data: {
-      issue: 'Redundant',
-      path,
-      principal,
-      permissions,
-      recommended_permissions: ['Remove'],
-      rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
-    },
+    data: { ...suggestionData },
   };
 }
 

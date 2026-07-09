@@ -350,7 +350,7 @@ describe('LLM Error Pages Handler', function () {
       context.env.OBSERVATION_LLM_BROKEN_URLS_ENABLED = 'false';
     });
 
-    it('should run audit, generate reports, and send to Mystique successfully', async () => {
+    it('should run audit, persist suggestions, and send to Mystique successfully', async () => {
       const result = await runAuditAndSendToMystique(context);
 
       expect(result.type).to.equal('audit-result');
@@ -362,7 +362,6 @@ describe('LLM Error Pages Handler', function () {
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
-      expect(mockSaveExcelReport).to.have.been.called;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/\[LLM-ERROR-PAGES\] Sent.*consolidated 404 URLs to Mystique/),
@@ -431,14 +430,14 @@ describe('LLM Error Pages Handler', function () {
     });
 
     it('should handle audit failure gracefully when setup fails before week loop', async () => {
-      mockCreateLLMOSharepointClient.rejects(new Error('SharePoint connection failed'));
+      mockGenerateReportingPeriods.throws(new Error('setup failed before week loop'));
 
       const result = await runAuditAndSendToMystique(context);
 
       expect(result.auditResult[0].success).to.be.false;
-      expect(result.auditResult[0].error).to.equal('SharePoint connection failed');
+      expect(result.auditResult[0].error).to.equal('setup failed before week loop');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: SharePoint connection failed/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: setup failed before week loop/),
         sinon.match.instanceOf(Error),
       );
     });
@@ -949,101 +948,6 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('should generate separate Excel files for 404, 403, and 5xx', async () => {
-      mockProcessResults.returns({
-        totalErrors: 6,
-        errorPages: [
-          { user_agent: 'Bot1', url: '/404-1', status: 404, total_requests: 10 },
-          { user_agent: 'Bot2', url: '/404-2', status: 404, total_requests: 9 },
-          { user_agent: 'Bot3', url: '/403-1', status: 403, total_requests: 8 },
-          { user_agent: 'Bot4', url: '/403-2', status: 403, total_requests: 7 },
-          { user_agent: 'Bot5', url: '/500-1', status: 500, total_requests: 6 },
-          { user_agent: 'Bot6', url: '/503-1', status: 503, total_requests: 5 },
-        ],
-        summary: { uniqueUrls: 6, uniqueUserAgents: 6 },
-      });
-
-      const result = await runAuditAndSendToMystique(context);
-
-      expect(result.auditResult[0].success).to.be.true;
-      expect(mockSaveExcelReport).to.have.been.calledThrice;
-    });
-
-    it('should apply fallbacks and sort when fields are missing', async () => {
-      const worksheetRows = [];
-      // Rewire the worksheet addRow to capture rows
-      const handlerModule = await esmock('../../../src/llm-error-pages/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: mockGenerateReportingPeriods,
-          processErrorPagesResults: () => ({
-            totalErrors: 2,
-            errorPages: [
-              { user_agent: 'BotA', url: '/a', status: 404, total_requests: 3, avg_ttfb_ms: undefined, country_code: undefined, product: undefined, category: undefined },
-              { user_agent: 'BotB', url: '/b', status: 404, total_requests: undefined, avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C' },
-            ],
-            summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 404: 3 } },
-          }),
-          buildLlmErrorPagesQuery: mockBuildQuery,
-          getAllLlmProviders: mockGetAllLlmProviders,
-          categorizeErrorsByStatusCode: (eps) => ({ 404: eps }),
-          consolidateErrorsByUrl: (errors) => errors,
-          sortErrorsByTrafficVolume: (errors) => errors,
-          toPathOnly: (url) => url,
-          SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
-        },
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: mockCreateLLMOSharepointClient,
-          saveExcelReport: mockSaveExcelReport,
-        },
-        '../../../src/utils/cdn-utils.js': {
-          buildSiteFilters: mockBuildSiteFilters,
-          getS3Config: mockGetS3Config,
-          getCdnAwsRuntime: () => ({
-            createAthenaClient: () => mockAthenaClient,
-          }),
-        },
-        exceljs: {
-          default: {
-            Workbook: function Workbook() {
-              return {
-                addWorksheet() {
-                  return {
-                    addRow: (row) => { worksheetRows.push(row); },
-                  };
-                },
-              };
-            },
-          },
-        },
-        '../../../src/cdn-logs-report/utils/report-utils.js': {
-          validateCountryCode: (code) => {
-            if (!code || typeof code !== 'string') return 'GLOBAL';
-            const up = code.toUpperCase();
-            return up.length === 2 ? up : 'GLOBAL';
-          },
-        },
-        '@adobe/spacecat-shared-tier-client': { default: {} },
-      });
-
-      await handlerModule.runAuditAndSendToMystique(context);
-      // First addRow is headers, then two data rows
-      expect(worksheetRows).to.have.length(3);
-      const dataRows = worksheetRows.slice(1);
-      // Sorted: entry with total_requests 3 should come before undefined (treated as 0)
-      expect(dataRows[0][1]).to.equal('BotA'); // User Agent
-      expect(dataRows[0][2]).to.equal(3); // Number of Hits
-      // Fallbacks applied
-      expect(dataRows[0][3]).to.equal(''); // Avg TTFB fallback
-      expect(dataRows[0][4]).to.equal('GLOBAL'); // Country validated fallback
-      expect(dataRows[0][6]).to.equal(''); // Product fallback
-      expect(dataRows[0][7]).to.equal(''); // Category fallback
-      // Second row hits fallback to 0
-      expect(dataRows[1][2]).to.equal(0);
-    });
-
     it('should handle site with no config', async () => {
       site.getConfig = () => null;
 
@@ -1486,139 +1390,6 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
         '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages',
       );
     });
-});
-
-describe('LLM Error Pages Handler (isolated)', function () {
-  this.timeout(10000);
-  it('covers Excel row fallbacks and sorting branches without shared beforeEach', async () => {
-    const worksheetRows = [];
-    const sandbox = sinon.createSandbox();
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getId: () => 'site-id-123',
-      getDeliveryType: () => 'aem_edge',
-      getConfig: () => ({
-        getLlmoCdnlogsFilter: () => [],
-        getLlmoDataFolder: () => 'test-customer',
-      }),
-    };
-    const audit = {
-      getId: () => 'audit-id-456',
-      getAuditType: () => 'llm-error-pages',
-      getFullAuditRef: () => 'llm-error-pages::example.com',
-      getAuditResult: sandbox.stub().returns({ success: true }),
-    };
-    const context = {
-      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
-      sqs: { sendMessage: sandbox.stub().resolves({}) },
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique' },
-      site,
-      audit,
-      dataAccess: {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com' }]),
-        },
-      },
-    };
-    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
-    const mockGetS3Config = sandbox.stub().returns({
-      bucket: 'test-bucket',
-      siteName: 'test-customer',
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      getAthenaTempLocation: () => 's3://test-bucket/temp/',
-    });
-    const mockGenerateReportingPeriods = sandbox.stub().returns({
-      weeks: [{
-        weekNumber: 34,
-        year: 2025,
-        startDate: new Date('2025-08-18T00:00:00Z'),
-        endDate: new Date('2025-08-24T23:59:59Z'),
-        periodIdentifier: 'w34-2025',
-      }],
-    });
-    const mockBuildSiteFilters = sandbox.stub().returns('');
-    const mockBuildQuery = sandbox.stub().resolves('SELECT ...');
-    const mockGetAllLlmProviders = sandbox.stub().returns(['chatgpt']);
-    const mockSaveExcelReport = sandbox.stub().resolves();
-    const handlerModule = await esmock('../../../src/llm-error-pages/handler.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import', SCRAPE_CLIENT: 'scrape' } },
-      },
-      '@adobe/spacecat-shared-tier-client': {
-        default: {},
-      },
-      '@adobe/spacecat-shared-athena-client': {
-        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
-      },
-      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
-      '../../../src/common/audit-builder.js': {
-        AuditBuilder: class AuditBuilder {
-          withUrlResolver() { return this; }
-          addStep() { return this; }
-          withRunner() { return this; }
-          withPersister() { return this; }
-          build() { return {}; }
-        },
-      },
-      '../../../src/common/audit-utils.js': {
-        default: {},
-      },
-      '../../../src/llm-error-pages/utils.js': {
-        generateReportingPeriods: mockGenerateReportingPeriods,
-        processErrorPagesResults: () => ({
-          totalErrors: 2,
-          errorPages: [
-            { user_agent: 'BotA', url: '/a', status: 404, total_requests: 3, avg_ttfb_ms: undefined, country_code: undefined, product: undefined, category: undefined },
-            { user_agent: 'BotB', url: '/b', status: 404, total_requests: undefined, avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C' },
-          ],
-          summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 404: 3 } },
-        }),
-        buildLlmErrorPagesQuery: mockBuildQuery,
-        getAllLlmProviders: mockGetAllLlmProviders,
-        categorizeErrorsByStatusCode: (eps) => ({ 404: eps }),
-        consolidateErrorsByUrl: (errors) => errors,
-        sortErrorsByTrafficVolume: (errors) => errors,
-        toPathOnly: (url) => url,
-        SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
-      },
-      '../../../src/utils/report-uploader.js': {
-        createLLMOSharepointClient: sandbox.stub().resolves({}),
-        saveExcelReport: mockSaveExcelReport,
-      },
-      '../../../src/utils/cdn-utils.js': {
-        buildSiteFilters: mockBuildSiteFilters,
-        getS3Config: mockGetS3Config,
-        getCdnAwsRuntime: () => ({
-          createAthenaClient: () => mockAthenaClient,
-        }),
-      },
-      exceljs: {
-        default: {
-          Workbook: function Workbook() {
-            return {
-              addWorksheet() {
-                return {
-                  addRow: (row) => { worksheetRows.push(row); },
-                };
-              },
-            };
-          },
-        },
-      },
-    });
-    await handlerModule.runAuditAndSendToMystique(context);
-    // headers + 2 rows
-    const dataRows = worksheetRows.slice(1);
-    // Sorted order and fallbacks
-    sinon.assert.match(dataRows[0][1], 'BotA');
-    sinon.assert.match(dataRows[0][2], 3);
-    sinon.assert.match(dataRows[0][3], '');
-    sinon.assert.match(dataRows[0][4], '');
-    sinon.assert.match(dataRows[0][6], '');
-    sinon.assert.match(dataRows[0][7], '');
-    sinon.assert.match(dataRows[1][2], 0);
-  });
 });
 
 describe('LLM Error Pages Handler – default export routing', function () {
@@ -2428,21 +2199,6 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     // Mystique message still sent (Excel + send-to-mystique path is independent of DB).
     expect(ctx.sqs.sendMessage).to.have.been.called;
     expect(result.auditResult[0].success).to.be.true;
-    sandbox.restore();
-  });
-
-  it('logs and continues when Excel write throws (best-effort independence)', async () => {
-    const sandbox = sinon.createSandbox();
-    const { handler, mockSyncSuggestions } = await buildHandler(sandbox, {
-      saveExcelReport: sandbox.stub().rejects(new Error('sharepoint-down')),
-    });
-    const ctx = buildContext(sandbox);
-
-    await handler.runAuditAndSendToMystique(ctx);
-
-    expect(ctx.log.error).to.have.been.calledWithMatch(/Excel write failed/);
-    // DB sync still ran.
-    expect(mockSyncSuggestions).to.have.been.called;
     sandbox.restore();
   });
 

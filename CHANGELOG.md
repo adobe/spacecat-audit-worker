@@ -1,3 +1,39 @@
+## [1.498.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.0...v1.498.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **SITES-47741:** mark suggestions OUTDATED, not FIXED, when no leftover items are found ([#2756](https://github.com/adobe/spacecat-audit-worker/issues/2756)) ([e48fb7c](https://github.com/adobe/spacecat-audit-worker/commit/e48fb7ccabe7cda6ce97f09ef38156223911f2ae))
+* transform suggestion data before syncSuggestions to prevent stale merge fields ([#2755](https://github.com/adobe/spacecat-audit-worker/issues/2755)) ([b13a18a](https://github.com/adobe/spacecat-audit-worker/commit/b13a18a752451075c01c5435de0ee988e4874bce))
+
+# [1.498.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.4...v1.498.0) (2026-07-09)
+
+
+### Features
+
+* **toc:** wire TOC opportunity into Impact Engine prompt generation (LLMO-5611) ([#2659](https://github.com/adobe/spacecat-audit-worker/issues/2659)) ([429d3e1](https://github.com/adobe/spacecat-audit-worker/commit/429d3e15c8e1549fa5643c290d7125308521cc99))
+
+## [1.497.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.3...v1.497.4) (2026-07-09)
+
+
+### Bug Fixes
+
+* remove Excel storing for llm error pages ([#2711](https://github.com/adobe/spacecat-audit-worker/issues/2711)) ([8f6a70b](https://github.com/adobe/spacecat-audit-worker/commit/8f6a70b5b68c05101b8650455a7d67016d18835a))
+
+## [1.497.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.2...v1.497.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **preflight:** only report DNS failures as broken external links (SITES-47125) ([#2727](https://github.com/adobe/spacecat-audit-worker/issues/2727)) ([6dd95c3](https://github.com/adobe/spacecat-audit-worker/commit/6dd95c3caa19ef78dd57e704619be37517c44d86))
+
+## [1.497.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.1...v1.497.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* **cwv:** dispatch guidance for PENDING_VALIDATION suggestions (SITES-47558) ([#2752](https://github.com/adobe/spacecat-audit-worker/issues/2752)) ([5339771](https://github.com/adobe/spacecat-audit-worker/commit/5339771ea3af7b1631d6a7211ac1ea6626b1f378))
+
 ## [1.497.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.497.0...v1.497.1) (2026-07-07)
 
 

@@ -51,10 +51,17 @@ The CWV audit is a 2-step `StepAudit` registered as audit type `cwv` ([`src/cwv/
 ## Eligibility gate
 
 A suggestion is sent to Mystique only when ALL of:
-- Status is `NEW`
-- No guidance has been written yet
+- Status is `NEW` **or** `PENDING_VALIDATION` (guidance must be generated for
+  `PENDING_VALIDATION` so an SME has something to review before approving to `NEW` —
+  gating on `NEW` deadlocked paid-tier sites, SITES-47558)
+- No code patch has run yet (`isCodeChangeAvailable !== true`)
+- For `PENDING_VALIDATION`: guidance is missing or in the legacy aggregated format
+  (issues lack `source_index`) — avoids regenerating granular guidance every weekly audit
 - `type: 'url'` (group-type suggestions are skipped)
 - The site has `cwv-auto-suggest` enabled in `Configuration`
+
+The outbound message carries `data.suggestionStatus` so Mystique gates code-fix
+generation on SME approval (`NEW` → code-fix; `PENDING_VALIDATION` → guidance only).
 
 ## Feature flags (per site, in `Configuration`)
 
