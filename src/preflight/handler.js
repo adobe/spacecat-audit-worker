@@ -22,6 +22,7 @@ import {
 } from './utils.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 import { AUDIT_ALT_TEXT } from './audit-constants.js';
+import { PreflightError } from './error-constants.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
@@ -142,6 +143,7 @@ export const preflightAudit = async (context) => {
       payload: {
         siteId: site.getId(),
         reason,
+        errorCode: PreflightError.PREFLIGHT_DISABLED.code,
       },
     });
     jobEntity.setEndedAt(new Date().toISOString());

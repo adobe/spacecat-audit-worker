@@ -1426,6 +1426,7 @@ describe('Preflight Audit', () => {
         payload: {
           siteId: 'site-123',
           reason: 'preflight audits disabled for site site-123',
+          errorCode: 'PREFLIGHT-100',
         },
       });
       expect(finalJobEntity.setEndedAt).to.have.been.called;
