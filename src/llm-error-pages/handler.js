@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import ExcelJS from 'exceljs';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -23,12 +22,9 @@ import {
   categorizeErrorsByStatusCode,
   groupErrorsByUrl,
   parsePeriodIdentifier,
-  SPREADSHEET_COLUMNS,
   toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
-import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
 import { buildSiteFilters, getS3Config, getCdnAwsRuntime } from '../utils/cdn-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -380,7 +376,7 @@ async function publishObservationLlmBrokenUrls({
 }
 
 /**
- * Step 3: Run audit, generate Excel reports, and send to Mystique.
+ * Step 3: Run audit, persist opportunities/suggestions, and send to Mystique.
  * Supports multiple weeks via auditContext.weekOffset for backfill.
  */
 /* eslint-disable no-await-in-loop */
@@ -409,9 +405,6 @@ export async function runAuditAndSendToMystique(context) {
 
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
     const siteFilters = buildSiteFilters(filters, site);
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
-    const outputLocation = `${llmoFolder}/agentic-traffic`;
     const {
       dataAccess, sqs, env, audit,
     } = context;
@@ -448,66 +441,6 @@ export async function runAuditAndSendToMystique(context) {
         if (processedResults.droppedUrls?.length > 0) {
           const sample = processedResults.droppedUrls.slice(0, 5);
           log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.droppedUrls.length} malformed URL(s); sample: ${JSON.stringify(sample)}`);
-        }
-
-        const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
-
-        const writeCategoryExcel = async (code, errors) => {
-          if (!errors || errors.length === 0) {
-            return;
-          }
-
-          /* c8 ignore next 2 */
-          const sorted = [...errors].sort(
-            (a, b) => (b.total_requests || 0) - (a.total_requests || 0),
-          );
-
-          const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('data');
-          sheet.addRow(SPREADSHEET_COLUMNS);
-
-          sorted.forEach((e) => {
-            sheet.addRow([
-              e.agent_type || '',
-              e.user_agent || '',
-              e.total_requests || 0,
-              e.avg_ttfb_ms ?? '',
-              /* c8 ignore next */
-              validateCountryCode(e.country_code),
-              /* c8 ignore next */
-              e.url || '',
-              e.product || '',
-              e.category || '',
-              '',
-              '',
-              '',
-            ]);
-          });
-
-          const filename = buildFilename(code);
-          await saveExcelReport({
-            workbook,
-            outputLocation,
-            log,
-            sharepointClient,
-            filename,
-          });
-          log.info(`[LLM-ERROR-PAGES] Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
-        };
-
-        try {
-          await Promise.all([
-            writeCategoryExcel('404', categorizedResults[404]?.slice(0, TOP_404_LIMIT)),
-            writeCategoryExcel('403', categorizedResults[403]),
-            writeCategoryExcel('5xx', categorizedResults['5xx']),
-          ]);
-        } catch (excelError) {
-          log.error('[LLM-ERROR-PAGES] Excel write failed', {
-            err: excelError.message,
-            stack: excelError.stack,
-            siteId: site.getId(),
-            periodIdentifier,
-          });
         }
 
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
@@ -818,13 +751,13 @@ const stepAudit = new AuditBuilder()
 // returns, but runAuditAndSendToMystique needs context.audit DURING its run:
 // convertToOpportunity reads audit.getId() to wire up Opportunity/Suggestion
 // records, and the Mystique message includes auditId so the guidance callback
-// can later locate the audit and write AI suggestions back into the SharePoint
-// xlsx. Without a real audit in context the bucket sync throws (silently, per
-// its try/catch) and Mystique gets a placeholder auditId that the guidance
-// handler cannot resolve, so backfilled weeks end up with no DB suggestions
-// and no AI columns in the xlsx. Pre-create the Audit row here, then override
-// the persister to update-and-return that same row so we end up with exactly
-// one Audit per backfill week (not a duplicate from processAuditResult).
+// can later locate the audit and write AI suggestions back into the DB
+// suggestions. Without a real audit in context the bucket sync throws (silently,
+// per its try/catch) and Mystique gets a placeholder auditId that the guidance
+// handler cannot resolve, so backfilled weeks end up with no DB suggestions.
+// Pre-create the Audit row here, then override the persister to
+// update-and-return that same row so we end up with exactly one Audit per
+// backfill week (not a duplicate from processAuditResult).
 const backfillAudit = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(async (_finalUrl, context, site, auditContext) => {

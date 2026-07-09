@@ -11,28 +11,10 @@
  */
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import ExcelJS from 'exceljs';
 import {
-  createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
-} from '../utils/report-uploader.js';
-import {
-  generateReportingPeriods,
   toPathOnly,
-  SPREADSHEET_COLUMNS,
 } from './utils.js';
-import { getS3Config } from '../utils/cdn-utils.js';
 import { filterOutConfirmedBrokenUrls } from './url-health-check.js';
-
-function derivePeriodFromBrokenLinks(brokenLinks = []) {
-  const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
-  for (const link of brokenLinks) {
-    const match = periodRegex.exec(link.suggestionId || '');
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  return null;
-}
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -55,7 +37,6 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -97,85 +78,6 @@ export default async function handler(message, context) {
     dropped: droppedCount,
   });
 
-  // Read-modify-write the weekly 404 Excel file in SharePoint
-  try {
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const derivedPeriod = derivePeriodFromBrokenLinks(brokenLinks)
-      || generateReportingPeriods(new Date(), [-1]).weeks[0].periodIdentifier;
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
-    const outputDir = `${llmoFolder}/agentic-traffic`;
-    const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
-
-    const workbook = new ExcelJS.Workbook();
-    const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);
-    await workbook.xlsx.load(existingBuffer);
-    const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
-
-    const baseUrl = site.getBaseURL?.() || 'https://example.com';
-    const col = (name) => SPREADSHEET_COLUMNS.indexOf(name) + 1;
-
-    // Create a map of broken URLs for quick lookup
-    const brokenUrlsMap = new Map();
-    log.debug(`Processing ${brokenLinks.length} broken links from Mystique`);
-
-    brokenLinks.forEach((brokenLink) => {
-      const {
-        suggestedUrls, aiRationale, urlFrom, urlTo,
-      } = brokenLink;
-      const keyUrl = toPathOnly(urlTo, baseUrl);
-
-      // suggestedUrls is normalized to an array by the HEAD-check pass above.
-      if (suggestedUrls.length === 0) {
-        // Aggregate counter in the head-check-summary log line above is the
-        // real signal; per-link traces stay at debug to keep INFO clean.
-        log.debug(`No suggested URLs for broken link: ${urlTo}`);
-      }
-
-      brokenUrlsMap.set(keyUrl, {
-        userAgents: urlFrom,
-        suggestedUrls,
-        aiRationale: aiRationale || '',
-      });
-    });
-
-    let updatedRows = 0;
-
-    for (let i = 2; i <= sheet.rowCount; i += 1) {
-      const urlCell = sheet.getCell(i, col('URL')).value?.toString?.() || '';
-      if (urlCell) {
-        const pathOnlyUrl = toPathOnly(urlCell, baseUrl);
-        // Look up the URL in brokenUrls and update if found
-        const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
-        if (brokenUrlData) {
-          const suggested = brokenUrlData.suggestedUrls.join('\n');
-
-          sheet.getCell(i, col('Suggested URLs')).value = suggested;
-          sheet.getCell(i, col('AI Rationale')).value = brokenUrlData.aiRationale;
-          updatedRows += 1;
-
-          log.debug(`Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
-        } else {
-          log.info(`No Mystique data found for URL: ${pathOnlyUrl}`);
-        }
-      }
-    }
-
-    log.debug(`Updated ${updatedRows} rows with Mystique suggestions`);
-
-    // Overwrite the file
-    const buffer = await workbook.xlsx.writeBuffer();
-    await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
-    await publishToAdminHlx(filename, outputDir, log);
-    log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
-  } catch (e) {
-    log.error('[LLM-ERROR-PAGES] Excel guidance update failed', {
-      err: e.message,
-      stack: e.stack,
-      siteId,
-      auditId,
-    });
-  }
-
   try {
     if (!opportunityId) {
       log.warn('[LLM-ERROR-PAGES] No opportunityId in Mystique message — skipping DB update');
@@ -197,10 +99,9 @@ export default async function handler(message, context) {
         );
 
         // Note: we intentionally do NOT gate on `suggestedUrls.length` here.
-        // Empty-suggestion rows are still written to Excel (so the report stays
-        // complete), and skipping them in the DB created Excel↔DB drift. The
-        // HEAD-check above already cleared the rationale on those rows, so what
-        // lands in the DB is consistent with what lands in Excel.
+        // Empty-suggestion rows are still persisted so the opportunity stays
+        // complete. The HEAD-check above already cleared the rationale on those
+        // rows, so what lands in the DB stays internally consistent.
         const toUpdate = brokenLinks.reduce((acc, link) => {
           const {
             urlTo, suggestedUrls, aiRationale, confidenceScore,
