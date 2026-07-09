@@ -225,4 +225,35 @@ describe('TOC Guidance Handler', () => {
     expect(dataAccessStub.Suggestion.saveMany).to.not.have.been.called;
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/No matching suggestion found for URL/));
   });
+
+  it('should treat a falsy getData() return value from an existing suggestion as no data', async () => {
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion(undefined),
+    ]);
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    expect(dataAccessStub.Suggestion.saveMany).to.not.have.been.called;
+    expect(logStub.warn).to.have.been.calledWith(sinon.match(/No matching suggestion found for URL/));
+  });
+
+  it('should return badRequest when message.data is missing entirely', async () => {
+    delete message.data;
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(badRequest().status);
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
+  });
+
+  it('should treat a falsy getSuggestions() resolution as no existing suggestions', async () => {
+    opportunityStub.getSuggestions.resolves(null);
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    expect(dataAccessStub.Suggestion.saveMany).to.not.have.been.called;
+    expect(logStub.warn).to.have.been.calledWith(sinon.match(/No matching suggestion found for URL/));
+  });
 });
