@@ -180,6 +180,23 @@ describe('Audit Utils Tests', () => {
       const result = await isAuditEnabledForSite('test-handler', site, context);
       expect(result).to.be.false;
     });
+
+    it('rethrows an entitlement-check error instead of returning false when throwOnError is true', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO'],
+        },
+      });
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(new Error('entitlement service unavailable')),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(isAuditEnabledForSite('test-handler', site, context, { throwOnError: true }))
+        .to.be.rejectedWith('entitlement service unavailable');
+    });
   });
 
   describe('isAuditDisabledForSite', () => {
@@ -343,6 +360,25 @@ describe('Audit Utils Tests', () => {
       const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
       expect(result).to.be.false;
       expect(context.log.error).to.have.been.calledWith('Error checking product code entitlements:', sinon.match.instanceOf(Error));
+    });
+
+    it('rethrows a per-product-code error instead of returning false when throwOnError is true', async () => {
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(new Error('ASO check failed')),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(
+        checkProductCodeEntitlements(['ASO'], site, context, { throwOnError: true }),
+      ).to.be.rejectedWith('ASO check failed');
+    });
+
+    it('rethrows a critical error instead of returning false when throwOnError is true', async () => {
+      sandbox.stub(Promise, 'all').throws(new Error('Critical Promise.all error'));
+
+      await expect(
+        checkProductCodeEntitlements(['ASO', 'LLMO'], site, context, { throwOnError: true }),
+      ).to.be.rejectedWith('Critical Promise.all error');
     });
   });
 

@@ -22,6 +22,7 @@ import {
 } from './utils.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 import { AUDIT_ALT_TEXT } from './audit-constants.js';
+import { PreflightError } from './error-constants.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
@@ -130,6 +131,8 @@ export const preflightAudit = async (context) => {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();
 
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. Processing preflight audit.`);
+
   const jobMetadata = job.getMetadata();
   /**
    * @type {{
@@ -151,10 +154,36 @@ export const preflightAudit = async (context) => {
     return stripTrailingSlash(url);
   });
 
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
+  }
+
+  // Only cancel on a genuine "disabled"/"not entitled" result (throwOnError: true), so a
+  // transient entitlement-service error doesn't get treated as a real denial and permanently
+  // cancel the job - it propagates instead, letting the message retry.
+  if (!(await isAuditEnabledForSite('preflight', site, context, { throwOnError: true }))) {
+    const reason = `preflight audits disabled for site ${site.getId()}`;
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. ${reason}, skipping`);
+
+    try {
+      const jobEntity = await AsyncJobEntity.findById(jobId);
+      jobEntity.setStatus(AsyncJob.Status.CANCELLED);
+      jobEntity.setMetadata({
+        payload: {
+          siteId: site.getId(),
+          reason: PreflightError.PREFLIGHT_DISABLED.message,
+          errorCode: PreflightError.PREFLIGHT_DISABLED.code,
+        },
+      });
+      jobEntity.setEndedAt(new Date().toISOString());
+      await jobEntity.save();
+    } catch (e) {
+      log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}. Failed to cancel job after determining preflight is disabled for the site.`, e);
+      throw e;
+    }
+    return;
   }
 
   // Enabled checks for this run, resolved from per-site configuration. Persist the resolved
@@ -168,7 +197,7 @@ export const preflightAudit = async (context) => {
       }),
     )).filter(Boolean);
 
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
@@ -333,7 +362,7 @@ export const preflightAudit = async (context) => {
       const domEndTime = Date.now();
       const domEndTimestamp = new Date().toISOString();
       const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'dom',

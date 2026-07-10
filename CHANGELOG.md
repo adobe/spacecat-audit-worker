@@ -1,3 +1,10 @@
+## [1.498.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.1...v1.498.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* cancel preflight audit runs when disabled for site, surface errorCode ([#2759](https://github.com/adobe/spacecat-audit-worker/issues/2759)) ([9f7f2ea](https://github.com/adobe/spacecat-audit-worker/commit/9f7f2ea25a1d5a13df2bc51505add54de6d2d931))
+
 ## [1.498.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.0...v1.498.1) (2026-07-09)
 
 
