@@ -10292,6 +10292,30 @@ describe('Prerender Audit', () => {
       expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
     });
 
+    it('should warn and not throw when PageCitability.allBySiteId rejects', async () => {
+      const warnStub = sandbox.stub();
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().rejects(new Error('DB pool exhausted')),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page1', citabilityScore: 0.5 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.not.have.been.called;
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write citability records for siteId=site-1');
+      expect(warnStub.firstCall.args[0]).to.include('DB pool exhausted');
+    });
+
     it('should return early without any calls when comparisonResults is empty', async () => {
       const debugStub = sandbox.stub();
       const context = {

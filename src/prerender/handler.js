@@ -1084,62 +1084,69 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
     return;
   }
 
-  const existingRecords = await PageCitability.allBySiteId(siteId);
-  const existingRecordsMap = new Map(
-    existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
-  );
+  try {
+    const existingRecords = await PageCitability.allBySiteId(siteId);
+    const existingRecordsMap = new Map(
+      existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
+    );
 
-  const successful = comparisonResults.filter((r) => !r.error);
-  const WRITE_BATCH_SIZE = 10;
+    const successful = comparisonResults.filter((r) => !r.error);
+    const WRITE_BATCH_SIZE = 10;
 
-  const writeOne = async (result) => {
-    const {
-      url,
-      citabilityScore,
-      contentGainRatio,
-      wordDifference,
-      wordCountBefore,
-      wordCountAfter,
-      isDeployedAtEdge,
-    } = result;
-    try {
-      const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
-      if (existing) {
-        existing.setCitabilityScore(citabilityScore ?? null);
-        existing.setContentRatio(contentGainRatio ?? null);
-        existing.setWordDifference(wordDifference ?? null);
-        existing.setBotWords(wordCountBefore ?? null);
-        existing.setNormalWords(wordCountAfter ?? null);
-        existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
-        await existing.save();
-      } else {
-        await PageCitability.create({
-          siteId,
-          url,
-          citabilityScore: citabilityScore ?? null,
-          contentRatio: contentGainRatio ?? null,
-          wordDifference: wordDifference ?? null,
-          botWords: wordCountBefore ?? null,
-          normalWords: wordCountAfter ?? null,
-          isDeployedAtEdge: isDeployedAtEdge ?? false,
-        });
+    const writeOne = async (result) => {
+      const {
+        url,
+        citabilityScore,
+        contentGainRatio,
+        wordDifference,
+        wordCountBefore,
+        wordCountAfter,
+        isDeployedAtEdge,
+      } = result;
+      try {
+        const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
+        if (existing) {
+          existing.setCitabilityScore(citabilityScore ?? null);
+          existing.setContentRatio(contentGainRatio ?? null);
+          existing.setWordDifference(wordDifference ?? null);
+          existing.setBotWords(wordCountBefore ?? null);
+          existing.setNormalWords(wordCountAfter ?? null);
+          existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
+          await existing.save();
+        } else {
+          await PageCitability.create({
+            siteId,
+            url,
+            citabilityScore: citabilityScore ?? null,
+            contentRatio: contentGainRatio ?? null,
+            wordDifference: wordDifference ?? null,
+            botWords: wordCountBefore ?? null,
+            normalWords: wordCountAfter ?? null,
+            isDeployedAtEdge: isDeployedAtEdge ?? false,
+          });
+        }
+        return true;
+      } catch (e) {
+        log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
+        return false;
       }
-      return true;
-    } catch (e) {
-      log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
-      return false;
+    };
+
+    // Intentionally not using saveMany/bulk writes here: this restores prior working behavior
+    // and is temporary (see todo above), so it's capped to batches of WRITE_BATCH_SIZE instead
+    // of being re-architected.
+    let written = 0;
+    for (let i = 0; i < successful.length; i += WRITE_BATCH_SIZE) {
+      const batch = successful.slice(i, i + WRITE_BATCH_SIZE);
+      // eslint-disable-next-line no-await-in-loop
+      const results = await Promise.all(batch.map(writeOne));
+      written += results.filter(Boolean).length;
     }
-  };
 
-  let written = 0;
-  for (let i = 0; i < successful.length; i += WRITE_BATCH_SIZE) {
-    const batch = successful.slice(i, i + WRITE_BATCH_SIZE);
-    // eslint-disable-next-line no-await-in-loop
-    const results = await Promise.all(batch.map(writeOne));
-    written += results.filter(Boolean).length;
+    log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to write citability records for siteId=${siteId}: ${e.message}`);
   }
-
-  log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
 }
 
 /**
