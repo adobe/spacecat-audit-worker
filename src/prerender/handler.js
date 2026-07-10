@@ -1061,6 +1061,95 @@ export async function processOpportunityAndSuggestions(
 }
 
 /**
+ * Writes citability metrics to the PageCitability entity for all successfully scraped URLs.
+ * This enables the page-citability audit to detect recently-processed URLs via its 7-day
+ * staleness filter, avoiding duplicate scraping across both audits.
+ *
+ * @param {Array} comparisonResults - Results from compareHtmlContent (all scraped URLs)
+ * @param {string} siteId - Site ID
+ * @param {Object} context - Audit context with dataAccess and log
+ * @returns {Promise<void>}
+ */
+// todo: remove after LLMO-5912
+export async function writeToCitabilityRecords(comparisonResults, siteId, context) {
+  if (!comparisonResults?.length) {
+    return;
+  }
+
+  const { dataAccess, log } = context;
+  const { PageCitability } = dataAccess;
+
+  if (!PageCitability?.allBySiteId) {
+    log.debug(`${LOG_PREFIX} PageCitability not available, skipping citability record writes`);
+    return;
+  }
+
+  try {
+    const existingRecords = await PageCitability.allBySiteId(siteId);
+    const existingRecordsMap = new Map(
+      existingRecords.map((r) => [normalizePathnameWithQuery(r.getUrl()), r]),
+    );
+
+    const successful = comparisonResults.filter((r) => !r.error);
+    const WRITE_BATCH_SIZE = 10;
+
+    const writeOne = async (result) => {
+      const {
+        url,
+        citabilityScore,
+        contentGainRatio,
+        wordDifference,
+        wordCountBefore,
+        wordCountAfter,
+        isDeployedAtEdge,
+      } = result;
+      try {
+        const existing = existingRecordsMap.get(normalizePathnameWithQuery(url));
+        if (existing) {
+          existing.setCitabilityScore(citabilityScore ?? null);
+          existing.setContentRatio(contentGainRatio ?? null);
+          existing.setWordDifference(wordDifference ?? null);
+          existing.setBotWords(wordCountBefore ?? null);
+          existing.setNormalWords(wordCountAfter ?? null);
+          existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
+          await existing.save();
+        } else {
+          await PageCitability.create({
+            siteId,
+            url,
+            citabilityScore: citabilityScore ?? null,
+            contentRatio: contentGainRatio ?? null,
+            wordDifference: wordDifference ?? null,
+            botWords: wordCountBefore ?? null,
+            normalWords: wordCountAfter ?? null,
+            isDeployedAtEdge: isDeployedAtEdge ?? false,
+          });
+        }
+        return true;
+      } catch (e) {
+        log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
+        return false;
+      }
+    };
+
+    // Intentionally not using saveMany/bulk writes here: this restores prior working behavior
+    // and is temporary (see todo above), so it's capped to batches of WRITE_BATCH_SIZE instead
+    // of being re-architected.
+    let written = 0;
+    for (let i = 0; i < successful.length; i += WRITE_BATCH_SIZE) {
+      const batch = successful.slice(i, i + WRITE_BATCH_SIZE);
+      // eslint-disable-next-line no-await-in-loop
+      const results = await Promise.all(batch.map(writeOne));
+      written += results.filter(Boolean).length;
+    }
+
+    log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to write citability records for siteId=${siteId}: ${e.message}`);
+  }
+}
+
+/**
  * Post processor to upload a status JSON file to S3 after audit completion
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data with results
@@ -1336,6 +1425,9 @@ export async function processContentAndGenerateOpportunities(context) {
     const comparisonResults = isDomainBlocked
       ? []
       : await Promise.all(urlsToCheck.map((url) => compareHtmlContent(url, context)));
+
+    // Phase 2c: write citability metrics to PageCitability entity.
+    await writeToCitabilityRecords(comparisonResults, siteId, context);
 
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);

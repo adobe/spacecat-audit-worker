@@ -25,6 +25,7 @@ import prerenderHandler, {
   uploadStatusSummaryToS3,
   getScrapeJobStats,
   buildMergeDataFunction,
+  writeToCitabilityRecords,
 } from '../../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
@@ -9891,6 +9892,67 @@ describe('Prerender Audit', () => {
   });
 
   describe('compareHtmlContent — citability score', () => {
+    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async function () {
+      this.timeout(5000);
+      const pageCitabilityCreateStub = sinon.stub().resolves({});
+      const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/html-comparator.js': {
+          analyzeHtmlForPrerender: sinon.stub().resolves({
+            needsPrerender: false,
+            contentGainRatio: 1.3,
+            wordCountBefore: 100,
+            wordCountAfter: 130,
+            citabilityScore: 0.85,
+            wordDifference: 30,
+          }),
+        },
+      });
+
+      const mockS3Client = {
+        send: sinon.stub().callsFake(async (cmd) => {
+          const key = cmd.input?.Key || '';
+          if (key.endsWith('scrape.json')) {
+            throw Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
+          }
+          return {
+            ContentType: 'text/html',
+            Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+          };
+        }),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: pageCitabilityAllBySiteIdStub,
+            create: pageCitabilityCreateStub,
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(pageCitabilityAllBySiteIdStub).to.have.been.calledWith('site-1');
+      expect(pageCitabilityCreateStub).to.have.been.calledOnce;
+      expect(pageCitabilityCreateStub.firstCall.args[0]).to.deep.include({
+        citabilityScore: 0.85,
+        botWords: 100,
+        normalWords: 130,
+      });
+    });
+
     it('should forward usedEarlyClientSideHtml from scrape.json metadata to auditResult.results', async () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/prerender/utils/html-comparator.js': {
@@ -9926,6 +9988,10 @@ describe('Prerender Audit', () => {
         audit: { getId: () => 'audit-id' },
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([]),
+            create: sinon.stub().resolves({}),
+          },
         },
         log: {
           info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
@@ -9940,6 +10006,504 @@ describe('Prerender Audit', () => {
 
       const page = result.auditResult.results.find((r) => r.url === 'https://example.com/page1');
       expect(page.usedEarlyClientSideHtml).to.equal(true);
+    });
+  });
+
+  describe('writeToCitabilityRecords', () => {
+    it('should create new PageCitability records for URLs not in existing map', async () => {
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.8,
+          contentGainRatio: 1.5,
+          wordDifference: 50,
+          wordCountBefore: 100,
+          wordCountAfter: 150,
+          isDeployedAtEdge: false,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0]).to.deep.include({
+        siteId: 'site-1',
+        url: 'https://example.com/page1',
+        citabilityScore: 0.8,
+        contentRatio: 1.5,
+        wordDifference: 50,
+        botWords: 100,
+        normalWords: 150,
+        isDeployedAtEdge: false,
+      });
+    });
+
+    it('should update an existing PageCitability record when URL matches', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.9,
+          contentGainRatio: 1.2,
+          wordDifference: 20,
+          wordCountBefore: 80,
+          wordCountAfter: 100,
+          isDeployedAtEdge: true,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should update an existing PageCitability record when only the hostname differs', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://www.example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.75,
+          contentGainRatio: 1.1,
+          wordDifference: 12,
+          wordCountBefore: 90,
+          wordCountAfter: 102,
+          isDeployedAtEdge: false,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should treat URLs with different query params as distinct records', async () => {
+      // Gap 2: PageCitability records keyed on pathname+search so query-param variants
+      // (/page?filter=iphone vs /page?filter=mac) are distinct, not collapsed to /page.
+      const saveStubIphone = sandbox.stub().resolves();
+      const saveStubMac = sandbox.stub().resolves();
+      const existingIphone = {
+        getUrl: () => 'https://example.com/page?filter=iphone',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubIphone,
+      };
+      const existingMac = {
+        getUrl: () => 'https://example.com/page?filter=mac',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStubMac,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingIphone, existingMac]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=iphone', citabilityScore: 0.9 },
+        { url: 'https://example.com/page?filter=mac', citabilityScore: 0.6 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingIphone.setCitabilityScore).to.have.been.calledWith(0.9);
+      expect(existingMac.setCitabilityScore).to.have.been.calledWith(0.6);
+      expect(saveStubIphone).to.have.been.calledOnce;
+      expect(saveStubMac).to.have.been.calledOnce;
+    });
+
+    it('should create new records for query-param URLs even when pathname-only variant exists', async () => {
+      // The pathname /page already exists but /page?filter=new is a distinct URL.
+      const saveStub = sandbox.stub().resolves();
+      const existingPlain = {
+        getUrl: () => 'https://example.com/page',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingPlain]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page?filter=new', citabilityScore: 0.8 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // /page?filter=new is different from /page — should create, not update
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/page?filter=new');
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('should handle existing records with unparseable URLs gracefully', async () => {
+      // Exercises the catch branch of normalizePathnameWithQuery.
+      const createStub = sandbox.stub().resolves({});
+      const saveStub = sandbox.stub().resolves();
+      const invalidRecord = {
+        getUrl: () => 'not-a-valid-url',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([invalidRecord]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.7 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Invalid record key doesn't match the valid URL so a new record is created
+      expect(createStub).to.have.been.calledOnce;
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('should skip results with error flag set', async () => {
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/error-page', error: true },
+        { url: 'https://example.com/ok-page', citabilityScore: 0.5 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/ok-page');
+    });
+
+    it('should warn and continue when a single URL write fails', async () => {
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: sandbox.stub().rejects(new Error('DB write error')),
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page1', citabilityScore: 0.5 },
+        { url: 'https://example.com/page2', citabilityScore: 0.7 },
+      ];
+
+      // Should not throw despite individual failures
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(warnStub).to.have.been.calledTwice;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+
+    it('should warn and not throw when PageCitability.allBySiteId rejects', async () => {
+      const warnStub = sandbox.stub();
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().rejects(new Error('DB pool exhausted')),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page1', citabilityScore: 0.5 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.not.have.been.called;
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write citability records for siteId=site-1');
+      expect(warnStub.firstCall.args[0]).to.include('DB pool exhausted');
+    });
+
+    it('should return early without any calls when comparisonResults is empty', async () => {
+      const debugStub = sandbox.stub();
+      const context = {
+        dataAccess: {},
+        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      await writeToCitabilityRecords([], 'site-1', context);
+
+      expect(debugStub).to.not.have.been.called;
+    });
+
+    it('should skip writes when PageCitability is not available in dataAccess', async () => {
+      const debugStub = sandbox.stub();
+      const context = {
+        dataAccess: {},
+        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      await writeToCitabilityRecords(
+        [{ url: 'https://example.com/page1', citabilityScore: 0.5 }],
+        'site-1',
+        context,
+      );
+
+      expect(debugStub).to.have.been.calledWith(sinon.match('PageCitability not available'));
+    });
+
+    it('should fall back to null/false for undefined fields when updating an existing record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1028-1033
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/page1' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(null);
+      expect(existingRecord.setContentRatio).to.have.been.calledWith(null);
+      expect(existingRecord.setWordDifference).to.have.been.calledWith(null);
+      expect(existingRecord.setBotWords).to.have.been.calledWith(null);
+      expect(existingRecord.setNormalWords).to.have.been.calledWith(null);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should fall back to null/false for undefined fields when creating a new record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1039+ in the create path
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/new-page' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0]).to.deep.equal({
+        siteId: 'site-1',
+        url: 'https://example.com/new-page',
+        citabilityScore: null,
+        contentRatio: null,
+        wordDifference: null,
+        botWords: null,
+        normalWords: null,
+        isDeployedAtEdge: false,
+      });
+    });
+
+    it('should process writes in batches of 10 to avoid connection pool exhaustion', async () => {
+      // 320 concurrent writes would exhaust the DB connection pool (20 per task).
+      // Writes must be chunked to 10 at a time.
+      const createOrder = [];
+      const createStub = sandbox.stub().callsFake(async ({ url }) => {
+        createOrder.push(url);
+        return {};
+      });
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      // 25 URLs — spans 3 batches (10 + 10 + 5)
+      const comparisonResults = Array.from({ length: 25 }, (_, i) => ({
+        url: `https://example.com/page${i}`,
+        citabilityScore: 0.5,
+      }));
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub.callCount).to.equal(25);
+      // All 25 URLs written — batching doesn't drop any
+      expect(createOrder).to.have.lengthOf(25);
+    });
+
+    it('RC-1: should attempt create twice when the same URL appears twice — stale snapshot gap', async () => {
+      // existingRecordsMap is built ONCE from allBySiteId before Promise.all runs.
+      // If the same URL appears twice in comparisonResults (upstream dedup failure),
+      // both iterations see undefined in the map and both call PageCitability.create().
+      // The second create fails (e.g. unique constraint) and is caught silently.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('unique constraint violation: page_citability_url_key'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.8 },
+        { url: 'https://example.com/page', citabilityScore: 0.8 }, // same URL duplicated
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Both iterations attempt create because the map was built before either resolved
+      expect(createStub).to.have.been.calledTwice;
+      // The second fails and is warned, not thrown
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+
+    it('RC-2: should survive a concurrent Lambda creating the same new URL — second create caught', async () => {
+      // SQS at-least-once delivery can trigger two Lambda instances for the same site.
+      // Both read allBySiteId before either has written, so both see the URL as new.
+      // Simulated by calling writeToCitabilityRecords twice with the same stale empty snapshot:
+      // the first invocation creates the record; the second throws a duplicate-key error.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('duplicate key value violates unique constraint'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]), // always empty — simulates stale read
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [{ url: 'https://example.com/new-page', citabilityScore: 0.7 }];
+
+      // First Lambda invocation: create succeeds
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledOnce;
+      expect(warnStub).to.not.have.been.called;
+
+      // Second Lambda invocation: stale snapshot still shows URL as new → create throws
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledTwice;
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
     });
   });
 
