@@ -1070,6 +1070,7 @@ export async function processOpportunityAndSuggestions(
  * @param {Object} context - Audit context with dataAccess and log
  * @returns {Promise<void>}
  */
+// todo: remove after LLMO-5912
 export async function writeToCitabilityRecords(comparisonResults, siteId, context) {
   if (!comparisonResults?.length) {
     return;
