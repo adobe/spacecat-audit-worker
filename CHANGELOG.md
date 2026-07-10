@@ -1,3 +1,10 @@
+## [1.498.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.2...v1.498.3) (2026-07-10)
+
+
+### Bug Fixes
+
+* restore writeToCitabilityRecords writes to PageCitability entity ([#2761](https://github.com/adobe/spacecat-audit-worker/issues/2761)) ([8035b60](https://github.com/adobe/spacecat-audit-worker/commit/8035b60b6954dccc476e469b0601a63ffee470ad))
+
 ## [1.498.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.1...v1.498.2) (2026-07-10)
 
 
