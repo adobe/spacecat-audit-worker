@@ -104,6 +104,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
     configuration = {
       isHandlerEnabledForSite: sinon.stub(),
       getHandlers: sinon.stub().returns({
+        preflight: { productCodes: ['aem-sites'] },
         'links-preflight': { productCodes: ['aem-sites'] },
       }),
     };
@@ -117,6 +118,9 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
     }
     sinon.stub(TierClient, 'createForSite').resolves(mockTierClient);
 
+    configuration.isHandlerEnabledForSite
+      .withArgs('preflight', site)
+      .returns(true);
     configuration.isHandlerEnabledForSite
       .withArgs('links-preflight', site)
       .returns(true);

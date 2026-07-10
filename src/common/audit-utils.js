@@ -20,9 +20,19 @@ import { retrieveAuditById } from '../utils/data-access.js';
  * @param {string[]} productCodes - Array of product codes to check
  * @param {Object} site - Site object
  * @param {Object} context - Lambda context
+ * @param {{ throwOnError?: boolean }} [options] - When `throwOnError` is true, an error
+ * encountered while checking entitlement (e.g. a network blip) is rethrown instead of being
+ * swallowed and treated as "not entitled". Callers that only skip an individual check on failure
+ * should keep the default (`false`); callers that take an irreversible action (e.g. cancelling a
+ * job) on a `false` result should pass `true` so a transient error isn't treated as a real denial.
  * @returns {Promise<boolean>} - True if site has enrollment for any product code
  */
-export async function checkProductCodeEntitlements(productCodes, site, context) {
+export async function checkProductCodeEntitlements(
+  productCodes,
+  site,
+  context,
+  { throwOnError = false } = {},
+) {
   if (!isNonEmptyArray(productCodes)) {
     return false; // No product codes to check, deny by default
   }
@@ -35,6 +45,9 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
           const tierResult = await tierClient.checkValidEntitlement();
           return tierResult.siteEnrollment || false;
         } catch (error) {
+          if (throwOnError) {
+            throw error;
+          }
           context.log.error(`Failed to check entitlement for product code ${productCode}:`, error);
           return false;
         }
@@ -42,12 +55,15 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
     );
     return enrollmentChecks.some((hasEnrollment) => hasEnrollment);
   } catch (error) {
+    if (throwOnError) {
+      throw error;
+    }
     context.log.error('Error checking product code entitlements:', error);
     return false; // Fail safe - deny audit if entitlement check fails
   }
 }
 
-export async function isAuditEnabledForSite(type, site, context) {
+export async function isAuditEnabledForSite(type, site, context, { throwOnError = false } = {}) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
@@ -57,6 +73,7 @@ export async function isAuditEnabledForSite(type, site, context) {
       handler.productCodes,
       site,
       context,
+      { throwOnError },
     );
     if (!hasValidEnrollment) {
       context.log.info(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);

@@ -763,6 +763,7 @@ describe('Preflight Audit', () => {
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
+        setMetadata: sinon.stub(),
         setEndedAt: sinon.stub(),
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -770,6 +771,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -783,6 +785,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 
       // Ensure entitlement checks pass for tests; avoid double-stubbing across tests
@@ -1452,6 +1455,74 @@ describe('Preflight Audit', () => {
       await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
+    it('cancels the job and logs when the preflight handler is disabled for the site', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await preflightAuditFunction(context);
+
+      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123. preflight audits disabled for site site-123, skipping');
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('CANCELLED');
+      expect(finalJobEntity.setMetadata).to.have.been.calledWith({
+        payload: {
+          siteId: 'site-123',
+          reason: 'The Preflight audit is not enabled for this site.',
+          errorCode: 'PREFLIGHT-100',
+        },
+      });
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+    });
+
+    it('does not cancel a job that is no longer in progress, even if preflight is disabled for the site', async () => {
+      job.getStatus.returns('COMPLETED');
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+
+      expect(context.dataAccess.AsyncJob.findById).to.not.have.been.called;
+    });
+
+    it('logs and propagates the error when AsyncJob.findById fails while cancelling a disabled job', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().rejects(new Error('db unavailable'));
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('db unavailable');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('logs and propagates the error when saving the cancelled job fails', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves({
+        setStatus: sinon.stub(),
+        setMetadata: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        save: sinon.stub().rejects(new Error('save failed')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('save failed');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('does not cancel the job and lets the error propagate when the entitlement check itself errors', async () => {
+      TierClient.createForSite.restore();
+      sinon.stub(TierClient, 'createForSite').returns({
+        checkValidEntitlement: sinon.stub().rejects(new Error('entitlement service unavailable')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('entitlement service unavailable');
+
+      expect(context.log.info).to.not.have.been.calledWithMatch(/disabled for site/);
+    });
+
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
@@ -1831,6 +1902,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
         }),
@@ -1909,6 +1981,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
@@ -4835,6 +4908,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -4848,6 +4922,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
