@@ -79,6 +79,43 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
+function buildCitabilityMap(citabilityScores, log) {
+  return (citabilityScores || []).reduce((acc, score) => {
+    let pathname;
+    try {
+      ({ pathname } = new URL(score.getUrl()));
+    } catch (error) {
+      log?.warn?.(`Skipping malformed citability URL during agentic mapping: ${error.message}`);
+      return acc;
+    }
+    const existingScore = acc[pathname];
+
+    if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
+      acc[pathname] = {
+        score: score.getCitabilityScore(),
+        isDeployedAtEdge: score.getIsDeployedAtEdge(),
+        updatedAt: score.getUpdatedAt(),
+      };
+    }
+
+    return acc;
+  }, {});
+}
+
+async function getCitabilityScores(site, context) {
+  const pageCitability = context?.dataAccess?.PageCitability;
+  if (!pageCitability?.allBySiteId) {
+    return [];
+  }
+
+  try {
+    return await pageCitability.allBySiteId(site.getId());
+  } catch (error) {
+    context?.log?.warn?.(`Failed to fetch citability scores for agentic mapping: ${error.message}`);
+    return [];
+  }
+}
+
 function canonicalizeAgenticUrlPath(rawUrl, baseURL, log) {
   const normalizedUrl = rawUrl === '-' ? '/' : normalizeText(rawUrl, '/');
   const pseudoUrlCandidate = normalizedUrl.replace(/^\/+/, '').toLowerCase();
@@ -104,6 +141,8 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
   }
 
   const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+  const citabilityScores = await getCitabilityScores(site, context);
+  const citabilityMap = buildCitabilityMap(citabilityScores, context?.log);
   const baseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL || site.getBaseURL();
   const defaultHost = new URL(baseURL).host;
   const classificationMap = new Map();
@@ -124,7 +163,16 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
       }
 
       const host = normalizeText(row.host, defaultHost) || defaultHost;
+      const citability = citabilityMap[urlPath];
       const dimensions = {};
+
+      if (citability?.score !== undefined && citability?.score !== null) {
+        dimensions.citability_score = citability.score;
+      }
+
+      if (citability?.isDeployedAtEdge !== undefined) {
+        dimensions.deployed_at_edge = citability.isDeployedAtEdge;
+      }
 
       const classificationKey = `${host}|${urlPath}`;
       if (!classificationMap.has(classificationKey)) {
