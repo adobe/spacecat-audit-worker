@@ -1,3 +1,10 @@
+## [1.498.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.3...v1.498.4) (2026-07-10)
+
+
+### Bug Fixes
+
+* **sync:** freeze SKIPPED/REJECTED suggestions in syncSuggestions (SITES-44646) ([#2758](https://github.com/adobe/spacecat-audit-worker/issues/2758)) ([717f2a9](https://github.com/adobe/spacecat-audit-worker/commit/717f2a97376295e2ccdb3f2ee9035016fc6811fb)), closes [#2593](https://github.com/adobe/spacecat-audit-worker/issues/2593)
+
 ## [1.498.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.2...v1.498.3) (2026-07-10)
 
 
