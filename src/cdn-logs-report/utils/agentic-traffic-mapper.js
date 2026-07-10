@@ -170,7 +170,7 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
         dimensions.citability_score = citability.score;
       }
 
-      if (citability?.isDeployedAtEdge !== undefined) {
+      if (citability?.isDeployedAtEdge !== undefined && citability?.isDeployedAtEdge !== null) {
         dimensions.deployed_at_edge = citability.isDeployedAtEdge;
       }
 

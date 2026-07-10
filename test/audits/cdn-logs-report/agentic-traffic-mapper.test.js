@@ -269,6 +269,48 @@ describe('agentic traffic mapper', () => {
     expect(noCitabilityResult.classificationRows[0].content_type).to.equal('gif');
   });
 
+  it('omits citability dimensions when the record has null score and null deployed-at-edge', async () => {
+    const site = {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://www.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    };
+    const context = {
+      log: { warn: sinon.spy() },
+      dataAccess: {
+        PageCitability: {
+          allBySiteId: sinon.stub().resolves([
+            {
+              getUrl: () => 'https://www.example.com/image.jpg',
+              getCitabilityScore: () => null,
+              getIsDeployedAtEdge: () => null,
+              getUpdatedAt: () => '2026-03-31T00:00:00.000Z',
+            },
+          ]),
+        },
+      },
+    };
+
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 4,
+        avg_ttfb_ms: 50,
+        country_code: 'US',
+        url: '/image.jpg',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Asset',
+      },
+    ], site, context, '2026-03-31');
+
+    expect(result.trafficRows[0].dimensions).to.deep.equal({});
+  });
+
   it('returns other for unknown file extensions and logs citability fetch failures', async () => {
     const warn = sinon.spy();
     const site = {

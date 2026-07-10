@@ -304,6 +304,7 @@ describe('agentic daily export', () => {
 
     expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
     expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
+    expect(module.testHelpers.escapeCsvValue('a,"b"')).to.equal('"a,""b"""');
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {
