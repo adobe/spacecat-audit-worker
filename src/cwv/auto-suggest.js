@@ -153,6 +153,10 @@ export async function processAutoSuggest(context, opportunity, site) {
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
+    // Extract once; included in every SQS message so the originating Slack
+    // thread can be reached when callbacks come back.
+    const slackContext = context.auditContext?.slackContext;
+
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
       // Skip suggestions that don't need auto-suggest
@@ -215,6 +219,9 @@ export async function processAutoSuggest(context, opportunity, site) {
             codePath: codeInfo.codePath,
           }),
         },
+        // Propagate slack context so callbacks can be routed back to the
+        // originating Slack thread.
+        ...(slackContext && { auditContext: { slackContext } }),
       };
 
       // eslint-disable-next-line no-await-in-loop

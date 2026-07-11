@@ -11,6 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { sendAuditFailureNotification } from '../utils/slack-utils.js';
 
 /**
  * Bot Detection Abort Handling
@@ -23,11 +24,13 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
  * - Log detailed bot protection information
  * - Format and validate abort details
  * - Return appropriate HTTP responses for skipped audits
+ * - Send Slack notifications for bot-protection aborts when triggered from Slack
  */
 
 /**
  * Handles abort signals in audit workflows.
- * Logs detailed information for bot protection aborts and returns an appropriate response.
+ * Logs detailed information for bot protection aborts, sends a Slack notification to the
+ * originating thread (when available), and returns an appropriate response.
  *
  * @param {Object} abort - Abort signal with reason and details
  * @param {string} abort.reason - Reason for abort (e.g., 'bot-protection')
@@ -36,8 +39,8 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
  * @param {string} type - Audit type (e.g., 'cwv', 'lhs')
  * @param {Object} site - Site object with getBaseURL() method
  * @param {string} siteId - Site identifier
- * @param {Object} log - Logger instance
- * @returns {Object} HTTP response indicating audit was skipped
+ * @param {Object} context - Lambda context (env, log, auditContext)
+ * @returns {Promise<Object>} HTTP response indicating audit was skipped
  *
  * @example
  * const abort = {
@@ -49,11 +52,12 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
  *     byHttpStatus: { 403: 5 },
  *   }
  * };
- * const result = handleAbort(abort, 'job-123', 'cwv', site, 'site-456', log);
+ * const result = await handleAbort(abort, 'job-123', 'cwv', site, 'site-456', context);
  * // => { status: 200, body: { skipped: true, reason: 'bot-protection', ... } }
  */
-export function handleAbort(abort, jobId, type, site, siteId, log) {
+export async function handleAbort(abort, jobId, type, site, siteId, context) {
   const { reason, details } = abort;
+  const { log, auditContext } = context;
 
   if (reason === 'bot-protection') {
     const {
@@ -73,6 +77,13 @@ export function handleAbort(abort, jobId, type, site, siteId, log) {
       + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
       + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
     );
+
+    await sendAuditFailureNotification(context, {
+      type,
+      siteUrl: site.getBaseURL(),
+      auditContext,
+      abort,
+    });
   }
 
   // Return generic abort response
