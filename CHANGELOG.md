@@ -1,3 +1,10 @@
+## [1.498.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.5...v1.498.6) (2026-07-13)
+
+
+### Bug Fixes
+
+* **backlinks:** keep broken backlinks whose target uses overrideBaseURL ([#2763](https://github.com/adobe/spacecat-audit-worker/issues/2763)) ([1bcef9c](https://github.com/adobe/spacecat-audit-worker/commit/1bcef9c0592b74a6f1d41d67be400767a521250c))
+
 ## [1.498.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.4...v1.498.5) (2026-07-11)
 
 
