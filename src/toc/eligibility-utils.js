@@ -11,17 +11,18 @@
  */
 
 /**
- * True when a TOC suggestion is still open (not FIXED/OUTDATED/SKIPPED) and therefore
- * still eligible to send/receive Impact Engine prompts. Shared by the outbound
- * (sendTocGuidanceRequestToMystique) and inbound (guidance-handler) eligibility checks
- * so the two stay in sync.
+ * True when a TOC suggestion is still open (not FIXED/OUTDATED/SKIPPED), not already
+ * deployed at the CDN edge, and therefore still eligible to send/receive Impact Engine
+ * prompts. Shared by the outbound (sendTocGuidanceRequestToMystique) and inbound
+ * (guidance-handler) eligibility checks so the two stay in sync.
  * @param {Object} suggestion - Suggestion entity
  * @param {Object} Suggestion - The Suggestion data-access collection (for STATUSES)
- * @returns {boolean} True if the suggestion is non-terminal
+ * @returns {boolean} True if the suggestion is non-terminal and not edge-deployed
  */
 export function isEligibleTocSuggestion(suggestion, Suggestion) {
   const status = suggestion.getStatus();
   return status !== Suggestion.STATUSES.FIXED
     && status !== Suggestion.STATUSES.OUTDATED
-    && status !== Suggestion.STATUSES.SKIPPED;
+    && status !== Suggestion.STATUSES.SKIPPED
+    && !suggestion.getData()?.edgeDeployed;
 }
