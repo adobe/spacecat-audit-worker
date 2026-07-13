@@ -4344,6 +4344,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       expect(result.auditContext).to.deep.equal({ generatePrompts: false });
       expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Failed to parse context\.data for mode/),
+      );
+      expect(logSpy.warn).to.have.been.calledWith(
         sinon.match(/Failed to parse context\.data for generatePrompts flag/),
       );
     });

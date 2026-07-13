@@ -83,6 +83,30 @@ describe('TOC ai-only mode (handleAiOnlyModeForToc)', () => {
     });
   });
 
+  it('returns status: no-op instead of misleadingly reporting complete when zero suggestions are eligible', async () => {
+    const opportunity = makeOpportunity({
+      getSuggestions: sinon.stub().resolves([
+        makeSuggestion({ url: 'https://example.com/fixed' }, 'FIXED'),
+      ]),
+    });
+    context.dataAccess.Opportunity.findById.resolves(opportunity);
+    context.data = { opportunityId: 'opportunity-1' };
+
+    const result = await handleAiOnlyModeForToc(context);
+
+    expect(context.sqs.sendMessage).not.to.have.been.called;
+    expect(result).to.deep.equal({
+      status: 'no-op',
+      mode: 'ai-only',
+      opportunityId: 'opportunity-1',
+      fullAuditRef: 'ai-only/opportunity-1',
+      auditResult: {
+        message: 'No eligible suggestions found to queue prompts for',
+        suggestionCount: 0,
+      },
+    });
+  });
+
   it('defaults generatePrompts to false when omitted from data', async () => {
     const opportunity = makeOpportunity();
     context.dataAccess.Opportunity.findById.resolves(opportunity);

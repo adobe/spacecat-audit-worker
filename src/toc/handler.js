@@ -41,9 +41,10 @@ const MODE_AI_ONLY = 'ai-only';
 /**
  * Parses the `mode` value from the audit `data` field.
  * @param {string|Object|null} data - The data field from the message
+ * @param {Object} log - Logger instance
  * @returns {string|null} - The mode value or null
  */
-function getModeFromData(data) {
+function getModeFromData(data, log) {
   if (!data) {
     return null;
   }
@@ -52,7 +53,7 @@ function getModeFromData(data) {
     const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
     return parsedData.mode || null;
   } catch (e) {
-    // Ignore parse errors
+    log.warn(`[TOC] Failed to parse context.data for mode, defaulting to null: ${e.message}`);
     return null;
   }
 }
@@ -527,15 +528,23 @@ export async function handleAiOnlyModeForToc(context) {
     generatePrompts,
   );
 
-  log.info(`[TOC] ai-only: Successfully queued prompt request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
+  // Distinguish "nothing to do" from "prompts are being generated" — suggestionCount is 0 when
+  // the opportunity has no suggestions or none are eligible, and status: 'complete' would
+  // otherwise misleadingly read as success to an operator running mode:ai-only from Slack.
+  const status = suggestionCount > 0 ? 'complete' : 'no-op';
+  const message = suggestionCount > 0
+    ? `Prompt generation queued successfully for ${suggestionCount} suggestion(s)`
+    : 'No eligible suggestions found to queue prompts for';
+
+  log.info(`[TOC] ai-only: ${message}. baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
 
   return {
-    status: 'complete',
+    status,
     mode: MODE_AI_ONLY,
     opportunityId: opportunity.getId(),
     fullAuditRef: `${MODE_AI_ONLY}/${opportunity.getId()}`,
     auditResult: {
-      message: `Prompt generation queued successfully for ${suggestionCount} suggestion(s)`,
+      message,
       suggestionCount,
     },
   };
@@ -550,7 +559,7 @@ export async function importTopPages(context) {
   const { site, log, data } = context;
 
   // Check for AI-only mode (from command like: audit:toc mode:ai-only)
-  const mode = getModeFromData(data);
+  const mode = getModeFromData(data, log);
   if (mode === MODE_AI_ONLY) {
     log.info('[TOC] Detected ai-only mode in step 1, skipping import/scraping/processing');
     return handleAiOnlyModeForToc(context);
