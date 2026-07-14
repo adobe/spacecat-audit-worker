@@ -1038,6 +1038,58 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
     });
 
+    it('extracts headings when transformRules.value is a HAST root node (real shape stored by the API), not a bare array (LLMO-6167)', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: {
+              type: 'root',
+              children: [{
+                type: 'element',
+                tagName: 'nav',
+                children: [{
+                  type: 'element',
+                  tagName: 'ul',
+                  children: [{
+                    type: 'element',
+                    tagName: 'li',
+                    children: [{
+                      type: 'element',
+                      tagName: 'a',
+                      properties: { 'data-selector': 'h1#intro' },
+                      children: [{ type: 'text', value: 'Introduction' }],
+                    }],
+                  }],
+                }],
+              }],
+            },
+          },
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
+    });
+
     it('skips FIXED/OUTDATED/SKIPPED/edge-deployed suggestions, and no eligible suggestions remain', async () => {
       const convertToOpportunityStub = setupMystiqueContext([
         makeExistingSuggestion({ url: 'https://example.com/fixed' }, 'FIXED'),

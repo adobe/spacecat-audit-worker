@@ -398,7 +398,10 @@ async function sendTocGuidanceRequestToMystique(
 
       const suggestionId = s.getId();
       const hastNodes = data?.transformRules?.value;
-      const headings = Array.isArray(hastNodes)
+      // hastNodes is normally a HAST root node (`{ type: 'root', children: [...] }`),
+      // not a bare array — extractHeadingTextsFromHast already handles both shapes
+      // (and null), so gate on truthiness rather than Array.isArray.
+      const headings = hastNodes
         ? [...new Set(extractHeadingTextsFromHast(hastNodes))]
         : [];
 
