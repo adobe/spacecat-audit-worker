@@ -10,7 +10,46 @@
  * governing permissions and limitations under the License.
  */
 
+import { load as cheerioLoad } from 'cheerio';
 import { calculateStats } from '@adobe/spacecat-shared-html-analyzer';
+
+const FONT_DETECTION_TEST_STRING = 'mmMwWLliI0fiflO';
+const FONT_DETECTION_WORD_MIN_REPS = 10;
+
+/**
+ * Returns true if the text is entirely composed of font-detection noise injected by
+ * FontFaceObserver / Next.js @next/font: either the font-metrics test string
+ * (startsWith to cover &N suffix variants) or exclusively repeated "word" tokens.
+ * Puppeteer captures these elements before the library removes them; direct-fetch HTML
+ * is unaffected. Filtering them prevents inflated word counts that falsely signal
+ * a prerender need.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isFontDetectionLeaf(text) {
+  if (!text) {
+    return false;
+  }
+  if (text.startsWith(FONT_DETECTION_TEST_STRING)) {
+    return true;
+  }
+  const tokens = text.trim().split(/\s+/);
+  return tokens.length >= FONT_DETECTION_WORD_MIN_REPS && tokens.every((t) => t === 'word');
+}
+
+function removeFontDetectionNoise(html) {
+  const $ = cheerioLoad(html);
+  $('*').each((i, el) => {
+    const $el = $(el);
+    if ($el.children().length > 0) {
+      return;
+    }
+    if (isFontDetectionLeaf($el.text().trim())) {
+      $el.remove();
+    }
+  });
+  return $.html();
+}
 
 /**
  * Analyzes HTML content to determine if prerendering is needed
@@ -25,7 +64,7 @@ async function analyzeHtmlForPrerender(directHtml, scrapedHtml, threshold = 1.2)
     throw new Error('Missing HTML content for comparison');
   }
 
-  const stats = await calculateStats(directHtml, scrapedHtml, true);
+  const stats = await calculateStats(directHtml, removeFontDetectionNoise(scrapedHtml), true);
   const needsPrerender = typeof stats.contentIncreaseRatio === 'number' && stats.contentIncreaseRatio >= threshold;
 
   return {
