@@ -36,6 +36,27 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 const auditType = Audit.AUDIT_TYPES.TOC;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const MAX_TOP_PAGES = 200;
+const MODE_AI_ONLY = 'ai-only';
+
+/**
+ * Parses the `mode` value from the audit `data` field.
+ * @param {string|Object|null} data - The data field from the message
+ * @param {Object} log - Logger instance
+ * @returns {string|null} - The mode value or null
+ */
+function getModeFromData(data, log) {
+  if (!data) {
+    return null;
+  }
+
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    return parsedData.mode || null;
+  } catch (e) {
+    log.warn(`[TOC] Failed to parse context.data for mode, defaulting to null: ${e.message}`);
+    return null;
+  }
+}
 
 /**
  * Fetches and merges TOC audit input URLs from three sources in priority order:
@@ -295,12 +316,266 @@ export async function validatePageTocFromScrapeJson(
 }
 
 /**
- * Step 1: Import top pages for the TOC audit.
+ * Recursively collect heading text from a HAST node tree. TOC transformRules render each
+ * heading as `li > a[data-selector] > text` (see tocArrayToHast) — walking every text node
+ * indiscriminately would also pick up insignificant whitespace text nodes and non-heading
+ * content from HTML-round-tripped (isEdited) trees, so this targets anchors carrying a
+ * `data-selector` (the heading link) specifically.
+ * @param {Object|Array} node - HAST node or array of nodes
+ * @returns {string[]} Array of heading text strings found in the tree
+ */
+function extractHeadingTextsFromHast(node) {
+  if (!node) {
+    return [];
+  }
+  if (Array.isArray(node)) {
+    return node.flatMap((child) => extractHeadingTextsFromHast(child));
+  }
+  if (node.type === 'element' && node.tagName === 'a' && node.properties?.['data-selector']) {
+    const text = (node.children || [])
+      .filter((child) => child.type === 'text' && typeof child.value === 'string')
+      .map((child) => child.value)
+      .join('')
+      .trim();
+    return text ? [text] : [];
+  }
+  if (node.children && Array.isArray(node.children)) {
+    return node.children.flatMap((child) => extractHeadingTextsFromHast(child));
+  }
+  return [];
+}
+
+/**
+ * Sends a guidance:table-of-contents message to Mystique so that prompts can be
+ * generated for each TOC suggestion (required for the Impact Engine geo-experiment flow).
+ * @param {string} auditUrl - Audited base URL
+ * @param {Object} opportunity - The TOC opportunity entity
  * @param {Object} context - Audit context
- * @returns {Promise<Object>}
+ * @param {boolean} [generatePrompts] - Whether to request prompt generation for the suggestions.
+ * @returns {Promise<number>} Number of suggestions sent to Mystique
+ */
+async function sendTocGuidanceRequestToMystique(
+  auditUrl,
+  opportunity,
+  context,
+  generatePrompts = false,
+) {
+  const {
+    log, sqs, env, site, audit,
+  } = context;
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn(`[TOC] SQS or Mystique queue not configured, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
+    return 0;
+  }
+
+  if (!opportunity || !opportunity.getId) {
+    log.warn(`[TOC] Opportunity entity not available, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
+    return 0;
+  }
+
+  const opportunityId = opportunity.getId();
+
+  try {
+    const existingSuggestions = await opportunity.getSuggestions();
+
+    if (!existingSuggestions || existingSuggestions.length === 0) {
+      log.debug(`[TOC] No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${auditUrl}`);
+      return 0;
+    }
+
+    const candidates = [];
+
+    existingSuggestions.forEach((s) => {
+      const data = s.getData();
+
+      // Skip FIXED, OUTDATED, SKIPPED, and edge-deployed suggestions. Suggestions that
+      // already have prompts are still included (tagged with hasPrompts below) rather than
+      // silently excluded — Mystique decides whether to regenerate.
+      if (!isEligibleTocSuggestion(s, Suggestion)) {
+        return;
+      }
+
+      const suggestionId = s.getId();
+      const hastNodes = data?.transformRules?.value;
+      const headings = Array.isArray(hastNodes)
+        ? [...new Set(extractHeadingTextsFromHast(hastNodes))]
+        : [];
+
+      candidates.push({
+        suggestionId,
+        url: data?.url || '',
+        title: data?.title || '',
+        headings,
+        hasPrompts: !!(data?.hasPrompts || (data?.prompts?.length > 0)),
+      });
+    });
+
+    if (candidates.length === 0) {
+      log.info(`[TOC] No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${auditUrl}`);
+      return 0;
+    }
+
+    const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
+    const time = new Date().toISOString();
+    // context.audit is undefined when called from ai-only mode (step 1, before any Audit
+    // record exists for this run) — fall back to the opportunity's stored auditId, or a
+    // synthetic one so the outbound message still carries a stable auditId.
+    const auditId = audit?.getId() || opportunity.getAuditId() || `toc-ai-only-${site.getId()}`;
+
+    await sqs.sendMessage(queue, {
+      type: 'guidance:table-of-contents',
+      url: auditUrl,
+      siteId: site.getId(),
+      auditId,
+      time,
+      data: {
+        opportunityId,
+        suggestions: candidates,
+        generatePrompts,
+        siteRegion: site.getRegion?.() ?? '',
+      },
+    });
+
+    log.info(`[TOC] Queued guidance:table-of-contents message to Mystique for baseUrl=${auditUrl}, opportunityId=${opportunityId}, suggestions=${candidates.length}`);
+    return candidates.length;
+  } catch (error) {
+    log.error(`[TOC] Failed to send guidance:table-of-contents message to Mystique for opportunityId=${opportunityId}, baseUrl=${auditUrl}: ${error.message}`, error);
+    return 0;
+  }
+}
+
+/**
+ * Handles TOC's ai-only mode: sends prompts for existing eligible suggestions to Mystique
+ * without re-running the audit (no re-scrape, no TOC-presence re-detection). Called early in
+ * step 1 to bypass import/scraping/processing steps.
+ * @param {Object} context - Audit context
+ * @returns {Promise<Object>} - Result indicating success/failure
+ */
+export async function handleAiOnlyModeForToc(context) {
+  const {
+    site, log, dataAccess, data,
+  } = context;
+  const { Opportunity } = dataAccess;
+  const siteId = site.getId();
+  const baseUrl = site.getBaseURL();
+
+  // Parse optional params from data field (opportunityId, generatePrompts)
+  let opportunityId = null;
+  let generatePrompts = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    if (parsedData) {
+      opportunityId = parsedData.opportunityId;
+      generatePrompts = !!parsedData.generatePrompts;
+    }
+  } catch (e) {
+    // Non-JSON data — graceful degradation, values stay at defaults
+    log.warn(`[TOC] ai-only: Failed to parse context.data for opportunityId, generatePrompts, defaulting to null, false: ${e.message}`);
+  }
+
+  log.info(`[TOC] ai-only: Processing prompt request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}, generatePrompts=${generatePrompts}`);
+
+  // Find the opportunity
+  let opportunity;
+  if (opportunityId) {
+    opportunity = await Opportunity.findById(opportunityId);
+    if (!opportunity) {
+      const error = `Opportunity not found: ${opportunityId}`;
+      log.error(`[TOC] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        error,
+        status: 'failed',
+        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+        auditResult: { error },
+      };
+    }
+  } else {
+    // Find latest NEW TOC opportunity for this site
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    opportunity = opportunities.find((o) => o.getType() === auditType);
+
+    if (!opportunity) {
+      const error = `No NEW TOC opportunity found for site: ${siteId}`;
+      log.error(`[TOC] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        error,
+        status: 'failed',
+        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+        auditResult: { error },
+      };
+    }
+
+    log.info(`[TOC] ai-only: Found latest NEW opportunity: ${opportunity.getId()} for baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+
+  // Verify opportunity belongs to the site
+  if (opportunity.getSiteId() !== siteId) {
+    const error = `Opportunity ${opportunity.getId()} does not belong to site ${siteId}`;
+    log.error(`[TOC] ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+    return {
+      error,
+      status: 'failed',
+      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+      auditResult: { error },
+    };
+  }
+
+  const suggestionCount = await sendTocGuidanceRequestToMystique(
+    baseUrl,
+    opportunity,
+    context,
+    generatePrompts,
+  );
+
+  // Distinguish "nothing to do" from "prompts are being generated" — suggestionCount is 0 when
+  // the opportunity has no suggestions or none are eligible, and status: 'complete' would
+  // otherwise misleadingly read as success to an operator running mode:ai-only from Slack.
+  const status = suggestionCount > 0 ? 'complete' : 'no-op';
+  const message = suggestionCount > 0
+    ? `Prompt generation queued successfully for ${suggestionCount} suggestion(s)`
+    : 'No eligible suggestions found to queue prompts for';
+
+  log.info(`[TOC] ai-only: ${message}. baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
+
+  return {
+    status,
+    mode: MODE_AI_ONLY,
+    opportunityId: opportunity.getId(),
+    fullAuditRef: `${MODE_AI_ONLY}/${opportunity.getId()}`,
+    auditResult: {
+      message,
+      suggestionCount,
+    },
+  };
+}
+
+/**
+ * Step 1: Import top pages for the TOC audit, OR handle ai-only mode.
+ * @param {Object} context - Audit context
+ * @returns {Promise<Object>} - Import job configuration OR ai-only result
  */
 export async function importTopPages(context) {
-  const { site, log } = context;
+  const { site, log, data } = context;
+
+  // Check for AI-only mode (from command like: audit:toc mode:ai-only)
+  const mode = getModeFromData(data, log);
+  if (mode === MODE_AI_ONLY) {
+    log.info('[TOC] Detected ai-only mode in step 1, skipping import/scraping/processing');
+    return handleAiOnlyModeForToc(context);
+  }
+
+  // Extract generatePrompts so it can be forwarded to downstream steps via auditContext.
+  // context.data is only populated on the SQS message that triggers Step 1 (the original
+  // Slack command payload) — it is NOT automatically forwarded to Steps 2 and 3.
+  let generatePrompts = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePrompts = !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`[TOC] Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+  }
+
   try {
     const { urls } = await getTocInputUrls(context, site);
     log.info(`[TOC] Found ${urls.length} URLs for audit`);
@@ -309,6 +584,7 @@ export async function importTopPages(context) {
       siteId: site.getId(),
       auditResult: { success: true, topPages: urls },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts },
     };
   } catch (error) {
     log.error(`[TOC] Failed to import top pages: ${error.message}`, error);
@@ -317,6 +593,7 @@ export async function importTopPages(context) {
       siteId: site.getId(),
       auditResult: { success: false, error: error.message, topPages: [] },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts },
     };
   }
 }
@@ -330,7 +607,9 @@ export async function importTopPages(context) {
  * @returns {Promise<Object>}
  */
 export async function submitForScraping(context) {
-  const { site, audit, log } = context;
+  const {
+    site, audit, log, auditContext,
+  } = context;
   const { Audit: AuditModel } = context.dataAccess;
   const auditResult = audit.getAuditResult();
   const topPages = auditResult?.topPages ?? [];
@@ -359,6 +638,7 @@ export async function submitForScraping(context) {
     urls: pagesToScrape.map((url) => ({ url })),
     siteId: site.getId(),
     maxScrapeAge: 24,
+    auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   };
 }
 
@@ -407,129 +687,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   log.debug(`Generated ${suggestions.toc.length} TOC suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
-}
-
-/**
- * Recursively collect heading text from a HAST node tree. TOC transformRules render each
- * heading as `li > a[data-selector] > text` (see tocArrayToHast) — walking every text node
- * indiscriminately would also pick up insignificant whitespace text nodes and non-heading
- * content from HTML-round-tripped (isEdited) trees, so this targets anchors carrying a
- * `data-selector` (the heading link) specifically.
- * @param {Object|Array} node - HAST node or array of nodes
- * @returns {string[]} Array of heading text strings found in the tree
- */
-function extractHeadingTextsFromHast(node) {
-  if (!node) {
-    return [];
-  }
-  if (Array.isArray(node)) {
-    return node.flatMap((child) => extractHeadingTextsFromHast(child));
-  }
-  if (node.type === 'element' && node.tagName === 'a' && node.properties?.['data-selector']) {
-    const text = (node.children || [])
-      .filter((child) => child.type === 'text' && typeof child.value === 'string')
-      .map((child) => child.value)
-      .join('')
-      .trim();
-    return text ? [text] : [];
-  }
-  if (node.children && Array.isArray(node.children)) {
-    return node.children.flatMap((child) => extractHeadingTextsFromHast(child));
-  }
-  return [];
-}
-
-/**
- * Sends a guidance:table-of-contents message to Mystique so that prompts can be
- * generated for each TOC suggestion (required for the Impact Engine geo-experiment flow).
- * @param {string} auditUrl - Audited base URL
- * @param {Object} opportunity - The TOC opportunity entity
- * @param {Object} context - Audit context
- * @returns {Promise<number>} Number of suggestions sent to Mystique
- */
-async function sendTocGuidanceRequestToMystique(auditUrl, opportunity, context) {
-  const {
-    log, sqs, env, site, audit,
-  } = context;
-
-  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn(`[TOC] SQS or Mystique queue not configured, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
-    return 0;
-  }
-
-  if (!opportunity || !opportunity.getId) {
-    log.warn(`[TOC] Opportunity entity not available, skipping guidance:table-of-contents message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}`);
-    return 0;
-  }
-
-  const opportunityId = opportunity.getId();
-
-  try {
-    const existingSuggestions = await opportunity.getSuggestions();
-
-    if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.debug(`[TOC] No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${auditUrl}`);
-      return 0;
-    }
-
-    const candidates = [];
-
-    existingSuggestions.forEach((s) => {
-      const data = s.getData();
-
-      // Skip FIXED, OUTDATED, SKIPPED suggestions
-      if (!isEligibleTocSuggestion(s, Suggestion)) {
-        return;
-      }
-
-      // Skip suggestions that already have prompts
-      if (data?.hasPrompts === true && data?.prompts?.length > 0) {
-        return;
-      }
-
-      const suggestionId = s.getId();
-      const hastNodes = data?.transformRules?.value;
-      const headings = Array.isArray(hastNodes)
-        ? [...new Set(extractHeadingTextsFromHast(hastNodes))]
-        : [];
-
-      candidates.push({
-        suggestionId,
-        url: data?.url || '',
-        title: data?.title || '',
-        headings,
-        hasPrompts: !!(data?.hasPrompts || (data?.prompts?.length > 0)),
-      });
-    });
-
-    if (candidates.length === 0) {
-      log.info(`[TOC] No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${auditUrl}`);
-      return 0;
-    }
-
-    const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
-    const time = new Date().toISOString();
-
-    await sqs.sendMessage(queue, {
-      type: 'guidance:table-of-contents',
-      url: auditUrl,
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      time,
-      data: {
-        opportunityId,
-        suggestions: candidates,
-        generatePrompts: true,
-        siteRegion: site.getRegion?.() ?? '',
-      },
-    });
-
-    log.info(`[TOC] Queued guidance:table-of-contents message to Mystique for baseUrl=${auditUrl}, opportunityId=${opportunityId}, suggestions=${candidates.length}`);
-    return candidates.length;
-  } catch (error) {
-    log.error(`[TOC] Failed to send guidance:table-of-contents message to Mystique for opportunityId=${opportunityId}, baseUrl=${auditUrl}: ${error.message}`, error);
-    return 0;
-  }
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
@@ -617,7 +774,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  await sendTocGuidanceRequestToMystique(auditUrl, opportunity, context);
+  await sendTocGuidanceRequestToMystique(
+    auditUrl,
+    opportunity,
+    context,
+    !!context.auditContext?.generatePrompts,
+  );
 
   log.info(`TOC opportunity created for Site Optimizer and ${tocSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
