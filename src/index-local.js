@@ -10,16 +10,10 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-console */
-process.env.SPACECAT_SKIP_VAULT_SECRETS = '1';
-
-const { main: universalMain } = await import('./index.js');
+import { main as universalMain } from './index.js';
 
 /**
  * Local testing entry point
- *
- * Vault is skipped (`SPACECAT_SKIP_VAULT_SECRETS` is set before loading `index.js`). Provide
- * secrets via `.env` / shell instead. To run the full stack including Vault, invoke `index.js`
- * with `SPACECAT_SKIP_VAULT_SECRETS` unset.
  *
  * Required environment variables:
  *   SPACECAT_API_BASE_URL - e.g., https://spacecat-services--api-service.aem-dev.hlx.page
@@ -31,8 +25,8 @@ const { main: universalMain } = await import('./index.js');
  */
 export const main = async () => {
   // Change this to test different audit types
-  const AUDIT_TYPE = process.env.AUDIT_TYPE || 'sitemap';
-  const SITE_ID = process.env.SITE_ID || 'cfaa3c1b-58a7-4cc8-bec9-ba9d7e201894';
+  const AUDIT_TYPE = process.env.AUDIT_TYPE || 'wikipedia-analysis';
+  const SITE_ID = process.env.SITE_ID || 'b1555a54-48b4-47ee-97c1-438257bd3839';
 
   const messageBody = {
     type: AUDIT_TYPE,
