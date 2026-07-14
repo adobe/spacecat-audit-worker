@@ -186,6 +186,78 @@ describe('TOC Guidance Handler', () => {
     }));
   });
 
+  it('preserves existing real prompts when Mystique skips regeneration and replies with an empty prompts array (LLMO-6167)', async () => {
+    const existingPrompts = [{
+      id: 'existing-1', origin: 'ai', prompt: 'Existing real prompt', source: 'config', regions: ['US'],
+    }];
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({
+        url: 'https://example.com/page1', checkType: 'missing-toc', prompts: existingPrompts, hasPrompts: true,
+      }),
+    ]);
+    // Mystique's actual behavior for an already-prompted suggestion: it never received
+    // the real prompt content in the request (audit-worker only forwards a hasPrompts
+    // flag), so when it skips regeneration it can only reply with an empty array.
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: existingPrompts,
+      hasPrompts: true,
+    }));
+  });
+
+  it('replaces existing prompts wholesale when Mystique sends a fresh non-empty prompts array', async () => {
+    const existingPrompts = [{
+      id: 'existing-1', origin: 'ai', prompt: 'Old prompt', source: 'config', regions: ['US'],
+    }];
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({
+        url: 'https://example.com/page1', checkType: 'missing-toc', prompts: existingPrompts, hasPrompts: true,
+      }),
+    ]);
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [{ id: 'new-1', prompt: 'New prompt' }], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: [{
+        id: 'new-1', origin: 'ai', prompt: 'New prompt', source: 'config', regions: [],
+      }],
+      hasPrompts: true,
+    }));
+  });
+
+  it('derives hasPrompts from the final prompts array only, ignoring Mystique\'s echoed flag', async () => {
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({ url: 'https://example.com/page1', checkType: 'missing-toc' }),
+    ]);
+    // Mystique claims hasPrompts:true but sends no prompts and there's nothing existing
+    // to preserve — the persisted hasPrompts must reflect the real (empty) result, not
+    // the claim, so the suggestion isn't left in a false "has prompts" state.
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: [],
+      hasPrompts: false,
+    }));
+  });
+
   it('resolves opportunityId and hasPrompts from Mystique\'s actual snake_case reply shape (LLMO-6167)', async () => {
     message.data = {
       opportunity_id: 'opp-123',

@@ -1485,10 +1485,17 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(message.data.siteRegion).to.equal('');
     });
 
-    it('derives per-candidate url/title defaults and hasPrompts across edge-case suggestion shapes', async () => {
+    it('derives per-candidate url/title defaults and hasPrompts from prompts.length, not the stored flag (LLMO-6167)', async () => {
       const convertToOpportunityStub = setupMystiqueContext([
         makeExistingSuggestion({}),
+        // Corrupted state: hasPrompts:true but prompts:[] (e.g. left behind by a prior
+        // Mystique reply that carried no prompts). hasPrompts must be derived from
+        // prompts.length alone so this suggestion is re-sent to Mystique for another
+        // attempt, rather than being permanently skipped because the stale flag says
+        // "already has prompts".
         makeExistingSuggestion({ url: 'https://example.com/u2', hasPrompts: true, prompts: [] }),
+        // Flag missing/unset but real prompts present — must still resolve to true from
+        // the array alone.
         makeExistingSuggestion({ url: 'https://example.com/u3', prompts: [{ id: 'p1' }] }),
       ]);
 
@@ -1512,7 +1519,7 @@ describe('TOC (Table of Contents) Audit', () => {
       const [candidate1, candidate2, candidate3] = message.data.suggestions;
 
       expect(candidate1).to.include({ url: '', title: '', hasPrompts: false });
-      expect(candidate2.hasPrompts).to.equal(true);
+      expect(candidate2.hasPrompts).to.equal(false);
       expect(candidate3.hasPrompts).to.equal(true);
     });
   });

@@ -410,7 +410,12 @@ async function sendTocGuidanceRequestToMystique(
         url: data?.url || '',
         title: data?.title || '',
         headings,
-        hasPrompts: !!(data?.hasPrompts || (data?.prompts?.length > 0)),
+        // Derive from the actual prompts array rather than the stored hasPrompts flag,
+        // which can desync from it (e.g. a suggestion left with hasPrompts:true and
+        // prompts:[] after a prior Mystique reply carried no prompts). Checking the
+        // array directly makes that state self-healing: it's re-sent to Mystique for
+        // another attempt instead of being permanently skipped.
+        hasPrompts: (data?.prompts?.length ?? 0) > 0,
       });
     });
 

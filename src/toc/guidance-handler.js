@@ -126,7 +126,6 @@ export default async function handler(message, context) {
   const toSave = [];
   suggestions.forEach((promptResult) => {
     const { url, prompts } = promptResult;
-    const hasPrompts = promptResult.hasPrompts ?? promptResult.has_prompts;
     const matches = eligibleByUrl.get(url);
 
     if (!matches || matches.length === 0) {
@@ -137,10 +136,18 @@ export default async function handler(message, context) {
     const promptsArray = (Array.isArray(prompts) ? prompts : []).map(normalizeTocPrompt);
 
     matches.forEach((suggestion) => {
+      const existingData = suggestion.getData();
+      // Mystique replies with prompts:[] for a suggestion it skipped regenerating
+      // (audit-worker never forwards existing prompt content in the outbound
+      // request, only a hasPrompts flag, so Mystique has no prompts to echo back).
+      // Preserve whatever real prompts the suggestion already has in that case,
+      // instead of wiping them — and derive hasPrompts from the final array only,
+      // never from Mystique's echoed flag, so it can't desync from the data again.
+      const finalPrompts = promptsArray.length > 0 ? promptsArray : (existingData?.prompts ?? []);
       const updatedData = {
-        ...suggestion.getData(),
-        prompts: promptsArray,
-        hasPrompts: !!hasPrompts || promptsArray.length > 0,
+        ...existingData,
+        prompts: finalPrompts,
+        hasPrompts: finalPrompts.length > 0,
       };
       suggestion.setData(updatedData);
       toSave.push(suggestion);
