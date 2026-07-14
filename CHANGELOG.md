@@ -1,3 +1,10 @@
+## [1.498.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.6...v1.498.7) (2026-07-14)
+
+
+### Bug Fixes
+
+* **toc:** make Impact Engine prompt generation opt-in and add mode:ai-only (LLMO-6167) ([#2764](https://github.com/adobe/spacecat-audit-worker/issues/2764)) ([0e086d3](https://github.com/adobe/spacecat-audit-worker/commit/0e086d3efede8e7ea212cd7f5c559aa804439a67))
+
 ## [1.498.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.5...v1.498.6) (2026-07-13)
 
 
