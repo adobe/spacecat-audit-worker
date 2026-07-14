@@ -30,7 +30,7 @@ export const HTML_SAME = '<html><body><p>identical content for both server and c
 export const HTML_SERVER_SPARSE = '<html><body><p>few words here</p></body></html>';
 
 /** Client-side with many words — ratio vs HTML_SERVER_SPARSE well above 1.1 threshold. */
-export const HTML_CLIENT_NEEDS_PRERENDER = `<html><body><p>${'The quick brown fox jumps over the lazy dog. '.repeat(15).trim()}</p></body></html>`;
+export const HTML_CLIENT_NEEDS_PRERENDER = `<html><body><p>${'text '.repeat(60).trim()}</p></body></html>`;
 
 // ─── S3 key helpers ───────────────────────────────────────────────────────────
 
