@@ -1806,6 +1806,230 @@ describe('Prerender Audit', () => {
 
       });
 
+      describe('excludedPathPrefixes filtering', () => {
+        it('filters out organic URLs whose pathname starts with an excluded prefix (non-Slack)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [],
+                getHandlerConfig: () => ({ excludedPathPrefixes: ['/jp/ja'] }),
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/en/page-1' },
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-2' },
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-3' },
+                  { getUrl: () => 'https://pwc.com/en/page-4' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://pwc.com/en/page-1');
+          expect(submittedUrls).to.include('https://pwc.com/en/page-4');
+          expect(submittedUrls).to.not.include('https://pwc.com/jp/ja/page-2');
+          expect(submittedUrls).to.not.include('https://pwc.com/jp/ja/page-3');
+        });
+
+        it('applies no filtering when excludedPathPrefixes is an empty array (non-Slack)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [],
+                getHandlerConfig: () => ({ excludedPathPrefixes: [] }),
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-1' },
+                  { getUrl: () => 'https://pwc.com/en/page-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://pwc.com/jp/ja/page-1');
+          expect(submittedUrls).to.include('https://pwc.com/en/page-2');
+        });
+
+        it('applies no filtering when getHandlerConfig returns undefined (non-Slack)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [],
+                getHandlerConfig: () => undefined,
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-1' },
+                  { getUrl: () => 'https://pwc.com/en/page-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://pwc.com/jp/ja/page-1');
+          expect(submittedUrls).to.include('https://pwc.com/en/page-2');
+        });
+
+        it('filters out organic URLs whose pathname starts with an excluded prefix (Slack-triggered)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [],
+                getHandlerConfig: () => ({ excludedPathPrefixes: ['/jp/ja'] }),
+              }),
+            },
+            auditContext: { slackContext: { channelId: 'C123', threadTs: '1.0' } },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/en/page-1' },
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-2' },
+                  { getUrl: () => 'https://pwc.com/en/page-3' },
+                ],
+              },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            env: {},
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://pwc.com/en/page-1');
+          expect(submittedUrls).to.include('https://pwc.com/en/page-3');
+          expect(submittedUrls).to.not.include('https://pwc.com/jp/ja/page-2');
+        });
+
+        it('applies no filtering when getHandlerConfig is absent from config (non-Slack)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/jp/ja/page-1' },
+                  { getUrl: () => 'https://pwc.com/en/page-2' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.include('https://pwc.com/jp/ja/page-1');
+          expect(submittedUrls).to.include('https://pwc.com/en/page-2');
+        });
+
+        it('keeps malformed URLs when excludedPathPrefixes is configured (URL parse error is silently ignored)', async () => {
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: async () => [],
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://pwc.com',
+              getConfig: () => ({
+                getIncludedURLs: () => ['not-a-valid-url'],
+                getHandlerConfig: () => ({ excludedPathPrefixes: ['/jp/ja'] }),
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: async () => [
+                  { getUrl: () => 'https://pwc.com/en/page-1' },
+                ],
+              },
+              Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+              LatestAudit: { updateByKeys: sinon.stub().resolves() },
+            },
+            log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+            s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          // The valid URL is present; the malformed URL doesn't crash the filter
+          expect(submittedUrls).to.include('https://pwc.com/en/page-1');
+        });
+      });
+
     });
 
     describe('processContentAndGenerateOpportunities', () => {
