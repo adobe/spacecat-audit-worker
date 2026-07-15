@@ -28,6 +28,10 @@ import {
 import {
   createOffsiteLogger, errorField, AUDIT, PEER,
 } from '../utils/offsite-logging.js';
+import {
+  prepareSuppressedRunSnapshot,
+  prepareSupersededRunSnapshot,
+} from '../common/offsite-snapshot.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
@@ -145,8 +149,27 @@ export default async function handler(message, context) {
     const evergreenOpportunity = await resolveEvergreenOffsiteOpportunity({
       dataAccess, siteId, auditType, log,
     });
+    const suppressedRun = isSuppressedRun(incomingStatus);
+    const preparedOpportunityPersistence = suppressedRun
+      ? await prepareSuppressedRunSnapshot({
+        dataAccess,
+        siteId,
+        auditType,
+        triggerAuditId: auditId,
+        opportunityData,
+        evergreenOpportunity,
+        log,
+      })
+      : await prepareSupersededRunSnapshot({
+        dataAccess,
+        siteId,
+        auditType,
+        triggerAuditId: auditId,
+        opportunityData,
+        evergreenOpportunity,
+        log,
+      });
 
-    // Suppressed runs create a hidden record; surfaced runs reuse the evergreen record.
     const opportunity = await persistOffsiteOpportunity(
       baseUrl,
       {
@@ -157,12 +180,7 @@ export default async function handler(message, context) {
       context,
       createOpportunityData,
       auditType,
-      {
-        opportunityData,
-        existingOpportunity: isSuppressedRun(incomingStatus)
-          ? null
-          : evergreenOpportunity,
-      },
+      preparedOpportunityPersistence,
     );
 
     const ologOpp = olog.with({ opportunityId: opportunity.getId() });
