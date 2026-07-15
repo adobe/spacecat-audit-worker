@@ -707,8 +707,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   );
 
   const mergeDataFunction = (existingSuggestion, newSuggestion) => {
-    // Do not overwrite data for suggestions already deployed to the edge CDN
-    if (existingSuggestion.edgeDeployed) {
+    // Do not overwrite data for suggestions already deployed to the edge CDN, or mid-IVE
+    // geo-experiment (edgeOptimizeStatus is set before edgeDeployed) (LLMO-6168)
+    if (existingSuggestion.edgeDeployed
+      || existingSuggestion.edgeOptimizeStatus === 'EXPERIMENT_IN_PROGRESS') {
       return { ...existingSuggestion };
     }
     const converted = { ...newSuggestion };
