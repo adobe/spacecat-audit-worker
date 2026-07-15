@@ -2597,6 +2597,63 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(merged.isEdited).to.equal(true);
     });
 
+    it('returns existing suggestion unchanged when edgeOptimizeStatus is EXPERIMENT_IN_PROGRESS (LLMO-6168)', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        edgeOptimizeStatus: 'EXPERIMENT_IN_PROGRESS',
+        transformRules: {
+          value: [{ text: 'Experiment Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — a suggestion mid-IVE-experiment must not be
+      // clobbered by a subsequent audit run, even before edgeDeployed is set
+      expect(merged.edgeOptimizeStatus).to.equal('EXPERIMENT_IN_PROGRESS');
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Experiment Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
+    });
+
     it('preserves Mystique-persisted prompts across re-audits when the new suggestion has none', async () => {
       const convertToOpportunityStub = sinon.stub().resolves({
         getId: () => 'test-opportunity-id',
