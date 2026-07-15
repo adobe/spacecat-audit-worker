@@ -23,7 +23,7 @@ import {
 } from '../utils/cdn-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { getConfigs } from './constants/report-configs.js';
-import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
+import { generatePatternsWorkbook, generateReferralPatternsWorkbook } from './patterns/patterns-uploader.js';
 import { runAgenticDbExports } from './utils/agentic-db-export.js';
 import { runDailyReferralExport } from './referral-daily-export.js';
 import { getPreviousUtcDate } from './agentic-daily-export.js';
@@ -53,11 +53,11 @@ function resolvePatternPeriods(auditContext) {
 async function generateAgenticPatterns({
   site,
   context,
-  s3Client,
   athenaClient,
   s3Config,
   agenticReportConfig,
   auditContext,
+  hasCdnData,
 }) {
   const { log } = context;
 
@@ -67,7 +67,7 @@ async function generateAgenticPatterns({
   }
 
   try {
-    if (!(await pathHasData(s3Client, agenticReportConfig.aggregatedLocation))) {
+    if (!hasCdnData) {
       log.info('No agentic report data found - skipping patterns generation');
       return;
     }
@@ -144,6 +144,32 @@ async function runReferralExport({
   }
 }
 
+/**
+ * Generates category classification rules for sites without CDN logs, sourcing the
+ * URL corpus from Postgres referral tables instead of Athena (LLMO-6257). Best-effort:
+ * a failure here must not block the daily exports. Skips sites that have CDN report
+ * data — the agentic path already generates their rules, so re-running the LLM here
+ * would be wasted work.
+ */
+async function generateReferralPatterns({
+  site,
+  context,
+  hasCdnData,
+}) {
+  const { log } = context;
+
+  try {
+    if (hasCdnData) {
+      log.info('CDN report data present - skipping referral pattern generation');
+      return;
+    }
+
+    await generateReferralPatternsWorkbook({ site, context });
+  } catch (error) {
+    log.error(`Referral patterns generation failed for ${site.getId()}: ${error.message}`, error);
+  }
+}
+
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
 
@@ -163,15 +189,22 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
   const referralReportConfig = reportConfigs.find((config) => config.name === 'referral');
 
+  // Whether this site has CDN report data — computed once and shared. The agentic
+  // pattern step needs it (CDN logs are its corpus); the referral step is its inverse
+  // (referral-only sites have no CDN logs, so they generate categories from Postgres).
+  const hasCdnData = agenticReportConfig
+    ? await pathHasData(s3Client, agenticReportConfig.aggregatedLocation)
+    : false;
+
   // 1. Ensure agentic classification rules exist in the DB (generate only if missing).
   await generateAgenticPatterns({
     site,
     context,
-    s3Client,
     athenaClient,
     s3Config,
     agenticReportConfig,
     auditContext,
+    hasCdnData,
   });
 
   // 2. Daily agentic export — feeds PostgreSQL.
@@ -194,7 +227,14 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     auditContext,
   });
 
-  // 4. Assemble the audit result from the DB export outcomes.
+  // 4. Generate referral category rules for sites without CDN logs (best-effort).
+  await generateReferralPatterns({
+    site,
+    context,
+    hasCdnData,
+  });
+
+  // 5. Assemble the audit result from the DB export outcomes.
   const auditResult = [];
   if (agenticDbExportResult.dailyAgenticExport?.batchId) {
     auditResult.push({

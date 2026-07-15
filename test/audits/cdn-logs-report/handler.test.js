@@ -76,6 +76,7 @@ describe('CDN Logs Report Handler', function test() {
       },
       '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
         generatePatternsWorkbook: (...a) => mocks.generatePatternsWorkbook(...a),
+        generateReferralPatternsWorkbook: (...a) => mocks.generateReferralPatternsWorkbook(...a),
       },
       '../../../src/cdn-logs-report/utils/agentic-db-export.js': {
         runAgenticDbExports: (...a) => mocks.runAgenticDbExports(...a),
@@ -97,6 +98,7 @@ describe('CDN Logs Report Handler', function test() {
     mocks.generateReportingPeriods = sandbox.stub().returns({ weeks: [], periodIdentifier: 'w01-2026' });
     mocks.fetchAgenticUrlClassificationRules = sandbox.stub().resolves(EXISTING_RULES);
     mocks.generatePatternsWorkbook = sandbox.stub().resolves(true);
+    mocks.generateReferralPatternsWorkbook = sandbox.stub().resolves(true);
     mocks.pathHasData = sandbox.stub().resolves(true);
     mocks.getS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
@@ -190,6 +192,48 @@ describe('CDN Logs Report Handler', function test() {
       const result = await runAudit({});
 
       expect(result.fullAuditRef).to.equal('null');
+    });
+  });
+
+  describe('referral pattern generation (no-CDN sites)', () => {
+    it('skips referral generation when CDN report data is present', async () => {
+      // Default mocks: pathHasData resolves true (CDN data present).
+      await runAudit({});
+
+      expect(mocks.generateReferralPatternsWorkbook).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN report data present - skipping referral pattern generation',
+      );
+    });
+
+    it('runs referral generation when the site has no CDN data', async () => {
+      mocks.pathHasData = sandbox.stub().resolves(false);
+
+      await runAudit({});
+
+      expect(mocks.generateReferralPatternsWorkbook).to.have.been.calledOnce;
+      expect(mocks.generateReferralPatternsWorkbook).to.have.been.calledWith(sinon.match({ site, context }));
+    });
+
+    it('runs referral generation when there is no agentic report config', async () => {
+      mocks.getConfigs = sandbox.stub().returns([referralConfig]);
+
+      await runAudit({});
+
+      expect(mocks.generateReferralPatternsWorkbook).to.have.been.calledOnce;
+    });
+
+    it('never lets a referral generation failure block the audit', async () => {
+      mocks.pathHasData = sandbox.stub().resolves(false);
+      mocks.generateReferralPatternsWorkbook = sandbox.stub().rejects(new Error('referral boom'));
+
+      const result = await runAudit({});
+
+      expect(result.auditResult).to.be.an('array');
+      expect(context.log.error).to.have.been.calledWith(
+        'Referral patterns generation failed for test-site: referral boom',
+        sinon.match.instanceOf(Error),
+      );
     });
   });
 
