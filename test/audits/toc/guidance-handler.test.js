@@ -57,8 +57,11 @@ describe('TOC Guidance Handler', () => {
       Site: { findById: sinon.stub().resolves(siteStub) },
       Audit: { findById: sinon.stub().resolves(auditStub) },
       Opportunity: { findById: sinon.stub().resolves(opportunityStub) },
+      // Real dataAccess.Suggestion is the request-scoped collection — it does not carry
+      // the static STATUSES map (LLMO-6167), unlike this mock's previous shape. Kept
+      // deliberately minimal so a regression reintroducing a STATUSES read on this
+      // object fails loudly instead of being silently tolerated by an inaccurate mock.
       Suggestion: {
-        STATUSES: SuggestionDataAccess.STATUSES,
         saveMany: sinon.stub().resolves(),
       },
     };
@@ -75,7 +78,21 @@ describe('TOC Guidance Handler', () => {
             url: 'https://example.com/page1',
             title: 'Page 1',
             headings: ['Intro', 'Details'],
-            prompts: [{ id: 'p1', prompt: 'What is X?', type: 'Non-Branded' }],
+            // Realistic shape of a raw Mystique PromptItem: richer fields
+            // (type/topic/category/reasoning/supporting_evidence) plus its own
+            // origin/source values — none of which TOC persists (LLMO-6167).
+            prompts: [{
+              id: 'p1',
+              prompt: 'What is X?',
+              type: 'Non-Branded',
+              topic: 'some topic',
+              category: 'Informational',
+              reasoning: 'because reasons',
+              supporting_evidence: 'quoted heading text',
+              origin: 'TOC-grounded',
+              source: 'TABLE OF CONTENTS',
+              regions: ['US'],
+            }],
             hasPrompts: true,
           },
         ],
@@ -87,7 +104,7 @@ describe('TOC Guidance Handler', () => {
     sinon.restore();
   });
 
-  it('should persist prompts onto the matching suggestion by URL', async () => {
+  it('should persist prompts onto the matching suggestion by URL, normalized to the legacy minimal shape', async () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(ok().status);
@@ -99,10 +116,29 @@ describe('TOC Guidance Handler', () => {
     expect(saved.setData).to.have.been.calledWith(sinon.match({
       url: 'https://example.com/page1',
       checkType: 'missing-toc',
-      prompts: [{ id: 'p1', prompt: 'What is X?', type: 'Non-Branded' }],
+      prompts: [{
+        id: 'p1', origin: 'ai', prompt: 'What is X?', source: 'config', regions: ['US'],
+      }],
       hasPrompts: true,
     }));
     expect(logStub.info).to.have.been.calledWith(sinon.match(/Successfully updated 1 suggestion/));
+  });
+
+  it('strips Mystique\'s richer PromptItem fields and normalizes origin/source (LLMO-6167)', async () => {
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    const [savedCall] = saved.setData.getCall(0).args;
+    const [savedPrompt] = savedCall.prompts;
+    expect(savedPrompt).to.deep.equal({
+      id: 'p1', origin: 'ai', prompt: 'What is X?', source: 'config', regions: ['US'],
+    });
+    expect(savedPrompt).to.not.have.property('type');
+    expect(savedPrompt).to.not.have.property('topic');
+    expect(savedPrompt).to.not.have.property('category');
+    expect(savedPrompt).to.not.have.property('reasoning');
+    expect(savedPrompt).to.not.have.property('supporting_evidence');
   });
 
   it('should apply the same prompts to every non-terminal suggestion sharing a URL', async () => {
@@ -147,6 +183,108 @@ describe('TOC Guidance Handler', () => {
     expect(saved.setData).to.have.been.calledWith(sinon.match({
       prompts: [],
       hasPrompts: false,
+    }));
+  });
+
+  it('preserves existing real prompts when Mystique skips regeneration and replies with an empty prompts array (LLMO-6167)', async () => {
+    const existingPrompts = [{
+      id: 'existing-1', origin: 'ai', prompt: 'Existing real prompt', source: 'config', regions: ['US'],
+    }];
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({
+        url: 'https://example.com/page1', checkType: 'missing-toc', prompts: existingPrompts, hasPrompts: true,
+      }),
+    ]);
+    // Mystique's actual behavior for an already-prompted suggestion: it never received
+    // the real prompt content in the request (audit-worker only forwards a hasPrompts
+    // flag), so when it skips regeneration it can only reply with an empty array.
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: existingPrompts,
+      hasPrompts: true,
+    }));
+  });
+
+  it('replaces existing prompts wholesale when Mystique sends a fresh non-empty prompts array', async () => {
+    const existingPrompts = [{
+      id: 'existing-1', origin: 'ai', prompt: 'Old prompt', source: 'config', regions: ['US'],
+    }];
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({
+        url: 'https://example.com/page1', checkType: 'missing-toc', prompts: existingPrompts, hasPrompts: true,
+      }),
+    ]);
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [{ id: 'new-1', prompt: 'New prompt' }], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: [{
+        id: 'new-1', origin: 'ai', prompt: 'New prompt', source: 'config', regions: [],
+      }],
+      hasPrompts: true,
+    }));
+  });
+
+  it('derives hasPrompts from the final prompts array only, ignoring Mystique\'s echoed flag', async () => {
+    opportunityStub.getSuggestions.resolves([
+      makeSuggestion({ url: 'https://example.com/page1', checkType: 'missing-toc' }),
+    ]);
+    // Mystique claims hasPrompts:true but sends no prompts and there's nothing existing
+    // to preserve — the persisted hasPrompts must reflect the real (empty) result, not
+    // the claim, so the suggestion isn't left in a false "has prompts" state.
+    message.data.suggestions = [
+      { url: 'https://example.com/page1', prompts: [], hasPrompts: true },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: [],
+      hasPrompts: false,
+    }));
+  });
+
+  it('resolves opportunityId and hasPrompts from Mystique\'s actual snake_case reply shape (LLMO-6167)', async () => {
+    message.data = {
+      opportunity_id: 'opp-123',
+      suggestions: [
+        {
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          headings: ['Intro', 'Details'],
+          prompts: [{
+            id: 'p1', prompt: 'What is X?', type: 'Non-Branded', origin: 'TOC-grounded', source: 'TABLE OF CONTENTS',
+          }],
+          has_prompts: true,
+        },
+      ],
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    expect(dataAccessStub.Opportunity.findById).to.have.been.calledWith('opp-123');
+    expect(dataAccessStub.Suggestion.saveMany).to.have.been.calledOnce;
+    const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
+    expect(saved.setData).to.have.been.calledWith(sinon.match({
+      prompts: [{
+        id: 'p1', origin: 'ai', prompt: 'What is X?', source: 'config', regions: [],
+      }],
+      hasPrompts: true,
     }));
   });
 

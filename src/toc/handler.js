@@ -398,7 +398,10 @@ async function sendTocGuidanceRequestToMystique(
 
       const suggestionId = s.getId();
       const hastNodes = data?.transformRules?.value;
-      const headings = Array.isArray(hastNodes)
+      // hastNodes is normally a HAST root node (`{ type: 'root', children: [...] }`),
+      // not a bare array — extractHeadingTextsFromHast already handles both shapes
+      // (and null), so gate on truthiness rather than Array.isArray.
+      const headings = hastNodes
         ? [...new Set(extractHeadingTextsFromHast(hastNodes))]
         : [];
 
@@ -407,7 +410,12 @@ async function sendTocGuidanceRequestToMystique(
         url: data?.url || '',
         title: data?.title || '',
         headings,
-        hasPrompts: !!(data?.hasPrompts || (data?.prompts?.length > 0)),
+        // Derive from the actual prompts array rather than the stored hasPrompts flag,
+        // which can desync from it (e.g. a suggestion left with hasPrompts:true and
+        // prompts:[] after a prior Mystique reply carried no prompts). Checking the
+        // array directly makes that state self-healing: it's re-sent to Mystique for
+        // another attempt instead of being permanently skipped.
+        hasPrompts: (data?.prompts?.length ?? 0) > 0,
       });
     });
 

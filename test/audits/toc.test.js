@@ -1038,6 +1038,58 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
     });
 
+    it('extracts headings when transformRules.value is a HAST root node (real shape stored by the API), not a bare array (LLMO-6167)', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: {
+              type: 'root',
+              children: [{
+                type: 'element',
+                tagName: 'nav',
+                children: [{
+                  type: 'element',
+                  tagName: 'ul',
+                  children: [{
+                    type: 'element',
+                    tagName: 'li',
+                    children: [{
+                      type: 'element',
+                      tagName: 'a',
+                      properties: { 'data-selector': 'h1#intro' },
+                      children: [{ type: 'text', value: 'Introduction' }],
+                    }],
+                  }],
+                }],
+              }],
+            },
+          },
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
+    });
+
     it('skips FIXED/OUTDATED/SKIPPED/edge-deployed suggestions, and no eligible suggestions remain', async () => {
       const convertToOpportunityStub = setupMystiqueContext([
         makeExistingSuggestion({ url: 'https://example.com/fixed' }, 'FIXED'),
@@ -1433,10 +1485,17 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(message.data.siteRegion).to.equal('');
     });
 
-    it('derives per-candidate url/title defaults and hasPrompts across edge-case suggestion shapes', async () => {
+    it('derives per-candidate url/title defaults and hasPrompts from prompts.length, not the stored flag (LLMO-6167)', async () => {
       const convertToOpportunityStub = setupMystiqueContext([
         makeExistingSuggestion({}),
+        // Corrupted state: hasPrompts:true but prompts:[] (e.g. left behind by a prior
+        // Mystique reply that carried no prompts). hasPrompts must be derived from
+        // prompts.length alone so this suggestion is re-sent to Mystique for another
+        // attempt, rather than being permanently skipped because the stale flag says
+        // "already has prompts".
         makeExistingSuggestion({ url: 'https://example.com/u2', hasPrompts: true, prompts: [] }),
+        // Flag missing/unset but real prompts present — must still resolve to true from
+        // the array alone.
         makeExistingSuggestion({ url: 'https://example.com/u3', prompts: [{ id: 'p1' }] }),
       ]);
 
@@ -1460,7 +1519,7 @@ describe('TOC (Table of Contents) Audit', () => {
       const [candidate1, candidate2, candidate3] = message.data.suggestions;
 
       expect(candidate1).to.include({ url: '', title: '', hasPrompts: false });
-      expect(candidate2.hasPrompts).to.equal(true);
+      expect(candidate2.hasPrompts).to.equal(false);
       expect(candidate3.hasPrompts).to.equal(true);
     });
   });
