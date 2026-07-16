@@ -277,6 +277,10 @@ export const handleOutdatedSuggestions = async ({
         || data?.edgeDeployed
         || data?.coveredByDomainWide
         || data?.isDomainWide
+        // Preserve suggestions mid-IVE geo-experiment: edgeOptimizeStatus is set before
+        // edgeDeployed, so without this a suggestion the audit no longer detects an issue
+        // for could flip to OUTDATED while its experiment is still running (LLMO-6168).
+        || data?.edgeOptimizeStatus === 'EXPERIMENT_IN_PROGRESS'
         // Preserve externally / manually-authored suggestions. Records published
         // through the backoffice write path (e.g. cwv-workbench guidance) live on
         // the shared audit-owned opportunity but are NOT part of THIS audit's

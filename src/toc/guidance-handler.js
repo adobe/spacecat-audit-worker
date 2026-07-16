@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { Suggestion } from '@adobe/spacecat-shared-data-access';
 import { isEligibleTocSuggestion } from './eligibility-utils.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
@@ -52,13 +53,14 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
  * prompts are grounded in the page's headings rather than the checkType, it's correct to apply
  * the same prompt set to every non-terminal suggestion for that URL.
  * @param {Array<Object>} suggestions - Existing Suggestion entities for the opportunity
- * @param {Object} Suggestion - The Suggestion data-access collection (for STATUSES)
+ * @param {Object} SuggestionClass - The Suggestion class (for STATUSES; not the request-scoped
+ * data-access collection, which doesn't carry it)
  * @returns {Map<string, Array<Object>>} URL -> matching, non-terminal suggestion entities
  */
-function groupEligibleSuggestionsByUrl(suggestions, Suggestion) {
+function groupEligibleSuggestionsByUrl(suggestions, SuggestionClass) {
   const byUrl = new Map();
   suggestions.forEach((suggestion) => {
-    if (!isEligibleTocSuggestion(suggestion, Suggestion)) {
+    if (!isEligibleTocSuggestion(suggestion, SuggestionClass)) {
       return;
     }
     const { url } = suggestion.getData() || {};
@@ -74,6 +76,25 @@ function groupEligibleSuggestionsByUrl(suggestions, Suggestion) {
 }
 
 /**
+ * Normalizes a single Mystique-generated prompt into the legacy, minimal shape used
+ * by existing TOC suggestion data (e.g. CrowdStrike): {id, origin, prompt, source,
+ * regions}. Mystique's current PromptItem schema adds type/topic/category/reasoning/
+ * supporting_evidence and sets its own origin/source values, but TOC intentionally
+ * keeps the older, narrower field set rather than adopting the richer shape.
+ * @param {Object} prompt - Raw prompt object from Mystique
+ * @returns {Object} Normalized prompt: {id, origin: "ai", prompt, source: "config", regions}
+ */
+function normalizeTocPrompt(prompt) {
+  return {
+    id: prompt?.id,
+    origin: 'ai',
+    prompt: prompt?.prompt,
+    source: 'config',
+    regions: Array.isArray(prompt?.regions) ? prompt.regions : [],
+  };
+}
+
+/**
  * Handles the Mystique guidance:table-of-contents callback and persists the generated
  * Impact Engine prompts back onto their matching TOC suggestions.
  * @param {Object} message - Message from Mystique with generated prompts
@@ -82,11 +103,18 @@ function groupEligibleSuggestionsByUrl(suggestions, Suggestion) {
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
+  // Suggestion here is the request-scoped data-access collection (used below for
+  // saveMany persistence) — it does not carry the static STATUSES map, so
+  // groupEligibleSuggestionsByUrl uses the Suggestion class imported above instead.
   const {
-    Site, Audit, Opportunity, Suggestion,
+    Site, Audit, Opportunity, Suggestion: SuggestionCollection,
   } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { opportunityId, presignedUrl } = data || {};
+  // Mystique's reply serializes `data` without applying its camelCase alias generator
+  // (a bug on Mystique's side), so fields can arrive as snake_case. Accept either
+  // casing for both so this keeps working regardless of which side ends up fixed.
+  const opportunityId = data?.opportunityId ?? data?.opportunity_id;
+  const presignedUrl = data?.presignedUrl ?? data?.presigned_url;
 
   log.debug(`[TOC Guidance] Message received in TOC guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -136,7 +164,7 @@ export default async function handler(message, context) {
 
   const toSave = [];
   suggestions.forEach((promptResult) => {
-    const { url, prompts, hasPrompts } = promptResult;
+    const { url, prompts } = promptResult;
     const matches = eligibleByUrl.get(url);
 
     if (!matches || matches.length === 0) {
@@ -144,13 +172,21 @@ export default async function handler(message, context) {
       return;
     }
 
-    const promptsArray = Array.isArray(prompts) ? prompts : [];
+    const promptsArray = (Array.isArray(prompts) ? prompts : []).map(normalizeTocPrompt);
 
     matches.forEach((suggestion) => {
+      const existingData = suggestion.getData();
+      // Mystique replies with prompts:[] for a suggestion it skipped regenerating
+      // (audit-worker never forwards existing prompt content in the outbound
+      // request, only a hasPrompts flag, so Mystique has no prompts to echo back).
+      // Preserve whatever real prompts the suggestion already has in that case,
+      // instead of wiping them — and derive hasPrompts from the final array only,
+      // never from Mystique's echoed flag, so it can't desync from the data again.
+      const finalPrompts = promptsArray.length > 0 ? promptsArray : (existingData?.prompts ?? []);
       const updatedData = {
-        ...suggestion.getData(),
-        prompts: promptsArray,
-        hasPrompts: !!hasPrompts || promptsArray.length > 0,
+        ...existingData,
+        prompts: finalPrompts,
+        hasPrompts: finalPrompts.length > 0,
       };
       suggestion.setData(updatedData);
       toSave.push(suggestion);
@@ -158,7 +194,7 @@ export default async function handler(message, context) {
   });
 
   if (toSave.length > 0) {
-    await Suggestion.saveMany(toSave);
+    await SuggestionCollection.saveMany(toSave);
   }
 
   log.info(`[TOC Guidance] Successfully updated ${toSave.length} suggestion(s) with Mystique prompts for opportunityId=${opportunityId}`);

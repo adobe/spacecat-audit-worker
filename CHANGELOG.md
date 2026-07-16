@@ -1,3 +1,10 @@
+## [1.498.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.7...v1.498.8) (2026-07-15)
+
+
+### Bug Fixes
+
+* repair TOC guidance:table-of-contents Mystique roundtrip (LLMO-6167) ([#2767](https://github.com/adobe/spacecat-audit-worker/issues/2767)) ([20c6090](https://github.com/adobe/spacecat-audit-worker/commit/20c6090a1820348aba36df66da8d2bd85ffa5f71)), closes [#3394](https://github.com/adobe/spacecat-audit-worker/issues/3394)
+
 ## [1.498.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.6...v1.498.7) (2026-07-14)
 
 
