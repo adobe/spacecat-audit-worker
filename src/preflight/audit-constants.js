@@ -15,8 +15,11 @@
  * Single source of truth for check identifiers shared between handler and sub-handlers.
  */
 export const AUDIT_ALT_TEXT = 'alt-text';
+export const AUDIT_BODY_SIZE = 'body-size';
+export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 
 /**
  * Preflight audit type (category) constants for the audit result object.
  */
 export const PREFLIGHT_AUDIT_TYPE_ACCESSIBILITY = 'accessibility';
+export const PREFLIGHT_AUDIT_TYPE_SEO = 'seo';

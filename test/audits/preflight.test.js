@@ -1581,7 +1581,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
+        const expectedChecks = ['body-size', 'lorem-ipsum', 'dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1600,9 +1600,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 9 calls: 1 metadata update + 7 intermediate saves (incl. alt-text) + 1 final)
+      // (total of 11 calls: 1 metadata update + 9 intermediate saves (body-size, lorem-ipsum, dom, canonical, metatags, links, headings, readability, alt-text) + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(9);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(11);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {

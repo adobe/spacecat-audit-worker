@@ -21,7 +21,7 @@ import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
-import { AUDIT_ALT_TEXT } from './audit-constants.js';
+import { AUDIT_ALT_TEXT, AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM } from './audit-constants.js';
 import { PreflightError } from './error-constants.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
@@ -31,6 +31,8 @@ import accessibility from './accessibility.js';
 import headings from './headings.js';
 import formAccessibility from './form-accessibility.js';
 import altText from './alt-text.js';
+import bodySize from './body-size.js';
+import loremIpsum from './lorem-ipsum.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -59,14 +61,12 @@ export const PREFLIGHT_META_TAGS_WAIT_MS = 5000;
 export const AUDIT_CANONICAL = 'canonical';
 export const AUDIT_LINKS = 'links';
 export const AUDIT_METATAGS = 'metatags';
-export const AUDIT_BODY_SIZE = 'body-size';
-export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
 export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
-export { AUDIT_ALT_TEXT } from './audit-constants.js';
+export { AUDIT_ALT_TEXT, AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM } from './audit-constants.js';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -91,6 +91,8 @@ export const PREFLIGHT_HANDLERS = {
   accessibility,
   'form-accessibility': formAccessibility,
   [AUDIT_ALT_TEXT]: altText,
+  [AUDIT_BODY_SIZE]: bodySize,
+  [AUDIT_LOREM_IPSUM]: loremIpsum,
 };
 
 export async function scrapePages(context) {
@@ -250,24 +252,45 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
-    const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
+    const handlerPayload = {
+      authHeader,
+      previewBaseURL,
+      previewUrls,
+      step,
+      audits,
+      auditsResult,
+      s3Keys,
+      scrapedObjects,
+      pageAuthToken,
+      urls,
+      timeExecutionBreakdown,
+    };
+
+    const runHandlers = (keys) => keys.reduce(
+      async (accPromise, key) => {
+        const acc = await accPromise;
+        const res = await PREFLIGHT_HANDLERS[key](context, handlerPayload);
+        return [...acc, res];
+      },
+      Promise.resolve([]),
+    );
+
+    // Checks that run before the h1-count DOM block so their audit entries appear first.
+    const PRE_DOM_HANDLER_KEYS = [AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM];
+    const allHandlersToRun = Object.keys(PREFLIGHT_HANDLERS)
+      .filter((key) => enabledChecks.includes(key));
+    const preDomHandlers = allHandlersToRun.filter((k) => PRE_DOM_HANDLER_KEYS.includes(k));
+    const postDomHandlers = allHandlersToRun.filter((k) => !PRE_DOM_HANDLER_KEYS.includes(k));
+
+    const preDomResults = await runHandlers(preDomHandlers);
+
     const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
-    // DOM-based checks: body size, lorem ipsum, h1 count
-    if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
+    if (h1CountEnabled) {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
       previewUrls.forEach((url) => {
         const pageResult = audits.get(url);
-        if (bodySizeEnabled) {
-          pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
-        }
-        if (loremIpsumEnabled) {
-          pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
-        }
-        if (h1CountEnabled) {
-          pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
-        }
+        pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
       });
 
       scrapedObjects.forEach(({ data }) => {
@@ -279,84 +302,29 @@ export const preflightAudit = async (context) => {
           pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
         );
 
-        const textContent = $('body').text().replace(/\n/g, '').trim();
+        const headingCount = $('h1').length;
+        if (headingCount !== 1) {
+          const h1Elements = $('h1').toArray();
 
-        if (bodySizeEnabled) {
-          if (textContent.length > 0 && textContent.length <= 100) {
-            auditsByName[AUDIT_BODY_SIZE].opportunities.push({
-              check: 'content-length',
-              issue: 'Body content length is below 100 characters',
-              seoImpact: 'Moderate',
-              seoRecommendation: 'Add more meaningful content to the page',
-              ...toElementTargets(getDomElementSelector($('body').get(0))),
-            });
-          }
-        }
+          const h1Selectors = h1Elements
+            .map((el) => getDomElementSelector(el))
+            .filter(Boolean);
+          const fallbackElement = $('body > main').get(0) || $('body').get(0);
+          const fallbackSelector = getDomElementSelector(fallbackElement);
 
-        if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
-            .toArray()
-            .filter((el) => /lorem ipsum/i.test($(el).text()));
-          // Keep only innermost matches — discard ancestors whose text matched
-          // solely because a descendant contains "Lorem ipsum".
-          const loremElements = allLoremElements.filter(
-            (el) => !allLoremElements.some((other) => {
-              if (other === el) {
-                return false;
-              }
-              let cursor = other.parent;
-              while (cursor) {
-                if (cursor === el) {
-                  return true;
-                }
-                cursor = cursor.parent;
-              }
-              return false;
-            }),
-          );
-          const loremSelectors = loremElements.map(
-            (el) => getDomElementSelector(el),
-          ).filter(Boolean);
-          const fallbackSelector = loremSelectors.length === 0
-            ? getDomElementSelector($('body').get(0))
-            : null;
-          auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
-            check: 'placeholder-text',
-            issue: 'Found Lorem ipsum placeholder text in the page content',
+          auditsByName[AUDIT_H1_COUNT].opportunities.push({
+            check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
+            issue:
+              headingCount > 1
+                ? `Found ${headingCount} H1 tags`
+                : 'No H1 tag found on the page',
             seoImpact: 'High',
-            seoRecommendation: 'Replace placeholder text with meaningful content',
+            seoRecommendation:
+              'Use exactly one H1 tag per page for better SEO structure',
             ...toElementTargets(
-              loremSelectors.length > 0 ? loremSelectors : fallbackSelector,
-              10,
+              headingCount > 0 ? h1Selectors : fallbackSelector,
             ),
           });
-        }
-
-        if (h1CountEnabled) {
-          const headingCount = $('h1').length;
-          if (headingCount !== 1) {
-            const h1Elements = $('h1').toArray();
-
-            const h1Selectors = h1Elements
-              .map((el) => getDomElementSelector(el))
-              .filter(Boolean);
-            const fallbackElement = $('body > main').get(0) || $('body').get(0);
-            const fallbackSelector = getDomElementSelector(fallbackElement);
-
-            auditsByName[AUDIT_H1_COUNT].opportunities.push({
-              check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-              issue:
-                headingCount > 1
-                  ? `Found ${headingCount} H1 tags`
-                  : 'No H1 tag found on the page',
-              seoImpact: 'High',
-              seoRecommendation:
-                'Use exactly one H1 tag per page for better SEO structure',
-              ...toElementTargets(
-                headingCount > 0 ? h1Selectors : fallbackSelector,
-              ),
-            });
-          }
         }
       });
       const domEndTime = Date.now();
@@ -374,29 +342,8 @@ export const preflightAudit = async (context) => {
       await saveIntermediateResults(context, auditsResult, 'DOM-based audit');
     }
 
-    // Execute only enabled preflight handlers
-    const handlersToRun = Object.keys(PREFLIGHT_HANDLERS)
-      .filter((key) => enabledChecks.includes(key));
-    const handlerResults = await handlersToRun.reduce(
-      async (accPromise, handler) => {
-        const acc = await accPromise;
-        const res = await PREFLIGHT_HANDLERS[handler](context, {
-          authHeader,
-          previewBaseURL,
-          previewUrls,
-          step,
-          audits,
-          auditsResult,
-          s3Keys,
-          scrapedObjects,
-          pageAuthToken,
-          urls,
-          timeExecutionBreakdown,
-        });
-        return [...acc, res];
-      },
-      Promise.resolve([]),
-    );
+    const postDomResults = await runHandlers(postDomHandlers);
+    const handlerResults = [...preDomResults, ...postDomResults];
 
     const endTime = Date.now();
     const endTimestamp = new Date().toISOString();
