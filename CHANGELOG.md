@@ -1,3 +1,10 @@
+## [1.498.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.8...v1.498.9) (2026-07-16)
+
+
+### Bug Fixes
+
+* **toc:** consume presigned-URL guidance reply from Mystique ([#2773](https://github.com/adobe/spacecat-audit-worker/issues/2773)) ([b5061e6](https://github.com/adobe/spacecat-audit-worker/commit/b5061e669f2633c6b25599019c109a4d5d047596))
+
 ## [1.498.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.7...v1.498.8) (2026-07-15)
 
 
