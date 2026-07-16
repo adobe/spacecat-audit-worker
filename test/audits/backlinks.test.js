@@ -75,6 +75,8 @@ describe('Backlinks Tests', function () {
   before(async () => {
     mockSeoClient = {
       getBrokenBacklinks: sandbox.stub(),
+      getBrokenBacklinksV2: sandbox.stub(),
+      hasNewBrokenBacklinksEndpoint: sandbox.stub().returns(false),
     };
 
     const handler = await esmock('../../src/backlinks/handler.js', {
@@ -617,6 +619,59 @@ describe('Backlinks Tests', function () {
         success: false,
       },
     });
+  });
+
+  it('should use getBrokenBacklinksV2 when OAuth2 credentials are present', async () => {
+    mockSeoClient.getBrokenBacklinks.resetHistory();
+    mockSeoClient.getBrokenBacklinksV2.resetHistory();
+    const v2Backlink = {
+      title: 'Example Page',
+      url_from: 'https://example.com/page',
+      url_to: 'https://foo.com/returns-404',
+      traffic_domain: 56,
+      page_score: 60,
+      domain_score: 80,
+      first_seen_at: '2026-01-01T00:00:00',
+      last_seen_at: '2026-06-01T00:00:00',
+      source_domain: 'example.com',
+      anchor: 'click here',
+      is_nofollow: false,
+      is_lost: false,
+      response_code: 200,
+      priority_score: 0.560,
+      priority_label: 'High',
+    };
+    mockSeoClient.hasNewBrokenBacklinksEndpoint.returns(true);
+    mockSeoClient.getBrokenBacklinksV2.resolves({
+      result: { backlinks: [v2Backlink] },
+      fullAuditRef: 'https://v2-ref',
+    });
+
+    const result = await brokenBacklinksAuditRunner(auditUrl, context, site);
+
+    expect(mockSeoClient.getBrokenBacklinksV2).to.have.been.calledOnceWith(auditUrl);
+    expect(mockSeoClient.getBrokenBacklinks).to.not.have.been.called;
+    expect(result.fullAuditRef).to.equal('https://v2-ref');
+    expect(result.auditResult.brokenBacklinks).to.deep.equal([v2Backlink]);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/v2 \(OAuth2\)/));
+    mockSeoClient.hasNewBrokenBacklinksEndpoint.returns(false);
+  });
+
+  it('should use getBrokenBacklinks (v1) when OAuth2 credentials are absent', async () => {
+    mockSeoClient.getBrokenBacklinks.resetHistory();
+    mockSeoClient.getBrokenBacklinksV2.resetHistory();
+    const { brokenBacklinks } = auditDataMock.auditResult;
+    mockSeoClient.hasNewBrokenBacklinksEndpoint.returns(false);
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
+
+    const result = await brokenBacklinksAuditRunner(auditUrl, context, site);
+
+    expect(mockSeoClient.getBrokenBacklinks).to.have.been.calledOnceWith(auditUrl);
+    expect(mockSeoClient.getBrokenBacklinksV2).to.not.have.been.called;
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/v1 \(API key\)/));
   });
 
   describe('generateSuggestionData', async () => {
@@ -1173,6 +1228,57 @@ describe('Backlinks Tests', function () {
       await generateSuggestionData(context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('includes V2 fields in suggestion data when backlinks contain priority metadata', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      const v2Backlink = {
+        title: 'Example Page',
+        url_from: 'https://example.com/page',
+        url_to: 'https://adobe.com/broken',
+        traffic_domain: 56,
+        page_score: 60,
+        domain_score: 80,
+        first_seen_at: '2026-01-01T00:00:00',
+        last_seen_at: '2026-06-01T00:00:00',
+        source_domain: 'example.com',
+        anchor: 'click here',
+        is_nofollow: false,
+        is_lost: false,
+        response_code: 200,
+        priority_score: 0.560,
+        priority_label: 'High',
+      };
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [v2Backlink],
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns({ errorItems: [], createdItems: [] });
+      context.s3Client.send.resolves(null);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub().resolves([]);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves(topPages);
+
+      await generateSuggestionData(context);
+
+      expect(brokenBacklinksOpportunity.addSuggestions).to.have.been.calledOnce;
+      const [addedSuggestions] = brokenBacklinksOpportunity.addSuggestions.getCall(0).args;
+      expect(addedSuggestions).to.have.length(1);
+      expect(addedSuggestions[0].data).to.deep.include({
+        title: 'Example Page',
+        url_from: 'https://example.com/page',
+        url_to: 'https://adobe.com/broken',
+        traffic_domain: 56,
+        priority_score: 0.560,
+        priority_label: 'High',
+        page_score: 60,
+        domain_score: 80,
+        source_domain: 'example.com',
+        anchor: 'click here',
+        is_nofollow: false,
+        is_lost: false,
+        response_code: 200,
+      });
     });
   });
 

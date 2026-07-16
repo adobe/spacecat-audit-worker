@@ -248,10 +248,14 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 
   try {
     const seoClient = SeoClient.createFrom(context);
+    const useV2 = seoClient.hasNewBrokenBacklinksEndpoint();
+    log.info(`Broken backlinks audit using ${useV2 ? 'v2 (OAuth2)' : 'v1 (API key)'} endpoint for siteId: ${siteId}`);
     const {
       result,
       fullAuditRef,
-    } = await seoClient.getBrokenBacklinks(auditUrl);
+    } = useV2
+      ? await seoClient.getBrokenBacklinksV2(auditUrl)
+      : await seoClient.getBrokenBacklinks(auditUrl);
     log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
 
@@ -441,6 +445,20 @@ export const generateSuggestionData = async (context) => {
         // backwards compatibility with downstream consumers (projector, api-service,
         // shared schemas). A coordinated rename is tracked separately.
         traffic_domain: backlink.traffic_domain,
+        // V2 fields — present only when using getBrokenBacklinksV2 (OAuth2 endpoint)
+        ...(backlink.priority_score !== undefined && {
+          page_score: backlink.page_score,
+          domain_score: backlink.domain_score,
+          first_seen_at: backlink.first_seen_at,
+          last_seen_at: backlink.last_seen_at,
+          source_domain: backlink.source_domain,
+          anchor: backlink.anchor,
+          is_nofollow: backlink.is_nofollow,
+          is_lost: backlink.is_lost,
+          response_code: backlink.response_code,
+          priority_score: backlink.priority_score,
+          priority_label: backlink.priority_label,
+        }),
       },
     }),
     // Use extracted functions for testability
