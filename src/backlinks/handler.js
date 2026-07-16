@@ -285,9 +285,19 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
 
     // Drop backlinks whose target belongs to a different subdomain than the audited site.
     // www and the bare domain are treated as the same host and are never filtered.
+    // A backlink is kept if it matches either the site's base URL or, when configured, the
+    // override URL the SEMrush query itself was run against (see withUrlResolver /
+    // site.resolveFinalURL()). Without this, every backlink would be rejected for sites with
+    // config.fetchConfig.overrideBaseURL configured, since the query domain and the base URL
+    // domain never match in that case (SITES-47904).
     const siteBaseURL = site.getBaseURL();
+    const overrideBaseURL = site.getConfig()?.getFetchConfig?.()?.overrideBaseURL;
     const filteredBacklinks = excludedFilteredBacklinks?.filter((backlink) => {
-      if (isOnDifferentSubdomain(backlink.url_to, siteBaseURL)) {
+      const differsFromBase = isOnDifferentSubdomain(backlink.url_to, siteBaseURL);
+      const differsFromOverride = overrideBaseURL
+        ? isOnDifferentSubdomain(backlink.url_to, overrideBaseURL)
+        : true;
+      if (differsFromBase && differsFromOverride) {
         log.debug(`Excluding backlink ${backlink.url_to}: different subdomain from ${siteBaseURL}`);
         return false;
       }

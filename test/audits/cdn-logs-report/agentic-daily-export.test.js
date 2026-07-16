@@ -55,7 +55,7 @@ describe('agentic daily export', () => {
           url_path: '/docs/page',
           hits: 12,
           avg_ttfb_ms: 123.45,
-          dimensions: {},
+          dimensions: { citability_score: 82 },
           metrics: {},
           updated_by: 'audit-worker:agentic-daily-export',
         }],

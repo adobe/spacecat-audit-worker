@@ -459,6 +459,76 @@ describe('Backlinks Tests', function () {
       expect(result.auditResult.brokenBacklinks).to.have.length(1);
       expect(result.auditResult.brokenBacklinks[0].url_to).to.equal('https://example.com/page');
     });
+
+    it('should keep backlinks whose url_to is on the configured overrideBaseURL domain (SITES-47904)', async () => {
+      const backlinks = [
+        {
+          title: null,
+          url_from: 'https://applyonline.hdfcbank.com/maintenance.html',
+          url_to: 'https://applyonline.hdfc.bank.in/maintenance.html',
+          traffic_domain: 46,
+        },
+      ];
+
+      nock('https://applyonline.hdfc.bank.in')
+        .get('/maintenance.html')
+        .reply(404);
+
+      const siteWithOverride = {
+        getId: () => 'override-site',
+        getBaseURL: () => 'https://applyonline.hdfcbank.com',
+        getConfig: () => Config({
+          fetchConfig: { overrideBaseURL: 'https://applyonline.hdfc.bank.in' },
+        }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(
+        'applyonline.hdfc.bank.in',
+        context,
+        siteWithOverride,
+      );
+
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+      expect(result.auditResult.brokenBacklinks[0].url_to)
+        .to.equal('https://applyonline.hdfc.bank.in/maintenance.html');
+    });
+
+    it('should still exclude backlinks on an unrelated subdomain when overrideBaseURL is configured', async () => {
+      const backlinks = [
+        {
+          title: null,
+          url_from: 'https://ref.com/page',
+          url_to: 'https://unrelated.example.com/page',
+          traffic_domain: 10,
+        },
+      ];
+
+      const siteWithOverride = {
+        getId: () => 'override-site-2',
+        getBaseURL: () => 'https://applyonline.hdfcbank.com',
+        getConfig: () => Config({
+          fetchConfig: { overrideBaseURL: 'https://applyonline.hdfc.bank.in' },
+        }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(
+        'applyonline.hdfc.bank.in',
+        context,
+        siteWithOverride,
+      );
+
+      expect(result.auditResult.brokenBacklinks).to.have.length(0);
+    });
   });
 
   describe('soft-404 detection', () => {

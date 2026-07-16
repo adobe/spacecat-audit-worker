@@ -106,13 +106,14 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('handles fetch errors', async () => {
+    it('reports a DNS-resolution failure (ENOTFOUND) as a broken internal link', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      const dnsError = () => Object.assign(new Error('getaddrinfo ENOTFOUND main--example--page.aem.page'), { code: 'ENOTFOUND' });
       nock('https://main--example--page.aem.page')
         .head('/fail')
-        .replyWithError('network fail')
+        .replyWithError(dnsError())
         .get('/fail')
-        .replyWithError('network fail');
+        .replyWithError(dnsError());
 
       const scrapedObjects = [{
         data: {
@@ -125,6 +126,26 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
       expect(context.log.info).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/fail unreachable/);
+    });
+
+    it('does NOT report a connection-level (non-DNS) failure as a broken internal link (SITES-47125)', async () => {
+      const urls = ['https://main--example--page.aem.page/page1'];
+      nock('https://main--example--page.aem.page')
+        .head('/blocked')
+        .replyWithError('socket hang up')
+        .get('/blocked')
+        .replyWithError('socket hang up');
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="/blocked">blocked</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/blocked probe inconclusive/);
     });
 
     it('handles HEAD failure with GET fallback success', async () => {
@@ -144,7 +165,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-works');
     });
 
     it('handles HEAD failure with GET fallback returning 404', async () => {
@@ -171,7 +192,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
 
     it('filters out scrapedObjects not in the urls list', async () => {
@@ -335,13 +356,14 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('handles external link fetch errors', async () => {
+    it('reports a DNS-resolution failure (ENOTFOUND) as a broken external link', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      const dnsError = () => Object.assign(new Error('getaddrinfo ENOTFOUND external-site.com'), { code: 'ENOTFOUND' });
       nock('https://external-site.com')
         .head('/fail')
-        .replyWithError('network fail')
+        .replyWithError(dnsError())
         .get('/fail')
-        .replyWithError('network fail');
+        .replyWithError(dnsError());
 
       const scrapedObjects = [{
         data: {
@@ -355,6 +377,28 @@ describe('Preflight Audit', () => {
       expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
       expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external-site.com/fail');
       expect(context.log.info).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/fail unreachable/);
+    });
+
+    it('does NOT report a bot-blocking connection-level failure as a broken external link (SITES-47125)', async () => {
+      // ups.com pattern: DNS resolves, but the server resets the HTTP/2 stream to block bots.
+      const urls = ['https://main--example--page.aem.page/page1'];
+      const http2Error = () => Object.assign(new Error('Stream closed with error code NGHTTP2_INTERNAL_ERROR'), { code: 'ERR_HTTP2_STREAM_ERROR' });
+      nock('https://external-site.com')
+        .head('/blocked')
+        .replyWithError(http2Error())
+        .get('/blocked')
+        .replyWithError(http2Error());
+
+      const scrapedObjects = [{
+        data: {
+          scrapeResult: { rawBody: '<a href="https://external-site.com/blocked">external blocked</a>' },
+          finalUrl: urls[0],
+        },
+      }];
+
+      const result = await runLinksChecks(urls, scrapedObjects, context);
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/blocked probe inconclusive/);
     });
 
     it('handles external HEAD failure with GET fallback success', async () => {
@@ -374,7 +418,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-works');
     });
 
     it('handles external HEAD failure with GET fallback returning 404', async () => {
@@ -401,7 +445,7 @@ describe('Preflight Audit', () => {
           elements: [{ selector: 'body > a' }],
         },
       ]);
-      expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
 
     it('processes both internal and external links correctly', async () => {
@@ -719,6 +763,7 @@ describe('Preflight Audit', () => {
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
+        setMetadata: sinon.stub(),
         setEndedAt: sinon.stub(),
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -726,6 +771,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -739,6 +785,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 
       // Ensure entitlement checks pass for tests; avoid double-stubbing across tests
@@ -1408,6 +1455,74 @@ describe('Preflight Audit', () => {
       await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
+    it('cancels the job and logs when the preflight handler is disabled for the site', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await preflightAuditFunction(context);
+
+      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123. preflight audits disabled for site site-123, skipping');
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('CANCELLED');
+      expect(finalJobEntity.setMetadata).to.have.been.calledWith({
+        payload: {
+          siteId: 'site-123',
+          reason: 'The Preflight audit is not enabled for this site.',
+          errorCode: 'PREFLIGHT-100',
+        },
+      });
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+    });
+
+    it('does not cancel a job that is no longer in progress, even if preflight is disabled for the site', async () => {
+      job.getStatus.returns('COMPLETED');
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+
+      expect(context.dataAccess.AsyncJob.findById).to.not.have.been.called;
+    });
+
+    it('logs and propagates the error when AsyncJob.findById fails while cancelling a disabled job', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().rejects(new Error('db unavailable'));
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('db unavailable');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('logs and propagates the error when saving the cancelled job fails', async () => {
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves({
+        setStatus: sinon.stub(),
+        setMetadata: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        save: sinon.stub().rejects(new Error('save failed')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('save failed');
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to cancel job/);
+    });
+
+    it('does not cancel the job and lets the error propagate when the entitlement check itself errors', async () => {
+      TierClient.createForSite.restore();
+      sinon.stub(TierClient, 'createForSite').returns({
+        checkValidEntitlement: sinon.stub().rejects(new Error('entitlement service unavailable')),
+      });
+
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('entitlement service unavailable');
+
+      expect(context.log.info).to.not.have.been.calledWithMatch(/disabled for site/);
+    });
+
     it('throws if the provided urls are invalid', async () => {
       job.getMetadata = () => ({
         payload: {
@@ -1787,6 +1902,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
         }),
@@ -1865,6 +1981,7 @@ describe('Preflight Audit', () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
         getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
@@ -4791,6 +4908,7 @@ describe('Preflight Audit', () => {
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
         getHandlers: sinon.stub().returns({
+          preflight: { productCodes: ['aem-sites'] },
           'readability-preflight': { productCodes: ['aem-sites'] },
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'metatags-preflight': { productCodes: ['aem-sites'] },
@@ -4804,6 +4922,7 @@ describe('Preflight Audit', () => {
           'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {

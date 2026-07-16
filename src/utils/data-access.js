@@ -277,6 +277,18 @@ export const handleOutdatedSuggestions = async ({
         || data?.edgeDeployed
         || data?.coveredByDomainWide
         || data?.isDomainWide
+        // Preserve suggestions mid-IVE geo-experiment: edgeOptimizeStatus is set before
+        // edgeDeployed, so without this a suggestion the audit no longer detects an issue
+        // for could flip to OUTDATED while its experiment is still running (LLMO-6168).
+        || data?.edgeOptimizeStatus === 'EXPERIMENT_IN_PROGRESS'
+        // Preserve externally / manually-authored suggestions. Records published
+        // through the backoffice write path (e.g. cwv-workbench guidance) live on
+        // the shared audit-owned opportunity but are NOT part of THIS audit's
+        // generated set, so keyed stale-page cleanup must not age them out
+        // (SITES-47557 / cwv-workbench ADR-0018). `authoredBy` identifies a
+        // non-audit producer; the audit's own suggestions carry no `provenance`
+        // (or `authoredBy: 'cwv-audit'`), so legitimate self-pruning is unaffected.
+        || (data?.provenance?.authoredBy && data.provenance.authoredBy !== 'cwv-audit')
       );
     })
     .filter((existing) => {
@@ -333,13 +345,15 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 /**
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
- * - REJECTED suggestions remain REJECTED
  * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
  * - ERROR suggestions transition back to NEW so a re-audit re-dispatches them.
  *   Recovers any suggestion that errored due to a transient or codefix-side bug
  *   once the underlying fix has shipped; pages that fail every run keep
  *   re-dispatching but the audit cadence (weekly for CWV) bounds the cost.
  * - Other statuses remain unchanged
+ *
+ * Note: SKIPPED and REJECTED suggestions never reach this function — they are
+ * frozen upstream in syncSuggestions before mergeStatusFunction is called.
  *
  * @param {Object} existing - The existing suggestion object.
  * @param {Object} newDataItem - The new data item being merged.
@@ -349,12 +363,6 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   const { log, site } = context;
   const currentStatus = existing.getStatus();
-
-  if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
-    // Keep REJECTED status when same suggestion appears again in audit
-    log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
-    return null; // Keep existing status
-  }
 
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
@@ -499,9 +507,25 @@ export async function syncSuggestions({
     return newDataKeys.has(existingKey);
   });
 
+  // SKIPPED and REJECTED suggestions are operator decisions that must not be
+  // overwritten by subsequent scans — their updatedAt must reflect the moment
+  // the operator acted. FIXED is intentionally excluded: some audits implement
+  // regression detection by transitioning FIXED → NEW via a custom
+  // mergeStatusFunction (e.g. permissions/suggestion-data-mapper.js).
+  const FROZEN_STATUSES = [
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+  ];
+
   matchedSuggestions.forEach((existing) => {
     const existingData = existing.getData();
     const existingKey = buildKey(existingData);
+
+    if (FROZEN_STATUSES.includes(existing.getStatus())) {
+      log.debug(`Skipping ${existing.getStatus()} suggestion ${existingKey} - terminal status suggestions are never updated`);
+      return;
+    }
+
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly
