@@ -13,9 +13,9 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import { ok, notFound, badRequest } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import handler from '../../../src/toc/guidance-handler.js';
 
 use(sinonChai);
 
@@ -27,6 +27,8 @@ describe('TOC Guidance Handler', () => {
   let siteStub;
   let auditStub;
   let opportunityStub;
+  let fetchStub;
+  let handler;
 
   const makeSuggestion = (data, status = SuggestionDataAccess.STATUSES.NEW) => ({
     getData: sinon.stub().returns(data),
@@ -34,7 +36,7 @@ describe('TOC Guidance Handler', () => {
     getStatus: sinon.stub().returns(status),
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     logStub = {
       debug: sinon.stub(),
       info: sinon.stub(),
@@ -70,17 +72,28 @@ describe('TOC Guidance Handler', () => {
       siteId: 'site-123',
       data: {
         opportunityId: 'opp-123',
-        suggestions: [
-          {
-            url: 'https://example.com/page1',
-            title: 'Page 1',
-            headings: ['Intro', 'Details'],
-            prompts: [{ id: 'p1', prompt: 'What is X?', type: 'Non-Branded' }],
-            hasPrompts: true,
-          },
-        ],
+        presignedUrl: 'https://s3.example.com/toc-suggestions.json?X-Amz-Signature=abc',
       },
     };
+
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub().resolves({
+      suggestions: [
+        {
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          headings: ['Intro', 'Details'],
+          prompts: [{ id: 'p1', prompt: 'What is X?', type: 'Non-Branded' }],
+          hasPrompts: true,
+        },
+      ],
+    });
+
+    handler = await esmock('../../../src/toc/guidance-handler.js', {
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
+      },
+    });
   });
 
   afterEach(() => {
@@ -94,6 +107,7 @@ describe('TOC Guidance Handler', () => {
     expect(dataAccessStub.Site.findById).to.have.been.calledWith('site-123');
     expect(dataAccessStub.Audit.findById).to.have.been.calledWith('audit-123');
     expect(dataAccessStub.Opportunity.findById).to.have.been.calledWith('opp-123');
+    expect(fetchStub).to.have.been.calledWith(message.data.presignedUrl, sinon.match.object);
     expect(dataAccessStub.Suggestion.saveMany).to.have.been.calledOnce;
     const [saved] = dataAccessStub.Suggestion.saveMany.getCall(0).args[0];
     expect(saved.setData).to.have.been.calledWith(sinon.match({
@@ -111,9 +125,9 @@ describe('TOC Guidance Handler', () => {
       makeSuggestion({ url: shared, checkType: 'missing-toc' }),
       makeSuggestion({ url: shared, checkType: 'single-heading' }),
     ]);
-    message.data.suggestions = [
-      { url: shared, prompts: [{ id: 'p1' }], hasPrompts: true },
-    ];
+    fetchStub.resolves({
+      suggestions: [{ url: shared, prompts: [{ id: 'p1' }], hasPrompts: true }],
+    });
 
     const result = await handler(message, context);
 
@@ -138,7 +152,7 @@ describe('TOC Guidance Handler', () => {
   });
 
   it('should default prompts to an empty array and hasPrompts to false when Mystique omits them', async () => {
-    message.data.suggestions = [{ url: 'https://example.com/page1' }];
+    fetchStub.resolves({ suggestions: [{ url: 'https://example.com/page1' }] });
 
     const result = await handler(message, context);
 
@@ -186,26 +200,45 @@ describe('TOC Guidance Handler', () => {
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Site ID mismatch/));
   });
 
-  it('should return badRequest when suggestions is not an array', async () => {
-    message.data.suggestions = 'not an array';
+  it('should return badRequest when presignedUrl is missing', async () => {
+    delete message.data.presignedUrl;
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(badRequest().status);
-    expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Missing presignedUrl/));
+    expect(fetchStub).to.not.have.been.called;
   });
 
-  it('should return badRequest when suggestions is null', async () => {
-    message.data.suggestions = null;
+  it('should return badRequest when message.data is missing entirely', async () => {
+    delete message.data;
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(badRequest().status);
-    expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Missing presignedUrl/));
+  });
+
+  it('should return badRequest when the presigned-URL download fails', async () => {
+    fetchStub.rejects(new Error('analysis fetch failed: 500 Internal Server Error'));
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(badRequest().status);
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Error downloading suggestions from presigned URL/));
+  });
+
+  it('should return badRequest when the downloaded payload is missing a suggestions array', async () => {
+    fetchStub.resolves({ notSuggestions: [] });
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(badRequest().status);
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Downloaded data is missing required suggestions array/));
   });
 
   it('should return ok when suggestions array is empty', async () => {
-    message.data.suggestions = [];
+    fetchStub.resolves({ suggestions: [] });
 
     const result = await handler(message, context);
 
@@ -236,15 +269,6 @@ describe('TOC Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
     expect(dataAccessStub.Suggestion.saveMany).to.not.have.been.called;
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/No matching suggestion found for URL/));
-  });
-
-  it('should return badRequest when message.data is missing entirely', async () => {
-    delete message.data;
-
-    const result = await handler(message, context);
-
-    expect(result.status).to.equal(badRequest().status);
-    expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
   });
 
   it('should treat a falsy getSuggestions() resolution as no existing suggestions', async () => {

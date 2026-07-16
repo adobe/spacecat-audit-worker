@@ -12,6 +12,37 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isEligibleTocSuggestion } from './eligibility-utils.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+
+const LOG_PREFIX = '[TOC Guidance]';
+
+/**
+ * Downloads JSON data from a presigned URL using the shared analysis-fetch helper
+ * (SSRF guard, size cap, log scrub of query-string credentials). Mystique's reply
+ * carries a presigned URL instead of inlining headings + generated prompts, since
+ * inlining blew past SQS's 262144-byte message limit once a batch had enough
+ * suggestions (LLMO-5792).
+ *
+ * @param {string} presignedUrl - The presigned S3 URL
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} - The parsed JSON data
+ * @throws {Error} - If the URL is not allowlisted, fetch fails, response is too
+ *   large, or the body is missing the required `suggestions` array.
+ */
+async function downloadFromPresignedUrl(presignedUrl, log) {
+  const data = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+    log,
+    prefix: LOG_PREFIX,
+  });
+
+  if (!data || !Array.isArray(data.suggestions)) {
+    const errorMsg = 'Downloaded data is missing required suggestions array';
+    log.error(`${LOG_PREFIX} ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  return data;
+}
 
 /**
  * Mystique's guidance:table-of-contents reply carries prompts keyed by page URL, not by
@@ -55,7 +86,7 @@ export default async function handler(message, context) {
     Site, Audit, Opportunity, Suggestion,
   } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { opportunityId, suggestions } = data || {};
+  const { opportunityId, presignedUrl } = data || {};
 
   log.debug(`[TOC Guidance] Message received in TOC guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -82,9 +113,17 @@ export default async function handler(message, context) {
     return badRequest('Site ID mismatch');
   }
 
-  if (!suggestions || !Array.isArray(suggestions)) {
-    log.error(`[TOC Guidance] Invalid suggestions format. Expected array, got: ${typeof suggestions}. Message: ${JSON.stringify(message)}`);
-    return badRequest('Invalid suggestions format');
+  if (!presignedUrl) {
+    log.error(`[TOC Guidance] Missing presignedUrl in Mystique response for siteId: ${siteId}`);
+    return badRequest('Missing presignedUrl');
+  }
+
+  let suggestions;
+  try {
+    ({ suggestions } = await downloadFromPresignedUrl(presignedUrl, log));
+  } catch (error) {
+    log.error(`[TOC Guidance] Error downloading suggestions from presigned URL for opportunityId=${opportunityId}: ${error.message}`, error);
+    return badRequest(`Failed to download suggestions: ${error.message}`);
   }
 
   if (suggestions.length === 0) {
