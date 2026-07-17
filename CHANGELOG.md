@@ -1,3 +1,10 @@
+# [1.499.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.11...v1.499.0) (2026-07-17)
+
+
+### Features
+
+* **backlinks:** switch to Semrush broken-links v2 endpoint when OAuth2 credentials present ([#2776](https://github.com/adobe/spacecat-audit-worker/issues/2776)) ([fb0e176](https://github.com/adobe/spacecat-audit-worker/commit/fb0e176c1a288458c59174dc5f8926bf901b935a))
+
 ## [1.498.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.10...v1.498.11) (2026-07-17)
 
 
