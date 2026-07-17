@@ -15,10 +15,15 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import {
+  isValidOffsiteAnalysis,
+  persistOffsiteOpportunity,
+  resolveEvergreenOffsiteOpportunity,
+  isSuppressedRun,
+} from '../common/offsite-refresh.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 const LOG_PREFIX = '[YouTube]';
@@ -93,9 +98,22 @@ export default async function handler(message, context) {
 
     log.info(`${LOG_PREFIX} Processing ${suggestions.length} suggestions for ${companyName}`);
 
-    const auditType = opportunityData.type || AUDIT_TYPE;
+    // Use the handler-owned type; the payload may only confirm it.
+    const auditType = AUDIT_TYPE;
+    const incomingStatus = opportunityData.status || 'NEW';
 
-    const opportunity = await convertToOpportunity(
+    // Validate before mutating the evergreen opportunity.
+    if (!isValidOffsiteAnalysis(analysisData, auditType)) {
+      log.error(`${LOG_PREFIX} Malformed analysis payload for siteId: ${siteId}; skipping update`);
+      return badRequest('Malformed analysis payload');
+    }
+
+    const evergreenOpportunity = await resolveEvergreenOffsiteOpportunity({
+      dataAccess, siteId, auditType, log,
+    });
+
+    // Suppressed runs create a hidden record; surfaced runs reuse the evergreen record.
+    const opportunity = await persistOffsiteOpportunity(
       baseUrl,
       {
         siteId,
@@ -105,15 +123,17 @@ export default async function handler(message, context) {
       context,
       createOpportunityData,
       auditType,
-      { opportunityData },
-      (oppty) => oppty.getAuditId() === auditId,
+      {
+        opportunityData,
+        existingOpportunity: isSuppressedRun(incomingStatus)
+          ? null
+          : evergreenOpportunity,
+      },
     );
 
-    // Persist the opportunity (with scope) BEFORE syncing suggestions; see
-    // cited-analysis/guidance-handler.js for the same reordering rationale.
+    // Save the scoped opportunity before syncing its suggestions.
     applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
-    const status = opportunityData.status || 'NEW';
-    opportunity.setStatus(status);
+    opportunity.setStatus(incomingStatus);
     opportunity.setData({
       ...opportunity.getData(),
       fullAnalysis: analysisData,
@@ -147,7 +167,7 @@ export default async function handler(message, context) {
           analysisName: 'youtube-analysis',
           baseUrl,
           suggestionsCount: suggestions.length,
-          isVisible: status !== 'IGNORED',
+          isVisible: incomingStatus !== 'IGNORED',
           verdict: opportunityData.qaVerdict,
         });
 
