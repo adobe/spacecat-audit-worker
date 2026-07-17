@@ -1,3 +1,10 @@
+## [1.498.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.10...v1.498.11) (2026-07-17)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** dispatch analysis audits per-bucket + raise DRS poll budget ([#2778](https://github.com/adobe/spacecat-audit-worker/issues/2778)) ([7343272](https://github.com/adobe/spacecat-audit-worker/commit/7343272b4534c133f84f48285437caec3ebcae33))
+
 ## [1.498.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.9...v1.498.10) (2026-07-17)
 
 
