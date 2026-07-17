@@ -399,6 +399,20 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(sentTypes).to.deep.equal(['offsite-brand-presence-drs-status']);
     });
 
+    it('does not fail the run when resolving the audits queue throws', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+      // Rejecting Configuration.findLatest makes triggerAnalysisAudits throw before its
+      // per-type try/catch, exercising the handler's outer safety net.
+      context.dataAccess.Configuration.findLatest.rejects(new Error('config down'));
+
+      const result = await handler.default(buildMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits for/);
+    });
+
     it('dispatches with partial data at the deadline if a dataset is still running', async () => {
       mockGetJob.withArgs('job-yv').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-yc').resolves({ status: 'RUNNING' });
