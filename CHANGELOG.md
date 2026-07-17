@@ -1,3 +1,17 @@
+## [1.498.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.10...v1.498.11) (2026-07-17)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** dispatch analysis audits per-bucket + raise DRS poll budget ([#2778](https://github.com/adobe/spacecat-audit-worker/issues/2778)) ([7343272](https://github.com/adobe/spacecat-audit-worker/commit/7343272b4534c133f84f48285437caec3ebcae33))
+
+## [1.498.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.9...v1.498.10) (2026-07-17)
+
+
+### Bug Fixes
+
+* **offsite:** don't show raw hallucination rate on visible opportu… ([#2777](https://github.com/adobe/spacecat-audit-worker/issues/2777)) ([8aed248](https://github.com/adobe/spacecat-audit-worker/commit/8aed248540be91e46c1b1f5b8d5771f8bdec894d))
+
 ## [1.498.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.498.8...v1.498.9) (2026-07-16)
 
 

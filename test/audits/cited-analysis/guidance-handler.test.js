@@ -621,7 +621,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(callText).to.include('2 suggestions processed');
     });
 
-    it('reports a visible opportunity with the hallucination rate', async () => {
+    it('reports a visible opportunity as below threshold without the raw rate', async () => {
       mockAudit.getAuditResult.returns({
         slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
       });
@@ -643,8 +643,38 @@ describe('Cited Analysis Guidance Handler', () => {
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include(':white_check_mark:');
       expect(callText).to.include('Visible in the UI');
-      expect(callText).to.include('hallucination 12%');
+      expect(callText).to.include('below hallucination threshold');
+      expect(callText).to.not.include('12%');
       expect(callText).to.not.include('Not visible');
+    });
+
+    it('notes dropped items on a visible opportunity recovered via drop-and-recover', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
+            opportunity: {
+              status: 'NEW',
+              qaVerdict: { rate: 0.48, droppedUrls: ['https://x.com/a', 'https://x.com/b'] },
+            },
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('Visible in the UI');
+      expect(callText).to.include('below hallucination threshold');
+      expect(callText).to.include('2 flagged items removed');
+      expect(callText).to.not.include('48%');
     });
 
     it('reports a hidden opportunity (IGNORED) with the hallucination rate', async () => {

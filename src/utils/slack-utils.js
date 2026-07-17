@@ -91,4 +91,65 @@ export async function postMessageOptional(context, channelId, text, options = {}
   }
 }
 
+/**
+ * Builds the "audit finished" Slack summary for an offsite analysis
+ * (cited / youtube / reddit), keeping the three consistent.
+ *
+ * Visibility is the QA gate's decision (opportunity status): a visible
+ * opportunity is one the gate surfaced, which means the *surfaced* set is below
+ * the hallucination threshold. We therefore do NOT print the raw rate on a
+ * visible opportunity — after drop-and-recover the raw pre-filter rate can be
+ * high (e.g. 48%) and be misread as "shown despite being bad", when the shown
+ * items are actually the clean survivors. The raw rate is only shown when the
+ * opportunity is hidden, where it is the reason for suppression.
+ *
+ * @param {object} params
+ * @param {string} params.analysisName - e.g. 'cited-analysis'
+ * @param {string} params.baseUrl - Site base URL
+ * @param {number} params.suggestionsCount - Number of suggestions processed
+ * @param {boolean} params.isVisible - Whether the opportunity is customer-visible
+ * @param {object} [params.verdict] - The qaVerdict stamp (rate, rateDetermined, droppedUrls)
+ * @returns {string} The formatted Slack message
+ */
+export function buildAnalysisVisibilityMessage({
+  analysisName,
+  baseUrl,
+  suggestionsCount,
+  isVisible,
+  verdict,
+}) {
+  const suggestionsLine = `• ${suggestionsCount} suggestion${suggestionsCount === 1 ? '' : 's'} processed`;
+
+  let note = '';
+  if (isVisible) {
+    if (verdict?.rateDetermined === false) {
+      // Real analysis, but the rate couldn't be computed (gate failed open).
+      note = ' — hallucination rate n/a';
+    } else if (verdict) {
+      // Surfaced => below threshold. Don't show the raw rate; optionally note how
+      // many flagged items the gate removed to get there.
+      note = ' — below hallucination threshold';
+      const droppedCount = Array.isArray(verdict.droppedUrls) ? verdict.droppedUrls.length : 0;
+      if (droppedCount > 0) {
+        note += ` (${droppedCount} flagged item${droppedCount === 1 ? '' : 's'} removed)`;
+      }
+    }
+    // No verdict at all => no note (unknown), preserving prior behavior.
+  } else if (verdict) {
+    // Hidden: show the rate that drove the suppression.
+    if (verdict.rateDetermined === false) {
+      note = ' — hallucination rate n/a';
+    } else if (typeof verdict.rate === 'number') {
+      note = ` — hallucination ${Math.round(verdict.rate * 100)}%`;
+    }
+  }
+
+  const header = isVisible ? ':white_check_mark:' : ':warning:';
+  const visibilityLine = isVisible
+    ? `• :eye: Visible in the UI${note}`
+    : `• :see_no_evil: Not visible in the UI${note}`;
+
+  return `${header} *${analysisName}* audit finished for *${baseUrl}*\n${suggestionsLine}\n${visibilityLine}`;
+}
+
 export { SLACK_TARGETS };
