@@ -18,7 +18,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { postMessageOptional } from '../utils/slack-utils.js';
+import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
@@ -147,30 +147,16 @@ export default async function handler(message, context) {
         const { channelId, threadTs } = slackContext;
 
         // Visibility is the QA gate's decision, carried on the opportunity status
-        // (NEW = customer-visible, IGNORED = suppressed). Branch on status rather
-        // than re-deriving the threshold here: the gate may surface a payload after
-        // dropping bad items, so its decision is authoritative over the raw rate.
-        const isVisible = status !== 'IGNORED';
-        const verdict = opportunityData.qaVerdict;
-        // rateDetermined === false means there was real analysis but the rate
-        // couldn't be computed (gate failed open → visible); show "n/a" rather
-        // than a misleading 0%. Older payloads without the flag fall back to the rate.
-        let hallucinationNote = '';
-        if (verdict) {
-          if (verdict.rateDetermined === false) {
-            hallucinationNote = ' — hallucination rate n/a';
-          } else if (typeof verdict.rate === 'number') {
-            hallucinationNote = ` — hallucination ${Math.round(verdict.rate * 100)}%`;
-          }
-        }
-        const suggestionsLine = `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`;
-        const slackMessage = isVisible
-          ? `:white_check_mark: *cited-analysis* audit finished for *${baseUrl}*\n`
-            + `${suggestionsLine}\n`
-            + `• :eye: Visible in the UI${hallucinationNote}`
-          : `:warning: *cited-analysis* audit finished for *${baseUrl}*\n`
-            + `${suggestionsLine}\n`
-            + `• :see_no_evil: Not visible in the UI${hallucinationNote}`;
+        // (NEW = customer-visible, IGNORED = suppressed). The gate may surface a
+        // payload after dropping bad items, so its decision is authoritative over
+        // the raw rate.
+        const slackMessage = buildAnalysisVisibilityMessage({
+          analysisName: 'cited-analysis',
+          baseUrl,
+          suggestionsCount: suggestions.length,
+          isVisible: status !== 'IGNORED',
+          verdict: opportunityData.qaVerdict,
+        });
 
         await postMessageOptional(context, channelId, slackMessage, { threadTs });
       }
