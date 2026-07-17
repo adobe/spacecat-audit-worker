@@ -70,57 +70,103 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
 }
 
 /**
- * Triggers the downstream analysis audits for every domain whose scrape jobs produced
- * usable data (a DRS_SUCCESS_STATUSES terminal status). Each audit type is triggered at
- * most once. The originating Slack context is forwarded so each analysis audit posts its
- * results to the same thread. Domains that failed, were cancelled, or are still running
- * at the deadline are skipped — there is no fresh data to analyze.
+ * Groups the per-job statuses by the analysis audit type that consumes them and returns
+ * the audit types that are ready to dispatch on this poll.
  *
- * An audit type is also skipped when a recent audit of the same type already exists for
- * the site (within AUDIT_TRIGGER_COOLDOWN_MS). This prevents duplicate analysis runs
- * caused by SQS at-least-once redelivery of the poll completion message.
+ * An audit type is ready when at least one of its jobs reached a DRS_SUCCESS_STATUSES
+ * status AND either:
+ *   - every job feeding that audit type is terminal (so Mystique analyzes complete data —
+ *     e.g. youtube-analysis waits for both youtube_videos and youtube_comments), or
+ *   - the polling deadline has passed (best-effort dispatch with whatever finished).
+ *
+ * Audit types already dispatched on an earlier poll (tracked in `alreadyTriggered`) are
+ * excluded so each type is triggered at most once. Different audit types are independent:
+ * a fast bucket (reddit) is returned as soon as it is ready without waiting for a slow one
+ * (top-cited/cited-analysis).
  *
  * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
+ * @param {boolean} deadlineReached - Whether the overall polling deadline has passed
+ * @param {Set<string>} alreadyTriggered - Audit types dispatched on a previous poll
+ * @returns {string[]} Audit types to trigger now
+ */
+function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
+  const groups = new Map();
+  for (const s of statuses) {
+    const auditType = resolveAnalysisAuditType(s.domain);
+    if (!auditType) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    if (!groups.has(auditType)) {
+      groups.set(auditType, []);
+    }
+    groups.get(auditType).push(s);
+  }
+
+  const ready = [];
+  for (const [auditType, groupJobs] of groups) {
+    if (alreadyTriggered.has(auditType)) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const allGroupTerminal = groupJobs.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
+    const anySuccess = groupJobs.some((s) => DRS_SUCCESS_STATUSES.has(s.status));
+    if (anySuccess && (allGroupTerminal || deadlineReached)) {
+      ready.push(auditType);
+    }
+  }
+  return ready;
+}
+
+/**
+ * Triggers the given downstream analysis audit types, forwarding the originating Slack
+ * context so each posts its results to the same thread.
+ *
+ * An audit type is skipped (but still reported as handled) when a recent audit of the same
+ * type already exists for the site (within AUDIT_TRIGGER_COOLDOWN_MS); this dedupes SQS
+ * at-least-once redelivery. A per-type send failure is logged and the type is NOT reported
+ * as handled, so the next poll retries it.
+ *
+ * @param {string[]} auditTypes - Analysis audit types to trigger
  * @param {string} siteId - The site ID
  * @param {object} slackContext - { channelId, threadTs } forwarded to the triggered audits
  * @param {object} context - Universal context (sqs, dataAccess, log)
+ * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
-async function triggerAnalysisAudits(statuses, siteId, slackContext, context) {
+async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context) {
   const { sqs, dataAccess, log } = context;
 
-  const auditTypes = new Set();
-  for (const s of statuses) {
-    if (DRS_SUCCESS_STATUSES.has(s.status)) {
-      const auditType = resolveAnalysisAuditType(s.domain);
-      if (auditType) {
-        auditTypes.add(auditType);
-      }
-    }
-  }
-
-  if (auditTypes.size === 0) {
-    return;
+  const handled = [];
+  if (auditTypes.length === 0) {
+    return handled;
   }
 
   const configuration = await dataAccess.Configuration.findLatest();
   const queueUrl = configuration.getQueues().audits;
   for (const type of auditTypes) {
-    // eslint-disable-next-line no-await-in-loop
-    if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-      log.info(`${LOG_PREFIX} Skipping ${type} for site ${siteId} — recent audit exists`);
-      // eslint-disable-next-line no-continue
-      continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      if (await hasRecentAudit(siteId, type, dataAccess, log)) {
+        log.info(`${LOG_PREFIX} Skipping ${type} for site ${siteId} — recent audit exists`);
+        handled.push(type);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(queueUrl, {
+        type,
+        siteId,
+        // DRS scraping is already done, so the analysis audit must analyze the available
+        // data rather than request another scrape (prevents a scrape→analyze loop).
+        auditContext: { slackContext, drsScrapeRequested: true },
+      });
+      log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
+      handled.push(type);
+    } catch (err) {
+      log.warn(`${LOG_PREFIX} Failed to trigger ${type} analysis audit for site ${siteId}: ${err.message}`);
     }
-    // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(queueUrl, {
-      type,
-      siteId,
-      // DRS scraping is already done, so the analysis audit must analyze the available
-      // data rather than request another scrape (prevents a scrape→analyze loop).
-      auditContext: { slackContext, drsScrapeRequested: true },
-    });
-    log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
   }
+  return handled;
 }
 
 /**
@@ -157,8 +203,15 @@ function buildSummary(baseURL, statuses) {
  * manual Slack run. Re-enqueues itself with an SQS delay until every job is terminal
  * or the deadline passes, then posts a single completion summary to the Slack thread.
  *
+ * Each downstream analysis audit is dispatched as soon as its own dataset(s) reach a
+ * terminal success status, rather than waiting for every bucket to finish. This keeps a
+ * fast bucket (e.g. reddit) from being held back by a slow one (e.g. top-cited, which
+ * scrapes arbitrary third-party pages via BrightData and can take far longer). The set of
+ * already-dispatched audit types travels with the re-enqueued poll message so each type is
+ * triggered at most once across the poll lifecycle.
+ *
  * @param {object} message - SQS message with auditContext { baseURL, slackContext,
- *   jobs: [{domain, datasetId, jobId}], deadline }
+ *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes? }
  * @param {object} context - Universal context (log, sqs, dataAccess, env)
  * @returns {Promise<Response>}
  */
@@ -167,7 +220,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { Configuration } = dataAccess;
   const { siteId, auditContext = {} } = message;
   const {
-    baseURL, slackContext = {}, jobs = [], deadline,
+    baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [],
   } = auditContext;
   const { channelId, threadTs } = slackContext;
 
@@ -190,36 +243,49 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
 
   const terminalCount = statuses.filter((s) => DRS_TERMINAL_STATUSES.has(s.status)).length;
   const allTerminal = terminalCount === statuses.length;
-
   const now = Date.now();
-  if (!allTerminal && now < deadline) {
+  const deadlineReached = now >= deadline;
+
+  // Dispatch the analysis audits for any buckets that just became ready, so early-finishing
+  // datasets go to Mystique immediately instead of waiting for the slowest job. Best-effort:
+  // a failure here must not abort the poll loop or cause the message to be redelivered.
+  const alreadyTriggered = new Set(triggeredAuditTypes);
+  let handled = [];
+  try {
+    const readyTypes = computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered);
+    handled = await triggerAnalysisAudits(readyTypes, siteId, slackContext, context);
+  } catch (err) {
+    log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
+  }
+  const nextTriggered = [...alreadyTriggered, ...handled];
+
+  // Keep polling until every job is terminal or the deadline passes. Carry the set of
+  // already-dispatched audit types forward so they are not re-triggered on later polls.
+  if (!allTerminal && !deadlineReached) {
     const delaySeconds = Math.min(
       DRS_POLL_INTERVAL_SECONDS,
       Math.max(0, Math.ceil((deadline - now) / 1000)),
       SQS_MAX_DELAY_SECONDS,
     );
     const configuration = await Configuration.findLatest();
-    await sqs.sendMessage(configuration.getQueues().audits, message, null, delaySeconds);
+    const nextMessage = {
+      ...message,
+      auditContext: { ...auditContext, triggeredAuditTypes: nextTriggered },
+    };
+    await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     log.info(`${LOG_PREFIX} ${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`);
     return ok();
   }
 
+  // Final poll (all jobs terminal or deadline reached): post the one-time completion
+  // summary. Analysis audits for terminal buckets were already dispatched above.
+  //
   // Accepted trade-off: SQS at-least-once delivery means a crash after this post but
   // before the message is deleted could redeliver and post the summary twice. There is
   // no idempotency key; a duplicate Slack summary is preferable to the complexity of
   // deduplication for a best-effort notification.
   await postMessageOptional(context, channelId, buildSummary(baseURL, statuses), { threadTs });
   log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
-
-  // Auto-trigger the analysis audits for domains whose scrapes succeeded, so the
-  // offsite-brand-presence run no longer needs reddit/youtube/cited/wikipedia to be
-  // triggered manually. Best-effort: a failure here must not cause the message to be
-  // redelivered (which would re-post the summary and re-trigger the audits).
-  try {
-    await triggerAnalysisAudits(statuses, siteId, slackContext, context);
-  } catch (err) {
-    log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
-  }
 
   return ok();
 }

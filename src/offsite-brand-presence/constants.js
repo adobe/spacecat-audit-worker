@@ -66,7 +66,13 @@ export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[
 
 // DRS job completion polling (offsite-brand-presence-drs-status handler).
 export const DRS_POLL_INTERVAL_SECONDS = 300; // 5 minutes between polls
-export const DRS_POLL_MAX_WAIT_SECONDS = 3600; // 60 minute total budget
+// The top-cited bucket scrapes arbitrary third-party web pages via BrightData, which is
+// substantially slower than the structured youtube/reddit collectors and can exceed an
+// hour. Each analysis audit is now dispatched as soon as its own bucket finishes (see the
+// drs-status handler), so this budget only bounds how long the poller waits for a straggler
+// like top-cited before giving up — a 60-minute budget caused cited-analysis to be dropped
+// while the faster buckets finished. Give the slow scrape room to terminalize. (LLMO)
+export const DRS_POLL_MAX_WAIT_SECONDS = 10800; // 3 hour total budget
 export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
 export const DRS_TERMINAL_STATUSES = new Set([
   'COMPLETED',
