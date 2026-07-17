@@ -34,6 +34,7 @@ import {
 import {
   createOffsiteLogger, errorField, AUDIT, PEER,
 } from '../utils/offsite-logging.js';
+import { deleteExpiredSnapshots } from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
@@ -222,6 +223,15 @@ export default async function handler(message, context) {
       count: suggestions.length,
     });
     logOffsiteLlmUsage(log, HUMAN_PREFIX, siteId, opportunityData.llmUsage);
+
+    // Retention must not fail an otherwise successful refresh.
+    try {
+      await deleteExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      });
+    } catch (error) {
+      log.error(`[Offsite][Retention] Unexpected failure siteId=${siteId} auditType=${auditType} error=${error.message}`);
+    }
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);
