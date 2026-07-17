@@ -68,9 +68,10 @@ export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[
 export const DRS_POLL_INTERVAL_SECONDS = 300; // 5 minutes between polls
 // The top-cited bucket scrapes arbitrary third-party web pages via BrightData, which is
 // substantially slower than the structured youtube/reddit collectors and can exceed an
-// hour. A 60-minute budget caused top-cited to time out while the other datasets finished,
-// so cited-analysis was never auto-triggered. Give the poller enough room to see the
-// slow scrape terminalize. (LLMO)
+// hour. Each analysis audit is now dispatched as soon as its own bucket finishes (see the
+// drs-status handler), so this budget only bounds how long the poller waits for a straggler
+// like top-cited before giving up — a 60-minute budget caused cited-analysis to be dropped
+// while the faster buckets finished. Give the slow scrape room to terminalize. (LLMO)
 export const DRS_POLL_MAX_WAIT_SECONDS = 10800; // 3 hour total budget
 export const DRS_STATUS_AUDIT_TYPE = 'offsite-brand-presence-drs-status';
 export const DRS_TERMINAL_STATUSES = new Set([

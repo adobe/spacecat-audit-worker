@@ -139,14 +139,18 @@ describe('offsite-brand-presence DRS status handler', () => {
 
     expect(result.status).to.equal(200);
     expect(mockPostMessageOptional).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    const [queueUrl, sentMessage, groupId, delaySeconds] = context.sqs.sendMessage.firstCall.args;
+    // The completed reddit bucket is dispatched now; the poll is re-enqueued for youtube.
+    const pollCall = context.sqs.sendMessage.getCalls()
+      .find((c) => c.args[1].type === 'offsite-brand-presence-drs-status');
+    expect(pollCall).to.not.be.undefined;
+    const [queueUrl, sentMessage, groupId, delaySeconds] = pollCall.args;
     expect(queueUrl).to.equal('audits-queue-url');
-    expect(sentMessage.type).to.equal('offsite-brand-presence-drs-status');
     expect(sentMessage.auditContext.jobs).to.have.length(2);
     // The absolute deadline must be preserved across re-enqueues so the wait budget
     // genuinely bounds total polling time regardless of SQS delivery jitter.
     expect(sentMessage.auditContext.deadline).to.equal(originalDeadline);
+    // Already-dispatched audit types travel with the poll so they are not re-triggered.
+    expect(sentMessage.auditContext.triggeredAuditTypes).to.include('reddit-analysis');
     expect(groupId).to.equal(null);
     expect(delaySeconds).to.equal(300);
   });
@@ -187,7 +191,10 @@ describe('offsite-brand-presence DRS status handler', () => {
 
     expect(result.status).to.equal(200);
     expect(mockPostMessageOptional).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    // reddit completed → dispatched now; youtube errored (non-terminal) → keep polling.
+    const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+    expect(sentTypes).to.include('reddit-analysis');
+    expect(sentTypes).to.include('offsite-brand-presence-drs-status');
     expect(log.warn).to.have.been.calledWithMatch(/getJob failed for job-2/);
   });
 
@@ -298,7 +305,7 @@ describe('offsite-brand-presence DRS status handler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger .* analysis audit for site/);
     });
 
     it('skips an audit type when a recent audit exists within the cooldown window', async () => {
@@ -344,6 +351,69 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(types).to.include('reddit-analysis');
       expect(types).to.include('youtube-analysis');
       expect(log.warn).to.have.been.calledWithMatch(/Failed to check recent/);
+    });
+
+    it('dispatches a completed bucket immediately while still polling for a slower one', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' }); // reddit
+      mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' }); // youtube
+
+      await handler.default(buildMessage(), context);
+
+      const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(sentTypes).to.include('reddit-analysis');
+      expect(sentTypes).to.not.include('youtube-analysis');
+      // Still polling for the running youtube job; no summary until everything resolves.
+      expect(sentTypes).to.include('offsite-brand-presence-drs-status');
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('does not re-dispatch an audit type already triggered on a previous poll', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' }); // reddit
+      mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' }); // youtube
+
+      await handler.default(
+        buildMessage({ triggeredAuditTypes: ['reddit-analysis'] }),
+        context,
+      );
+
+      const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(sentTypes).to.not.include('reddit-analysis');
+      const pollCall = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'offsite-brand-presence-drs-status');
+      expect(pollCall.args[1].auditContext.triggeredAuditTypes).to.include('reddit-analysis');
+    });
+
+    it('waits for all datasets of an audit type before dispatching it', async () => {
+      mockGetJob.withArgs('job-yv').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-yc').resolves({ status: 'RUNNING' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'youtube.com', datasetId: 'youtube_videos', jobId: 'job-yv' },
+          { domain: 'youtube.com', datasetId: 'youtube_comments', jobId: 'job-yc' },
+        ],
+      }), context);
+
+      // One dataset still running → hold youtube-analysis; only the poll is re-enqueued.
+      const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(sentTypes).to.deep.equal(['offsite-brand-presence-drs-status']);
+    });
+
+    it('dispatches with partial data at the deadline if a dataset is still running', async () => {
+      mockGetJob.withArgs('job-yv').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-yc').resolves({ status: 'RUNNING' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'youtube.com', datasetId: 'youtube_videos', jobId: 'job-yv' },
+          { domain: 'youtube.com', datasetId: 'youtube_comments', jobId: 'job-yc' },
+        ],
+        deadline: Date.now() - 1,
+      }), context);
+
+      const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(sentTypes).to.include('youtube-analysis');
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
     });
   });
 });
