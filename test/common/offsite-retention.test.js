@@ -15,11 +15,16 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { subDays } from 'date-fns';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { SNAPSHOT_TAG } from '../../src/common/offsite-snapshot.js';
 import {
   SNAPSHOT_RETENTION_DAYS,
   findExpiredSnapshots,
   deleteExpiredSnapshots,
+  OUTDATED_SUGGESTION_RETENTION_DAYS,
+  OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
+  isOutdatedSuggestionExpired,
+  deleteExpiredOutdatedSuggestions,
 } from '../../src/common/offsite-retention.js';
 
 use(sinonChai);
@@ -61,9 +66,468 @@ describe('offsite-retention', () => {
     remove: remove || sandbox.stub().resolves(),
   });
 
+  const { STATUSES } = SuggestionModel;
+
+  const buildSuggestion = ({
+    id,
+    status = STATUSES.OUTDATED,
+    updatedAt,
+  }) => ({
+    getId: () => id,
+    getStatus: () => status,
+    getUpdatedAt: () => updatedAt,
+  });
+
   describe('SNAPSHOT_RETENTION_DAYS', () => {
     it('is 30 days', () => {
       expect(SNAPSHOT_RETENTION_DAYS).to.equal(30);
+    });
+  });
+
+  describe('OUTDATED_SUGGESTION_RETENTION_DAYS', () => {
+    it('is 30 days, tunable independently of the snapshot window', () => {
+      expect(OUTDATED_SUGGESTION_RETENTION_DAYS).to.equal(30);
+    });
+  });
+
+  describe('isOutdatedSuggestionExpired', () => {
+    const retentionCutoff = subDays(new Date(), OUTDATED_SUGGESTION_RETENTION_DAYS);
+
+    it('is true for an OUTDATED suggestion older than the window', () => {
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'expired', updatedAt: daysAgo(31) }),
+        retentionCutoff,
+      )).to.be.true;
+    });
+
+    it('is true one millisecond before the cutoff instant (strict "<" is satisfied)', () => {
+      const justOlder = new Date(retentionCutoff.getTime() - 1).toISOString();
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'just-expired', updatedAt: justOlder }),
+        retentionCutoff,
+      )).to.be.true;
+    });
+
+    it('is false exactly at the cutoff instant (predicate is strict "<", not "<=")', () => {
+      const atCutoff = new Date(retentionCutoff.getTime()).toISOString();
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'at-cutoff', updatedAt: atCutoff }),
+        retentionCutoff,
+      )).to.be.false;
+    });
+
+    it('is false for an OUTDATED suggestion younger than the window', () => {
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'recent', updatedAt: daysAgo(1) }),
+        retentionCutoff,
+      )).to.be.false;
+    });
+
+    it('retains (never deletes) an OUTDATED row with a null updated_at', () => {
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'null-timestamp', updatedAt: null }),
+        retentionCutoff,
+      )).to.be.false;
+    });
+
+    it('retains (never deletes) an OUTDATED row with an undefined updated_at', () => {
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'missing-timestamp', updatedAt: undefined }),
+        retentionCutoff,
+      )).to.be.false;
+    });
+
+    it('retains (never deletes) an OUTDATED row with an unparseable updated_at', () => {
+      expect(isOutdatedSuggestionExpired(
+        buildSuggestion({ id: 'invalid-timestamp', updatedAt: 'not-a-date' }),
+        retentionCutoff,
+      )).to.be.false;
+    });
+
+    it('is false for any non-OUTDATED status even when old', () => {
+      [
+        STATUSES.NEW, STATUSES.PENDING_VALIDATION, STATUSES.IN_PROGRESS,
+        STATUSES.APPROVED, STATUSES.FIXED, STATUSES.SKIPPED, STATUSES.REJECTED,
+        STATUSES.ERROR,
+      ].forEach((status) => {
+        expect(isOutdatedSuggestionExpired(
+          buildSuggestion({ id: `protected-${status}`, status, updatedAt: daysAgo(99) }),
+          retentionCutoff,
+        ), status).to.be.false;
+      });
+    });
+  });
+
+  const buildOpportunity = ({ id = 'evergreen-1', suggestions = [], getSuggestions } = {}) => ({
+    getId: () => id,
+    getSuggestions: getSuggestions || sandbox.stub().resolves(suggestions),
+  });
+
+  describe('deleteExpiredOutdatedSuggestions', () => {
+    it('deletes only the OUTDATED suggestions older than the window, in one bulk call', async () => {
+      const expiredOutdatedSuggestion = buildSuggestion({
+        id: 'old', updatedAt: daysAgo(31),
+      });
+      const recentOutdatedSuggestion = buildSuggestion({
+        id: 'fresh', updatedAt: daysAgo(2),
+      });
+      const activeSuggestion = buildSuggestion({
+        id: 'active', status: STATUSES.NEW, updatedAt: daysAgo(99),
+      });
+      const removeByIds = sandbox.stub().resolves();
+      const dataAccess = { Suggestion: { removeByIds } };
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess,
+        opportunity: buildOpportunity({
+          suggestions: [
+            expiredOutdatedSuggestion,
+            recentOutdatedSuggestion,
+            activeSuggestion,
+          ],
+        }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds).to.have.been.calledOnceWithExactly(['old']);
+      expect(retentionSummary).to.deep.equal({
+        scanned: 3, eligible: 1, deleted: 1, failed: 0,
+      });
+    });
+
+    it('deletes ALL eligible rows (not just the first) in one bulk call, mixed with ineligible', async () => {
+      const now = new Date('2026-01-15T12:00:00.000Z');
+      sandbox.useFakeTimers(now);
+      const retentionCutoff = subDays(now, OUTDATED_SUGGESTION_RETENTION_DAYS);
+      const firstExpiredSuggestion = buildSuggestion({
+        id: 'expired-1', updatedAt: daysAgo(31),
+      });
+      const secondExpiredSuggestion = buildSuggestion({
+        id: 'expired-2', updatedAt: daysAgo(45),
+      });
+      const boundaryExpiredSuggestion = buildSuggestion({
+        id: 'expired-boundary',
+        updatedAt: new Date(retentionCutoff.getTime() - 1).toISOString(),
+      });
+      const recentOutdatedSuggestion = buildSuggestion({
+        id: 'young', updatedAt: daysAgo(2),
+      });
+      const cutoffSuggestion = buildSuggestion({
+        id: 'at-cutoff', updatedAt: retentionCutoff.toISOString(),
+      });
+      const activeSuggestion = buildSuggestion({
+        id: 'new', status: STATUSES.NEW, updatedAt: daysAgo(99),
+      });
+      const fixedSuggestion = buildSuggestion({
+        id: 'fixed', status: STATUSES.FIXED, updatedAt: daysAgo(99),
+      });
+      const approvedSuggestion = buildSuggestion({
+        id: 'approved', status: STATUSES.APPROVED, updatedAt: daysAgo(99),
+      });
+
+      const removeByIds = sandbox.stub().resolves();
+      const opportunitySuggestions = [
+        recentOutdatedSuggestion,
+        firstExpiredSuggestion,
+        activeSuggestion,
+        secondExpiredSuggestion,
+        fixedSuggestion,
+        cutoffSuggestion,
+        boundaryExpiredSuggestion,
+        approvedSuggestion,
+      ];
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: opportunitySuggestions }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds).to.have.been.calledOnce;
+      const suggestionIds = removeByIds.firstCall.args[0];
+      expect([...suggestionIds].sort())
+        .to.deep.equal(['expired-1', 'expired-2', 'expired-boundary']);
+      expect(retentionSummary).to.deep.equal({
+        scanned: 8, eligible: 3, deleted: 3, failed: 0,
+      });
+    });
+
+    it('retains a suggestion newly marked OUTDATED during this refresh', async () => {
+      // Sync refreshes updatedAt when changing status to OUTDATED, making the row recent.
+      const now = new Date('2026-02-01T00:00:00.000Z');
+      sandbox.useFakeTimers(now);
+
+      let freshUpdatedAt = subDays(now, 120).toISOString();
+      const freshlyOutdatedSuggestion = {
+        getId: () => 'freshly-outdated',
+        getStatus: () => STATUSES.OUTDATED,
+        getUpdatedAt: () => freshUpdatedAt,
+      };
+      const expiredOutdatedSuggestion = buildSuggestion({
+        id: 'stale-outdated',
+        updatedAt: subDays(now, 90).toISOString(),
+      });
+
+      freshUpdatedAt = now.toISOString();
+
+      const removeByIds = sandbox.stub().resolves();
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({
+          suggestions: [freshlyOutdatedSuggestion, expiredOutdatedSuggestion],
+        }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds).to.have.been.calledOnceWithExactly(['stale-outdated']);
+      expect(retentionSummary).to.deep.equal({
+        scanned: 2, eligible: 1, deleted: 1, failed: 0,
+      });
+    });
+
+    it('protects every non-OUTDATED status and keeps younger OUTDATED rows', async () => {
+      const recentOutdatedSuggestion = buildSuggestion({ id: 'kept', updatedAt: daysAgo(5) });
+      const fixedSuggestion = buildSuggestion({
+        id: 'fixed', status: STATUSES.FIXED, updatedAt: daysAgo(99),
+      });
+      const skippedSuggestion = buildSuggestion({
+        id: 'skipped', status: STATUSES.SKIPPED, updatedAt: daysAgo(99),
+      });
+      const removeByIds = sandbox.stub().resolves();
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({
+          suggestions: [recentOutdatedSuggestion, fixedSuggestion, skippedSuggestion],
+        }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds).to.not.have.been.called;
+      expect(retentionSummary).to.deep.equal({
+        scanned: 3, eligible: 0, deleted: 0, failed: 0,
+      });
+    });
+
+    it('is a no-op (never calls removeByIds) when nothing is eligible', async () => {
+      const removeByIds = sandbox.stub().rejects(new Error('should not be called with []'));
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: [] }),
+        siteId,
+        auditType,
+        log,
+      });
+      expect(removeByIds).to.not.have.been.called;
+      expect(retentionSummary.deleted).to.equal(0);
+      expect(retentionSummary.scanned).to.equal(0);
+      expect(log.info).to.have.been.calledWith(sinon.match(
+        /Expired OUTDATED suggestion deletion summary .*scanned=0 eligible=0 deleted=0 failed=0/,
+      ));
+    });
+
+    it('treats a falsy getSuggestions result as an empty set', async () => {
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds: sandbox.stub() } },
+        opportunity: buildOpportunity({ getSuggestions: sandbox.stub().resolves(null) }),
+        siteId,
+        auditType,
+        log,
+      });
+      expect(retentionSummary.scanned).to.equal(0);
+    });
+
+    it('logs identifiers and returns a zeroed summary when reading suggestions fails', async () => {
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds: sandbox.stub() } },
+        opportunity: buildOpportunity({
+          getSuggestions: sandbox.stub().rejects(new Error('read fail')),
+        }),
+        siteId,
+        auditType,
+        log,
+      });
+      expect(retentionSummary).to.deep.equal({
+        scanned: 0, eligible: 0, deleted: 0, failed: 0,
+      });
+      expect(log.error).to.have.been.calledWith(sinon.match(
+        /\[Offsite\]\[Retention\] Failed to read suggestions for expired OUTDATED suggestion deletion opportunityId=evergreen-1 siteId=site-1 auditType=cited-analysis error=read fail/,
+      ));
+    });
+
+    it('records a failed batch without logging its suggestions as deleted', async () => {
+      const expiredOutdatedSuggestion = buildSuggestion({
+        id: 'old', updatedAt: daysAgo(31),
+      });
+      const removeByIds = sandbox.stub().rejects(new Error('DELETE failed'));
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: [expiredOutdatedSuggestion] }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(retentionSummary).to.deep.equal({
+        scanned: 1, eligible: 1, deleted: 0, failed: 1,
+      });
+      expect(log.error).to.have.been.calledWith(sinon.match(
+        /\[Offsite\]\[Retention\] Failed to delete 1 expired OUTDATED suggestion\(s\) opportunityId=evergreen-1 siteId=site-1 auditType=cited-analysis error=DELETE failed/,
+      ));
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match(/Deleted expired OUTDATED suggestion/),
+      );
+    });
+
+    it('never passes a missing/invalid updated_at row to removeByIds (retained end-to-end)', async () => {
+      const missingTimestampSuggestion = buildSuggestion({
+        id: 'null-dated', updatedAt: null,
+      });
+      const invalidTimestampSuggestion = buildSuggestion({
+        id: 'invalid-dated', updatedAt: 'garbage',
+      });
+      const expiredOutdatedSuggestion = buildSuggestion({
+        id: 'genuinely-old', updatedAt: daysAgo(60),
+      });
+      const removeByIds = sandbox.stub().resolves();
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({
+          suggestions: [
+            missingTimestampSuggestion,
+            invalidTimestampSuggestion,
+            expiredOutdatedSuggestion,
+          ],
+        }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds).to.have.been.calledOnceWithExactly(['genuinely-old']);
+      expect(retentionSummary).to.deep.equal({
+        scanned: 3, eligible: 1, deleted: 1, failed: 0,
+      });
+    });
+
+    it('chunks a large eligible set into <= batch-size removeByIds calls covering every id once', async () => {
+      const suggestionCount = OUTDATED_SUGGESTION_DELETE_BATCH_SIZE * 2 + 7;
+      const opportunitySuggestions = Array.from(
+        { length: suggestionCount },
+        (_, index) => buildSuggestion({
+          id: `old-${index}`,
+          updatedAt: daysAgo(40),
+        }),
+      );
+      const removeByIds = sandbox.stub().resolves();
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: opportunitySuggestions }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      const expectedBatchCount = Math.ceil(
+        suggestionCount / OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
+      );
+      expect(removeByIds.callCount).to.equal(expectedBatchCount);
+      removeByIds.getCalls().forEach((call) => {
+        expect(call.args[0].length).to.be.at.most(OUTDATED_SUGGESTION_DELETE_BATCH_SIZE);
+      });
+      const deletedSuggestionIds = removeByIds.getCalls()
+        .flatMap((call) => call.args[0]);
+      expect(deletedSuggestionIds).to.have.lengthOf(suggestionCount);
+      expect(new Set(deletedSuggestionIds).size).to.equal(suggestionCount);
+      const expectedSuggestionIds = opportunitySuggestions
+        .map((suggestion) => suggestion.getId())
+        .sort();
+      expect([...new Set(deletedSuggestionIds)].sort()).to.deep.equal(expectedSuggestionIds);
+      expect(retentionSummary).to.deep.equal({
+        scanned: suggestionCount,
+        eligible: suggestionCount,
+        deleted: suggestionCount,
+        failed: 0,
+      });
+    });
+
+    it('isolates a failed batch and omits successful logs for its suggestions', async () => {
+      const suggestionCount = OUTDATED_SUGGESTION_DELETE_BATCH_SIZE + 5;
+      const opportunitySuggestions = Array.from(
+        { length: suggestionCount },
+        (_, index) => buildSuggestion({
+          id: `old-${index}`,
+          updatedAt: daysAgo(40),
+        }),
+      );
+      const failedSuggestionId = `old-${suggestionCount - 1}`;
+      const removeByIds = sandbox.stub().callsFake(async (suggestionIds) => {
+        if (suggestionIds.includes(failedSuggestionId)) {
+          throw new Error('batch DELETE failed');
+        }
+      });
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: opportunitySuggestions }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(removeByIds.callCount).to.equal(2);
+      expect(retentionSummary).to.deep.equal({
+        scanned: suggestionCount,
+        eligible: suggestionCount,
+        deleted: OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
+        failed: suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
+      });
+      expect(log.error).to.have.been.calledWith(sinon.match(
+        /Failed to delete 5 expired OUTDATED suggestion\(s\).*error=batch DELETE failed/,
+      ));
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match(
+          new RegExp(`Deleted expired OUTDATED suggestion suggestionId=${failedSuggestionId}\\b`),
+        ),
+      );
+    });
+
+    it('logs each deletion only after its batch succeeds and emits a summary', async () => {
+      const expiredOutdatedSuggestion = buildSuggestion({
+        id: 'old',
+        updatedAt: daysAgo(40),
+      });
+      const removeByIds = sandbox.stub().resolves();
+
+      const retentionSummary = await deleteExpiredOutdatedSuggestions({
+        dataAccess: { Suggestion: { removeByIds } },
+        opportunity: buildOpportunity({ suggestions: [expiredOutdatedSuggestion] }),
+        siteId,
+        auditType,
+        log,
+      });
+
+      expect(retentionSummary).to.deep.equal({
+        scanned: 1, eligible: 1, deleted: 1, failed: 0,
+      });
+      expect(removeByIds).to.have.been.calledBefore(log.info);
+      expect(log.info).to.have.been.calledWith(sinon.match(
+        /\[Offsite\]\[Retention\] Deleted expired OUTDATED suggestion suggestionId=old opportunityId=evergreen-1 siteId=site-1 auditType=cited-analysis suggestionAgeDays=40/,
+      ));
+      expect(log.info).to.have.been.calledWith(sinon.match(
+        /\[Offsite\]\[Retention\] Expired OUTDATED suggestion deletion summary opportunityId=evergreen-1 siteId=site-1 auditType=cited-analysis scanned=1 eligible=1 deleted=1 failed=0/,
+      ));
     });
   });
 
