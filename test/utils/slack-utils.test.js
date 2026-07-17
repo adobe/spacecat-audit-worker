@@ -192,6 +192,31 @@ describe('Slack Utils', () => {
       expect(msg).to.include('Not visible in the UI — hallucination 42%');
     });
 
+    it('shows n/a on a hidden opportunity whose rate could not be determined', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: false,
+        verdict: { rate: 0, rateDetermined: false },
+      });
+      expect(msg).to.include('Not visible in the UI — hallucination rate n/a');
+    });
+
+    it('omits the note on a hidden opportunity with a non-numeric rate', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: false,
+        verdict: { reasons: ['no rate'] },
+      });
+      expect(msg).to.include('Not visible in the UI');
+      expect(msg).to.not.include('hallucination');
+    });
+
+    it('omits the note on a hidden opportunity with no verdict', () => {
+      const msg = buildAnalysisVisibilityMessage({ ...base, isVisible: false });
+      expect(msg).to.include('Not visible in the UI');
+      expect(msg).to.not.include('hallucination');
+    });
+
     it('shows n/a for a visible opportunity whose rate could not be determined', () => {
       const msg = buildAnalysisVisibilityMessage({
         ...base,
