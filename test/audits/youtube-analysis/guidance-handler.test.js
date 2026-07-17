@@ -41,6 +41,7 @@ describe('YouTube Analysis Guidance Handler', () => {
   let prepareSuppressedRunSnapshotStub;
   let prepareSupersededRunSnapshotStub;
   let deleteExpiredSnapshotsStub;
+  let deleteExpiredOutdatedSuggestionsStub;
 
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
@@ -159,6 +160,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });
     deleteExpiredSnapshotsStub = sandbox.stub().resolves(0);
+    deleteExpiredOutdatedSuggestionsStub = sandbox.stub().resolves({
+      scanned: 0, eligible: 0, deleted: 0, failed: 0,
+    });
 
     guidanceHandler = await esmock('../../../src/youtube-analysis/guidance-handler.js', {
       '../../../src/utils/analysis-fetch.js': {
@@ -185,6 +189,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-retention.js': {
         deleteExpiredSnapshots: deleteExpiredSnapshotsStub,
+        deleteExpiredOutdatedSuggestions: deleteExpiredOutdatedSuggestionsStub,
       },
     });
 
@@ -1597,6 +1602,86 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(deleteExpiredSnapshotsStub).to.not.have.been.called;
+    });
+  });
+
+  describe('Outdated-suggestion retention', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('prunes the refreshed opportunity after a surfaced (NEW) run, scoped correctly', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredOutdatedSuggestionsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('youtube-analysis');
+      expect(callArgs.opportunity).to.equal(mockOpportunity);
+    });
+
+    it('runs suggestion retention after sync and before snapshot deletion', async () => {
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+      await guidanceHandler.default(validMessage(), context);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledAfter(mockSyncSuggestions);
+      expect(deleteExpiredOutdatedSuggestionsStub)
+        .to.have.been.calledBefore(deleteExpiredSnapshotsStub);
+    });
+
+    it('does NOT run retention when the handler returns before a successful sync', async () => {
+      // syncSuggestions throwing means the refresh never completed — retention must not run.
+      mockSyncSuggestions.rejects(new Error('sync blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(400);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('does NOT run retention on the empty-suggestions early return (204)', async () => {
+      const result = await guidanceHandler.default(validMessage({
+        data: { companyName: 'Example Corp', analysis: { suggestions: [] } },
+      }), context);
+      expect(result.status).to.equal(204);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('still returns ok() when retention throws (local try/catch second safety net)', async () => {
+      deleteExpiredOutdatedSuggestionsStub.rejects(new Error('retention blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=outdated_suggestion_delete/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorMessage="retention blew up"/)),
+      );
     });
   });
 });
