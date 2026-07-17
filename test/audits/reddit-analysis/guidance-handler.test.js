@@ -493,7 +493,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(callText).to.include('2 suggestions processed');
     });
 
-    it('reports a visible opportunity with the hallucination rate', async () => {
+    it('reports a visible opportunity as below threshold without the raw rate', async () => {
       mockAudit.getAuditResult.returns({
         slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
       });
@@ -515,7 +515,8 @@ describe('Reddit Analysis Guidance Handler', () => {
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include(':white_check_mark:');
       expect(callText).to.include('Visible in the UI');
-      expect(callText).to.include('hallucination 12%');
+      expect(callText).to.include('below hallucination threshold');
+      expect(callText).to.not.include('12%');
     });
 
     it('reports a hidden opportunity (IGNORED) with the hallucination rate', async () => {

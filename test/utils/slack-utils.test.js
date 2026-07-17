@@ -18,6 +18,7 @@ import {
   postMessage,
   postMessageOptional,
   postMessageSafe,
+  buildAnalysisVisibilityMessage,
   SLACK_TARGETS,
 } from '../../src/utils/slack-utils.js';
 
@@ -145,6 +146,73 @@ describe('Slack Utils', () => {
 
       expect(result.success).to.be.false;
       expect(result.error).to.equal(error);
+    });
+  });
+
+  describe('buildAnalysisVisibilityMessage', () => {
+    const base = { analysisName: 'cited-analysis', baseUrl: 'https://x.com', suggestionsCount: 4 };
+
+    it('does not show the raw rate on a visible opportunity, only that it is below threshold', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: true,
+        verdict: { rate: 0.48, rateDetermined: true },
+      });
+      expect(msg).to.include(':white_check_mark:');
+      expect(msg).to.include('Visible in the UI — below hallucination threshold');
+      expect(msg).to.not.include('48%');
+      expect(msg).to.not.include('%');
+    });
+
+    it('notes how many flagged items were removed on a recovered opportunity', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: true,
+        verdict: { rate: 0.48, droppedUrls: ['a', 'b', 'c'] },
+      });
+      expect(msg).to.include('below hallucination threshold (3 flagged items removed)');
+    });
+
+    it('uses singular wording for a single dropped item', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: true,
+        verdict: { rate: 0.3, droppedUrls: ['a'] },
+      });
+      expect(msg).to.include('(1 flagged item removed)');
+    });
+
+    it('shows the raw rate on a hidden opportunity (the reason it was suppressed)', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: false,
+        verdict: { rate: 0.42, rateDetermined: true },
+      });
+      expect(msg).to.include(':warning:');
+      expect(msg).to.include('Not visible in the UI — hallucination 42%');
+    });
+
+    it('shows n/a for a visible opportunity whose rate could not be determined', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: true,
+        verdict: { rate: 0, rateDetermined: false },
+      });
+      expect(msg).to.include('Visible in the UI — hallucination rate n/a');
+      expect(msg).to.not.include('0%');
+    });
+
+    it('omits any note when there is no verdict', () => {
+      const msg = buildAnalysisVisibilityMessage({ ...base, isVisible: true });
+      expect(msg).to.include('Visible in the UI');
+      expect(msg).to.not.include('hallucination');
+    });
+
+    it('pluralizes the suggestion count', () => {
+      expect(buildAnalysisVisibilityMessage({ ...base, suggestionsCount: 1, isVisible: true }))
+        .to.include('1 suggestion processed');
+      expect(buildAnalysisVisibilityMessage({ ...base, suggestionsCount: 2, isVisible: true }))
+        .to.include('2 suggestions processed');
     });
   });
 });
