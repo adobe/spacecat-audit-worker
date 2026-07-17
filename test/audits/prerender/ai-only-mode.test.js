@@ -618,6 +618,11 @@ describe('Prerender AI-Only Mode', () => {
           isPaidLLMOCustomer: sinon.stub().resolves(true),
           mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
         },
+        '../../../src/prerender/path-suggestions/main.js': {
+          findPreservablePathSuggestions: sinon.stub().resolves([]),
+          buildPathTypeSuggestions: sinon.stub().resolves([]),
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
+        },
       });
 
       const auditData = {

@@ -888,19 +888,16 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      // REJECTED suggestions are frozen before merge functions run
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // With no data changes and no status change, save should be skipped
-      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
-      // Verify that setData is NOT called when data hasn't changed
       expect(existingSuggestions[0].setData).to.not.have.been.called;
-      // Verify that skip log is called
-      expect(mockLogger.debug).to.have.been.calledWith(sinon.match(/Skipping update for suggestion/));
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping REJECTED suggestion .* terminal status/),
+      );
     });
 
-    it('should preserve REJECTED status when data changes', async () => {
+    it('should not save REJECTED suggestion when data changes between scans', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', description: 'old description' },
       ];
@@ -931,18 +928,16 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      // REJECTED suggestions must never be saved regardless of data changes
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that saveMany is called with the updated suggestion
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-      // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping REJECTED suggestion .* terminal status/),
+      );
     });
 
-    it('should preserve REJECTED status when data changes even if site requires validation', async () => {
+    it('should not save REJECTED suggestion when data changes even if site requires validation', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', url: 'https://example.com/page1' },
       ];
@@ -958,16 +953,11 @@ describe('data-access', () => {
         setUpdatedBy: sinon.stub().returnsThis(),
       }];
 
-      // Data changed (url changed)
       const newData = [
         { key: '1', title: 'old title', url: 'https://example.com/page2' },
       ];
 
-      // Mock site with requiresValidation
-      context.site = {
-        requiresValidation: true,
-      };
-
+      context.site = { requiresValidation: true };
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
 
       await syncSuggestions({
@@ -978,18 +968,15 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that saveMany is called with the updated suggestion
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-      // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping REJECTED suggestion .* terminal status/),
+      );
     });
 
-    it('should preserve REJECTED status when nested objects and arrays change', async () => {
+    it('should not save REJECTED suggestion when nested objects and arrays change', async () => {
       const suggestionsData = [
         { key: '1', metrics: [{ value: 100 }], issues: [{ type: 'error1' }] },
       ];
@@ -1005,14 +992,48 @@ describe('data-access', () => {
         setUpdatedBy: sinon.stub().returnsThis(),
       }];
 
-      // Nested object/array changed in data
       const newData = [
         { key: '1', metrics: [{ value: 200 }], issues: [{ type: 'error2' }] },
       ];
 
-      context.site = {
-        requiresValidation: false,
-      };
+      context.site = { requiresValidation: false };
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping REJECTED suggestion .* terminal status/),
+      );
+    });
+
+    it('should not save SKIPPED suggestion when data changes between scans', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.SKIPPED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+      ];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
 
@@ -1024,12 +1045,58 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping SKIPPED suggestion .* terminal status/),
+      );
+    });
+
+    it('should allow FIXED suggestion to be updated when custom mergeStatusFunction detects regression', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+
+      // Custom mergeStatusFunction that detects FIXED regression (e.g. permissions audit)
+      const regressionMergeStatus = (existing) => {
+        if (existing.getStatus() === SuggestionDataAccess.STATUSES.FIXED) {
+          return SuggestionDataAccess.STATUSES.NEW;
+        }
+        return null;
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        mergeStatusFunction: regressionMergeStatus,
+      });
+
+      // FIXED is NOT frozen — custom mergeStatusFunction can transition it to NEW
+      expect(existingSuggestions[0].setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.NEW,
+      );
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
     });
 
     it('should update suggestion when status changes but data does not', async () => {
@@ -1396,6 +1463,56 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
+    it('should not mark suggestions mid-IVE-experiment as OUTDATED (LLMO-6168)', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: {
+            url: 'https://example.com/page1', key: 'page1', edgeOptimizeStatus: 'EXPERIMENT_IN_PROGRESS',
+          },
+          getId: sinon.stub().returns('1'),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/page1', key: 'page1', edgeOptimizeStatus: 'EXPERIMENT_IN_PROGRESS',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getId: sinon.stub().returns('2'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should not mark prerender domain-wide or covered suggestions as OUTDATED', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
 
@@ -1461,6 +1578,71 @@ describe('data-access', () => {
         'OUTDATED',
       );
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark externally-authored (data.provenance) suggestions as OUTDATED', async () => {
+      // SITES-47557 / cwv-workbench ADR-0018: a suggestion published through the
+      // backoffice write path carries data.provenance.authoredBy. It lives on the
+      // shared audit-owned opportunity but is not part of this audit's generated
+      // set, so a keyed stale-page sweep must not age it out. A record carrying the
+      // audit's OWN provenance ('cwv-audit') is still pruned normally.
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key ?? ''}`;
+
+      const workbenchSuggestion = {
+        id: 'workbench',
+        data: {
+          url: 'https://example.com/savings',
+          provenance: { authoredBy: 'cwv-workbench' },
+        },
+        getId: sinon.stub().returns('workbench'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/savings',
+          provenance: { authoredBy: 'cwv-workbench' },
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const auditOwnedSuggestion = {
+        id: 'audit-owned',
+        data: {
+          url: 'https://example.com/old',
+          provenance: { authoredBy: 'cwv-audit' },
+        },
+        getId: sinon.stub().returns('audit-owned'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/old',
+          provenance: { authoredBy: 'cwv-audit' },
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const normalSuggestion = {
+        id: 'normal',
+        data: { url: 'https://example.com/page2', key: 'page2' },
+        getId: sinon.stub().returns('normal'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      mockOpportunity.getSuggestions.resolves([
+        workbenchSuggestion,
+        auditOwnedSuggestion,
+        normalSuggestion,
+      ]);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+      });
+
+      // Only the audit-owned + plain stale records are OUTDATED; the
+      // workbench-authored suggestion is preserved.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [auditOwnedSuggestion, normalSuggestion],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
     });
 
     it('should update suggestions when they are detected again', async () => {

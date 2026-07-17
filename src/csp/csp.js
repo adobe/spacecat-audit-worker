@@ -114,7 +114,7 @@ export async function resolveOpportunity(auditData, context, auditType) {
     return;
   }
 
-  // Mark all suggestions as completed
+  // Mark all suggestions as outdated
   try {
     opportunity.setStatus(Oppty.STATUSES.RESOLVED);
     await opportunity.save();
@@ -130,7 +130,7 @@ export async function resolveOpportunity(auditData, context, auditType) {
     if (isNonEmptyArray(existingOutdatedSuggestions)) {
       await Suggestion.bulkUpdateStatus(
         existingOutdatedSuggestions,
-        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.OUTDATED,
       );
     }
   } catch (e) {

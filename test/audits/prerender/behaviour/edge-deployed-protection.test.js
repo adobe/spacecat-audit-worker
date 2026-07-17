@@ -107,7 +107,7 @@ async function runAudit(sandbox, existingSuggestions) {
   return { bulkUpdateStatusStub };
 }
 
-describe('Prerender edge-deployed suggestion protection (behavior)', () => {
+describe('Prerender edge-deployed suggestion protection (behaviour)', () => {
   const sandbox = sinon.createSandbox();
 
   afterEach(() => sandbox.restore());

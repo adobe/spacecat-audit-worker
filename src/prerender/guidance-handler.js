@@ -199,7 +199,9 @@ export default async function handler(message, context) {
 
       // Track if AI summary is meaningful
       const hasValidAiSummary = aiSummary && aiSummary.toLowerCase() !== 'not available';
-      const isValuable = typeof valuable === 'boolean' ? valuable : true;
+      // Preserve tri-state: true/false = confirmed verdict, null/undefined = indeterminate.
+      // Never coerce null to true — an analysis error is not a confirmed content gain.
+      const isValuable = typeof valuable === 'boolean' ? valuable : null;
 
       if (hasValidAiSummary) {
         validAiSummaryCount += 1;
@@ -220,8 +222,9 @@ export default async function handler(message, context) {
         aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
         // Use new prompts if provided; otherwise preserve existing
         prompts: hasNewPrompts ? prompts : (currentData.prompts ?? []),
-        // Keep valuable in sync with aiSummary — only update when new AI response is valid
-        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? true),
+        // Keep valuable in sync with aiSummary — only update when new AI response is valid.
+        // Preserve tri-state: fall back to existing value (which may be null) not true.
+        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? null),
       };
 
       warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);

@@ -131,6 +131,7 @@ describe('Summarization Handler', () => {
           ],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         'site-id-123',
@@ -153,6 +154,7 @@ describe('Summarization Handler', () => {
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
@@ -174,11 +176,48 @@ describe('Summarization Handler', () => {
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(log.error).to.have.been.calledWith(
         '[SUMMARIZATION] Failed to import top pages: Database error',
         error,
       );
+    });
+
+    it('should forward generatePrompts=true when data is an object', async () => {
+      context.data = { generatePrompts: true };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('should forward generatePrompts=true when data is a JSON string', async () => {
+      context.data = JSON.stringify({ generatePrompts: true });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('should default generatePrompts to false and warn on invalid JSON in data', async () => {
+      context.data = '{not-json';
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
+      expect(log.warn).to.have.been.calledWithMatch(
+        /\[SUMMARIZATION\] Failed to parse context.data for generatePrompts flag, defaulting to false:/,
+      );
+    });
+
+    it('should forward generatePrompts=false when no SEO pages and data omits the flag', async () => {
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.data = { somethingElse: true };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
     });
   });
 
@@ -195,6 +234,7 @@ describe('Summarization Handler', () => {
             'https://adobe.com/page2',
             'https://adobe.com/page3',
           ],
+          generatePrompts: false,
         },
         urls: [
           { url: 'https://adobe.com/page1' },
@@ -205,6 +245,15 @@ describe('Summarization Handler', () => {
         type: 'summarization',
       });
       expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 3 pages for scraping');
+    });
+
+    it('should forward generatePrompts=true from auditContext when present', async () => {
+      audit.getAuditResult.returns({ success: true });
+      context.auditContext = { generatePrompts: true };
+
+      const result = await submitForScraping(context);
+
+      expect(result.auditContext.generatePrompts).to.equal(true);
     });
 
     it('should limit to 200 pages when submitting for scraping', async () => {
@@ -289,7 +338,7 @@ describe('Summarization Handler', () => {
       const result = await sendToMystique(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      
+
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.type).to.equal('guidance:summarization');
       expect(sentMessage.siteId).to.equal('site-id-123');
@@ -297,7 +346,8 @@ describe('Summarization Handler', () => {
       expect(sentMessage.auditId).to.equal('audit-id-456');
       expect(sentMessage.deliveryType).to.equal('aem');
       expect(sentMessage.data.pages).to.have.lengthOf(3);
-      
+      expect(sentMessage.data.generatePrompts).to.equal(false);
+
       // Check that all pages are from the scraped URLs
       const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
       expect(pageUrls).to.include.members([
@@ -305,10 +355,22 @@ describe('Summarization Handler', () => {
         'https://adobe.com/page2',
         'https://adobe.com/page3',
       ]);
-      
+
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] Sent 3 pages to Mystique for site site-id-123',
       );
+    });
+
+    it('should propagate generatePrompts=true from auditContext into Mystique payload', async () => {
+      context.auditContext = {
+        ...context.auditContext,
+        generatePrompts: true,
+      };
+
+      await sendToMystique(context);
+
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.generatePrompts).to.equal(true);
     });
 
     it('should limit to 100 pages when sending to Mystique', async () => {

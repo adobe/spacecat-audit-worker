@@ -55,7 +55,9 @@ describe('TOC (Table of Contents) Audit', () => {
   let s3Client;
 
   beforeEach(() => {
-    log = { info: console.log, error: console.error, debug: console.debug };
+    log = {
+      info: console.log, error: console.error, debug: console.debug, warn: console.warn,
+    };
     context = {
       log,
       env: {
@@ -947,6 +949,578 @@ describe('TOC (Table of Contents) Audit', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
+    });
+  });
+
+  describe('sendTocGuidanceRequestToMystique (outbound guidance:table-of-contents message)', () => {
+    const makeExistingSuggestion = (data, status = 'NEW') => ({
+      getId: () => 'suggestion-1',
+      getStatus: () => status,
+      getData: () => data,
+    });
+
+    const setupMystiqueContext = (existingSuggestions) => {
+      context.sqs = { sendMessage: sinon.stub().resolves() };
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = 'test-mystique-queue';
+      context.audit = { getId: () => 'audit-1' };
+      context.site = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getRegion: () => 'US',
+      };
+      return sinon.stub().resolves({
+        getId: () => 'test-toc-opportunity-id',
+        getAuditId: () => null,
+        getSuggestions: sinon.stub().resolves(existingSuggestions),
+      });
+    };
+
+    it('includes siteId and auditId at the top level, matching the guidance:prerender/summarization contract', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: [{
+              type: 'element',
+              tagName: 'a',
+              properties: { 'data-selector': 'h1#intro' },
+              children: [{ type: 'text', value: 'Introduction' }],
+            }],
+          },
+        }),
+      ]);
+      // Simulates the flag having been parsed in step 1 and forwarded through steps 2/3.
+      context.auditContext = { generatePrompts: true };
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+            explanation: 'TOC missing',
+            recommendedAction: 'Add TOC',
+            transformRules: {
+              action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }], valueFormat: 'html',
+            },
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queue, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(queue).to.equal('test-mystique-queue');
+      expect(message).to.include({
+        type: 'guidance:table-of-contents',
+        url: auditUrl,
+        siteId: 'site-1',
+        auditId: 'audit-1',
+      });
+      expect(message.data).to.include({
+        opportunityId: 'test-toc-opportunity-id',
+        generatePrompts: true,
+        siteRegion: 'US',
+      });
+      expect(message.data.suggestions).to.have.length(1);
+      expect(message.data.suggestions[0]).to.include({
+        url: 'https://example.com/page1',
+        title: 'Page 1',
+      });
+      expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
+    });
+
+    it('extracts headings when transformRules.value is a HAST root node (real shape stored by the API), not a bare array (LLMO-6167)', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: {
+              type: 'root',
+              children: [{
+                type: 'element',
+                tagName: 'nav',
+                children: [{
+                  type: 'element',
+                  tagName: 'ul',
+                  children: [{
+                    type: 'element',
+                    tagName: 'li',
+                    children: [{
+                      type: 'element',
+                      tagName: 'a',
+                      properties: { 'data-selector': 'h1#intro' },
+                      children: [{ type: 'text', value: 'Introduction' }],
+                    }],
+                  }],
+                }],
+              }],
+            },
+          },
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.suggestions[0].headings).to.deep.equal(['Introduction']);
+    });
+
+    it('skips FIXED/OUTDATED/SKIPPED/edge-deployed suggestions, and no eligible suggestions remain', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/fixed' }, 'FIXED'),
+        makeExistingSuggestion({ url: 'https://example.com/outdated' }, 'OUTDATED'),
+        makeExistingSuggestion({ url: 'https://example.com/skipped' }, 'SKIPPED'),
+        makeExistingSuggestion({ url: 'https://example.com/edge-deployed', edgeDeployed: true }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/fixed', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('includes already-prompted suggestions tagged with hasPrompts instead of silently excluding them', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/already-has-prompts',
+          hasPrompts: true,
+          prompts: [{ id: 'p1' }],
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/already-has-prompts', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.suggestions).to.have.length(1);
+      expect(message.data.suggestions[0]).to.include({
+        url: 'https://example.com/already-has-prompts',
+        hasPrompts: true,
+      });
+    });
+
+    it('defaults generatePrompts to false in the outbound message when auditContext has no flag', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/page1' }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.generatePrompts).to.equal(false);
+    });
+
+    it('falls back to opportunity.getAuditId() then a synthetic id when context.audit is absent', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/page1' }),
+      ]);
+      delete context.audit;
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      // No opportunity.getAuditId() on the resolved entity → synthetic fallback.
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+      let [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.auditId).to.equal('toc-ai-only-site-1');
+
+      // opportunity.getAuditId() present → used over the synthetic fallback.
+      const convertToOpportunityStubWithAuditId = sinon.stub().resolves({
+        getId: () => 'test-toc-opportunity-id',
+        getAuditId: () => 'stored-audit-id',
+        getSuggestions: sinon.stub().resolves([
+          makeExistingSuggestion({ url: 'https://example.com/page1' }),
+        ]),
+      });
+      const mockedHandler2 = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStubWithAuditId },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+      await mockedHandler2.opportunityAndSuggestions(auditUrl, auditData, context);
+      [, message] = context.sqs.sendMessage.getCall(1).args;
+      expect(message.auditId).to.equal('stored-audit-id');
+    });
+
+    it('swallows errors from sqs.sendMessage and logs them without failing the audit', async () => {
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
+      context.log = logSpy;
+
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/page1', title: 'Page 1' }),
+      ]);
+      context.sqs.sendMessage = sinon.stub().rejects(new Error('SQS unavailable'));
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await expect(mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context)).to.be.fulfilled;
+
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Failed to send guidance:table-of-contents message to Mystique/),
+      );
+    });
+
+    it('skips the Mystique message when the opportunity entity has no getId', async () => {
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
+      context.log = logSpy;
+      context.sqs = { sendMessage: sinon.stub().resolves() };
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = 'test-mystique-queue';
+
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getSuggestions: sinon.stub().resolves([]),
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Opportunity entity not available/),
+      );
+    });
+
+    it('skips the Mystique message when there are no existing suggestions to send', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('walks nested HAST wrappers and tolerates null children and childless anchors when extracting headings', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({
+          url: 'https://example.com/page1',
+          title: 'Page 1',
+          transformRules: {
+            value: [
+              { type: 'text', value: '\n' },
+              {
+                type: 'element',
+                tagName: 'ul',
+                children: [
+                  null,
+                  {
+                    type: 'element',
+                    tagName: 'li',
+                    children: [
+                      {
+                        type: 'element',
+                        tagName: 'a',
+                        properties: { 'data-selector': 'h2#one' },
+                        children: [{ type: 'text', value: 'First Heading' }],
+                      },
+                    ],
+                  },
+                  {
+                    type: 'element',
+                    tagName: 'a',
+                    properties: { 'data-selector': 'h2#two' },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.suggestions[0].headings).to.deep.equal(['First Heading']);
+    });
+
+    it('falls back through site?.getBaseURL?.() in the skip-warning when auditUrl is empty and SQS/queue is unconfigured', async () => {
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
+      context.log = logSpy;
+      // No context.sqs / QUEUE_SPACECAT_TO_MYSTIQUE configured on purpose.
+
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-toc-opportunity-id',
+        getSuggestions: sinon.stub().resolves([]),
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      // No site at all: `site?.` short-circuits, falls through to the final `|| ''`.
+      delete context.site;
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/SQS or Mystique queue not configured.*baseUrl=$/),
+      );
+
+      // Site present but with no getBaseURL method: `?.()` short-circuits instead.
+      context.site = {};
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/SQS or Mystique queue not configured.*baseUrl=$/),
+      );
+
+      // Site present with a real getBaseURL(): the call actually resolves.
+      context.site = { getBaseURL: () => 'https://fallback.example.com' };
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/SQS or Mystique queue not configured.*baseUrl=https:\/\/fallback\.example\.com/),
+      );
+    });
+
+    it('falls back through site?.getBaseURL?.() in the skip-warning when auditUrl is empty and the opportunity has no getId', async () => {
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
+      context.log = logSpy;
+      context.sqs = { sendMessage: sinon.stub().resolves() };
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = 'test-mystique-queue';
+
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getSuggestions: sinon.stub().resolves([]),
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      // No site at all: `site?.` short-circuits, falls through to the final `|| ''`.
+      delete context.site;
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Opportunity entity not available.*baseUrl=$/),
+      );
+
+      // Site present but with no getBaseURL method: `?.()` short-circuits instead.
+      context.site = {};
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Opportunity entity not available.*baseUrl=$/),
+      );
+
+      // Site present with a real getBaseURL(): the call actually resolves.
+      context.site = { getBaseURL: () => 'https://fallback.example.com' };
+      await mockedHandler.opportunityAndSuggestions('', auditData, context);
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Opportunity entity not available.*baseUrl=https:\/\/fallback\.example\.com/),
+      );
+    });
+
+    it('defaults siteRegion to an empty string when the site has no getRegion method', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({ url: 'https://example.com/page1', title: 'Page 1' }),
+      ]);
+      delete context.site.getRegion;
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      expect(message.data.siteRegion).to.equal('');
+    });
+
+    it('derives per-candidate url/title defaults and hasPrompts from prompts.length, not the stored flag (LLMO-6167)', async () => {
+      const convertToOpportunityStub = setupMystiqueContext([
+        makeExistingSuggestion({}),
+        // Corrupted state: hasPrompts:true but prompts:[] (e.g. left behind by a prior
+        // Mystique reply that carried no prompts). hasPrompts must be derived from
+        // prompts.length alone so this suggestion is re-sent to Mystique for another
+        // attempt, rather than being permanently skipped because the stale flag says
+        // "already has prompts".
+        makeExistingSuggestion({ url: 'https://example.com/u2', hasPrompts: true, prompts: [] }),
+        // Flag missing/unset but real prompts present — must still resolve to true from
+        // the array alone.
+        makeExistingSuggestion({ url: 'https://example.com/u3', prompts: [{ id: 'p1' }] }),
+      ]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE', checkType: 'toc', url: 'https://example.com/page1', explanation: 'x', recommendedAction: 'x',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const [, message] = context.sqs.sendMessage.getCall(0).args;
+      const [candidate1, candidate2, candidate3] = message.data.suggestions;
+
+      expect(candidate1).to.include({ url: '', title: '', hasPrompts: false });
+      expect(candidate2.hasPrompts).to.equal(false);
+      expect(candidate3.hasPrompts).to.equal(true);
     });
   });
 
@@ -2022,6 +2596,167 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(merged.transformRules.value).to.deep.equal([{ text: 'Deployed Title', level: 1 }]);
       expect(merged.isEdited).to.equal(true);
     });
+
+    it('returns existing suggestion unchanged when edgeOptimizeStatus is EXPERIMENT_IN_PROGRESS (LLMO-6168)', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        edgeOptimizeStatus: 'EXPERIMENT_IN_PROGRESS',
+        transformRules: {
+          value: [{ text: 'Experiment Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — a suggestion mid-IVE-experiment must not be
+      // clobbered by a subsequent audit run, even before edgeDeployed is set
+      expect(merged.edgeOptimizeStatus).to.equal('EXPERIMENT_IN_PROGRESS');
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Experiment Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
+    });
+
+    it('preserves Mystique-persisted prompts across re-audits when the new suggestion has none', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'Old explanation',
+        prompts: [{ id: 'p1', prompt: 'What is X?' }],
+        hasPrompts: true,
+      };
+      // Re-audits never re-derive prompts, so the raw new suggestion carries empty defaults
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'New explanation',
+        prompts: [],
+        hasPrompts: false,
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      expect(merged.explanation).to.equal('New explanation');
+      expect(merged.prompts).to.deep.equal([{ id: 'p1', prompt: 'What is X?' }]);
+      expect(merged.hasPrompts).to.equal(true);
+    });
+
+    it('does not touch prompts on merge when the new suggestion already carries its own', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        prompts: [{ id: 'p1', prompt: 'Old prompt' }],
+        hasPrompts: true,
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        prompts: [{ id: 'p2', prompt: 'New prompt' }],
+        hasPrompts: true,
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      expect(merged.prompts).to.deep.equal([{ id: 'p2', prompt: 'New prompt' }]);
+      expect(merged.hasPrompts).to.equal(true);
+    });
   });
 
   describe('Coverage Tests for Missing Lines', () => {
@@ -2243,7 +2978,9 @@ describe('TOC (Table of Contents) Audit', () => {
     it('covers line 73: fallback to empty string when pageTags.title is falsy', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const logSpy = {
+        info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
+      };
       context.log = logSpy;
 
       const mockClient = {
@@ -3665,6 +4402,89 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.topPages).to.deep.equal([]);
     });
+
+    const stubUrlDeps = () => ({
+      '../../src/utils/audit-input-urls.js': {
+        getMergedAuditInputUrls: sinon.stub().resolves({
+          urls: [],
+          topPagesUrls: [],
+          agenticUrls: [],
+          includedURLs: [],
+          filteredCount: 0,
+        }),
+        sortTopPagesByTraffic: sinon.stub().returns([]),
+      },
+      '../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+      },
+    });
+
+    it('forwards a true generatePrompts flag via auditContext when present in context.data', async () => {
+      context.site = site;
+      context.data = { generatePrompts: true };
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', stubUrlDeps());
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('parses generatePrompts from a JSON-string context.data', async () => {
+      context.site = site;
+      context.data = JSON.stringify({ generatePrompts: true });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', stubUrlDeps());
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('defaults generatePrompts to false when context.data is absent', async () => {
+      context.site = site;
+      context.data = undefined;
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', stubUrlDeps());
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
+    });
+
+    it('defaults generatePrompts to false and logs a warning when context.data is malformed JSON', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.data = '{not valid json';
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', stubUrlDeps());
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Failed to parse context\.data for mode/),
+      );
+      expect(logSpy.warn).to.have.been.calledWith(
+        sinon.match(/Failed to parse context\.data for generatePrompts flag/),
+      );
+    });
+
+    it('still includes auditContext.generatePrompts on the failure path when getTocInputUrls throws', async () => {
+      context.site = site;
+      context.data = { generatePrompts: true };
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: sinon.stub().rejects(new Error('DB error')),
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
   });
 
   describe('submitForScraping', () => {
@@ -3682,7 +4502,24 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.processingType).to.be.undefined;
       expect(result.options).to.be.undefined;
       expect(result.maxScrapeAge).to.equal(24);
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
       expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping');
+    });
+
+    it('forwards auditContext (including generatePrompts) from step 1 through to step 3', async () => {
+      const url = 'https://example.com/page';
+      context.log = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true, topPages: [url] }) };
+      context.auditContext = { generatePrompts: true, someOtherKey: 'preserved' };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+      const result = await submitForScraping(context);
+
+      expect(result.auditContext).to.deep.equal({
+        generatePrompts: true,
+        someOtherKey: 'preserved',
+      });
     });
 
     it('persists terminal result and returns when previous audit step failed', async () => {

@@ -27,6 +27,16 @@ const MAX_PAGES_TO_MYSTIQUE = 100;
 // Summarization opportunities remain in NEW status while active/unresolved.
 const ACTIVE_OPPORTUNITY_STATUS = 'NEW';
 
+function parseGeneratePromptsFlag(data, log) {
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    return !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`[SUMMARIZATION] Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+    return false;
+  }
+}
+
 /**
  * Builds a map of URL → stored contentHash from the most recent suggestions
  * for the site's active summarization opportunity.
@@ -107,8 +117,11 @@ async function getSummarizationInputUrls(context) {
 /* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
   const {
-    site, dataAccess, log,
+    site, dataAccess, log, data,
   } = context;
+
+  const generatePromptsFlag = parseGeneratePromptsFlag(data, log);
+
   try {
     const { urls: allUrls } = await getMergedAuditInputUrls({
       site,
@@ -129,6 +142,7 @@ export async function importTopPages(context) {
           topPages: [],
         },
         fullAuditRef: site.getBaseURL(),
+        auditContext: { generatePrompts: generatePromptsFlag },
       };
     }
 
@@ -142,6 +156,7 @@ export async function importTopPages(context) {
         topPages: allUrls,
       },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts: generatePromptsFlag },
     };
   } catch (error) {
     log.error(`[SUMMARIZATION] Failed to import top pages: ${error.message}`, error);
@@ -154,6 +169,7 @@ export async function importTopPages(context) {
         topPages: [],
       },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts: generatePromptsFlag },
     };
   }
 }
@@ -163,7 +179,7 @@ export async function importTopPages(context) {
  */
 export async function submitForScraping(context) {
   const {
-    site, audit, log,
+    site, audit, log, auditContext,
   } = context;
 
   const auditResult = audit.getAuditResult();
@@ -194,6 +210,7 @@ export async function submitForScraping(context) {
   return {
     auditContext: {
       [AUDIT_CONTEXT_URLS_KEY]: topPagesToScrape,
+      generatePrompts: !!auditContext?.generatePrompts,
     },
     urls: topPagesToScrape.map((url) => ({ url })),
     siteId: site.getId(),
@@ -227,6 +244,7 @@ export async function sendToMystique(context) {
     throw new Error('No submitted URLs found');
   }
   const urlsToCheck = submittedUrls;
+  const generatePrompts = !!auditContext?.generatePrompts;
 
   // Verify scrape availability before sending to Mystique
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
@@ -322,7 +340,7 @@ export async function sendToMystique(context) {
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
-    data: { pages: topPagesPayload },
+    data: { pages: topPagesPayload, generatePrompts },
   };
 
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
