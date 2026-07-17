@@ -28,6 +28,7 @@ import {
   prepareSuppressedRunSnapshot,
   prepareSupersededRunSnapshot,
 } from '../common/offsite-snapshot.js';
+import { deleteExpiredSnapshots } from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 const LOG_PREFIX = '[YouTube]';
@@ -172,6 +173,15 @@ export default async function handler(message, context) {
     });
 
     log.info(`${LOG_PREFIX} Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+
+    // Retention must not fail an otherwise successful refresh.
+    try {
+      await deleteExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      });
+    } catch (error) {
+      log.error(`[Offsite][Retention] Unexpected failure siteId=${siteId} auditType=${auditType} error=${error.message}`);
+    }
 
     if (auditId) {
       const audit = await AuditModel.findById(auditId);
