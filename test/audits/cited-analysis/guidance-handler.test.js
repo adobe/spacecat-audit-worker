@@ -147,7 +147,6 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
-      expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.calledBefore(syncSuggestionsStub);
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed cited analysis/));
@@ -879,7 +878,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.log.error).to.have.been.calledWith(sinon.match(/Audit not found/));
     });
 
-    it('should store full analysis in opportunity data', async () => {
+    it('should NOT persist the redundant fullAnalysis blob on the opportunity', async () => {
       const boJson = {
         suggestions: [
           { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
@@ -898,12 +897,10 @@ describe('Cited Analysis Guidance Handler', () => {
 
       await handler.default(message, context);
 
-      expect(mockOpportunity.setData).to.have.been.calledWith(
-        sinon.match({
-          existingData: true,
-          fullAnalysis: sinon.match({ suggestions: boJson.suggestions }),
-        }),
+      expect(mockOpportunity.setData).to.not.have.been.calledWith(
+        sinon.match.has('fullAnalysis'),
       );
+      expect(mockOpportunity.save).to.have.been.called;
     });
   });
 

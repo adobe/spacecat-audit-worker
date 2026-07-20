@@ -563,7 +563,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(key).to.equal('youtube::my_suggestion_id');
     });
 
-    it('should save full analysis data to opportunity', async () => {
+    it('should NOT persist the redundant fullAnalysis blob on the opportunity', async () => {
       const message = {
         siteId,
         auditId,
@@ -575,11 +575,10 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       await guidanceHandler.default(message, context);
 
-      expect(mockOpportunity.setData).to.have.been.calledWith(
-        sinon.match({
-          fullAnalysis: mockAnalysisData,
-        }),
+      expect(mockOpportunity.setData).to.not.have.been.calledWith(
+        sinon.match.has('fullAnalysis'),
       );
+      expect(mockOpportunity.save).to.have.been.called;
     });
 
     it('should return badRequest when processing fails', async () => {

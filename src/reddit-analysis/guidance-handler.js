@@ -136,10 +136,10 @@ export default async function handler(message, context) {
     // Save the scoped opportunity before syncing its suggestions.
     applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
     opportunity.setStatus(incomingStatus);
-    opportunity.setData({
-      ...opportunity.getData(),
-      fullAnalysis: analysisData,
-    });
+    // The raw analysis payload is intentionally NOT persisted on the opportunity:
+    // persistOffsiteOpportunity already stores the dashboard data the UI renders and
+    // suggestions are synced below as their own records. Duplicating the full
+    // (localized, larger) analysis here only bloats the item.
     await opportunity.save();
 
     await syncSuggestions({
