@@ -30,7 +30,10 @@ import {
   prepareSuppressedRunSnapshot,
   prepareSupersededRunSnapshot,
 } from '../common/offsite-snapshot.js';
-import { deleteExpiredSnapshots } from '../common/offsite-retention.js';
+import {
+  deleteExpiredSnapshots,
+  deleteExpiredOutdatedSuggestions,
+} from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 const LOG_PREFIX = '[Reddit]';
@@ -176,13 +179,24 @@ export default async function handler(message, context) {
 
     log.info(`${LOG_PREFIX} Successfully processed Reddit analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
 
-    // Retention must not fail an otherwise successful refresh.
+    // Expired suggestion deletion must not fail an otherwise successful refresh.
+    try {
+      await deleteExpiredOutdatedSuggestions({
+        dataAccess, opportunity, siteId, auditType, log,
+      });
+    } catch (error) {
+      log.error('[Offsite][Retention] Unexpected expired OUTDATED suggestion deletion failure '
+        + `opportunityId=${opportunity.getId()} siteId=${siteId} auditType=${auditType} `
+        + `error=${error.message}`);
+    }
+
+    // Expired snapshot deletion must not fail an otherwise successful refresh.
     try {
       await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      log.error(`[Offsite][Retention] Unexpected failure siteId=${siteId} auditType=${auditType} error=${error.message}`);
+      log.error(`[Offsite][Retention] Unexpected expired snapshot deletion failure siteId=${siteId} auditType=${auditType} error=${error.message}`);
     }
 
     if (auditId) {
