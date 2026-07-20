@@ -636,6 +636,68 @@ describe('summarization utils', () => {
       expect(result[0].contentHash).to.be.null;
       expect(result[1].contentHash).to.be.null;
     });
+
+    describe('sourceEvidence persistence', () => {
+      it('should persist source_evidence from pageSummary onto the summary suggestion', () => {
+        const sourceEvidence = ['Raw sentence A from page.', 'Raw sentence B from page.'];
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: sourceEvidence,
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].sourceEvidence).to.deep.equal(sourceEvidence);
+      });
+
+      it('should persist source_evidence from keyPoints onto the key-points suggestion', () => {
+        const kpEvidence = ['Sentence for Key 1.', 'Sentence for Key 2.'];
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: {
+            formatted_items: ['Key 1', 'Key 2'],
+            source_evidence: kpEvidence,
+          },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[1].keyPoints).to.be.true;
+        expect(result[1].sourceEvidence).to.deep.equal(kpEvidence);
+      });
+
+      it('should default sourceEvidence to empty array when source_evidence is absent', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.deep.equal([]);
+        expect(result[1].sourceEvidence).to.deep.equal([]);
+      });
+    });
   });
 });
 

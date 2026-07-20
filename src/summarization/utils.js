@@ -75,6 +75,12 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         scrapedAt,
         contentHash,
         prompts: summaryPrompts,
+        // Verbatim raw-page sentences the summary was derived from (captured by the
+        // gen_summary_crew QA task). Persisted here so the on-demand prompt-regeneration
+        // path (build_summarization_inputs) can use them as summary_sources without
+        // needing to re-fetch the raw page.
+        sourceEvidence: Array.isArray(suggestion.pageSummary?.source_evidence)
+          ? suggestion.pageSummary.source_evidence : [],
       });
     }
 
@@ -94,6 +100,11 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         scrapedAt,
         contentHash,
         prompts: keyPointsPrompts,
+        // Verbatim raw-page sentences each key point was derived from (parallel to
+        // keyPoints.items). Persisted so on-demand regeneration can use them as
+        // kp_sources without re-fetching the raw page.
+        sourceEvidence: Array.isArray(suggestion.keyPoints?.source_evidence)
+          ? suggestion.keyPoints.source_evidence : [],
       });
     }
   });
