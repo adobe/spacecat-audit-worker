@@ -2597,7 +2597,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(merged.isEdited).to.equal(true);
     });
 
-    it('returns existing suggestion unchanged when edgeOptimizeStatus is EXPERIMENT_IN_PROGRESS (LLMO-6168)', async () => {
+    it('returns existing suggestion unchanged when edgeOptimizeStatus is present, regardless of value (LLMO-6168)', async () => {
       const convertToOpportunityStub = sinon.stub().resolves({
         getId: () => 'test-opportunity-id',
       });
@@ -2633,7 +2633,7 @@ describe('TOC (Table of Contents) Audit', () => {
       const existingSuggestion = {
         url: 'https://example.com/page1',
         isEdited: true,
-        edgeOptimizeStatus: 'EXPERIMENT_IN_PROGRESS',
+        edgeOptimizeStatus: 'EXPERIMENT_COMPLETE',
         transformRules: {
           value: [{ text: 'Experiment Title', level: 1 }],
         },
@@ -2648,8 +2648,9 @@ describe('TOC (Table of Contents) Audit', () => {
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
       // Must return existing data unchanged — a suggestion mid-IVE-experiment must not be
-      // clobbered by a subsequent audit run, even before edgeDeployed is set
-      expect(merged.edgeOptimizeStatus).to.equal('EXPERIMENT_IN_PROGRESS');
+      // clobbered by a subsequent audit run, even before edgeDeployed is set. This holds for
+      // any edgeOptimizeStatus value, not just EXPERIMENT_IN_PROGRESS.
+      expect(merged.edgeOptimizeStatus).to.equal('EXPERIMENT_COMPLETE');
       expect(merged.transformRules.value).to.deep.equal([{ text: 'Experiment Title', level: 1 }]);
       expect(merged.isEdited).to.equal(true);
     });
