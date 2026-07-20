@@ -30,13 +30,16 @@ import { checkGoogleConnection } from './opportunity-utils.js';
   */
 
 // eslint-disable-next-line max-len
-export async function convertToOpportunity(auditUrl, auditData, context, createOpportunityData, auditType, props = {}, comparisonFn = undefined) {
+export async function convertToOpportunity(auditUrl, auditData, context, createOpportunityData, auditType, props = {}, comparisonFn = undefined, existingOpportunity = undefined) {
   const opportunityInstance = createOpportunityData(props);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
-  let opportunity;
+  // Callers may pre-resolve the existing opportunity (e.g. brand-scoped analyses
+  // look it up by scope across NEW + IN_PROGRESS, which the NEW-only fetch below
+  // cannot see). When provided, reuse it and skip the fetch.
+  let opportunity = existingOpportunity;
 
-  if (auditType !== 'high-organic-low-ctr') {
+  if (!opportunity && auditType !== 'high-organic-low-ctr') {
     try {
       // eslint-disable-next-line max-len
       const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.NEW);

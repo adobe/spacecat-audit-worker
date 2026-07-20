@@ -31,7 +31,7 @@ const LOG_PREFIX = '[YouTube]';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Audit: AuditModel } = dataAccess;
+  const { Site, Audit: AuditModel, Opportunity } = dataAccess;
   // Note: any inbound `brandId` from Mystique is informational only. Scope is
   // re-resolved server-side via resolveBrandResultForSite; trusting the inbound
   // value would let a tampered message re-attribute the opportunity.
@@ -95,6 +95,20 @@ export default async function handler(message, context) {
 
     const auditType = opportunityData.type || AUDIT_TYPE;
 
+    // Brand-scoped analyses are unique per (scopeType, scopeId, type) in Postgres
+    // (idx_opportunities_unique_active_scope, covering NEW + IN_PROGRESS). auditId
+    // changes on every run, so match/reuse the existing active brand opportunity by
+    // scope and update it in place; creating a second row and stamping the same
+    // brand scope collides (23505 duplicate key) and aborts before syncSuggestions.
+    const resolvedBrandId = brandResult?.brand?.brandId;
+    let existingOpportunity;
+    if (resolvedBrandId && typeof Opportunity?.allByScope === 'function') {
+      const scoped = await Opportunity.allByScope('brand', resolvedBrandId);
+      existingOpportunity = scoped.find(
+        (oppty) => oppty.getType() === auditType
+          && ['NEW', 'IN_PROGRESS'].includes(oppty.getStatus()),
+      );
+    }
     const opportunity = await convertToOpportunity(
       baseUrl,
       {
@@ -106,7 +120,10 @@ export default async function handler(message, context) {
       createOpportunityData,
       auditType,
       { opportunityData },
-      (oppty) => oppty.getAuditId() === auditId,
+      (oppty) => (resolvedBrandId
+        ? oppty.getScopeType?.() === 'brand' && oppty.getScopeId?.() === resolvedBrandId
+        : oppty.getAuditId() === auditId),
+      existingOpportunity,
     );
 
     // Persist the opportunity (with scope) BEFORE syncing suggestions; see

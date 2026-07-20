@@ -170,7 +170,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
-    it('should pass comparisonFn that matches by auditId', async () => {
+    it('should pass comparisonFn that matches by auditId when no brand is resolved', async () => {
       const message = {
         siteId,
         auditId,
@@ -190,6 +190,53 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(comparisonFn).to.be.a('function');
       expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
       expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+    });
+
+    it('should match/reuse the existing brand opportunity (NEW or IN_PROGRESS) when a brand is resolved', async () => {
+      const brandId = 'brand-uuid-123';
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId }, resolved: true });
+      const inProgressOppty = {
+        getType: () => 'reddit-analysis',
+        getStatus: () => 'IN_PROGRESS',
+        getScopeType: () => 'brand',
+        getScopeId: () => brandId,
+      };
+      context.dataAccess.Opportunity = {
+        allByScope: sinon.stub().resolves([inProgressOppty]),
+      };
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      // The active IN_PROGRESS brand opportunity is looked up by scope and passed
+      // to convertToOpportunity so it is reused instead of duplicated (23505).
+      expect(context.dataAccess.Opportunity.allByScope).to.have.been.calledWith('brand', brandId);
+      expect(convertToOpportunityStub.firstCall.args[7]).to.equal(inProgressOppty);
+
+      // And the comparison fn matches by brand scope, not auditId.
+      const comparisonFn = convertToOpportunityStub.firstCall.args[6];
+      expect(comparisonFn({
+        getScopeType: () => 'brand',
+        getScopeId: () => brandId,
+        getAuditId: () => 'different-audit-id',
+      })).to.be.true;
+      expect(comparisonFn({
+        getScopeType: () => 'brand',
+        getScopeId: () => 'other-brand',
+        getAuditId: () => auditId,
+      })).to.be.false;
     });
 
     it('should set status from opportunityData when provided by Mystique', async () => {
