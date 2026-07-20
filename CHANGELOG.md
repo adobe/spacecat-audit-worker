@@ -1,3 +1,15 @@
+# [1.500.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.499.1...v1.500.0) (2026-07-20)
+
+
+### Bug Fixes
+
+* **toc:** treat edgeOptimizeStatus as present-check, not value-check (LLMO-6168) ([#2781](https://github.com/adobe/spacecat-audit-worker/issues/2781)) ([9d5104f](https://github.com/adobe/spacecat-audit-worker/commit/9d5104f6eaa43b80bd884d938b1f3143f98da8dd))
+
+
+### Features
+
+* **evergreen-offsite-opportunities:** Make offsite opportunities a stable, persistent entity that is refreshed in place every week (LLMO-6122) ([#2765](https://github.com/adobe/spacecat-audit-worker/issues/2765)) ([4e4a8f4](https://github.com/adobe/spacecat-audit-worker/commit/4e4a8f4ae80b7440d8db2b59778335b5fb907d74))
+
 ## [1.499.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.499.0...v1.499.1) (2026-07-18)
 
 
