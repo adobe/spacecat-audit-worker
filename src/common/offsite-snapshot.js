@@ -21,6 +21,12 @@ export const SNAPSHOT_KINDS = {
   SUPPRESSED_REFRESH: 'suppressed-refresh',
 };
 
+/** Returns true for a managed snapshot of the requested audit type. */
+export function isOffsiteSnapshot(opportunity, auditType) {
+  return opportunity.getType() === auditType
+    && (opportunity.getTags() || []).includes(SNAPSHOT_TAG);
+}
+
 /**
  * Finds a snapshot by (siteId, auditType, triggerAuditId).
  * Lookup failures propagate to avoid duplicate creation.
@@ -41,8 +47,7 @@ export async function findSnapshotByTriggerAuditId({
   return (opportunities || []).find((opportunity) => {
     const snapshotMetadata = opportunity.getData()?.snapshot;
 
-    return opportunity.getType() === auditType
-      && (opportunity.getTags() || []).includes(SNAPSHOT_TAG)
+    return isOffsiteSnapshot(opportunity, auditType)
       && snapshotMetadata?.triggerAuditId === triggerAuditId;
   }) || null;
 }

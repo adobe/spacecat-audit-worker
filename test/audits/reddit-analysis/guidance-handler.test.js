@@ -38,6 +38,7 @@ describe('Reddit Analysis Guidance Handler', () => {
   let findSnapshotByTriggerAuditIdStub;
   let prepareSuppressedRunSnapshotStub;
   let prepareSupersededRunSnapshotStub;
+  let deleteExpiredSnapshotsStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -123,6 +124,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       }
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });
+    deleteExpiredSnapshotsStub = sandbox.stub().resolves(0);
 
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -142,6 +144,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       '../../../src/common/offsite-snapshot.js': {
         prepareSuppressedRunSnapshot: prepareSuppressedRunSnapshotStub,
         prepareSupersededRunSnapshot: prepareSupersededRunSnapshotStub,
+      },
+      '../../../src/common/offsite-retention.js': {
+        deleteExpiredSnapshots: deleteExpiredSnapshotsStub,
       },
     });
 
@@ -1407,6 +1412,79 @@ describe('Reddit Analysis Guidance Handler', () => {
         snapshot: { kind: 'suppressed-refresh' },
       });
       expect(propsArg.opportunityData.data.snapshot).to.not.have.property('triggerAuditId');
+    });
+  });
+
+  describe('Snapshot retention', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('deletes old snapshots once, scoped to (siteId, auditType), after a surfaced run', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredSnapshotsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+    });
+
+    it('deletes old snapshots once after a suppressed run', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredSnapshotsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+    });
+
+    it('still returns ok() when retention throws', async () => {
+      deleteExpiredSnapshotsStub.rejects(new Error('retention blew up'));
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.error).to.have.been.calledWith(sinon.match(
+        /\[Offsite\]\[Retention\] Unexpected failure siteId=test-site-id auditType=reddit-analysis error=retention blew up/,
+      ));
     });
   });
 });
