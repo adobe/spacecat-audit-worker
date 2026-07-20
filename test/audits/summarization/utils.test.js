@@ -637,6 +637,65 @@ describe('summarization utils', () => {
       expect(result[1].contentHash).to.be.null;
     });
 
+    describe('depthLift persistence', () => {
+      it('should persist depthLift on both summary and key-points suggestions', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          depthLift: 0.5783,
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1', 'Key 2'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].depthLift).to.equal(0.5783);
+        expect(result[1].depthLift).to.equal(0.5783);
+      });
+
+      it('should default depthLift to 0 when absent', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].depthLift).to.equal(0);
+        expect(result[1].depthLift).to.equal(0);
+      });
+
+      it('should default depthLift to 0 when value is not a number', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          depthLift: 'invalid',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].depthLift).to.equal(0);
+        expect(result[1].depthLift).to.equal(0);
+      });
+    });
+
     describe('sourceEvidence persistence', () => {
       it('should persist source_evidence from pageSummary onto the summary suggestion', () => {
         const sourceEvidence = ['Raw sentence A from page.', 'Raw sentence B from page.'];
