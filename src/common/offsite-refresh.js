@@ -14,6 +14,12 @@ import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
 
+// An offsite opportunity is unique per (scopeType, scopeId, type) while active, where active
+// means NEW or IN_PROGRESS (idx_opportunities_unique_active_scope). Both statuses must be
+// treated as the reusable evergreen; a customer-activated (IN_PROGRESS) opportunity that is
+// not reused would be recreated and collide with the existing row on save.
+const ACTIVE_OFFSITE_STATUSES = [Oppty.STATUSES.NEW, Oppty.STATUSES.IN_PROGRESS];
+
 /**
  * Validates the payload shape and rejects a declared opportunity type that differs from
  * the handler-owned audit type.
@@ -110,9 +116,12 @@ export async function persistOffsiteOpportunity(
 }
 
 /**
- * Resolves the evergreen offsite opportunity (status NEW).
+ * Resolves the evergreen offsite opportunity (active status: NEW or IN_PROGRESS).
  *
- * If duplicates exist, keeps the most recently updated one and retires the rest to IGNORED.
+ * A customer-activated (IN_PROGRESS) opportunity is reused in place, not treated as absent —
+ * otherwise the refresh would create a second row and collide with it on the active-scope
+ * unique index. If duplicates exist, keeps the most recently updated one and retires the
+ * rest to IGNORED.
  *
  * @param {Object} params
  * @param {Object} params.dataAccess - The data access object (from audit-worker context).
@@ -126,15 +135,18 @@ export async function resolveEvergreenOffsiteOpportunity({
   dataAccess, siteId, auditType, log,
 }) {
   const { Opportunity } = dataAccess;
-  let opportunities;
+  let activeOpportunities;
   try {
-    opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
+    const opportunitiesByStatus = await Promise.all(
+      ACTIVE_OFFSITE_STATUSES.map((status) => Opportunity.allBySiteIdAndStatus(siteId, status)),
+    );
+    activeOpportunities = opportunitiesByStatus.flatMap((list) => list || []);
   } catch (e) {
     log.error(`[OffsiteRefresh] Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
     throw e;
   }
 
-  const matchingOpportunities = (opportunities || [])
+  const matchingOpportunities = activeOpportunities
     .filter((opportunity) => opportunity.getType() === auditType);
   if (matchingOpportunities.length === 0) {
     return null;
@@ -147,7 +159,7 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  log.info(`[OffsiteRefresh] Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`);
+  log.info(`[OffsiteRefresh] Found ${matchingOpportunities.length} active ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`);
 
   duplicates.forEach((duplicate) => {
     duplicate.setStatus(Oppty.STATUSES.IGNORED);

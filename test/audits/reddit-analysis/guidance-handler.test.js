@@ -984,9 +984,11 @@ describe('Reddit Analysis Guidance Handler', () => {
         getStatus: sandbox.stub().returns('NEW'),
         getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
       };
-      context.dataAccess.Opportunity = {
-        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
-      };
+      // The resolver queries each active status; the visible one is NEW.
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([visibleOpportunity]);
+      allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([]);
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus };
 
       const message = validMessage({
         data: {
@@ -1044,9 +1046,10 @@ describe('Reddit Analysis Guidance Handler', () => {
         getStatus: sandbox.stub().returns('NEW'),
         getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
       };
-      context.dataAccess.Opportunity = {
-        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
-      };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([visibleOpportunity]);
+      allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([]);
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus };
 
       const message = validMessage();
 
@@ -1054,7 +1057,41 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       const propsArg = convertToOpportunityStub.firstCall.args[5];
       expect(propsArg.existingOpportunity).to.equal(visibleOpportunity);
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
+      // The resolver queries each active status (NEW and IN_PROGRESS) once; the single lookup
+      // is shared with persistOffsiteOpportunity, which is stubbed and never re-queries.
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledTwice;
+    });
+
+    it('should reuse a customer-activated IN_PROGRESS opportunity in place on a surfaced run', async () => {
+      // A customer-activated (IN_PROGRESS) opportunity is invisible to a NEW-only lookup, so a
+      // refresh would recreate it and collide on the active-scope unique index — dropping its
+      // suggestions. It must be reused in place, not retired and not recreated.
+      const inProgressOpportunity = {
+        getId: sandbox.stub().returns('in-progress-opp'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('IN_PROGRESS'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([]);
+      allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([inProgressOpportunity]);
+      const saveManyStub = sandbox.stub().resolves();
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus, saveMany: saveManyStub };
+
+      const message = validMessage();
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      // Reused directly as the evergreen target, never retired or recreated.
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub.firstCall.args[5].existingOpportunity)
+        .to.equal(inProgressOpportunity);
+      expect(inProgressOpportunity.setStatus).to.not.have.been.called;
+      expect(saveManyStub).to.not.have.been.called;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
     });
 
     it('should lazily retire duplicate NEW opportunities of the same type via saveMany, keeping the most recent as evergreen', async () => {
@@ -1075,8 +1112,11 @@ describe('Reddit Analysis Guidance Handler', () => {
         setUpdatedBy: sandbox.stub(),
       };
       const saveManyStub = sandbox.stub().resolves();
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([older, newer]);
+      allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([]);
       context.dataAccess.Opportunity = {
-        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        allBySiteIdAndStatus,
         saveMany: saveManyStub,
       };
 
@@ -1110,8 +1150,11 @@ describe('Reddit Analysis Guidance Handler', () => {
         setStatus: sandbox.stub(),
         setUpdatedBy: sandbox.stub(),
       };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([older, newer]);
+      allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([]);
       context.dataAccess.Opportunity = {
-        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        allBySiteIdAndStatus,
         saveMany: sandbox.stub().rejects(new Error('save failed')),
       };
 
