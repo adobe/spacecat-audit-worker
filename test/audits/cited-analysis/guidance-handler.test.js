@@ -75,8 +75,8 @@ describe('Cited Analysis Guidance Handler', () => {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
       },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: convertToOpportunityStub,
+      '../../../src/common/offsite-refresh.js': {
+        persistOffsiteOpportunity: convertToOpportunityStub,
       },
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchAnalysisStub,
@@ -98,6 +98,13 @@ describe('Cited Analysis Guidance Handler', () => {
           },
           Audit: {
             findById: sandbox.stub().resolves(mockAudit),
+          },
+          // withOverrides() shallow-replaces the whole dataAccess object, so Opportunity
+          // must be provided here too — otherwise resolveEvergreenOpportunity's internal
+          // Opportunity.allBySiteIdAndStatus call throws on `undefined` for every test in
+          // this file that doesn't set its own dataAccess.Opportunity mock below.
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
         },
       })
@@ -142,10 +149,11 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
+      expect(mockOpportunity.save).to.have.been.calledBefore(syncSuggestionsStub);
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed cited analysis/));
     });
 
-    it('should pass opportunityData from BO JSON to convertToOpportunity', async () => {
+    it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
       const opportunityData = {
         title: 'Cited URL Analysis',
         description: 'Custom description from Mystique',
@@ -174,7 +182,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
-    it('should pass comparisonFn that matches by auditId', async () => {
+    it('should not pass a comparisonFn, relying on default match-by-type for a stable opportunity per (site, type)', async () => {
       const message = {
         siteId,
         auditId,
@@ -192,10 +200,7 @@ describe('Cited Analysis Guidance Handler', () => {
 
       await handler.default(message, context);
 
-      const comparisonFn = convertToOpportunityStub.firstCall.args[6];
-      expect(comparisonFn).to.be.a('function');
-      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
-      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+      expect(convertToOpportunityStub.firstCall.args[6]).to.be.undefined;
     });
 
     it('should set status from opportunityData when provided by Mystique', async () => {
@@ -220,7 +225,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
     });
 
-    it('should use auditType from opportunityData.type when provided', async () => {
+    it('should always use the handler-owned AUDIT_TYPE, ignoring opportunityData.type', async () => {
       const message = {
         siteId,
         auditId,
@@ -237,10 +242,35 @@ describe('Cited Analysis Guidance Handler', () => {
         },
       };
 
+      const result = await handler.default(message, context);
+
+      // A mismatched declared type is treated as a malformed payload — never trusted for
+      // matching/creation, and never silently corrected to make the run proceed.
+      expect(result.status).to.equal(400);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
+    it('should proceed using AUDIT_TYPE when opportunityData.type agrees with it', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { type: 'cited-analysis' },
+            suggestions: [
+              {
+                id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+              },
+            ],
+          },
+        },
+      };
+
       await handler.default(message, context);
 
       const auditTypeArg = convertToOpportunityStub.firstCall.args[4];
-      expect(auditTypeArg).to.equal('custom-audit-type');
+      expect(auditTypeArg).to.equal('cited-analysis');
     });
 
     it('should return noContent when no suggestions found', async () => {
@@ -778,6 +808,27 @@ describe('Cited Analysis Guidance Handler', () => {
       );
     });
 
+    it('does not sync suggestions when opportunity persistence fails', async () => {
+      mockOpportunity.save.rejects(new Error('save failed'));
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+
     it('should skip audit lookup when auditId is not provided', async () => {
       const message = {
         siteId,
@@ -1015,6 +1066,209 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(resolveBrandResultForSiteStub).to.have.been.called;
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
       expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
+    });
+  });
+
+  describe('Evergreen opportunity refresh safety', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('should return badRequest and skip all mutation when analysis.opportunity is malformed', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: ['not', 'an', 'object'],
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+      expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('should persist a suppressed run as a new opportunity without touching the visible one', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      // existingOpportunity is explicitly null so persistOffsiteOpportunity creates a record
+      // a new opportunity, never reusing (or re-querying for) the visible one.
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg).to.have.property('existingOpportunity', null);
+    });
+
+    // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
+    // NEW-status lookup that feeds resolution returns the same thing (no matches) — so both
+    // states exercise this same "create a new row" path.
+    it('should create a new (hidden) opportunity for a suppressed run when nothing is visible yet', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg).to.have.property('existingOpportunity', null);
+    });
+
+    it('should hand the resolved evergreen to persistOffsiteOpportunity for a surfaced run', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage();
+
+      await handler.default(message, context);
+
+      // A surfaced (NEW) run must reuse the already-resolved evergreen opportunity directly —
+      // never trigger a second, independent query inside persistOffsiteOpportunity.
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.existingOpportunity).to.equal(visibleOpportunity);
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
+    });
+
+    it('should lazily retire duplicate NEW opportunities of the same type via saveMany, keeping the most recent as evergreen', async () => {
+      const older = {
+        getId: sandbox.stub().returns('older-opp'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2025-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const newer = {
+        getId: sandbox.stub().returns('newer-opp'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const saveManyStub = sandbox.stub().resolves();
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        saveMany: saveManyStub,
+      };
+
+      const message = validMessage();
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(older.setStatus).to.have.been.calledWith('IGNORED');
+      expect(newer.setStatus).to.not.have.been.called;
+      expect(saveManyStub).to.have.been.calledOnce;
+      expect(saveManyStub.firstCall.args[0]).to.deep.equal([older]);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      // The de-duplicated evergreen opportunity (newer) is what gets reused, not a fresh re-query.
+      expect(convertToOpportunityStub.firstCall.args[5].existingOpportunity).to.equal(newer);
+    });
+
+    it('should propagate the error (badRequest) when duplicate retirement fails, without proceeding', async () => {
+      const older = {
+        getId: sandbox.stub().returns('older-opp'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2025-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const newer = {
+        getId: sandbox.stub().returns('newer-opp'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        saveMany: sandbox.stub().rejects(new Error('save failed')),
+      };
+
+      const message = validMessage();
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
+    it('should propagate the error (badRequest) when the initial opportunity lookup fails, without creating a duplicate', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')),
+      };
+
+      const message = validMessage();
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      // A transient read failure must never be treated as "nothing exists yet" (which
+      // would otherwise create a duplicate NEW opportunity) — conversion is never attempted.
+      expect(convertToOpportunityStub).to.not.have.been.called;
+      expect(syncSuggestionsStub).to.not.have.been.called;
     });
   });
 });

@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
 /**
  * Data sources for opportunities
  */
@@ -22,3 +24,12 @@ export const DATA_SOURCES = {
 };
 
 export const ELMO_LIVE_HOST = 'https://main--project-elmo-ui-data--adobe.aem.live';
+
+/**
+ * Offsite audit types: opportunities refreshed on a recurring schedule.
+ */
+export const OFFSITE_AUDIT_TYPES = new Set([
+  Audit.AUDIT_TYPES.CITED_ANALYSIS,
+  Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
+  Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
+]);

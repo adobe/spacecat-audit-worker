@@ -15,7 +15,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 /**
  * Creates opportunity data for YouTube analysis from the Mystique payload.
- * @param {Object} props - The props object from convertToOpportunity
+ * @param {Object} props - The options passed by persistOffsiteOpportunity
  * @param {Object} [props.opportunityData] - The opportunity object from the analysis payload
  * @returns {Object} Opportunity data
  */
