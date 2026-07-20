@@ -1463,7 +1463,7 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
-    it('should not mark suggestions mid-IVE-experiment as OUTDATED (LLMO-6168)', async () => {
+    it('should not mark suggestions with any edgeOptimizeStatus present as OUTDATED (LLMO-6168)', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
       const existingSuggestions = [
@@ -1480,18 +1480,30 @@ describe('data-access', () => {
         },
         {
           id: '2',
-          data: { url: 'https://example.com/page2', key: 'page2' },
+          data: {
+            url: 'https://example.com/page2', key: 'page2', edgeOptimizeStatus: 'EXPERIMENT_COMPLETE',
+          },
           getId: sinon.stub().returns('2'),
-          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getData: sinon.stub().returns({
+            url: 'https://example.com/page2', key: 'page2', edgeOptimizeStatus: 'EXPERIMENT_COMPLETE',
+          }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+        {
+          id: '3',
+          data: { url: 'https://example.com/page3', key: 'page3' },
+          getId: sinon.stub().returns('3'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
           getStatus: sinon.stub().returns('NEW'),
         },
       ];
 
-      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
       const scrapedUrlsSet = new Set([
         'https://example.com/page1',
         'https://example.com/page2',
         'https://example.com/page3',
+        'https://example.com/page4',
       ]);
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -1506,8 +1518,11 @@ describe('data-access', () => {
         scrapedUrlsSet,
       });
 
+      // page1 (EXPERIMENT_IN_PROGRESS) and page2 (EXPERIMENT_COMPLETE) are preserved
+      // regardless of the specific status value — only page3, with no edgeOptimizeStatus
+      // at all, gets marked OUTDATED.
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-        [existingSuggestions[1]],
+        [existingSuggestions[2]],
         'OUTDATED',
       );
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
