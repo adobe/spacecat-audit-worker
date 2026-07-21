@@ -431,6 +431,9 @@ describe('agentic traffic mapper', () => {
       { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/guide.pdf', host: 'www.example.com', product: 'Docs', category: 'Asset' },
       { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/index.htm', host: 'www.example.com', product: 'Docs', category: 'Asset' },
       { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/notes.txt', host: 'www.example.com', product: 'Docs', category: 'Asset' },
+      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/foo.md', host: 'www.example.com', product: 'Docs', category: 'Asset' },
+      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/foo.markdown', host: 'www.example.com', product: 'Docs', category: 'Asset' },
+      { agent_type: 'Chatbots', user_agent_display: 'ChatGPT-User', status: 200, number_of_hits: 1, avg_ttfb_ms: 10, country_code: 'US', url: '/FOO.MD', host: 'www.example.com', product: 'Docs', category: 'Asset' },
     ], site, {
       log: { warn: sinon.spy() },
       dataAccess: {
@@ -449,6 +452,9 @@ describe('agentic traffic mapper', () => {
       'pdf',
       'html',
       'txt',
+      'md',
+      'md',
+      'md',
     ]);
   });
 
