@@ -171,23 +171,22 @@ async function filterOutValidBacklinks(backlinks, log) {
  * fields, causing every audit-side consumer that reads snake_case to silently
  * short-circuit on `undefined`. This helper accepts either casing.
  *
+ * Precedence is uniform: snake_case (the form the audit-worker writes) is
+ * preferred; camelCase is the UI-mutation fallback. `urlEdited` and `isEdited`
+ * are intentionally asymmetric — they are UI-only fields that the audit-worker
+ * never writes, so there is no snake_case equivalent to fall back to.
+ *
  * @param {Object} data - The suggestion's `.getData()` payload.
  * @returns {{urlTo: string|undefined, urlFrom: string|undefined,
  *            urlsSuggested: string[], urlEdited: string|undefined}}
  */
 function normaliseBacklinkFields(data) {
-  let urlsSuggested = [];
-  if (Array.isArray(data?.urlsSuggested)) {
-    urlsSuggested = data.urlsSuggested;
-  /* c8 ignore next 2 */
-  } else if (Array.isArray(data?.urls_suggested)) {
-    urlsSuggested = data.urls_suggested;
-  }
+  const urlsSuggestedRaw = data?.urls_suggested ?? data?.urlsSuggested;
   return {
     urlTo: data?.url_to ?? data?.urlTo,
     urlFrom: data?.url_from ?? data?.urlFrom,
-    urlsSuggested,
-    urlEdited: data?.urlEdited,
+    urlsSuggested: Array.isArray(urlsSuggestedRaw) ? urlsSuggestedRaw : [],
+    urlEdited: data?.urlEdited, // UI-only field; no snake_case equivalent
   };
 }
 

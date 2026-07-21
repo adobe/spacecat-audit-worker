@@ -2709,6 +2709,27 @@ describe('Backlinks Tests', function () {
       expect(result).to.be.false;
     });
 
+    it('should accept snake_case urls_suggested (audit-worker native shape, SITES-48410)', async () => {
+      // Legacy audit-worker records may carry `urls_suggested` (snake_case)
+      // instead of the newer `urlsSuggested` (camelCase). The predicate must
+      // read either casing.
+      nock('https://example.com')
+        .get('/broken')
+        .reply(301, '', { Location: 'https://example.com/fixed' });
+      nock('https://example.com')
+        .get('/fixed')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urls_suggested: ['https://example.com/fixed'],   // snake_case
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
+
     it('should accept camelCase urlTo when data is UI-edited (SITES-48410)', async () => {
       // UI-edited suggestions carry camelCase fields (urlTo, urlFrom, urlsSuggested)
       // instead of the audit-side snake_case (url_to, url_from). The predicate must
