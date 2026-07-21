@@ -404,8 +404,24 @@ export async function syncBrokenInternalLinksSuggestions({
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
   });
 
+  // SKIPPED and REJECTED suggestions are operator decisions that must not be
+  // overwritten by subsequent scans — their updatedAt must reflect the moment
+  // the operator acted. Mirrors the FROZEN_STATUSES guard in the shared
+  // syncSuggestions (SITES-44646).
+  const FROZEN_STATUSES = [
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+  ];
+
   const toUpdate = existingSuggestions
-    .filter((existing) => newDataKeys.has(buildKey(existing.getData())));
+    .filter((existing) => newDataKeys.has(buildKey(existing.getData())))
+    .filter((existing) => {
+      if (FROZEN_STATUSES.includes(existing.getStatus())) {
+        log.debug(`[internal-links] Skipping ${existing.getStatus()} suggestion - terminal status suggestions are never updated`);
+        return false;
+      }
+      return true;
+    });
 
   toUpdate.forEach((existing) => {
     const newDataItem = newDataByKey.get(buildKey(existing.getData()));
