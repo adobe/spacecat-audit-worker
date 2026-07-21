@@ -10,9 +10,10 @@
 ## 1. Goal
 
 Today the `offsite-brand-presence` audit selects the cited URLs it feeds to DRS
-(YouTube, Reddit, and top third-party "cited" sources) from **weekly Brand-Presence
-Excel sheets read out of SharePoint**. We want to source those same URLs — filtered
-by platform and ordered by citation count — from the **Semrush API** instead.
+(YouTube, Reddit, and top third-party "cited" sources) from **internal Brand-Presence
+execution data** — PostgREST for brandalf-enabled orgs, with a SharePoint Excel
+fallback. We want to source those same URLs — filtered by platform and ordered by
+citation count — from the **Semrush API** instead.
 
 Downstream of URL selection (URL store, DRS scraping, poll, and the
 `cited-analysis` / `youtube-analysis` / `reddit-analysis` audits that hand off to
@@ -28,7 +29,7 @@ All in `spacecat-audit-worker/src/offsite-brand-presence/`.
 | Step | Code | Notes |
 |---|---|---|
 | Determine weeks | `getPreviousWeeks` (`utils/offsite-brand-presence-enrichment.js`) | multi-week window |
-| Load data | `loadBrandPresenceData` (`utils/offsite-brand-presence-enrichment.js:~368`) | reads `brandpresence-*-wNN-YYYY` sheets from SharePoint via `createLLMOSharepointClient`; `Sources` column holds cited URLs |
+| Load data | `loadBrandPresenceData` (`utils/offsite-brand-presence-enrichment.js:~368`) | **two paths, same downstream shape:** (1) **PostgREST** — for brandalf-enabled orgs, `loadBrandPresenceDataFromPostgrest` (`utils/offsite-brand-presence-postgrest.js`) reads `brand_presence_executions` + nested `brand_presence_sources` over the multi-week window from `getPreviousWeeks`, maps rows to the legacy `{ Sources, Region, Prompt, ... }` shape (`Sources` = cited URLs). Defaults to **`US` region only** (`DEFAULT_REGION_CODE`). (2) **SharePoint** — for non-brandalf orgs, or when PostgREST returns no rows, reads `brandpresence-*-wNN-YYYY` Excel sheets via `createLLMOSharepointClient`; `Sources` column holds cited URLs |
 | Parse + classify | `extractUrlsAndTopics` → `classifyAndNormalize` (`handler.js:259`, `:165`) | splits `row.Sources` on `[;\n]`, filters `ACCEPTED_REGIONS`, drops owned/social/brand-lookalike hosts, classifies `youtube.com`/`reddit.com` by regex, tags `wikipedia.org` as excluded. Builds `allUrls: Map<url, { count, domain }>` where **`count` = citation frequency** |
 | Rank + bucket | `selectTopUrls(allUrls, DRS_URLS_LIMIT, excluded)` (`handler.js:644`) | sort by `count` desc → `topByDomain['youtube.com']`, `topByDomain['reddit.com']` (cap 70 each) + `topCited` (top 70, excl. offsite + wikipedia) |
 | Store | `addUrlsToUrlStore` (`handler.js:316`) | writes `AuditUrl` tagged with `youtube-analysis` / `reddit-analysis` / `cited-analysis` |
@@ -50,6 +51,12 @@ export const TOP_CITED_EXCLUDED_DOMAINS = ['wikipedia.org'];
 then let the existing `classifyAndNormalize` / `selectTopUrls` / DRS path run
 unchanged.** `count` must be a citation-volume proxy so the top-70 ranking is
 preserved.
+
+**Data-source note:** Semrush replaces whichever path `loadBrandPresenceData` took
+(PostgREST or SharePoint). The PostgREST path is increasingly the live path for
+brandalf orgs; SharePoint remains the fallback. Region behavior also differs today:
+PostgREST is US-only, while `ACCEPTED_REGIONS` allows six markets — the Semrush
+loader should call per region (see §5.3).
 
 ---
 
