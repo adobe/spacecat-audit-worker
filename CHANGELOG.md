@@ -1,3 +1,10 @@
+# [1.501.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.500.2...v1.501.0) (2026-07-21)
+
+
+### Features
+
+* **summarization:** persist sourceEvidence and depthLift on suggestion ([#2785](https://github.com/adobe/spacecat-audit-worker/issues/2785)) ([df40126](https://github.com/adobe/spacecat-audit-worker/commit/df40126c2cc92632b52726421edf11ff13ca3fe9)), closes [#3395](https://github.com/adobe/spacecat-audit-worker/issues/3395)
+
 ## [1.500.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.500.1...v1.500.2) (2026-07-21)
 
 
