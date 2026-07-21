@@ -694,6 +694,68 @@ describe('summarization utils', () => {
         expect(result[0].depthLift).to.equal(0);
         expect(result[1].depthLift).to.equal(0);
       });
+
+      it('should default depthLift to 0 for NaN and Infinity', () => {
+        for (const val of [NaN, Infinity, -Infinity]) {
+          const suggestions = [{
+            pageUrl: 'https://example.com/page1',
+            depthLift: val,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: { formatted_items: ['Key 1'] },
+          }];
+          const result = getJsonSummarySuggestion(suggestions);
+          expect(result[0].depthLift).to.equal(0, `expected 0 for depthLift=${val}`);
+        }
+      });
+    });
+
+    describe('sourceEvidence validation', () => {
+      it('should filter out non-string elements from sourceEvidence', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: ['valid string', 42, null, undefined, 'another valid'],
+          },
+          keyPoints: {
+            formatted_items: ['Key 1'],
+            source_evidence: [true, 'valid kp', {}, 'another kp'],
+          },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.deep.equal(['valid string', 'another valid']);
+        expect(result[1].sourceEvidence).to.deep.equal(['valid kp', 'another kp']);
+      });
+
+      it('should cap sourceEvidence at 50 entries', () => {
+        const bigArray = Array.from({ length: 60 }, (_, i) => `evidence ${i}`);
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: bigArray,
+          },
+          keyPoints: { formatted_items: ['Key 1'], source_evidence: bigArray },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.have.length(50);
+        expect(result[1].sourceEvidence).to.have.length(50);
+      });
     });
 
     describe('sourceEvidence persistence', () => {

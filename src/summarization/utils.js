@@ -61,7 +61,7 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
 
     // depthLift is a page-level signal (mean burial weight of facts behind prompts, 0..1).
     // Stored on both suggestion records so the UI can use it for High Impact URL ranking.
-    const depthLift = typeof suggestion.depthLift === 'number' ? suggestion.depthLift : 0;
+    const depthLift = Number.isFinite(suggestion.depthLift) ? suggestion.depthLift : 0;
 
     // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
@@ -85,7 +85,7 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         // path (build_summarization_inputs) can use them as summary_sources without
         // needing to re-fetch the raw page.
         sourceEvidence: Array.isArray(suggestion.pageSummary?.source_evidence)
-          ? suggestion.pageSummary.source_evidence : [],
+          ? suggestion.pageSummary.source_evidence.filter((e) => typeof e === 'string').slice(0, 50) : [],
       });
     }
 
@@ -110,7 +110,7 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         // keyPoints.items). Persisted so on-demand regeneration can use them as
         // kp_sources without re-fetching the raw page.
         sourceEvidence: Array.isArray(suggestion.keyPoints?.source_evidence)
-          ? suggestion.keyPoints.source_evidence : [],
+          ? suggestion.keyPoints.source_evidence.filter((e) => typeof e === 'string').slice(0, 50) : [],
       });
     }
   });
