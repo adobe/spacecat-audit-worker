@@ -1,3 +1,10 @@
+## [1.500.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.500.1...v1.500.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* classify .md/.markdown URLs as md content type (LLMO-6399) ([#2788](https://github.com/adobe/spacecat-audit-worker/issues/2788)) ([3da746e](https://github.com/adobe/spacecat-audit-worker/commit/3da746ec7af43f10a407811d237ad0e0f5d362c0))
+
 ## [1.500.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.500.0...v1.500.1) (2026-07-20)
 
 
