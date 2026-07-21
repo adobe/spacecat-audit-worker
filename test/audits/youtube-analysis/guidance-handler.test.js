@@ -688,6 +688,29 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(callText).to.include('1 suggestion processed');
     });
 
+    it('auto-ignores the opportunity and posts a warning when suggestions fail to persist', async () => {
+      mockSyncSuggestions.rejects(new Error('Failed to create suggestions'));
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: mockAnalysisData, companyName: 'Example Corp' },
+      };
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':warning:');
+      expect(callText).to.include('0 suggestions persisted');
+      expect(callText).to.include('auto-ignored');
+      expect(context.log.info).to.not.have.been.calledWith(sinon.match(/Successfully processed YouTube analysis/));
+    });
+
     it('reports a visible opportunity as below threshold without the raw rate', async () => {
       mockAudit.getAuditResult.returns({
         slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },

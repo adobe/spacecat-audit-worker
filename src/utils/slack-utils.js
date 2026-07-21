@@ -103,12 +103,18 @@ export async function postMessageOptional(context, channelId, text, options = {}
  * items are actually the clean survivors. The raw rate is only shown when the
  * opportunity is hidden, where it is the reason for suppression.
  *
+ * When `emptyPersist` is true, the suggestions failed to store (e.g. a DB conflict) so
+ * the opportunity was auto-ignored. This uses a warning tone to stand apart from a QA-gate
+ * suppression, so operators can tell a storage failure from a quality decision.
+ *
  * @param {object} params
  * @param {string} params.analysisName - e.g. 'cited-analysis'
  * @param {string} params.baseUrl - Site base URL
  * @param {number} params.suggestionsCount - Number of suggestions processed
  * @param {boolean} params.isVisible - Whether the opportunity is customer-visible
  * @param {object} [params.verdict] - The qaVerdict stamp (rate, rateDetermined, droppedUrls)
+ * @param {boolean} [params.emptyPersist] - True when suggestions failed to persist and the
+ *   opportunity was auto-ignored
  * @returns {string} The formatted Slack message
  */
 export function buildAnalysisVisibilityMessage({
@@ -117,7 +123,14 @@ export function buildAnalysisVisibilityMessage({
   suggestionsCount,
   isVisible,
   verdict,
+  emptyPersist = false,
 }) {
+  if (emptyPersist) {
+    return `:warning: *${analysisName}* audit finished for *${baseUrl}*\n`
+      + '• 0 suggestions persisted\n'
+      + '• :see_no_evil: Not visible in the UI — no suggestions stored (auto-ignored)';
+  }
+
   const suggestionsLine = `• ${suggestionsCount} suggestion${suggestionsCount === 1 ? '' : 's'} processed`;
 
   let note = '';

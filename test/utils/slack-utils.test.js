@@ -239,5 +239,20 @@ describe('Slack Utils', () => {
       expect(buildAnalysisVisibilityMessage({ ...base, suggestionsCount: 2, isVisible: true }))
         .to.include('2 suggestions processed');
     });
+
+    it('reports a persistence failure with a warning tone when emptyPersist is set', () => {
+      const msg = buildAnalysisVisibilityMessage({
+        ...base,
+        isVisible: true,
+        verdict: { rate: 0.9, rateDetermined: true },
+        emptyPersist: true,
+      });
+      expect(msg).to.include(':warning:');
+      expect(msg).to.include('cited-analysis');
+      expect(msg).to.include('0 suggestions persisted');
+      expect(msg).to.include('Not visible in the UI — no suggestions stored (auto-ignored)');
+      // The verdict-driven note is suppressed for a persistence failure.
+      expect(msg).to.not.include('hallucination');
+    });
   });
 });

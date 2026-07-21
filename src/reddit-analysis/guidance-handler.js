@@ -142,20 +142,30 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
 
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData: suggestions,
-      buildKey: (suggestion) => `reddit::${suggestion.id}`,
-      mapNewSuggestion: (suggestion) => ({
-        opportunityId: opportunity.getId(),
-        type: suggestion.type || 'CONTENT_UPDATE',
-        rank: suggestion.rank,
-        data: suggestion.data,
-      }),
-    });
-
-    log.info(`${LOG_PREFIX} Successfully processed Reddit analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    // syncSuggestions throws when every suggestion fails to store (e.g. a DB conflict),
+    // which would leave the opportunity NEW/visible with nothing attached. Catch that and
+    // auto-ignore the empty opportunity instead of surfacing it or retrying.
+    let emptyPersist = false;
+    try {
+      await syncSuggestions({
+        context,
+        opportunity,
+        newData: suggestions,
+        buildKey: (suggestion) => `reddit::${suggestion.id}`,
+        mapNewSuggestion: (suggestion) => ({
+          opportunityId: opportunity.getId(),
+          type: suggestion.type || 'CONTENT_UPDATE',
+          rank: suggestion.rank,
+          data: suggestion.data,
+        }),
+      });
+      log.info(`${LOG_PREFIX} Successfully processed Reddit analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    } catch (syncError) {
+      log.warn(`${LOG_PREFIX} No suggestions persisted (${syncError.message}); ignoring opportunity ${opportunity.getId()}`);
+      opportunity.setStatus('IGNORED');
+      await opportunity.save();
+      emptyPersist = true;
+    }
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);
@@ -164,13 +174,15 @@ export default async function handler(message, context) {
         const { channelId, threadTs } = slackContext;
 
         // Visibility is the QA gate's decision, carried on the opportunity status
-        // (NEW = customer-visible, IGNORED = suppressed).
+        // (NEW = customer-visible, IGNORED = suppressed). emptyPersist overrides this
+        // with a warning when nothing stored.
         const slackMessage = buildAnalysisVisibilityMessage({
           analysisName: 'reddit-analysis',
           baseUrl,
           suggestionsCount: suggestions.length,
           isVisible: incomingStatus !== 'IGNORED',
           verdict: opportunityData.qaVerdict,
+          emptyPersist,
         });
 
         await postMessageOptional(context, channelId, slackMessage, { threadTs });

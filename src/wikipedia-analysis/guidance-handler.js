@@ -17,7 +17,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { postMessageOptional } from '../utils/slack-utils.js';
+import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
@@ -158,33 +158,43 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
 
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData: suggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
-      mapNewSuggestion: (suggestion) => ({
-        opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: getRankFromPriority(suggestion.priority),
-        data: suggestion,
-      }),
-    });
-
-    log.info(`${LOG_PREFIX} Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    // syncSuggestions throws when every suggestion fails to store (e.g. a DB conflict),
+    // which would leave the opportunity NEW/visible with nothing attached. Catch that and
+    // auto-ignore the empty opportunity instead of surfacing it or retrying.
+    let emptyPersist = false;
+    try {
+      await syncSuggestions({
+        context,
+        opportunity,
+        newData: suggestions,
+        buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
+        mapNewSuggestion: (suggestion) => ({
+          opportunityId: opportunity.getId(),
+          type: 'CONTENT_UPDATE',
+          rank: getRankFromPriority(suggestion.priority),
+          data: suggestion,
+        }),
+      });
+      log.info(`${LOG_PREFIX} Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    } catch (syncError) {
+      log.warn(`${LOG_PREFIX} No suggestions persisted (${syncError.message}); ignoring opportunity ${opportunity.getId()}`);
+      opportunity.setStatus('IGNORED');
+      await opportunity.save();
+      emptyPersist = true;
+    }
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);
       const slackContext = auditRecord?.getAuditResult()?.slackContext;
       if (slackContext) {
         const { channelId, threadTs } = slackContext;
-        await postMessageOptional(
-          context,
-          channelId,
-          `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
-          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
-          { threadTs },
-        );
+        // On success keep the plain completion message; when nothing stored, reuse the
+        // shared warning message so the auto-ignore reads the same as the other analyses.
+        const slackMessage = emptyPersist
+          ? buildAnalysisVisibilityMessage({ analysisName: 'wikipedia-analysis', baseUrl, emptyPersist: true })
+          : `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
+            + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`;
+        await postMessageOptional(context, channelId, slackMessage, { threadTs });
       }
     }
 

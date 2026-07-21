@@ -56,6 +56,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opp-123'),
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
+      setStatus: sandbox.stub(),
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
@@ -604,6 +605,30 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       expect(callText).to.include('audit finished');
       expect(callText).to.include(baseURL);
       expect(callText).to.include('2 suggestions processed');
+    });
+
+    it('auto-ignores the opportunity and posts a warning when suggestions fail to persist', async () => {
+      syncSuggestionsStub.rejects(new Error('Failed to create suggestions'));
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: mockAnalysisData },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':warning:');
+      expect(callText).to.include('wikipedia-analysis');
+      expect(callText).to.include('0 suggestions persisted');
+      expect(callText).to.include('auto-ignored');
+      expect(context.log.info).to.not.have.been.calledWith(sinon.match(/Successfully processed Wikipedia analysis/));
     });
 
     it('should not send Slack notification when no slackContext on audit', async () => {
