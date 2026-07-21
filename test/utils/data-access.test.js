@@ -3044,7 +3044,7 @@ describe('data-access', () => {
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
-        'Failed to add fix entities on opportunity opp-id: Add fix entities error',
+        sinon.match(/Failed to add fix entities on opportunity opp-id.*Add fix entities error/),
       );
     });
 
@@ -3087,6 +3087,95 @@ describe('data-access', () => {
 
       expect(suggestion.setStatus).to.not.have.been.called;
       expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+    });
+
+    it('should reconcile OUTDATED suggestions when data.isEdited is true (customer picked target)', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-edited'),
+        getData: sinon.stub().returns({ key: 'e', isEdited: true, urlEdited: 'https://supply.lilly.com/' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: (s, opp) => ({
+          opportunityId: opp.getId(),
+          status: 'PUBLISHED',
+          suggestions: [s.getId()],
+        }),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(mockOpportunity.addFixEntities).to.have.been.called;
+      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+      expect(mockSuggestionCollection.saveMany).to.have.been.called;
+    });
+
+    it('should NOT reconcile OUTDATED suggestions without isEdited (attribution guard)', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-outdated-plain'),
+        getData: sinon.stub().returns({ key: 'op' }), // no isEdited
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+    });
+
+    it('should NOT flip suggestion status when addFixEntities throws (no drift)', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-fe-fail'),
+        getData: sinon.stub().returns({ key: 'ff' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const failingOpportunity = {
+        getId: sinon.stub().returns('opp-id'),
+        addFixEntities: sinon.stub().rejects(new Error('FixEntity DB error')),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: failingOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: (s, opp) => ({
+          opportunityId: opp.getId(),
+          status: 'PUBLISHED',
+          suggestions: [s.getId()],
+        }),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(failingOpportunity.addFixEntities).to.have.been.called;
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/Failed to add fix entities.*leaving suggestions unchanged/),
+      );
     });
   });
 

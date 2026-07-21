@@ -2709,6 +2709,31 @@ describe('Backlinks Tests', function () {
       expect(result).to.be.false;
     });
 
+    it('should accept camelCase urlTo when data is UI-edited (SITES-48410)', async () => {
+      // UI-edited suggestions carry camelCase fields (urlTo, urlFrom, urlsSuggested)
+      // instead of the audit-side snake_case (url_to, url_from). The predicate must
+      // fall back to the camelCase form or it silently returns false on the very
+      // first guard, and every customer-deployed fix on an edited suggestion goes
+      // uncredited.
+      nock('https://example.com')
+        .get('/broken')
+        .reply(301, '', { Location: 'https://example.com/custom-fix' });
+      nock('https://example.com')
+        .get('/custom-fix')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          urlTo: 'https://example.com/broken',           // camelCase (UI-edited shape)
+          urlEdited: 'https://example.com/custom-fix',
+          urlsSuggested: ['https://example.com/other'],
+          isEdited: true,
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
+
     it('should use urlTo as fallback when response has no url property', async () => {
       // Use esmock to mock fetch with a response that has no url property
       const esmock = (await import('esmock')).default;
@@ -2779,6 +2804,28 @@ describe('Backlinks Tests', function () {
 
       expect(result.status).to.equal(FixEntityModel.STATUSES.DEPLOYED);
       expect(result.changeDetails.updatedValue).to.equal('https://example.com/ai-fix');
+    });
+
+    it('should build payload from camelCase fields when data is UI-edited (SITES-48410)', () => {
+      const suggestion = {
+        getId: () => 'sugg-edit',
+        getType: () => 'REDIRECT_UPDATE',
+        getData: () => ({
+          urlFrom: 'https://referring.com/page',           // camelCase (UI-edited shape)
+          urlTo: 'https://example.com/broken',
+          urlEdited: 'https://example.com/custom-fix',
+          urlsSuggested: ['https://example.com/ai-fix'],
+          isEdited: true,
+        }),
+      };
+      const opportunity = { getId: () => 'opp-edit' };
+      const site = { getDeliveryType: () => 'aem_edge' };
+
+      const result = buildBacklinkFixEntityPayload(suggestion, opportunity, false, site);
+
+      expect(result.changeDetails.pagePath).to.equal('https://referring.com/page');
+      expect(result.changeDetails.oldValue).to.equal('https://example.com/broken');
+      expect(result.changeDetails.updatedValue).to.equal('https://example.com/custom-fix');
     });
 
     it('should handle missing data gracefully', () => {

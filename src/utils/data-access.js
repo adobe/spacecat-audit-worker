@@ -644,8 +644,19 @@ export function getDisappearedSuggestions(existingSuggestions, newDataKeys, buil
 
 /**
  * Reconciles disappeared suggestions by checking if issues were fixed externally.
- * For suggestions in NEW status that have disappeared from audit data, this function
- * checks if the issue was resolved using the AI suggestion and marks them as FIXED.
+ *
+ * Candidates:
+ *   - Suggestions in NEW status that disappeared from the fresh audit data.
+ *   - Suggestions in OUTDATED status whose data has `isEdited === true` — these
+ *     are second-chance candidates for customer-deployed fixes that landed after
+ *     a prior audit swept them to OUTDATED. `isEdited: true` means the customer
+ *     explicitly picked a target in the ASO UI, so a live match against that
+ *     target is high-confidence attribution.
+ *
+ * For each candidate, calls `isIssueFixedWithAISuggestion` and, on success,
+ * writes the FixEntity FIRST and only then flips the suggestion status to
+ * FIXED. This ordering avoids the "status=FIXED with no FixEntity" drift that
+ * happens when the FixEntity write fails after the status is already committed.
  *
  * @param {Object} params - The parameters object.
  * @param {Object} params.opportunity - The opportunity object with addFixEntities method.
@@ -667,13 +678,20 @@ export async function reconcileDisappearedSuggestions({
 }) {
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
+    const outdatedStatus = SuggestionDataAccess?.STATUSES?.OUTDATED;
 
-    // From disappeared suggestions, only process those in NEW status
+    // Accept NEW suggestions, plus OUTDATED suggestions with `isEdited: true`
+    // (customer explicitly picked a redirect target, so a live match is
+    // high-confidence attribution — see function docstring).
     const candidates = disappearedSuggestions.filter((s) => {
-      if (!newStatus || s?.getStatus?.() !== newStatus) {
-        return false;
+      const status = s?.getStatus?.();
+      if (newStatus && status === newStatus) {
+        return true;
       }
-      return true;
+      if (outdatedStatus && status === outdatedStatus && s?.getData?.()?.isEdited === true) {
+        return true;
+      }
+      return false;
     });
 
     if (candidates.length === 0) {
@@ -693,21 +711,9 @@ export async function reconcileDisappearedSuggestions({
       return;
     }
 
-    // Batch-save all fixed suggestions instead of individual saves
-    fixedSuggestions.forEach((suggestion) => {
-      log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
-      suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
-      suggestion.setUpdatedBy?.('system');
-    });
-
-    try {
-      await Suggestion.saveMany(fixedSuggestions);
-    } catch (e) {
-      log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
-      return;
-    }
-
-    // Build fix entities for all successfully saved suggestions
+    // Build fix-entity payloads BEFORE flipping suggestion status, so a FixEntity
+    // write failure leaves the suggestion in its prior state for the next audit
+    // to retry — preferring "under-report" to "credit-without-attribution".
     const fixEntityObjects = [];
     if (typeof buildFixEntityPayload === 'function') {
       for (const suggestion of fixedSuggestions) {
@@ -727,8 +733,22 @@ export async function reconcileDisappearedSuggestions({
         await opportunity.addFixEntities(fixEntityObjects);
         log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
       } catch (e) {
-        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
+        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}; leaving suggestions unchanged for next-audit retry: ${e.message}`);
+        return;
       }
+    }
+
+    // FixEntities persisted (or none to persist) — now flip suggestion status.
+    fixedSuggestions.forEach((suggestion) => {
+      log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
+      suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
+      suggestion.setUpdatedBy?.('system');
+    });
+
+    try {
+      await Suggestion.saveMany(fixedSuggestions);
+    } catch (e) {
+      log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
     }
   } catch (e) {
     log.warn(`Failed reconciliation for disappeared suggestions: ${e.message}`);
