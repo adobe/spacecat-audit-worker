@@ -1509,8 +1509,15 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
-    // Create mock suggestions
-    const mockSuggestions = [{}];
+    // Mix of statuses: only NEW / PENDING_VALIDATION should be flipped to OUTDATED;
+    // SKIPPED / REJECTED (and other terminal statuses) must be preserved (SITES-44646).
+    const activeSuggestion = { id: 'active-1', getStatus: () => 'NEW' };
+    const pendingSuggestion = { id: 'pending-1', getStatus: () => 'PENDING_VALIDATION' };
+    const skippedSuggestion = { id: 'skipped-1', getStatus: () => 'SKIPPED' };
+    const rejectedSuggestion = { id: 'rejected-1', getStatus: () => 'REJECTED' };
+    const mockSuggestions = [
+      activeSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
+    ];
 
     const existingOpportunity = {
       setStatus: sandbox.spy(sandbox.stub().resolves()),
@@ -1533,7 +1540,17 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Mock statuses
     sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
-    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW', FIXED: 'FIXED' });
+    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({
+      OUTDATED: 'OUTDATED',
+      NEW: 'NEW',
+      FIXED: 'FIXED',
+      ERROR: 'ERROR',
+      SKIPPED: 'SKIPPED',
+      REJECTED: 'REJECTED',
+      APPROVED: 'APPROVED',
+      IN_PROGRESS: 'IN_PROGRESS',
+      PENDING_VALIDATION: 'PENDING_VALIDATION',
+    });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
 
@@ -1563,11 +1580,13 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify suggestions were retrieved
     expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
 
-    // Verify suggestions statuses were updated
-    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-      mockSuggestions,
-      'OUTDATED',
-    );
+    // Only NEW + PENDING_VALIDATION should be outdated; terminal statuses preserved
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+    const [passedSuggestions, targetStatus] = context.dataAccess.Suggestion
+      .bulkUpdateStatus.firstCall.args;
+    expect(targetStatus).to.equal('OUTDATED');
+    expect(passedSuggestions).to.have.members([activeSuggestion, pendingSuggestion]);
+    expect(passedSuggestions).to.not.include.members([skippedSuggestion, rejectedSuggestion]);
     expect(existingOpportunity.save).to.have.been.calledOnce;
 
     expect(result.status).to.equal('complete');
