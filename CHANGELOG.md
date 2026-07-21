@@ -1,3 +1,10 @@
+## [1.501.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.0...v1.501.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **deps:** trigger prod deploy for spacecat-shared-data-access 4.11.0 (LLMO-6401) ([#2793](https://github.com/adobe/spacecat-audit-worker/issues/2793)) ([fb37c69](https://github.com/adobe/spacecat-audit-worker/commit/fb37c697e7870c007f06c0cb47987cca1d05d9af))
+
 # [1.501.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.500.2...v1.501.0) (2026-07-21)
 
 
