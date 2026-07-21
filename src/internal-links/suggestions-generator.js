@@ -371,12 +371,10 @@ export async function syncBrokenInternalLinksSuggestions({
     return merged;
   };
 
+  // Note: SKIPPED and REJECTED suggestions never reach this function — they are
+  // frozen upstream by the FROZEN_STATUSES filter on toUpdate below (SITES-44646).
   const mergeStatusFunction = (existing) => {
     const currentStatus = existing.getStatus();
-    if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
-      return null;
-    }
-
     if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
       const requiresValidation = Boolean(context.site?.requiresValidation);
       return requiresValidation
