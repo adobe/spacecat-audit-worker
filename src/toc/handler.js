@@ -718,7 +718,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     // Do not overwrite data for suggestions already deployed to the edge CDN, or mid-IVE
     // geo-experiment (edgeOptimizeStatus is set before edgeDeployed) (LLMO-6168)
     if (existingSuggestion.edgeDeployed
-      || existingSuggestion.edgeOptimizeStatus === 'EXPERIMENT_IN_PROGRESS') {
+      || existingSuggestion.edgeOptimizeStatus) {
       return { ...existingSuggestion };
     }
     const converted = { ...newSuggestion };

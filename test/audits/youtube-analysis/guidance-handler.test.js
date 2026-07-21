@@ -98,8 +98,8 @@ describe('YouTube Analysis Guidance Handler', () => {
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
       },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: mockConvertToOpportunity,
+      '../../../src/common/offsite-refresh.js': {
+        persistOffsiteOpportunity: mockConvertToOpportunity,
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
@@ -119,6 +119,13 @@ describe('YouTube Analysis Guidance Handler', () => {
           },
           Audit: {
             findById: sandbox.stub().resolves(mockAudit),
+          },
+          // withOverrides() shallow-replaces the whole dataAccess object, so Opportunity
+          // must be provided here too — otherwise resolveEvergreenOpportunity's internal
+          // Opportunity.allBySiteIdAndStatus call throws on `undefined` for every test in
+          // this file that doesn't set its own dataAccess.Opportunity mock below.
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
         },
       })
@@ -401,7 +408,7 @@ describe('YouTube Analysis Guidance Handler', () => {
         context,
         sinon.match.any,
         sinon.match.any,
-        { opportunityData: {} },
+        { opportunityData: {}, existingOpportunity: null },
       );
     });
 
@@ -444,7 +451,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
     });
 
-    it('should pass comparisonFn that matches by auditId', async () => {
+    it('should not pass a comparisonFn, relying on default match-by-type for a stable opportunity per (site, type)', async () => {
       const message = {
         siteId,
         auditId,
@@ -460,10 +467,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       await guidanceHandler.default(message, context);
 
-      const comparisonFn = mockConvertToOpportunity.firstCall.args[6];
-      expect(comparisonFn).to.be.a('function');
-      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
-      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+      expect(mockConvertToOpportunity.firstCall.args[6]).to.be.undefined;
     });
 
     it('should pass rank and data from Mystique suggestion', async () => {
@@ -939,6 +943,204 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(resolveBrandResultForSiteStub).to.have.been.called;
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
       expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
+    });
+  });
+
+  describe('Evergreen opportunity refresh safety', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('should return badRequest and skip all mutation when analysis.opportunity is malformed', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: ['not', 'an', 'object'],
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      };
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(mockConvertToOpportunity).to.not.have.been.called;
+      expect(mockSyncSuggestions).to.not.have.been.called;
+    });
+
+    it('should persist a suppressed run as a new opportunity without touching the visible one', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockConvertToOpportunity).to.have.been.calledOnce;
+      expect(mockSyncSuggestions).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      // existingOpportunity is explicitly null so persistOffsiteOpportunity creates a record
+      // a new opportunity, never reusing (or re-querying for) the visible one.
+      const propsArg = mockConvertToOpportunity.firstCall.args[5];
+      expect(propsArg).to.have.property('existingOpportunity', null);
+    });
+
+    // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
+    // NEW-status lookup that feeds resolution returns the same thing (no matches) — so both
+    // states exercise this same "create a new row" path.
+    it('should create a new (hidden) opportunity for a suppressed run when nothing is visible yet', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockConvertToOpportunity).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      const propsArg = mockConvertToOpportunity.firstCall.args[5];
+      expect(propsArg).to.have.property('existingOpportunity', null);
+    });
+
+    it('should hand the resolved evergreen to persistOffsiteOpportunity for a surfaced run', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage();
+
+      await guidanceHandler.default(message, context);
+
+      const propsArg = mockConvertToOpportunity.firstCall.args[5];
+      expect(propsArg.existingOpportunity).to.equal(visibleOpportunity);
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
+    });
+
+    it('should lazily retire duplicate NEW opportunities of the same type via saveMany, keeping the most recent as evergreen', async () => {
+      const older = {
+        getId: sandbox.stub().returns('older-opp'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2025-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const newer = {
+        getId: sandbox.stub().returns('newer-opp'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const saveManyStub = sandbox.stub().resolves();
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        saveMany: saveManyStub,
+      };
+
+      const message = validMessage();
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(older.setStatus).to.have.been.calledWith('IGNORED');
+      expect(newer.setStatus).to.not.have.been.called;
+      expect(saveManyStub).to.have.been.calledOnce;
+      expect(saveManyStub.firstCall.args[0]).to.deep.equal([older]);
+      expect(mockConvertToOpportunity).to.have.been.calledOnce;
+      expect(mockConvertToOpportunity.firstCall.args[5].existingOpportunity).to.equal(newer);
+    });
+
+    it('should propagate the error (badRequest) when duplicate retirement fails, without proceeding', async () => {
+      const older = {
+        getId: sandbox.stub().returns('older-opp'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2025-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const newer = {
+        getId: sandbox.stub().returns('newer-opp'),
+        getType: sandbox.stub().returns('youtube-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+        saveMany: sandbox.stub().rejects(new Error('save failed')),
+      };
+
+      const message = validMessage();
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(mockConvertToOpportunity).to.not.have.been.called;
+    });
+
+    it('should propagate the error (badRequest) when the initial opportunity lookup fails, without creating a duplicate', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')),
+      };
+
+      const message = validMessage();
+
+      const result = await guidanceHandler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      // A transient read failure must never be treated as "nothing exists yet" (which
+      // would otherwise create a duplicate NEW opportunity) — conversion is never attempted.
+      expect(mockConvertToOpportunity).to.not.have.been.called;
+      expect(mockSyncSuggestions).to.not.have.been.called;
     });
   });
 });

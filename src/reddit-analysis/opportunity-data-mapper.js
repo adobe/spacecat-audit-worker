@@ -17,7 +17,7 @@ import { DATA_SOURCES } from '../common/constants.js';
  * Creates opportunity data for Reddit analysis.
  * When a BO JSON opportunity object is provided (from Mystique), uses its values.
  * Otherwise falls back to defaults.
- * @param {Object} props - The props object from convertToOpportunity
+ * @param {Object} props - The options passed by persistOffsiteOpportunity
  * @param {Object} [props.opportunityData] - The opportunity object from the BO JSON
  * @returns {Object} Opportunity data
  */
