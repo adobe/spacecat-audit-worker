@@ -675,8 +675,7 @@ export async function createIndividualOpportunitySuggestions(
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
       scrapedUrlsSet,
-      // No auto-fix for accessibility: a suggestion no longer detected on re-scan is
-      // outdated even if it's IN_PROGRESS, since we can't confirm it was actually fixed.
+      // A suggestion no longer detected on re-scan should be marked as outdated
       outdateInProgress: true,
     });
 
