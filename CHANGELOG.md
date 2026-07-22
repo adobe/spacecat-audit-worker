@@ -1,3 +1,10 @@
+# [1.503.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.502.0...v1.503.0) (2026-07-22)
+
+
+### Features
+
+* **offsite:** report DRS / Mystique / total phase timings to Slack ([#2799](https://github.com/adobe/spacecat-audit-worker/issues/2799)) ([0f5b242](https://github.com/adobe/spacecat-audit-worker/commit/0f5b242c9dfb008b390a8e7b0b9a8220bf6503f9))
+
 # [1.502.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.3...v1.502.0) (2026-07-22)
 
 
