@@ -1,3 +1,10 @@
+# [1.502.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.3...v1.502.0) (2026-07-22)
+
+
+### Features
+
+* **wikipedia-analysis:** report to Slack when the audit can't run ([#2796](https://github.com/adobe/spacecat-audit-worker/issues/2796)) ([73d74f6](https://github.com/adobe/spacecat-audit-worker/commit/73d74f62feb5344d2221d102d631d92fd3014a8e)), closes [#2794](https://github.com/adobe/spacecat-audit-worker/issues/2794) [#2794](https://github.com/adobe/spacecat-audit-worker/issues/2794)
+
 ## [1.501.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.2...v1.501.3) (2026-07-22)
 
 
