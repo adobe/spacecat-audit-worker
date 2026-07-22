@@ -1409,6 +1409,53 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
+    it('should mark IN_PROGRESS suggestions as OUTDATED when outdateInProgress is true', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.APPROVED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page4',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+        outdateInProgress: true,
+      });
+
+      // APPROVED remains protected; only the no-longer-detected IN_PROGRESS suggestion
+      // is marked OUTDATED since there is no auto-fix to confirm it was actually fixed.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should not mark deployed suggestions as OUTDATED', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
