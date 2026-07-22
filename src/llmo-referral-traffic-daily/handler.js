@@ -17,6 +17,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
+import { generateReferralCategoryRules } from '../cdn-logs-report/patterns/patterns-uploader.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -200,6 +201,15 @@ export async function referralTrafficDailyRunner(context) {
   const host = new URL(site.getBaseURL()).hostname;
 
   validateDate(date);
+
+  // Generate the site's shared category rules if missing (LLMO-6257 P2). Runs off
+  // the DB corpus (independent of today's parquet), so it precedes the export.
+  // Best-effort: a generation failure must never block the daily traffic export.
+  try {
+    await generateReferralCategoryRules({ site, context });
+  } catch (err) {
+    log.warn(`[llmo-referral-traffic-daily] Referral category rule generation failed for site ${siteId}: ${err.message}`);
+  }
 
   const csvKey = getCsvS3Key(siteId, year, month, day);
   const s3Uri = `s3://${bucket}/${csvKey}`;

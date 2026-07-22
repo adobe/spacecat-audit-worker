@@ -88,6 +88,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
   let sqsSendMessageStub;
   let parquetReadObjectsStub;
   let handlerModule;
+  let mockGenerateReferralCategoryRules;
 
   before(() => {
     sandbox = sinon.createSandbox();
@@ -97,6 +98,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
     s3ClientStub = { send: sandbox.stub() };
     sqsSendMessageStub = sandbox.stub().resolves();
     parquetReadObjectsStub = sandbox.stub().resolves([PARQUET_ROW]);
+    mockGenerateReferralCategoryRules = sandbox.stub().resolves(true);
 
     site = {
       getId: sandbox.stub().returns('site-123'),
@@ -139,6 +141,9 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         GetObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'GetObjectCommand' })),
         PutObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'PutObjectCommand' })),
         DeleteObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'DeleteObjectCommand' })),
+      },
+      '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+        generateReferralCategoryRules: mockGenerateReferralCategoryRules,
       },
     });
   });
@@ -241,6 +246,30 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       });
       await expect(handlerModule.referralTrafficDailyRunner(context))
         .to.be.rejectedWith('Invalid date format: not-a-date');
+    });
+
+    it('generates the site category rules (create-if-missing) before exporting', async () => {
+      const noSuchKeyError = new Error('NoSuchKey');
+      noSuchKeyError.name = 'NoSuchKey';
+      s3ClientStub.send.rejects(noSuchKeyError);
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(mockGenerateReferralCategoryRules).to.have.been.calledWithMatch({ site });
+    });
+
+    it('logs a warning but still runs the export when rule generation throws', async () => {
+      mockGenerateReferralCategoryRules.rejects(new Error('gen boom'));
+      const noSuchKeyError = new Error('NoSuchKey');
+      noSuchKeyError.name = 'NoSuchKey';
+      s3ClientStub.send.rejects(noSuchKeyError);
+
+      const result = await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(result.auditResult.rowCount).to.equal(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Referral category rule generation failed for site site-123: gen boom/),
+      );
     });
 
     it('should return early with rowCount 0 when parquet does not exist (NoSuchKey)', async () => {
