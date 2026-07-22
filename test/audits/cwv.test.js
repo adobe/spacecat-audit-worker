@@ -526,9 +526,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.setLastAuditedAt).to.have.been.calledOnce;
       expect(oppty.save).to.have.been.calledTwice;
 
-      // make sure that 1 old suggestion is removed
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
-        .calledOnceWith([existingSuggestions[0]], 'OUTDATED');
+      // existingSuggestions[0] (NON_EXISTING_URL) is absent from this run's RUM
+      // data, so it is NOT observed this run and must be preserved rather than
+      // aged out — absence is not evidence the issue is fixed (SITES-48436).
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
 
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
@@ -539,6 +540,86 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
+    });
+
+    it('does not outdate a still-failing suggestion whose page was not observed this run (SITES-48436)', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      // Existing NEW suggestion for a page with genuinely-failing cached metrics
+      // whose URL is ABSENT from this run's RUM data (e.g. WAF-blocked HEAD,
+      // dropped from the top-N/threshold selection, or sparse RUM). Absence is
+      // NOT evidence the issue is fixed, so it must be preserved, not OUTDATED.
+      const stillFailing = {
+        opportunityId: oppty.getId(),
+        getId: () => 'sugg-still-failing',
+        getData: () => ({
+          type: 'url',
+          url: 'https://www.aem.live/waf-blocked-page',
+          metrics: [{ deviceType: 'mobile', lcp: 6000, cls: 1.2, inp: 800 }],
+        }),
+        getStatus: () => 'NEW',
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([stillFailing]);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // The page was not measured this run → not proven fixed → never OUTDATED.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('outdates a suggestion whose page was observed this run and now passes (SITES-48436)', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      const nowPassingUrl = 'https://www.aem.live/now-passing';
+      const resolved = {
+        opportunityId: oppty.getId(),
+        getId: () => 'sugg-resolved',
+        getData: () => ({
+          type: 'url',
+          url: nowPassingUrl,
+          metrics: [{ deviceType: 'mobile', lcp: 6000, cls: 1.2, inp: 800 }],
+        }),
+        getStatus: () => 'NEW',
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([resolved]);
+
+      // This run DID observe the page, but every metric now passes, so it drops
+      // from the failing set — genuinely resolved → correctly OUTDATED.
+      const passingAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({
+          cwv: [{
+            type: 'url',
+            url: nowPassingUrl,
+            name: 'Now passing',
+            pageviews: 9000,
+            organic: 5000,
+            metrics: [{
+              deviceType: 'mobile', lcp: 1000, cls: 0.01, inp: 100,
+            }],
+          }],
+          auditContext: { interval: 7 },
+        }),
+      };
+
+      const stepContext = {
+        ...context, site, audit: passingAudit, finalUrl: auditUrl,
+      };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus)
+        .to.have.been.calledOnceWith([resolved], 'OUTDATED');
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
