@@ -62,6 +62,14 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     if (!latest) {
       return false;
     }
+    // A `pending_scrape` run is the analysis itself, waiting for the DRS scrape this poll
+    // just completed — it requested the scrape and must NOT suppress its own re-trigger.
+    // (Without this, an individual analysis run that self-heals an empty URL store never
+    // reaches Mystique: its pending_scrape audit trips the cooldown for the whole hour.)
+    // Only a real completed/in-progress analysis within the window dedupes redelivered polls.
+    if (latest.getAuditResult?.()?.status === 'pending_scrape') {
+      return false;
+    }
     const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {

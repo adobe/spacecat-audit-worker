@@ -358,6 +358,26 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(log.info).to.have.been.calledWithMatch(/Skipping reddit-analysis.*recent audit exists/);
     });
 
+    it('triggers within the cooldown when the recent audit is a pending_scrape run', async () => {
+      // A pending_scrape run is the analysis waiting for the DRS scrape this poll just
+      // completed — it must not block its own re-trigger, even inside the cooldown window.
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      const pendingScrapeAudit = {
+        getAuditedAt: () => new Date(Date.now() - AUDIT_TRIGGER_COOLDOWN_MS / 2).toISOString(),
+        getAuditResult: () => ({ success: false, status: 'pending_scrape' }),
+      };
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType
+        .withArgs(SITE_ID, 'reddit-analysis').resolves(pendingScrapeAudit);
+
+      await handler.default(buildMessage(), context);
+
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.include('reddit-analysis');
+      expect(types).to.include('youtube-analysis');
+    });
+
     it('triggers the audit when the most recent audit is older than the cooldown window', async () => {
       mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
