@@ -1,3 +1,10 @@
+## [1.503.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.503.0...v1.503.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **cwv:** only outdate suggestions whose page was observed this run (SITES-48436) ([#2800](https://github.com/adobe/spacecat-audit-worker/issues/2800)) ([f6b6dfa](https://github.com/adobe/spacecat-audit-worker/commit/f6b6dfa63d95abb730787abb37bf895bc64349b1))
+
 # [1.503.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.502.0...v1.503.0) (2026-07-22)
 
 
