@@ -22,6 +22,8 @@ import {
   computeBrandTokens,
   isExcludedCitedHost,
   toApexHost,
+  formatDuration,
+  buildOffsiteTimingLines,
 } from '../../src/utils/offsite-audit-utils.js';
 
 use(sinonChai);
@@ -354,6 +356,65 @@ describe('offsite-audit-utils', () => {
       expect(toApexHost(undefined)).to.equal('');
       expect(toApexHost('   ')).to.equal('');
       expect(toApexHost('http://[bad')).to.equal('');
+    });
+  });
+
+  describe('formatDuration', () => {
+    it('returns null for missing, negative, or non-finite input', () => {
+      expect(formatDuration(undefined)).to.equal(null);
+      expect(formatDuration(NaN)).to.equal(null);
+      expect(formatDuration(-1)).to.equal(null);
+      expect(formatDuration(Infinity)).to.equal(null);
+    });
+
+    it('formats sub-minute durations as seconds', () => {
+      expect(formatDuration(0)).to.equal('0s');
+      expect(formatDuration(42_000)).to.equal('42s');
+      expect(formatDuration(59_400)).to.equal('59s');
+    });
+
+    it('formats whole minutes without a seconds part', () => {
+      expect(formatDuration(180_000)).to.equal('3m');
+    });
+
+    it('formats minutes with a remaining seconds part', () => {
+      expect(formatDuration(190_000)).to.equal('3m 10s');
+    });
+  });
+
+  describe('buildOffsiteTimingLines', () => {
+    const now = 1_000_000;
+
+    it('returns empty string when timings are missing or lack analysisStartedAt', () => {
+      expect(buildOffsiteTimingLines(undefined, now)).to.equal('');
+      expect(buildOffsiteTimingLines({}, now)).to.equal('');
+      expect(buildOffsiteTimingLines({ analysisStartedAt: 'x' }, now)).to.equal('');
+    });
+
+    it('reports DRS, Mystique, and total when DRS timings are present', () => {
+      const timings = {
+        drsStartedAt: now - 100_000, // DRS scrape started 100s before "now"
+        drsCompletedAt: now - 60_000, // finished 40s later → DRS = 40s
+        analysisStartedAt: now - 30_000, // analysis (Mystique) started 30s before now
+      };
+      const lines = buildOffsiteTimingLines(timings, now);
+      expect(lines).to.include('• DRS scrape: 40s');
+      expect(lines).to.include('• Suggestion generation (Mystique): 30s');
+      // total = DRS (40s) + Mystique (30s) = 70s → rendered as minutes+seconds
+      expect(lines).to.include('• Total (DRS + Mystique): 1m 10s');
+    });
+
+    it('reports DRS as n/a when no scrape ran this cycle', () => {
+      const lines = buildOffsiteTimingLines({ analysisStartedAt: now - 45_000 }, now);
+      expect(lines).to.include('• DRS scrape: already scraped (n/a)');
+      expect(lines).to.include('• Suggestion generation (Mystique): 45s');
+      expect(lines).to.include('• Total: 45s');
+      expect(lines).to.not.include('DRS + Mystique');
+    });
+
+    it('returns empty string when the elapsed Mystique time is not computable', () => {
+      // analysisStartedAt in the future → negative elapsed → no usable duration.
+      expect(buildOffsiteTimingLines({ analysisStartedAt: now + 5_000 }, now)).to.equal('');
     });
   });
 });

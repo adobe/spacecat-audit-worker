@@ -42,6 +42,67 @@ export const NON_EARNED_EXCLUDED_DOMAINS = Object.freeze([
   'groupon.com',
 ]);
 
+/**
+ * Formats a millisecond duration as a compact human string (e.g. `42s`, `3m`, `3m 10s`).
+ * Returns null for a missing/negative/non-finite input so callers can omit the line.
+ *
+ * @param {number} ms - Duration in milliseconds
+ * @returns {string|null}
+ */
+export function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return null;
+  }
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Builds the Slack phase-timing lines for an offsite analysis (cited/youtube/reddit),
+ * from the timing anchors persisted on the audit result.
+ *
+ * - When a DRS scrape ran this cycle (drsStartedAt + drsCompletedAt present): reports the
+ *   DRS scrape duration, the Mystique suggestion-generation duration (analysis start → now),
+ *   and their sum as the total.
+ * - When no scrape ran (content already scraped): reports DRS as n/a and Mystique = total.
+ *
+ * Returns '' when there is no usable timing anchor, so the caller appends nothing.
+ *
+ * @param {object} [timings] - { analysisStartedAt, drsStartedAt?, drsCompletedAt? } (epoch ms)
+ * @param {number} [nowMs] - Completion instant (defaults to Date.now())
+ * @returns {string} Newline-joined Slack lines, or '' when timings are unusable
+ */
+export function buildOffsiteTimingLines(timings, nowMs = Date.now()) {
+  if (!timings || !Number.isFinite(timings.analysisStartedAt)) {
+    return '';
+  }
+  const mystique = formatDuration(nowMs - timings.analysisStartedAt);
+  if (mystique === null) {
+    return '';
+  }
+
+  const { drsStartedAt, drsCompletedAt } = timings;
+  const hasDrs = Number.isFinite(drsStartedAt) && Number.isFinite(drsCompletedAt);
+  const drsMs = hasDrs ? drsCompletedAt - drsStartedAt : null;
+  const drs = hasDrs ? formatDuration(drsMs) : null;
+
+  if (drs === null) {
+    return '• DRS scrape: already scraped (n/a)\n'
+      + `• Suggestion generation (Mystique): ${mystique}\n`
+      + `• Total: ${mystique}`;
+  }
+
+  const total = formatDuration(drsMs + (nowMs - timings.analysisStartedAt));
+  return `• DRS scrape: ${drs}\n`
+    + `• Suggestion generation (Mystique): ${mystique}\n`
+    + `• Total (DRS + Mystique): ${total}`;
+}
+
 // Tokens shorter than this are dropped from brand-token matching: a 1-2 char
 // substring would match almost any host and turn the branded filter into a
 // blunt instrument.

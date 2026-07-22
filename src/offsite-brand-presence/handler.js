@@ -740,8 +740,17 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  * @param {object} context - The execution context (sqs, dataAccess, log)
  * @param {string} channelId - Slack channel ID
  * @param {string} threadTs - Slack thread timestamp
+ * @param {number} drsStartedAt - Epoch ms when DRS scraping was triggered (phase timing)
  */
-async function scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs) {
+async function scheduleDrsStatusPoll(
+  drsResults,
+  baseURL,
+  siteId,
+  context,
+  channelId,
+  threadTs,
+  drsStartedAt,
+) {
   const { sqs, dataAccess, log } = context;
 
   if (!channelId || !threadTs) {
@@ -765,6 +774,7 @@ async function scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, chann
       slackContext: { channelId, threadTs },
       jobs,
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
+      drsStartedAt,
     },
   }, null, DRS_POLL_INTERVAL_SECONDS);
 
@@ -882,6 +892,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
+  // Phase timing anchor: when DRS scraping is triggered. Threaded through the poll and
+  // the downstream analysis audits so each can report how long its scrape took.
+  const drsStartedAt = Date.now();
   const { skipped, results: drsResults } = await triggerDrsScraping(
     storedByDomain,
     siteId,
@@ -899,7 +912,15 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // must not fail the run, which already submitted the DRS jobs (POST /jobs is not
     // idempotent) and posted the initial notification. Re-running would duplicate both.
     try {
-      await scheduleDrsStatusPoll(drsResults, baseURL, siteId, context, channelId, threadTs);
+      await scheduleDrsStatusPoll(
+        drsResults,
+        baseURL,
+        siteId,
+        context,
+        channelId,
+        threadTs,
+        drsStartedAt,
+      );
     } catch (err) {
       log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
     }

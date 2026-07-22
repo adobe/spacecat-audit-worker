@@ -126,6 +126,10 @@ async function fetchStoreData(siteId, context, site) {
 async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
+  // Phase-timing anchor for the Mystique phase; combined with the DRS timings threaded in
+  // via auditContext (from the offsite-brand-presence DRS status handler) in the guidance
+  // handler to report DRS / Mystique / total durations.
+  const analysisStartedAt = Date.now();
 
   log.info(`${LOG_PREFIX} Starting YouTube analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
@@ -175,6 +179,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         config: { ...youtubeConfig, urlLimit },
         storeData,
         ...(slackContext && { slackContext }),
+        timings: { analysisStartedAt, ...(auditContext.timings || {}) },
       },
       fullAuditRef: url,
     };

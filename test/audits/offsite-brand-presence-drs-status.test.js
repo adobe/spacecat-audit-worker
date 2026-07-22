@@ -106,6 +106,26 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(text).to.not.include('status update');
   });
 
+  it('appends the DRS scraping elapsed time when drsStartedAt is present', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+    await handler.default(buildMessage({ drsStartedAt: Date.now() - 5000 }), context);
+
+    const text = mockPostMessageOptional.firstCall.args[2];
+    expect(text).to.include('DRS scraping elapsed: ~');
+  });
+
+  it('omits the elapsed line when drsStartedAt is absent', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+    await handler.default(buildMessage(), context);
+
+    const text = mockPostMessageOptional.firstCall.args[2];
+    expect(text).to.not.include('DRS scraping elapsed');
+  });
+
   it('includes the error message for a failed job', async () => {
     mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
     mockGetJob.withArgs('job-2').resolves({ status: 'FAILED', error_message: 'boom' });
@@ -244,6 +264,20 @@ describe('offsite-brand-presence DRS status handler', () => {
           drsScrapeRequested: true,
         },
       });
+    });
+
+    it('forwards DRS phase timings to the triggered analysis audit when drsStartedAt is set', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+      const drsStartedAt = Date.now() - 5000;
+
+      await handler.default(buildMessage({ drsStartedAt }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      const { timings } = reddit.args[1].auditContext;
+      expect(timings.drsStartedAt).to.equal(drsStartedAt);
+      expect(timings.drsCompletedAt).to.be.a('number').and.to.be.at.least(drsStartedAt);
     });
 
     it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
