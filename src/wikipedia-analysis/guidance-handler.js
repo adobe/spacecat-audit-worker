@@ -65,6 +65,37 @@ function getRankFromPriority(priority) {
 }
 
 /**
+ * Posts an audit-outcome message to the Slack thread the audit was triggered from,
+ * if a slackContext was captured on the audit. No-op when there is no auditId,
+ * no audit record, or no slackContext (e.g. a non-Slack-triggered run).
+ * @param {Object} context - Context object with data access
+ * @param {string} auditId - The audit ID
+ * @param {string} text - The message text to post
+ * @returns {Promise<void>}
+ */
+async function postWikipediaOutcomeToSlack(context, auditId, text) {
+  if (!auditId) {
+    return;
+  }
+  const { log, dataAccess } = context;
+  // Posting is a best-effort side-effect: a DB/lookup failure here must never crash
+  // the primary handler (this runs on graceful noContent paths, some outside the
+  // main try/catch). postMessageOptional already swallows Slack API errors; guard
+  // the preceding findById the same way.
+  try {
+    const auditRecord = await dataAccess.Audit.findById(auditId);
+    const slackContext = auditRecord?.getAuditResult()?.slackContext;
+    if (!slackContext) {
+      return;
+    }
+    const { channelId, threadTs } = slackContext;
+    await postMessageOptional(context, channelId, text, { threadTs });
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to post outcome to Slack: ${e.message}`);
+  }
+}
+
+/**
  * Handles Mystique response for Wikipedia analysis
  * @param {Object} message - Message from Mystique with analysis results
  * @param {Object} context - Context object with data access and logger
@@ -79,6 +110,25 @@ export default async function handler(message, context) {
   const { siteId, auditId, data } = message;
 
   log.info(`${LOG_PREFIX} Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`[Wikipedia] Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
+  const baseUrl = site.getBaseURL();
+
+  // Mystique couldn't complete the analysis (e.g. an upstream producer/service
+  // failure). Report it to the Slack thread instead of failing silently, then stop.
+  if (data?.error) {
+    log.error(`${LOG_PREFIX} Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    await postWikipediaOutcomeToSlack(
+      context,
+      auditId,
+      `:warning: *wikipedia-analysis* audit for *${baseUrl}* couldn't run — the analysis failed${data.errorMessage ? ` (${data.errorMessage})` : ''}.`,
+    );
+    return noContent();
+  }
 
   // Handle presigned URL (large response) or direct analysis data
   let analysisData = data?.analysis;
@@ -102,12 +152,6 @@ export default async function handler(message, context) {
     return badRequest('Analysis data is required');
   }
 
-  const site = await Site.findById(siteId);
-  if (!site) {
-    log.error(`[Wikipedia] Site not found for siteId: ${siteId}`);
-    return notFound('Site not found');
-  }
-
   // Check if audit exists
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
@@ -119,12 +163,20 @@ export default async function handler(message, context) {
 
   try {
     const brandResult = await resolveBrandResultForSite(context, site);
-    const baseUrl = site.getBaseURL();
-    const { suggestions = [], company, industryAnalysis } = analysisData;
+    const {
+      suggestions = [], company, industryAnalysis, wikipediaUrl,
+    } = analysisData;
 
-    // If no suggestions, return early
+    // No suggestions means either no Wikipedia page exists to analyze, or the page
+    // was analyzed but had nothing to improve. Report the outcome to Slack — this
+    // path used to return silently, so a Slack-triggered run showed only the trigger.
     if (suggestions.length === 0) {
       log.info(`${LOG_PREFIX} No suggestions found in analysis`);
+      const outcomeMessage = wikipediaUrl
+        ? `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
+          + '• Wikipedia page analyzed — no improvement suggestions found'
+        : `:warning: *wikipedia-analysis* audit for *${baseUrl}* couldn't run — no Wikipedia page was found to analyze`;
+      await postWikipediaOutcomeToSlack(context, auditId, outcomeMessage);
       return noContent();
     }
 
@@ -173,20 +225,12 @@ export default async function handler(message, context) {
 
     log.info(`${LOG_PREFIX} Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
 
-    if (auditId) {
-      const auditRecord = await AuditModel.findById(auditId);
-      const slackContext = auditRecord?.getAuditResult()?.slackContext;
-      if (slackContext) {
-        const { channelId, threadTs } = slackContext;
-        await postMessageOptional(
-          context,
-          channelId,
-          `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
-          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
-          { threadTs },
-        );
-      }
-    }
+    await postWikipediaOutcomeToSlack(
+      context,
+      auditId,
+      `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
+      + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
+    );
 
     return ok();
   } catch (error) {
