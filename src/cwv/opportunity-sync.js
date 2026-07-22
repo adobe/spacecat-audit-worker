@@ -169,6 +169,20 @@ export async function syncOpportunitiesAndSuggestions(context) {
     .map(filterToFailingDeviceMetrics);
   log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
+  // Set of page URLs actually observed in THIS run's RUM data (the full reported
+  // set, before the failing-metrics filter). Passed to syncSuggestions so a
+  // suggestion is only aged out to OUTDATED when its page was measured this run
+  // and dropped from the failing set because it now passes. A URL absent from
+  // this set — bot/WAF-blocked HEAD, dropped from the top-N/threshold selection,
+  // or sparse/empty RUM — is NOT evidence the issue is resolved, so it must not
+  // be marked OUTDATED (SITES-48436). Group/pattern rows carry no scraped-URL
+  // identity and are unaffected by this guard.
+  const scrapedUrlsSet = new Set(
+    auditResult.cwv
+      .filter((entry) => entry.type === 'url')
+      .map((entry) => entry.url),
+  );
+
   // Build minimal audit data object for opportunity creation
   const auditData = {
     siteId: site.getId(),
@@ -198,6 +212,7 @@ export async function syncOpportunitiesAndSuggestions(context) {
     newData: cwvData,
     context,
     buildKey,
+    scrapedUrlsSet,
     bypassValidationForPlg: true,
     // On re-audit: shallow-merge new fields onto existing data, then mark issues
     // OUTDATED for any metric whose failure has resolved (skip list preserves
