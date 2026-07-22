@@ -14,6 +14,7 @@ import { BaseAudit } from './base-audit.js';
 import { parseMessageDataForRunnerAudit } from './audit-utils.js';
 import {
   formatAuditCompletionMessage,
+  formatAuditDispatchedMessage,
   say,
   sendAuditFailureNotification,
 } from '../utils/slack-utils.js';
@@ -72,11 +73,16 @@ export class RunnerAudit extends BaseAudit {
       );
 
       // Notify the originating Slack thread that the audit completed.
-      // No-op when the audit was not triggered from Slack.
+      // If the runner handed work to an async downstream whose result won't
+      // land back in this worker (signaled via context.slackAuditDispatched),
+      // use the "handoff complete" wording instead of a misleading green
+      // check. No-op when the audit was not triggered from Slack.
       await say(
         context,
         auditContext?.slackContext,
-        formatAuditCompletionMessage(),
+        context.slackAuditDispatched
+          ? formatAuditDispatchedMessage()
+          : formatAuditCompletionMessage(),
       );
 
       return response;

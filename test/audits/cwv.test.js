@@ -918,15 +918,16 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     it('posts a "Sent to Mystique" Slack message when auditContext.slackContext is present', async () => {
       const slackContext = { channelId: 'C123', threadTs: '1700000000.000001' };
-
-      await mockedSyncStep({
+      const stepCtx = {
         ...context,
         site,
         audit: mockAuditRecord,
         finalUrl: auditUrl,
         auditContext: { slackContext },
         log: context.log,
-      });
+      };
+
+      await mockedSyncStep(stepCtx);
 
       expect(sayStub).to.have.been.calledOnce;
       const [, slackArg, messageArg] = sayStub.firstCall.args;
@@ -936,6 +937,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(messageArg).to.include('Sent to Mystique');
       // newSuggestions.length above is 3 — detail string must echo it.
       expect(messageArg).to.include('3');
+      // Handler must flag the shared context so StepAudit's completion line
+      // reads "Handoff Complete" instead of the misleading "Audit Completed".
+      // For CWV, Mystique's reply lands in spacecat-api-service (no
+      // `guidance:cwv` handler in this worker), so this invocation truly
+      // ends at the fan-out.
+      expect(stepCtx.slackAuditDispatched).to.equal(true);
     });
 
     it('still calls say() (which no-ops internally) when auditContext is absent', async () => {
@@ -943,18 +950,23 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // arg to say() is undefined. say() guards on channelId/threadTs so the
       // post is a no-op, but the call site itself must still run for line 85
       // coverage to be deterministic across runs.
-      await mockedSyncStep({
+      const stepCtx = {
         ...context,
         site,
         audit: mockAuditRecord,
         finalUrl: auditUrl,
         // auditContext intentionally omitted
         log: context.log,
-      });
+      };
+
+      await mockedSyncStep(stepCtx);
 
       expect(sayStub).to.have.been.calledOnce;
       const [, slackArg] = sayStub.firstCall.args;
       expect(slackArg).to.be.undefined;
+      // Flag is set regardless of whether the audit was Slack-triggered —
+      // it's how the framework knows the pipeline hasn't truly completed.
+      expect(stepCtx.slackAuditDispatched).to.equal(true);
     });
   });
 });

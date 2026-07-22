@@ -38,9 +38,11 @@ describe('buildRunnerAuditContext', () => {
 describe('RunnerAudit', () => {
   let sandbox;
   let RunnerAudit;
+  let saySpy;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    saySpy = sandbox.stub().resolves();
     const mod = await esmock(
       '../../src/common/runner-audit.js',
       import.meta.url,
@@ -50,6 +52,11 @@ describe('RunnerAudit', () => {
         },
         '../../src/utils/slack-utils.js': {
           sendAuditFailureNotification: sandbox.stub().resolves(),
+          say: saySpy,
+          // Sentinel strings so tests can assert which branch was taken
+          // without depending on the exact wording.
+          formatAuditCompletionMessage: () => 'FAKE_COMPLETION_MSG',
+          formatAuditDispatchedMessage: () => 'FAKE_DISPATCHED_MSG',
         },
       },
     );
@@ -194,6 +201,50 @@ describe('RunnerAudit', () => {
         context,
       ),
     ).to.be.rejectedWith('reddit-analysis audit failed for site site-1. Reason: runner boom');
+  });
+
+  it('uses the "handoff complete" message when runner sets context.slackAuditDispatched', async () => {
+    // Truthy branch of the new ternary: a runner that hands work to an
+    // async downstream (e.g. Mystique) mutates context.slackAuditDispatched
+    // so the completion line reflects "pipeline still in flight" instead
+    // of a misleading green :white_check_mark:.
+    const runner = sandbox.stub().callsFake(async (_url, ctx) => {
+      // eslint-disable-next-line no-param-reassign
+      ctx.slackAuditDispatched = true;
+      return { auditResult: { success: true }, fullAuditRef: 'https://example.com' };
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
+    const { instance } = buildInstance(runner, persister);
+    const context = buildContext();
+
+    await instance.run(
+      { type: 'reddit-analysis', siteId: 'site-1', auditContext: {} },
+      context,
+    );
+
+    expect(saySpy).to.have.been.calledOnce;
+    const [, , messageArg] = saySpy.firstCall.args;
+    expect(messageArg).to.equal('FAKE_DISPATCHED_MSG');
+  });
+
+  it('uses the standard "Audit Completed" message when no downstream dispatch was signaled', async () => {
+    // Falsy branch of the new ternary — flag defaults to undefined.
+    const runner = sandbox.stub().resolves({
+      auditResult: { success: true },
+      fullAuditRef: 'https://example.com',
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
+    const { instance } = buildInstance(runner, persister);
+    const context = buildContext();
+
+    await instance.run(
+      { type: 'reddit-analysis', siteId: 'site-1', auditContext: {} },
+      context,
+    );
+
+    expect(saySpy).to.have.been.calledOnce;
+    const [, , messageArg] = saySpy.firstCall.args;
+    expect(messageArg).to.equal('FAKE_COMPLETION_MSG');
   });
 
   it('falls back to siteId when site.getBaseURL() throws during siteUrl caching', async () => {

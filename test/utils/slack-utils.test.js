@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
 import {
   formatAuditCompletionMessage,
+  formatAuditDispatchedMessage,
   formatAuditFailureMessage,
   formatBotProtectionPartialBlockMessage,
   formatBotProtectionSlackMessage,
@@ -622,6 +623,18 @@ describe('Slack Utils', () => {
       // original :adobe-run: trigger message at the top of the Slack thread.
       expect(msg).to.not.include('Audit Type');
       expect(msg).to.not.include('Site:');
+    });
+  });
+
+  describe('formatAuditDispatchedMessage', () => {
+    it('renders a "handoff complete, downstream in progress" line', () => {
+      const msg = formatAuditDispatchedMessage();
+      // Not the misleading green check — the pipeline is still in flight.
+      expect(msg).to.not.include(':white_check_mark:');
+      expect(msg).to.include('Handoff Complete');
+      expect(msg).to.include('downstream');
+      // Uses an hourglass to indicate "still working" downstream.
+      expect(msg).to.include(':hourglass_flowing_sand:');
     });
   });
 

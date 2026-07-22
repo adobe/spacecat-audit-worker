@@ -24,6 +24,7 @@ import {
 import { handleAbort } from './bot-detection.js';
 import {
   formatAuditCompletionMessage,
+  formatAuditDispatchedMessage,
   formatBotProtectionPartialBlockMessage,
   formatStepCompletionMessage,
   say,
@@ -244,11 +245,17 @@ export class StepAudit extends BaseAudit {
           formatStepCompletionMessage(stepName),
         );
       } else {
-        // Last step done — overall audit pipeline completed end-to-end.
+        // Last step done. If the step handed work to an async downstream
+        // whose result won't land back in this worker (signaled via
+        // stepContext.slackAuditDispatched — see src/cwv/handler.js), the
+        // audit-worker's steps are complete but the pipeline isn't. Use the
+        // "handoff complete" wording instead of a misleading green check.
         await say(
           context,
           auditContext?.slackContext,
-          formatAuditCompletionMessage(),
+          stepContext.slackAuditDispatched
+            ? formatAuditDispatchedMessage()
+            : formatAuditCompletionMessage(),
         );
       }
 

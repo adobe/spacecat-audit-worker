@@ -12,6 +12,7 @@
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
 
 import { expect, use } from 'chai';
 import sinon from 'sinon';
@@ -654,6 +655,55 @@ describe('Step-based Audit Tests', () => {
       await noRequiresValidationAudit.run(message, context);
 
       expect(capturedSite.requiresValidation).to.be.undefined;
+    });
+
+    it('surfaces "Audit Handoff Complete" when last step signals downstream dispatch', async () => {
+      // Covers the truthy branch of stepContext.slackAuditDispatched — the
+      // step handler mutates the stepContext it receives to signal that work
+      // has been handed to an async downstream (Mystique for CWV), and the
+      // framework switches from the misleading green :white_check_mark:
+      // "Audit Completed" to the "handoff complete" wording.
+      nock('https://space.cat').get('/').reply(200, 'Success');
+
+      const mockSlackClient = {
+        postMessage: sandbox.stub().resolves({ channel: 'C123', ts: '1.2' }),
+      };
+      sandbox.stub(BaseSlackClient, 'createFrom').returns(mockSlackClient);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+      context.env.SLACK_TOKEN_WORKSPACE_INTERNAL = 'wtok';
+      context.env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL = 'ops';
+
+      const dispatchAudit = new AuditBuilder()
+        .addStep('final', async (stepCtx) => {
+          // Handler signals downstream dispatch by mutating its context.
+          // eslint-disable-next-line no-param-reassign
+          stepCtx.slackAuditDispatched = true;
+          return { status: 'complete' };
+        })
+        .build();
+
+      const messageWithSlack = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'final',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          slackContext: { channelId: 'C123', threadTs: '1700000000.000001' },
+        },
+      };
+
+      await dispatchAudit.run(messageWithSlack, context);
+
+      expect(mockSlackClient.postMessage).to.have.been.calledOnce;
+      const { text } = mockSlackClient.postMessage.firstCall.args[0];
+      expect(text).to.include('Handoff Complete');
+      expect(text).to.not.include('Audit Completed');
     });
 
     it('preserves requiresValidation false from context.site', async () => {

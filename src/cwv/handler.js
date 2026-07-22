@@ -77,9 +77,13 @@ export async function syncOpportunityAndSuggestionsStep(context) {
   await sendLowSuggestionCountAlert(site, Audit.AUDIT_TYPES.CWV, newSuggestions.length, context);
 
   // processAutoSuggest has dispatched auto-suggest messages to Mystique for the
-  // NEW suggestions. Mystique's reply lands asynchronously via the
-  // `guidance:cwv` handler — between now and then the Slack thread would look
-  // frozen ("Audit Completed" then silence), so surface the handoff explicitly.
+  // NEW suggestions. Mystique's reply for CWV lands directly on the Suggestion
+  // via spacecat-api-service — there is no `guidance:cwv` handler in this
+  // worker, so this invocation truly ends at the fan-out. Signal that on the
+  // shared context so StepAudit's completion line reads "Handoff Complete —
+  // downstream in progress" instead of the misleading green "Audit Completed".
+  // eslint-disable-next-line no-param-reassign
+  context.slackAuditDispatched = true;
   await say(
     context,
     auditContext?.slackContext,

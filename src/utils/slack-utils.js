@@ -328,6 +328,26 @@ export function formatAuditCompletionMessage() {
 }
 
 /**
+ * Formats a "handoff complete, downstream still working" message.
+ *
+ * Used in place of formatAuditCompletionMessage() when a step handed work
+ * to an async downstream (Mystique, autofix-worker) whose result does NOT
+ * land back in audit-worker inside this invocation — e.g. CWV, whose
+ * Mystique reply is written directly to Suggestion via spacecat-api-service.
+ * The audit-worker's steps are complete, but the operator-visible outcome
+ * (AI guidance / code fix) is still being produced downstream, so a green
+ * :white_check_mark: would misrepresent the pipeline state.
+ *
+ * A step handler signals this by setting `context.slackAuditDispatched = true`
+ * on the context it receives (see src/cwv/handler.js for the reference use).
+ *
+ * @returns {string}
+ */
+export function formatAuditDispatchedMessage() {
+  return ':hourglass_flowing_sand: *Audit Handoff Complete* — downstream AI processing in progress';
+}
+
+/**
  * Converts a kebab-case, snake_case, or camelCase step identifier into a
  * human-readable Title Case label. Acronym runs are preserved (CWVData stays
  * "CWV Data", not "C W V Data").
