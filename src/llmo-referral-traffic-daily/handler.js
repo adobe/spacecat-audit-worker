@@ -18,6 +18,8 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { generateReferralCategoryRules } from '../cdn-logs-report/patterns/patterns-uploader.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
+import { buildClassificationRows } from './classify.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -73,6 +75,18 @@ export function serializeCsv(rows) {
   return [header, ...body].join('\r\n');
 }
 
+// Category-only classification CSV (LLMO-6257 P2) — imported into
+// referral_url_classifications by the projector via wrpc_import_referral_url_classifications.
+const CLASSIFICATION_CSV_COLUMNS = ['host', 'url_path', 'category_name', 'updated_by'];
+
+export function serializeClassificationCsv(rows) {
+  const header = CLASSIFICATION_CSV_COLUMNS.join(',');
+  const body = rows.map(
+    (row) => CLASSIFICATION_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
+  );
+  return [header, ...body].join('\r\n');
+}
+
 function buildCsvRows(records, host) {
   const grouped = new Map();
 
@@ -119,6 +133,12 @@ function getCsvS3Key(siteId, year, month, day) {
   const paddedMonth = String(month).padStart(2, '0');
   const paddedDay = String(day).padStart(2, '0');
   return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}/data.csv`;
+}
+
+function getClassificationCsvS3Key(siteId, year, month, day) {
+  const paddedMonth = String(month).padStart(2, '0');
+  const paddedDay = String(day).padStart(2, '0');
+  return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}/classifications.csv`;
 }
 
 async function getAnalyticsQueueUrl(context) {
@@ -176,6 +196,74 @@ export async function triggerTrafficAnalysisDailyImport(context) {
     fullAuditRef: finalUrl,
     allowCache: false,
   };
+}
+
+/**
+ * Classifies a run's referral URLs against the site's active category rules and
+ * emits them for the projector to import into referral_url_classifications
+ * (LLMO-6257 P2, write-time-in-service, Option A). Separate CSV + projector message
+ * from the traffic export; the projector serializes all sources for a site on the
+ * referral_url_classifications:<siteId> FIFO group.
+ */
+export async function emitReferralClassifications({
+  site, context, rows, date, year, month, day, bucket, queueUrl,
+}) {
+  const { log, s3Client, sqs } = context;
+  const siteId = site.getId();
+
+  const rulesResult = await fetchAgenticUrlClassificationRules(site, context);
+  const rules = Array.isArray(rulesResult?.topicPatterns) ? rulesResult.topicPatterns : [];
+  if (rules.length === 0) {
+    log.info(`[llmo-referral-traffic-daily] No category rules for site ${siteId}; skipping classification emit`);
+    return { classified: 0 };
+  }
+
+  const classificationRows = buildClassificationRows(rows, rules, 'spacecat:optel');
+  if (classificationRows.length === 0) {
+    log.info(`[llmo-referral-traffic-daily] No referral URLs matched a category rule for site ${siteId}`);
+    return { classified: 0 };
+  }
+
+  const classificationKey = getClassificationCsvS3Key(siteId, year, month, day);
+  const classificationUri = `s3://${bucket}/${classificationKey}`;
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: classificationKey,
+    Body: serializeClassificationCsv(classificationRows),
+    ContentType: 'text/csv',
+  }));
+
+  const dedupId = createHash('sha256')
+    .update(`${siteId}:${date}:referral_url_classifications`)
+    .digest('hex');
+  const messageGroupId = `referral_url_classifications:${siteId}`;
+
+  const message = {
+    type: 'batch.completed',
+    correlationId: dedupId,
+    pipeline_id: 'referral_url_classifications',
+    s3_uri: classificationUri,
+    site_id: siteId,
+    start_date: date,
+    end_date: date,
+    row_count: classificationRows.length,
+  };
+
+  if (site.getOrganizationId?.()) {
+    message.org_id = site.getOrganizationId();
+  }
+
+  try {
+    await sqs.sendMessage(queueUrl, message, messageGroupId, 0, dedupId);
+  } catch (err) {
+    log.error(`[llmo-referral-traffic-daily] Classification SQS dispatch failed for site ${siteId}; cleaning up uploaded CSV`);
+    await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: classificationKey }));
+    throw err;
+  }
+
+  log.info(`[llmo-referral-traffic-daily] Dispatched ${classificationRows.length} referral classifications for site ${siteId}`);
+  return { classified: classificationRows.length };
 }
 
 export async function referralTrafficDailyRunner(context) {
@@ -288,6 +376,17 @@ export async function referralTrafficDailyRunner(context) {
   log.info(
     `[llmo-referral-traffic-daily] Dispatched analytics event for site ${siteId}, date ${date}, dedupId: ${dedupId}`,
   );
+
+  // Classify this run's referral URLs and emit them for import into
+  // referral_url_classifications (LLMO-6257 P2). Best-effort: the traffic export has
+  // already succeeded, so a classification hiccup must not fail the audit.
+  try {
+    await emitReferralClassifications({
+      site, context, rows, date, year, month, day, bucket, queueUrl,
+    });
+  } catch (err) {
+    log.warn(`[llmo-referral-traffic-daily] Referral URL classification emit failed for site ${siteId}: ${err.message}`);
+  }
 
   return {
     auditResult: { date, csvKey, rowCount: rows.length },
