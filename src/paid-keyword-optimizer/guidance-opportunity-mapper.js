@@ -13,8 +13,67 @@
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
+import { normalizeUrl } from './utils.js';
 
 const MISALIGNED_SCORES = new Set(['poor', 'fair']);
+
+// Stricter than MISALIGNED_SCORES ({poor, fair}) on purpose: only the worst-aligned clusters
+// are proposed for keyword exclusion. Product decision, v4. Widen this set to extend the policy.
+const EXCLUDE_ALIGNMENT_SCORES = new Set(['poor']);
+
+/**
+ * Resolves the "why excluded" text for a poor cluster. Only keyword->page signals justify
+ * excluding a keyword; cluster.summary / keywordToAdGap are intentionally NOT in the chain.
+ * @param {Object} cluster - cluster result
+ * @returns {string|null} reason text, or null when no source text exists
+ */
+function resolveExclusionReason(cluster) {
+  const kpg = cluster.gapAnalysis?.keywordToPageGap;
+  const candidates = [kpg?.explanation, kpg?.gapDescription];
+  const reason = candidates.find((s) => typeof s === 'string' && s.trim().length > 0);
+  return reason ? reason.trim() : null;
+}
+
+/**
+ * Builds the "exclude keywords" recommended action from poorly-aligned clusters.
+ * Totals are computed over the DISTINCT keyword set across listed clusters.
+ * @param {Array} clusterResults - cluster results from the guidance body
+ * @returns {Object|null} recommendedAction, or null when no poor clusters
+ */
+function buildRecommendedAction(clusterResults) {
+  const poor = clusterResults.filter(
+    (c) => c.analysisStatus !== 'failed' && EXCLUDE_ALIGNMENT_SCORES.has(c.overallAlignmentScore),
+  );
+  if (poor.length === 0) {
+    return null;
+  }
+
+  const clusters = poor.map((c) => ({
+    clusterId: c.clusterId,
+    representativeKeyword: c.representativeKeyword,
+    alignmentScore: c.overallAlignmentScore,
+    reason: resolveExclusionReason(c),
+    keywords: (c.keywords || []).map((k) => ({ keyword: k.keyword, searchVolume: k.traffic ?? 0 })),
+  }));
+
+  // keyword -> searchVolume (Semrush volume is market-wide, identical per keyword)
+  const distinct = new Map();
+  for (const c of clusters) {
+    for (const k of c.keywords) {
+      if (!distinct.has(k.keyword)) {
+        distinct.set(k.keyword, k.searchVolume);
+      }
+    }
+  }
+
+  return {
+    actionType: 'exclude',
+    totalClusters: clusters.length,
+    totalKeywords: distinct.size,
+    totalSearchVolume: [...distinct.values()].reduce((sum, v) => sum + v, 0),
+    clusters,
+  };
+}
 
 /**
  * Formats a currency value with $ prefix and K suffix for thousands.
@@ -77,9 +136,10 @@ export function assignClusterRanks(clusterResults) {
  * @param {string} siteId - The site ID
  * @param {Object} audit - The audit object
  * @param {Object} message - The SQS message from mystique
+ * @param {Object} auditResult - The audit result (truthy, provided by the guidance handler)
  * @returns {Object} Opportunity entity
  */
-export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
+export function mapToKeywordOptimizerOpportunity(siteId, audit, message, auditResult) {
   const { guidance } = message.data;
   const guidanceBody = guidance?.[0]?.body || {};
   const url = message.data?.url;
@@ -102,6 +162,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
    */
   const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
   const pageTopics = guidanceBody.pageTopics ?? [];
+  const whatsLikelyHappening = guidanceBody.whatsLikelyHappening ?? null;
   const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
@@ -117,6 +178,18 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     (sum, c) => sum + (c.clusterMisalignedSpend || 0),
     0,
   );
+  const recommendedAction = buildRecommendedAction(clusterResults);
+
+  // auditResult is provided (and truthy) by the guidance handler, which returns early if absent.
+  const paidPages = auditResult.predominantlyPaidPages || [];
+  const matchedPage = paidPages.find((p) => normalizeUrl(p.url) === normalizeUrl(url));
+  const landingPageMetrics = matchedPage
+    ? {
+      bounceRate: matchedPage.bounceRate,
+      engagedScrollRate: matchedPage.engagedScrollRate,
+      paidTrafficShare: matchedPage.paidTrafficShare ?? null,
+    }
+    : null;
 
   const description = 'Multiple keyword intent groups target this page. '
     + `${misalignedClusters} of ${totalClusters} clusters show significant alignment gaps. `
@@ -149,6 +222,9 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       totalMisalignedSpend,
       resolvedPageHeading,
       pageTopics,
+      whatsLikelyHappening,
+      recommendedAction,
+      landingPageMetrics,
     },
     status: 'NEW',
     tags: [
