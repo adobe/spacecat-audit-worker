@@ -132,20 +132,83 @@ describe('offsite-refresh', () => {
       expect(log.error).to.have.been.calledWith(sinon.match(/DB down/));
     });
 
-    it('returns the single matching opportunity without touching it', async () => {
+    it('returns the single matching NEW opportunity without touching it', async () => {
       const only = {
         getType: () => 'cited-analysis',
         getId: () => 'only-opp',
       };
-      const dataAccess = {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([only]) },
-      };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs('site-1', 'NEW').resolves([only]);
+      allBySiteIdAndStatus.withArgs('site-1', 'IN_PROGRESS').resolves([]);
+      const dataAccess = { Opportunity: { allBySiteIdAndStatus } };
 
       const result = await resolveEvergreenOffsiteOpportunity({
         dataAccess, siteId: 'site-1', auditType: 'cited-analysis', log,
       });
 
       expect(result).to.equal(only);
+    });
+
+    it('reuses a customer-activated IN_PROGRESS opportunity in place, without retiring it', async () => {
+      // The refresh must not treat an IN_PROGRESS opportunity as absent: recreating it would
+      // collide with the existing row on the active-scope unique index and drop suggestions.
+      const inProgress = {
+        getType: () => 'cited-analysis',
+        getId: () => 'in-progress-opp',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs('site-1', 'NEW').resolves([]);
+      allBySiteIdAndStatus.withArgs('site-1', 'IN_PROGRESS').resolves([inProgress]);
+      const saveManyStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Opportunity: { allBySiteIdAndStatus, saveMany: saveManyStub },
+      };
+
+      const result = await resolveEvergreenOffsiteOpportunity({
+        dataAccess, siteId: 'site-1', auditType: 'cited-analysis', log,
+      });
+
+      expect(result).to.equal(inProgress);
+      expect(inProgress.setStatus).to.not.have.been.called;
+      expect(saveManyStub).to.not.have.been.called;
+    });
+
+    it('retires the NEW duplicate and keeps the more recent IN_PROGRESS one as evergreen', async () => {
+      // Legacy leftovers can span both active statuses; convergence must keep a single active
+      // opportunity regardless of which status the survivor holds.
+      const staleNew = {
+        getType: () => 'cited-analysis',
+        getId: () => 'stale-new',
+        getUpdatedAt: () => '2025-01-01T00:00:00.000Z',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const activeInProgress = {
+        getType: () => 'cited-analysis',
+        getId: () => 'active-in-progress',
+        getUpdatedAt: () => '2026-01-01T00:00:00.000Z',
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs('site-1', 'NEW').resolves([staleNew]);
+      allBySiteIdAndStatus.withArgs('site-1', 'IN_PROGRESS').resolves([activeInProgress]);
+      const saveManyStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Opportunity: { allBySiteIdAndStatus, saveMany: saveManyStub },
+      };
+
+      const result = await resolveEvergreenOffsiteOpportunity({
+        dataAccess, siteId: 'site-1', auditType: 'cited-analysis', log,
+      });
+
+      expect(result).to.equal(activeInProgress);
+      expect(staleNew.setStatus).to.have.been.calledWith('IGNORED');
+      expect(activeInProgress.setStatus).to.not.have.been.called;
+      expect(saveManyStub).to.have.been.calledOnce;
+      expect(saveManyStub.firstCall.args[0]).to.deep.equal([staleNew]);
     });
 
     it('ignores opportunities of a different type', async () => {
@@ -184,9 +247,12 @@ describe('offsite-refresh', () => {
         setUpdatedBy: sandbox.stub(),
       };
       const saveManyStub = sandbox.stub().resolves();
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs('site-1', 'NEW').resolves([oldest, newest, middle]);
+      allBySiteIdAndStatus.withArgs('site-1', 'IN_PROGRESS').resolves([]);
       const dataAccess = {
         Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub().resolves([oldest, newest, middle]),
+          allBySiteIdAndStatus,
           saveMany: saveManyStub,
         },
       };
@@ -220,9 +286,12 @@ describe('offsite-refresh', () => {
         setStatus: sandbox.stub(),
         setUpdatedBy: sandbox.stub(),
       };
+      const allBySiteIdAndStatus = sandbox.stub();
+      allBySiteIdAndStatus.withArgs('site-1', 'NEW').resolves([older, newer]);
+      allBySiteIdAndStatus.withArgs('site-1', 'IN_PROGRESS').resolves([]);
       const dataAccess = {
         Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub().resolves([older, newer]),
+          allBySiteIdAndStatus,
           saveMany: sandbox.stub().rejects(new Error('save failed')),
         },
       };
