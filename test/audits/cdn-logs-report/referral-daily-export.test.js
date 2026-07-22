@@ -69,7 +69,12 @@ describe('referral daily export', function referralDailyExportTests() {
     };
   }
 
-  async function loadModule(classifyStub, reportUtilsOverrides = {}, queryBuilderOverrides = {}) {
+  async function loadModule(
+    classifyStub,
+    reportUtilsOverrides = {},
+    queryBuilderOverrides = {},
+    rulesStub = undefined,
+  ) {
     return esmock('../../../src/cdn-logs-report/referral-daily-export.js', {
       '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js': {
         classifyTrafficSource: classifyStub,
@@ -84,6 +89,12 @@ describe('referral daily export', function referralDailyExportTests() {
           createReferralDailyReportQuery: sandbox.stub().resolves('SELECT * FROM daily_referral'),
           ...queryBuilderOverrides,
         },
+      },
+      // Category rules for the write-time classification emit (LLMO-6257 P2).
+      // Defaults to null (no rules) so pre-existing tests skip classification and
+      // their single-emit assertions hold; classification tests pass a rulesStub.
+      '../../../src/common/agentic-url-classification-rules.js': {
+        fetchAgenticUrlClassificationRules: rulesStub || sandbox.stub().resolves(null),
       },
     });
   }
@@ -806,5 +817,158 @@ describe('referral daily export', function referralDailyExportTests() {
       sinon.match.any,
       sinon.match.any,
     );
+  });
+
+  describe('referral URL classification (LLMO-6257 P2)', () => {
+    const llmRow = (overrides = {}) => ({
+      path: '/products/ai',
+      host: 'www.example.com',
+      referrer: 'chatgpt.com',
+      utm_source: null,
+      utm_medium: null,
+      tracking_param: null,
+      device: 'desktop',
+      date: '2026-03-31',
+      region: 'US',
+      pageviews: 5,
+      ...overrides,
+    });
+
+    const exportWith = (module, context, rows = [llmRow()]) => module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves(rows),
+      },
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context,
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    });
+
+    it('classifies matching referral URLs and emits a classification event', async () => {
+      const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+      const rulesStub = sandbox.stub().resolves({ topicPatterns: [{ name: 'Products', regex: '/products' }] });
+      const module = await loadModule(classifyStub, {}, {}, rulesStub);
+      const context = makeContext();
+
+      await exportWith(module, context);
+
+      const expectedDedupId = createHash('sha256')
+        .update('site-abc:2026-03-31:referral_url_classifications:cdn')
+        .digest('hex');
+
+      // First send = traffic CSV, second send = classifications CSV.
+      expect(s3ClientMock.send).to.have.been.calledTwice;
+      expect(s3ClientMock.send.secondCall.args[0].input.Key).to.equal(
+        'referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/classifications.csv',
+      );
+      const classificationBody = s3ClientMock.send.secondCall.args[0].input.Body;
+      expect(classificationBody).to.include('host,url_path,category_name,updated_by');
+      expect(classificationBody).to.include('www.example.com,/products/ai,Products,spacecat:cdn');
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      expect(context.sqs.sendMessage.secondCall).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        sinon.match({
+          type: 'batch.completed',
+          correlationId: expectedDedupId,
+          pipeline_id: 'referral_url_classifications',
+          s3_uri: 's3://spacecat-importer-bucket/referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/classifications.csv',
+          site_id: 'site-abc',
+          org_id: 'org-1',
+          start_date: '2026-03-31',
+          end_date: '2026-03-31',
+          row_count: 1,
+        }),
+        'referral_url_classifications:site-abc',
+        0,
+        expectedDedupId,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[cdn-logs-report] Dispatched 1 referral classifications for site site-abc on 2026-03-31',
+      );
+    });
+
+    it('skips the classification emit when no referral URL matches a rule', async () => {
+      const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+      const rulesStub = sandbox.stub().resolves({ topicPatterns: [{ name: 'Blog', regex: '/blog' }] });
+      const module = await loadModule(classifyStub, {}, {}, rulesStub);
+      const context = makeContext();
+
+      await exportWith(module, context);
+
+      // Only the traffic CSV + event; no classification emit.
+      expect(s3ClientMock.send).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(
+        '[cdn-logs-report] No referral URLs matched a category rule for site site-abc',
+      );
+    });
+
+    it('skips the classification emit when the site has no category rules', async () => {
+      const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+      const rulesStub = sandbox.stub().resolves(null);
+      const module = await loadModule(classifyStub, {}, {}, rulesStub);
+      const context = makeContext();
+
+      await exportWith(module, context);
+
+      expect(s3ClientMock.send).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(
+        '[cdn-logs-report] No category rules for site site-abc; skipping classification emit',
+      );
+    });
+
+    it('does not fail the audit when the classification emit throws (best-effort)', async () => {
+      const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+      const rulesStub = sandbox.stub().resolves({ topicPatterns: [{ name: 'Products', regex: '/products' }] });
+      const module = await loadModule(classifyStub, {}, {}, rulesStub);
+      const sqs = { sendMessage: sandbox.stub() };
+      sqs.sendMessage.onFirstCall().resolves(); // traffic emit ok
+      sqs.sendMessage.onSecondCall().rejects(new Error('sqs down')); // classification emit fails
+      const context = makeContext({ sqs });
+
+      const result = await exportWith(module, context);
+
+      // Traffic export already succeeded — the audit still returns success.
+      expect(result).to.deep.include({ success: true, skipped: false, rowCount: 1 });
+      // The classification CSV was uploaded, then cleaned up after the SQS failure.
+      expect(s3ClientMock.send.lastCall.args[0].constructor.name).to.equal('DeleteObjectCommand');
+      expect(s3ClientMock.send.lastCall.args[0].input.Key).to.equal(
+        'referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/classifications.csv',
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Referral URL classification emit failed for site site-abc'),
+      );
+    });
+
+    it('emitReferralClassifications omits org_id when the site has no organization', async () => {
+      const rulesStub = sandbox.stub().resolves({ topicPatterns: [{ name: 'Products', regex: '/products' }] });
+      const module = await loadModule(
+        sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' }),
+        {},
+        {},
+        rulesStub,
+      );
+      const context = makeContext();
+      const site = makeSite({ getOrganizationId: () => null });
+
+      const result = await module.testHelpers.emitReferralClassifications({
+        site,
+        context,
+        rows: [{ host: 'www.example.com', url_path: '/products/ai' }],
+        trafficDate: '2026-03-31',
+        bucket: 'spacecat-importer-bucket',
+        queueUrl: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        s3Client: s3ClientMock,
+      });
+
+      expect(result).to.deep.equal({ classified: 1 });
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.pipeline_id).to.equal('referral_url_classifications');
+      expect(sentMessage).to.not.have.property('org_id');
+    });
   });
 });
