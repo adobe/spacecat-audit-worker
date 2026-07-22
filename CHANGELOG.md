@@ -1,3 +1,10 @@
+# [1.504.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.503.1...v1.504.0) (2026-07-22)
+
+
+### Features
+
+* **offsite:** self-heal empty URL store on individual analysis runs ([#2801](https://github.com/adobe/spacecat-audit-worker/issues/2801)) ([6f23889](https://github.com/adobe/spacecat-audit-worker/commit/6f2388907b0bc8a88ec7f6b0c9edd13189c2d79e))
+
 ## [1.503.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.503.0...v1.503.1) (2026-07-22)
 
 
