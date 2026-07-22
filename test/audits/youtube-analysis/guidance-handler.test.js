@@ -634,6 +634,31 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(callText).to.include('2 suggestions processed');
     });
 
+    it('appends DRS / Mystique / total phase timings when present on the audit result', async () => {
+      const now = Date.now();
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+        timings: {
+          drsStartedAt: now - 100_000,
+          drsCompletedAt: now - 60_000,
+          analysisStartedAt: now - 30_000,
+        },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: mockAnalysisData, companyName: 'Example Corp' },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('• DRS scrape:');
+      expect(callText).to.include('Suggestion generation (Mystique):');
+      expect(callText).to.include('Total (DRS + Mystique):');
+    });
+
     it('should not send Slack notification when no slackContext on audit', async () => {
       mockAudit.getAuditResult.returns({});
 

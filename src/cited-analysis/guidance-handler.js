@@ -20,6 +20,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import { buildOffsiteTimingLines } from '../utils/offsite-audit-utils.js';
 import {
   isValidOffsiteAnalysis,
   persistOffsiteOpportunity,
@@ -159,7 +160,8 @@ export default async function handler(message, context) {
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);
-      const slackContext = auditRecord?.getAuditResult()?.slackContext;
+      const auditResultData = auditRecord?.getAuditResult();
+      const slackContext = auditResultData?.slackContext;
       if (slackContext) {
         const { channelId, threadTs } = slackContext;
 
@@ -175,7 +177,11 @@ export default async function handler(message, context) {
           verdict: opportunityData.qaVerdict,
         });
 
-        await postMessageOptional(context, channelId, slackMessage, { threadTs });
+        // Append DRS / Mystique / total phase timings (from anchors on the audit result).
+        const timingLines = buildOffsiteTimingLines(auditResultData?.timings);
+        const fullMessage = timingLines ? `${slackMessage}\n${timingLines}` : slackMessage;
+
+        await postMessageOptional(context, channelId, fullMessage, { threadTs });
       }
     }
 
