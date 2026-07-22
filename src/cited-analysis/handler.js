@@ -306,13 +306,37 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     };
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.error(`${LOG_PREFIX} Store data missing: ${error.message}`);
+      const { slackContext } = auditContext;
+      const { channelId, threadTs } = slackContext || {};
+      // A scoped scrape already ran and the store is STILL empty → the brand has no
+      // cited URLs to analyze. Report a terminal message instead of looping.
+      if (auditContext.drsScrapeRequested) {
+        log.error(`${LOG_PREFIX} URL store still empty after scrape: ${error.message}`);
+        await postMessageOptional(
+          context,
+          channelId,
+          `:warning: *cited-analysis* for *${site.getBaseURL()}* — no cited URLs found to analyze.`,
+          { threadTs },
+        );
+        return {
+          auditResult: { success: false, error: error.message, storeName: error.storeName },
+          fullAuditRef: url,
+        };
+      }
+      // First individual run with an empty store: collect + scrape just this bucket via a
+      // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
+      // completes — no need to run offsite-brand-presence for all buckets manually.
+      log.info(`${LOG_PREFIX} URL store empty, requesting a scoped scrape for top-cited`);
+      await postMessageOptional(
+        context,
+        channelId,
+        `:mag: *cited-analysis* for *${site.getBaseURL()}* — no stored URLs yet; `
+          + 'collecting & scraping cited URLs first, will retry automatically.',
+        { threadTs },
+      );
+      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext);
       return {
-        auditResult: {
-          success: false,
-          error: error.message,
-          storeName: error.storeName,
-        },
+        auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }

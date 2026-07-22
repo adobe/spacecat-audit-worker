@@ -302,14 +302,43 @@ describe('Reddit Analysis Handler', function () {
       expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
     });
 
-    it('should return error when urlStore returns empty', async () => {
+    it('requests a scoped scrape and notifies Slack when the urlStore is empty on a first run', async () => {
       mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No reddit-analysis URLs found'));
 
-      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { slackContext: { channelId: 'C1', threadTs: 'T1' } },
+      );
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('urlStore returned empty results');
+      expect(result.auditResult.status).to.equal('pending_scrape');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.type).to.equal('offsite-brand-presence');
+      expect(msg.auditContext.messageData.domainScope).to.equal('reddit.com');
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        sinon.match.any,
+        'C1',
+        sinon.match(/no stored URLs yet/),
+        { threadTs: 'T1' },
+      );
+    });
+
+    it('reports no URLs found (terminal) when the store is still empty after a scrape', async () => {
+      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No reddit-analysis URLs found'));
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { drsScrapeRequested: true },
+      );
+
+      expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.storeName).to.equal('urlStore');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.error).to.have.been.called;
     });
 
