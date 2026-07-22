@@ -59,6 +59,19 @@ function rebaseUrl(url, preferredBase, log) {
   }
 }
 
+function applyPathPrefixExclusions(urls, excludedPrefixes) {
+  if (!excludedPrefixes || excludedPrefixes.length === 0) {
+    return urls;
+  }
+  return urls.filter((url) => !excludedPrefixes.some((prefix) => {
+    try {
+      return new URL(url).pathname.startsWith(prefix);
+    } catch {
+      return false;
+    }
+  }));
+}
+
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -604,6 +617,8 @@ export async function submitForScraping(context) {
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));
+  const excludedPathPrefixes = site?.getConfig?.()
+    ?.getHandlerConfig?.(AUDIT_TYPE)?.excludedPathPrefixes ?? [];
 
   let finalUrls;
   let filteredCount;
@@ -633,6 +648,7 @@ export async function submitForScraping(context) {
     // Single site-scope filter on the merged candidate set (scoped here, not per-source).
     finalUrls = filterBySiteScope(crossSlackDeduped, siteBaseUrl);
     scopeFilteredCount = crossSlackDeduped.length - finalUrls.length;
+    finalUrls = applyPathPrefixExclusions(finalUrls, excludedPathPrefixes);
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
     currentIncludedUrls = includedSlackDeduped.length;
@@ -682,7 +698,8 @@ export async function submitForScraping(context) {
     // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
     const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
     scopeFilteredCount = crossDeduped.length - scopedUrls.length;
-    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
+    const pathFilteredUrls = applyPathPrefixExclusions(scopedUrls, excludedPathPrefixes);
+    const batchedUrls = pathFilteredUrls.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(organicDeduped);
     const includedUrlSet = new Set(includedDeduped);
