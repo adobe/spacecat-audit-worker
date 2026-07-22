@@ -758,6 +758,25 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(callText).to.not.include('(');
     });
 
+    it('does not crash the handler when the Slack-context lookup fails', async () => {
+      // A notification side-effect must never turn a graceful noContent into a 500.
+      // The data.error path posts before any audit-existence lookup, so the only
+      // Audit.findById is the guarded one inside the helper.
+      context.dataAccess.Audit.findById.rejects(new Error('DB down'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: { error: true, errorMessage: 'Wikipedia analysis failed' },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(mockPostMessageOptional).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to post outcome to Slack/));
+    });
+
     it('does not post an outcome message for an empty result when there is no slackContext', async () => {
       mockAudit.getAuditResult.returns({});
 

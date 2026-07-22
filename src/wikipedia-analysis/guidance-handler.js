@@ -77,14 +77,22 @@ async function postWikipediaOutcomeToSlack(context, auditId, text) {
   if (!auditId) {
     return;
   }
-  const { dataAccess } = context;
-  const auditRecord = await dataAccess.Audit.findById(auditId);
-  const slackContext = auditRecord?.getAuditResult()?.slackContext;
-  if (!slackContext) {
-    return;
+  const { log, dataAccess } = context;
+  // Posting is a best-effort side-effect: a DB/lookup failure here must never crash
+  // the primary handler (this runs on graceful noContent paths, some outside the
+  // main try/catch). postMessageOptional already swallows Slack API errors; guard
+  // the preceding findById the same way.
+  try {
+    const auditRecord = await dataAccess.Audit.findById(auditId);
+    const slackContext = auditRecord?.getAuditResult()?.slackContext;
+    if (!slackContext) {
+      return;
+    }
+    const { channelId, threadTs } = slackContext;
+    await postMessageOptional(context, channelId, text, { threadTs });
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to post outcome to Slack: ${e.message}`);
   }
-  const { channelId, threadTs } = slackContext;
-  await postMessageOptional(context, channelId, text, { threadTs });
 }
 
 /**
