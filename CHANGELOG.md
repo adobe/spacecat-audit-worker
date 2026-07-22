@@ -1,3 +1,10 @@
+## [1.501.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.1...v1.501.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* **cwv:** remove redundant enabled/entitlement check from cwv-auto-suggest and cwv-auto-fix. ([#2791](https://github.com/adobe/spacecat-audit-worker/issues/2791)) ([a3f8d48](https://github.com/adobe/spacecat-audit-worker/commit/a3f8d481fd4f1e999db59bfda133074476e7ea0a))
+
 ## [1.501.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.0...v1.501.1) (2026-07-21)
 
 
