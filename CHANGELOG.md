@@ -1,3 +1,10 @@
+## [1.504.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.0...v1.504.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **offsite:** don't let a pending_scrape run block its own post-scrape re-trigger ([#2802](https://github.com/adobe/spacecat-audit-worker/issues/2802)) ([5127e83](https://github.com/adobe/spacecat-audit-worker/commit/5127e834f324cadb29df4a9f2dc1449e35b79100)), closes [#2801](https://github.com/adobe/spacecat-audit-worker/issues/2801)
+
 # [1.504.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.503.1...v1.504.0) (2026-07-22)
 
 
