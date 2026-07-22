@@ -1,3 +1,10 @@
+## [1.501.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.2...v1.501.3) (2026-07-22)
+
+
+### Bug Fixes
+
+* bump @adobe/spacecat-shared-html-analyzer to 1.3.4 ([#2795](https://github.com/adobe/spacecat-audit-worker/issues/2795)) ([dcfc0db](https://github.com/adobe/spacecat-audit-worker/commit/dcfc0dbd4480c29681254b54577f0b8021163d60))
+
 ## [1.501.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.501.1...v1.501.2) (2026-07-22)
 
 
