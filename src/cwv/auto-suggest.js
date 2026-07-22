@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { isAuditEnabledForSite } from '../common/index.js';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 import { METRICS, THRESHOLDS } from './kpi-metrics.js';
 
@@ -43,8 +42,6 @@ function getFailingMetricInfo(allMetrics) {
 }
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
-const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
-const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
 
 /**
  * Checks if a specific suggestion should receive auto-suggest from Mystique.
@@ -107,11 +104,18 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
 
 /**
  * Processes CWV auto-suggest for eligible suggestions.
- * Checks if auto-suggest is enabled, filters suggestions that need guidance,
- * and sends messages to Mystique for AI-powered guidance generation.
+ * Filters suggestions that need guidance and sends messages to Mystique for
+ * AI-powered guidance generation.
  * Sends one message per suggestion that needs auto-suggest (NEW or PENDING_VALIDATION
  * status, no guidance yet — see `shouldSendAutoSuggestForSuggestion`)
- * Includes code repository information (codeBucket, codePath) if auto-fix feature is enabled
+ * Includes code repository information (codeBucket, codePath) whenever a site is provided.
+ *
+ * Entitlement/enablement for `cwv` is already verified upstream — the job-dispatcher's
+ * `isHandlerEnabledForSite` pre-filter for scheduled runs, and `run-audit`'s entitlement +
+ * deny-list check for one-off runs — before this audit ever gets dispatched, so this step
+ * does not re-check `cwv-auto-suggest`/`cwv-auto-fix` (consistent with how every other
+ * audit type's auto-suggest/auto-fix step in this codebase relies on the base audit's own
+ * gating rather than re-checking Configuration for the sub-feature).
  *
  * @param {Object} context - Context object containing log, sqs, env, s3Client
  * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
@@ -123,24 +127,6 @@ export async function processAutoSuggest(context, opportunity, site) {
     log, sqs, env,
   } = context;
 
-  // Check if CWV auto-suggest feature is enabled for this site
-  const isAutoSuggestEnabled = await isAuditEnabledForSite(
-    CWV_AUTO_SUGGEST_FEATURE_TOGGLE,
-    site,
-    context,
-  );
-  if (!isAutoSuggestEnabled) {
-    log.info(`[audit-worker-cwv] siteId: ${site?.getId?.()} | baseURL: ${site?.getBaseURL?.()} | CWV auto-suggest is disabled, skipping`);
-    return;
-  }
-
-  // Check if CWV auto-fix feature is enabled for this site
-  const isAutoFixEnabled = await isAuditEnabledForSite(
-    CWV_AUTO_FIX_FEATURE_TOGGLE,
-    site,
-    context,
-  );
-
   try {
     const siteId = opportunity.getSiteId();
     const auditId = opportunity.getAuditId();
@@ -149,8 +135,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Processing ${suggestions.length} suggestions for CWV auto-suggest, opportunityId: ${opportunityId}`);
 
-    // Get code repository information only if auto-fix is enabled
-    const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
+    const codeInfo = site ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
     // Send one SQS message per suggestion that needs auto-suggest

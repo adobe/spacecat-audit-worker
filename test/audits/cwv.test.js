@@ -784,6 +784,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       const mockOppty = {
         getId: () => 'oppty-id',
+        getSiteId: () => 'site-id',
+        getAuditId: () => 'audit-id',
         setAuditId: sandbox.stub(),
         getData: sandbox.stub().returns({}),
         setData: sandbox.stub(),
@@ -821,6 +823,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       const mockOppty = {
         getId: () => 'oppty-id',
+        getSiteId: () => 'site-id',
+        getAuditId: () => 'audit-id',
         setAuditId: sandbox.stub(),
         getData: sandbox.stub().returns({}),
         setData: sandbox.stub(),
