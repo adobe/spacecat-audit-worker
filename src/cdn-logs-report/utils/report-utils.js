@@ -152,3 +152,72 @@ export async function replaceAgenticUrlClassificationRules({
 
   return Array.isArray(data) ? data[0] : data;
 }
+
+/**
+ * Fetches a site's top distinct referral url_paths (ranked by summed pageviews
+ * across all referral sources) via the read RPC. This is the Postgres analogue of
+ * the CDN Athena top-URLs query — the URL corpus fed to category-rule generation
+ * for referral-only sites (LLMO-6257). Returns a flat array of path strings.
+ */
+export async function fetchReferralTopUrls({ site, context, limit = 200 }) {
+  const siteId = site.getId();
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+
+  if (!postgrestClient?.rpc) {
+    throw new Error('PostgREST client is required to fetch referral top URLs');
+  }
+
+  const { data, error } = await postgrestClient.rpc(
+    'rpc_referral_traffic_top_urls',
+    {
+      p_site_id: siteId,
+      p_limit: limit,
+    },
+  );
+
+  if (error) {
+    context?.log?.error?.(`Failed to fetch referral top URLs for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => row?.url_path)
+    .filter((path) => typeof path === 'string' && path.length > 0);
+}
+
+/**
+ * Materializes a site's active category rules onto its referral URLs via the writer
+ * RPC, upserting category_name into agentic_url_classifications (LLMO-6257). Returns
+ * the RPC payload ({ site_id, classified }).
+ */
+export async function applyCategoryRulesToReferral({
+  site,
+  context,
+  source = null,
+  since = null,
+  updatedBy = 'audit-worker:referral-patterns',
+}) {
+  const siteId = site.getId();
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+
+  if (!postgrestClient?.rpc) {
+    throw new Error('PostgREST client is required to apply category rules to referral');
+  }
+
+  const { data, error } = await postgrestClient.rpc(
+    'wrpc_apply_category_rules_to_referral',
+    {
+      p_site_id: siteId,
+      p_source: source,
+      p_since: since,
+      p_updated_by: updatedBy,
+    },
+  );
+
+  if (error) {
+    context?.log?.error?.(`Failed to apply category rules to referral for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+
+  return Array.isArray(data) ? data[0] : data;
+}

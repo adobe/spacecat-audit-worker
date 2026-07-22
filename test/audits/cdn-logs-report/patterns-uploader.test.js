@@ -482,3 +482,182 @@ describe('Patterns Uploader', () => {
     );
   });
 });
+
+describe('Referral Patterns Uploader', () => {
+  let sandbox;
+  let generateReferralPatternsWorkbook;
+  let mockAnalyzeProducts;
+  let mockFetchReferralTopUrls;
+  let mockApplyCategoryRulesToReferral;
+  let mockReplaceRules;
+  let mockFetchRules;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+
+    mockAnalyzeProducts = sandbox.stub().resolves({ shoes: '/shoes' });
+    mockFetchReferralTopUrls = sandbox.stub().resolves(['/shoes', '/boots']);
+    mockApplyCategoryRulesToReferral = sandbox.stub().resolves({ site_id: 'test-site', classified: 2 });
+    mockReplaceRules = sandbox.stub().resolves({ category_rules: 1, page_type_rules: 0 });
+    mockFetchRules = sandbox.stub().resolves({ topicPatterns: [], pagePatterns: [] });
+
+    const module = await esmock('../../../src/cdn-logs-report/patterns/patterns-uploader.js', {
+      '../../../src/cdn-logs-report/patterns/product-analysis.js': {
+        analyzeProducts: mockAnalyzeProducts,
+      },
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        replaceAgenticUrlClassificationRules: mockReplaceRules,
+        fetchReferralTopUrls: mockFetchReferralTopUrls,
+        applyCategoryRulesToReferral: mockApplyCategoryRulesToReferral,
+      },
+      '../../../src/common/agentic-url-classification-rules.js': {
+        fetchAgenticUrlClassificationRules: mockFetchRules,
+      },
+    });
+
+    generateReferralPatternsWorkbook = module.generateReferralPatternsWorkbook;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  const createMockOptions = () => ({
+    site: {
+      getId: () => 'test-site',
+      getBaseURL: () => 'https://www.example.com',
+    },
+    context: {
+      log: {
+        info: sandbox.spy(),
+        warn: sandbox.spy(),
+        error: sandbox.spy(),
+      },
+    },
+  });
+
+  it('generates rules from referral URLs, persists them, and materializes classifications', async () => {
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    expect(mockFetchReferralTopUrls).to.have.been.calledWith(sinon.match({ site: options.site }));
+    expect(mockAnalyzeProducts).to.have.been.calledWith('www.example.com', ['/shoes', '/boots']);
+
+    const replaceArgs = mockReplaceRules.getCall(0).args[0];
+    expect(replaceArgs.updatedBy).to.equal('audit-worker:referral-patterns');
+    expect(replaceArgs.categoryRules).to.have.lengthOf(1);
+    expect(replaceArgs.categoryRules[0]).to.include({ name: 'shoes', regex: '/shoes', source: 'ai' });
+    expect(replaceArgs.pageTypeRules).to.deep.equal([]);
+
+    expect(mockApplyCategoryRulesToReferral).to.have.been.calledWith(sinon.match({
+      site: options.site,
+      updatedBy: 'audit-worker:referral-patterns',
+    }));
+    expect(options.context.log.info).to.have.been.calledWith(
+      'Synced referral category rules for site test-site: 1 rules, 2 classifications',
+    );
+  });
+
+  it('skips when the site has no referral URLs in the DB', async () => {
+    mockFetchReferralTopUrls.resolves([]);
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.false;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
+    expect(mockReplaceRules).to.not.have.been.called;
+    expect(mockApplyCategoryRulesToReferral).to.not.have.been.called;
+    expect(options.context.log.info).to.have.been.calledWith(
+      'No referral URLs found in DB - skipping referral pattern generation',
+    );
+  });
+
+  it('skips when the existing-rules fetch failed', async () => {
+    mockFetchRules.resolves({ error: true });
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.false;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
+    expect(mockReplaceRules).to.not.have.been.called;
+    expect(options.context.log.info).to.have.been.calledWith(
+      'Skipping referral patterns for test-site; DB rule fetch failed',
+    );
+  });
+
+  it('reuses existing product patterns without re-hitting the LLM and preserves page-type rules', async () => {
+    mockFetchRules.resolves({
+      topicPatterns: [{ name: 'apparel', regex: '/apparel' }],
+      pagePatterns: [{ name: 'pdp', regex: '/product' }],
+    });
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
+    expect(options.context.log.info).to.have.been.calledWith(
+      'Reusing existing product patterns for referral generation',
+    );
+    // On the reuse path the rules are already persisted, so the whole-site replace
+    // RPC must NOT run again (it would churn provenance + purge soft-deletes).
+    expect(mockReplaceRules).to.not.have.been.called;
+    expect(mockApplyCategoryRulesToReferral).to.have.been.called;
+  });
+
+  it('propagates a data-service failure to the caller (best-effort catch lives in the handler)', async () => {
+    mockApplyCategoryRulesToReferral.rejects(new Error('apply boom'));
+    const options = createMockOptions();
+
+    let err;
+    try {
+      await generateReferralPatternsWorkbook(options);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an('error');
+    expect(err.message).to.equal('apply boom');
+  });
+
+  it('handles a non-array rules payload defensively', async () => {
+    mockFetchRules.resolves({});
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    // No existing topic patterns -> LLM runs.
+    expect(mockAnalyzeProducts).to.have.been.called;
+    expect(mockReplaceRules.getCall(0).args[0].pageTypeRules).to.deep.equal([]);
+  });
+
+  it('defaults the classified count to 0 when the apply RPC returns no payload', async () => {
+    mockApplyCategoryRulesToReferral.resolves(null);
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    expect(options.context.log.info).to.have.been.calledWith(
+      'Synced referral category rules for site test-site: 1 rules, 0 classifications',
+    );
+  });
+
+  it('skips when no category rules survive the merge', async () => {
+    mockAnalyzeProducts.resolves({});
+    const options = createMockOptions();
+
+    const result = await generateReferralPatternsWorkbook(options);
+
+    expect(result).to.be.false;
+    expect(mockReplaceRules).to.not.have.been.called;
+    expect(mockApplyCategoryRulesToReferral).to.not.have.been.called;
+    expect(options.context.log.warn).to.have.been.calledWith(
+      'No referral category rules available after merge',
+    );
+  });
+});

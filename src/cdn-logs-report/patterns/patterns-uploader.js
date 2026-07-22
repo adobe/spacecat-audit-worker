@@ -12,7 +12,12 @@
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
-import { replaceAgenticUrlClassificationRules } from '../utils/report-utils.js';
+import {
+  replaceAgenticUrlClassificationRules,
+  fetchReferralTopUrls,
+  applyCategoryRulesToReferral,
+} from '../utils/report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../common/agentic-url-classification-rules.js';
 
 const SAMPLE_URLS_CAP = 20;
 // sample_urls clamp — a bad element aborts the whole-site replace RPC batch.
@@ -231,4 +236,80 @@ export async function generatePatternsWorkbook(options) {
     log.error(`Failed to generate patterns: ${error.message}`);
     return false;
   }
+}
+
+/**
+ * Generates category classification rules for a site whose URL corpus lives in
+ * Postgres referral tables rather than CDN Athena logs (LLMO-6257). Mirrors
+ * `generatePatternsWorkbook` but sources paths from `fetchReferralTopUrls`, then
+ * reuses the same product LLM analysis + merge + whole-site replace RPC, and
+ * finally materializes the rules onto referral URLs via the apply RPC. Only
+ * category rules are (re)generated; existing page-type rules are preserved.
+ * Throws on data-service failure; the caller runs this best-effort.
+ */
+export async function generateReferralPatternsWorkbook({ site, context }) {
+  const { log } = context;
+
+  const paths = await fetchReferralTopUrls({ site, context });
+  if (paths.length === 0) {
+    log.info('No referral URLs found in DB - skipping referral pattern generation');
+    return false;
+  }
+  log.info(`Fetched ${paths.length} referral URLs for pattern generation`);
+
+  const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+  if (existingPatterns?.error) {
+    log.info(`Skipping referral patterns for ${site.getId?.()}; DB rule fetch failed`);
+    return false;
+  }
+
+  const existingTopicPatterns = Array.isArray(existingPatterns?.topicPatterns)
+    ? existingPatterns.topicPatterns
+    : [];
+  const existingPagePatterns = Array.isArray(existingPatterns?.pagePatterns)
+    ? existingPatterns.pagePatterns
+    : [];
+
+  const domain = new URL(site.getBaseURL()).hostname;
+
+  // Reuse existing product rules when present so re-runs don't re-hit the LLM or
+  // churn customer-tuned categories.
+  const reusedExistingRules = existingTopicPatterns.length > 0;
+  let productRegexes = {};
+  if (reusedExistingRules) {
+    log.info('Reusing existing product patterns for referral generation');
+  } else {
+    productRegexes = await analyzeProducts(domain, paths, context);
+  }
+
+  const categoryRules = mergePatternRules(existingTopicPatterns, productRegexes, paths, log);
+  if (categoryRules.length === 0) {
+    log.warn('No referral category rules available after merge');
+    return false;
+  }
+
+  // Only (re)write rules when we generated fresh ones. On the reuse path the rules
+  // are already persisted (that is why existingTopicPatterns is non-empty); calling
+  // the whole-site replace RPC again would DELETE+INSERT daily, resetting
+  // created_by/created_at and hard-purging customer soft-deletes. The apply RPC
+  // reads rules straight from the table, so it does not depend on replace running.
+  if (!reusedExistingRules) {
+    await replaceAgenticUrlClassificationRules({
+      site,
+      context,
+      categoryRules,
+      pageTypeRules: existingPagePatterns,
+      updatedBy: 'audit-worker:referral-patterns',
+    });
+  }
+
+  const applyResult = await applyCategoryRulesToReferral({
+    site,
+    context,
+    updatedBy: 'audit-worker:referral-patterns',
+  });
+
+  log.info(`Synced referral category rules for site ${site.getId()}: ${categoryRules.length} rules, ${applyResult?.classified ?? 0} classifications`);
+
+  return true;
 }

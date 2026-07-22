@@ -408,6 +408,155 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
+  describe('fetchReferralTopUrls', () => {
+    const mockSite = { getId: () => 'test-site-id' };
+
+    it('throws when no PostgREST RPC client is available', async () => {
+      await expect(reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: {},
+      })).to.be.rejectedWith('PostgREST client is required to fetch referral top URLs');
+    });
+
+    it('calls the read RPC and maps rows to a flat path array', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ url_path: '/shoes' }, { url_path: '/boots' }],
+        error: null,
+      });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal(['/shoes', '/boots']);
+      expect(rpc).to.have.been.calledWith(
+        'rpc_referral_traffic_top_urls',
+        { p_site_id: 'test-site-id', p_limit: 200 },
+      );
+    });
+
+    it('honors a custom limit', async () => {
+      const rpc = sandbox.stub().resolves({ data: [], error: null });
+
+      await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        limit: 50,
+      });
+
+      expect(rpc.firstCall.args[1].p_limit).to.equal(50);
+    });
+
+    it('drops empty and non-string paths', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ url_path: '/shoes' }, { url_path: '' }, { url_path: null }, {}],
+        error: null,
+      });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal(['/shoes']);
+    });
+
+    it('returns an empty array when the RPC returns no data', async () => {
+      const rpc = sandbox.stub().resolves({ data: null, error: null });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal([]);
+    });
+
+    it('throws and logs RPC errors', async () => {
+      const rpc = sandbox.stub().resolves({ data: null, error: new Error('read boom') });
+      const log = { error: sandbox.stub() };
+
+      await expect(reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { log, dataAccess: { services: { postgrestClient: { rpc } } } },
+      })).to.be.rejectedWith('read boom');
+      expect(log.error).to.have.been.calledWith(
+        'Failed to fetch referral top URLs for site test-site-id: read boom',
+      );
+    });
+  });
+
+  describe('applyCategoryRulesToReferral', () => {
+    const mockSite = { getId: () => 'test-site-id' };
+
+    it('throws when no PostgREST RPC client is available', async () => {
+      await expect(reportUtils.applyCategoryRulesToReferral({
+        site: mockSite,
+        context: {},
+      })).to.be.rejectedWith('PostgREST client is required to apply category rules to referral');
+    });
+
+    it('calls the apply RPC with defaults and unwraps array responses', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ site_id: 'test-site-id', classified: 3 }],
+        error: null,
+      });
+
+      const result = await reportUtils.applyCategoryRulesToReferral({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal({ site_id: 'test-site-id', classified: 3 });
+      expect(rpc).to.have.been.calledWith(
+        'wrpc_apply_category_rules_to_referral',
+        {
+          p_site_id: 'test-site-id',
+          p_source: null,
+          p_since: null,
+          p_updated_by: 'audit-worker:referral-patterns',
+        },
+      );
+    });
+
+    it('passes source/since/updatedBy overrides and returns object responses as-is', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: { site_id: 'test-site-id', classified: 0 },
+        error: null,
+      });
+
+      const result = await reportUtils.applyCategoryRulesToReferral({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        source: 'ga4',
+        since: '2026-03-01',
+        updatedBy: 'unit-test',
+      });
+
+      expect(result).to.deep.equal({ site_id: 'test-site-id', classified: 0 });
+      expect(rpc.firstCall.args[1]).to.deep.equal({
+        p_site_id: 'test-site-id',
+        p_source: 'ga4',
+        p_since: '2026-03-01',
+        p_updated_by: 'unit-test',
+      });
+    });
+
+    it('throws and logs RPC errors', async () => {
+      const rpc = sandbox.stub().resolves({ data: null, error: new Error('apply boom') });
+      const log = { error: sandbox.stub() };
+
+      await expect(reportUtils.applyCategoryRulesToReferral({
+        site: mockSite,
+        context: { log, dataAccess: { services: { postgrestClient: { rpc } } } },
+      })).to.be.rejectedWith('apply boom');
+      expect(log.error).to.have.been.calledWith(
+        'Failed to apply category rules to referral for site test-site-id: apply boom',
+      );
+    });
+  });
+
   describe('getImporterS3Client', () => {
     it('lazily creates and caches a single importer S3 client', () => {
       const first = reportUtils.getImporterS3Client();
