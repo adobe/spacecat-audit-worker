@@ -73,6 +73,9 @@ function inferContentType(urlPath = '') {
   if (/\.txt$/.test(path)) {
     return 'txt';
   }
+  if (/\.(md|markdown)$/.test(path)) {
+    return 'md';
+  }
   if (!path || path.endsWith('/') || !path.split('/').pop().includes('.')) {
     return 'html';
   }

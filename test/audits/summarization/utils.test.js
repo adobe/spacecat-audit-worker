@@ -636,6 +636,189 @@ describe('summarization utils', () => {
       expect(result[0].contentHash).to.be.null;
       expect(result[1].contentHash).to.be.null;
     });
+
+    describe('depthLift persistence', () => {
+      it('should persist depthLift on both summary and key-points suggestions', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          depthLift: 0.5783,
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1', 'Key 2'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].depthLift).to.equal(0.5783);
+        expect(result[1].depthLift).to.equal(0.5783);
+      });
+
+      it('should default depthLift to 0 when absent', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].depthLift).to.equal(0);
+        expect(result[1].depthLift).to.equal(0);
+      });
+
+      it('should default depthLift to 0 when value is not a number', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          depthLift: 'invalid',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].depthLift).to.equal(0);
+        expect(result[1].depthLift).to.equal(0);
+      });
+
+      it('should default depthLift to 0 for NaN and Infinity', () => {
+        for (const val of [NaN, Infinity, -Infinity]) {
+          const suggestions = [{
+            pageUrl: 'https://example.com/page1',
+            depthLift: val,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: { formatted_items: ['Key 1'] },
+          }];
+          const result = getJsonSummarySuggestion(suggestions);
+          expect(result[0].depthLift).to.equal(0, `expected 0 for depthLift=${val}`);
+        }
+      });
+    });
+
+    describe('sourceEvidence validation', () => {
+      it('should filter out non-string elements from sourceEvidence', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: ['valid string', 42, null, undefined, 'another valid'],
+          },
+          keyPoints: {
+            formatted_items: ['Key 1'],
+            source_evidence: [true, 'valid kp', {}, 'another kp'],
+          },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.deep.equal(['valid string', 'another valid']);
+        expect(result[1].sourceEvidence).to.deep.equal(['valid kp', 'another kp']);
+      });
+
+      it('should cap sourceEvidence at 50 entries', () => {
+        const bigArray = Array.from({ length: 60 }, (_, i) => `evidence ${i}`);
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: bigArray,
+          },
+          keyPoints: { formatted_items: ['Key 1'], source_evidence: bigArray },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.have.length(50);
+        expect(result[1].sourceEvidence).to.have.length(50);
+      });
+    });
+
+    describe('sourceEvidence persistence', () => {
+      it('should persist source_evidence from pageSummary onto the summary suggestion', () => {
+        const sourceEvidence = ['Raw sentence A from page.', 'Raw sentence B from page.'];
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+            source_evidence: sourceEvidence,
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].sourceEvidence).to.deep.equal(sourceEvidence);
+      });
+
+      it('should persist source_evidence from keyPoints onto the key-points suggestion', () => {
+        const kpEvidence = ['Sentence for Key 1.', 'Sentence for Key 2.'];
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: {
+            formatted_items: ['Key 1', 'Key 2'],
+            source_evidence: kpEvidence,
+          },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[1].keyPoints).to.be.true;
+        expect(result[1].sourceEvidence).to.deep.equal(kpEvidence);
+      });
+
+      it('should default sourceEvidence to empty array when source_evidence is absent', () => {
+        const suggestions = [{
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        }];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result[0].sourceEvidence).to.deep.equal([]);
+        expect(result[1].sourceEvidence).to.deep.equal([]);
+      });
+    });
   });
 });
 

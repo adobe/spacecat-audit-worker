@@ -126,6 +126,10 @@ async function fetchStoreData(siteId, context, site) {
 async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
+  // Phase-timing anchor for the Mystique phase; combined with the DRS timings threaded in
+  // via auditContext (from the offsite-brand-presence DRS status handler) in the guidance
+  // handler to report DRS / Mystique / total durations.
+  const analysisStartedAt = Date.now();
 
   log.info(`${LOG_PREFIX} Starting Reddit analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
@@ -175,18 +179,43 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
         config: { ...redditConfig, urlLimit },
         storeData,
         ...(slackContext && { slackContext }),
+        timings: { analysisStartedAt, ...(auditContext.timings || {}) },
       },
       fullAuditRef: url,
     };
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.error(`${LOG_PREFIX} Store data missing: ${error.message}`);
+      const { slackContext } = auditContext;
+      const { channelId, threadTs } = slackContext || {};
+      // A scoped scrape already ran and the store is STILL empty → the brand has no
+      // Reddit URLs to analyze. Report a terminal message instead of looping.
+      if (auditContext.drsScrapeRequested) {
+        log.error(`${LOG_PREFIX} URL store still empty after scrape: ${error.message}`);
+        await postMessageOptional(
+          context,
+          channelId,
+          `:warning: *reddit-analysis* for *${site.getBaseURL()}* — no Reddit URLs found to analyze.`,
+          { threadTs },
+        );
+        return {
+          auditResult: { success: false, error: error.message, storeName: error.storeName },
+          fullAuditRef: url,
+        };
+      }
+      // First individual run with an empty store: collect + scrape just this bucket via a
+      // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
+      // completes — no need to run offsite-brand-presence for all buckets manually.
+      log.info(`${LOG_PREFIX} URL store empty, requesting a scoped scrape for reddit.com`);
+      await postMessageOptional(
+        context,
+        channelId,
+        `:mag: *reddit-analysis* for *${site.getBaseURL()}* — no stored URLs yet; `
+          + 'collecting & scraping Reddit URLs first, will retry automatically.',
+        { threadTs },
+      );
+      await requestOffsiteScrape(context, siteId, 'reddit.com', slackContext);
       return {
-        auditResult: {
-          success: false,
-          error: error.message,
-          storeName: error.storeName,
-        },
+        auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }

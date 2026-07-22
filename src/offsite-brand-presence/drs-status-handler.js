@@ -13,6 +13,7 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { formatDuration } from '../utils/offsite-audit-utils.js';
 import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_TERMINAL_STATUSES,
@@ -131,9 +132,10 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  * @param {string} siteId - The site ID
  * @param {object} slackContext - { channelId, threadTs } forwarded to the triggered audits
  * @param {object} context - Universal context (sqs, dataAccess, log)
+ * @param {number} [drsStartedAt] - Epoch ms when DRS scraping was triggered (phase timing)
  * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
-async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context) {
+async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context, drsStartedAt) {
   const { sqs, dataAccess, log } = context;
 
   const handled = [];
@@ -141,6 +143,9 @@ async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context) 
     return handled;
   }
 
+  // The bucket's jobs are terminal now, so this is when DRS scraping finished for the
+  // analysis types being dispatched. Paired with drsStartedAt it gives the DRS duration.
+  const drsCompletedAt = Date.now();
   const configuration = await dataAccess.Configuration.findLatest();
   const queueUrl = configuration.getQueues().audits;
   for (const type of auditTypes) {
@@ -158,7 +163,12 @@ async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context) 
         siteId,
         // DRS scraping is already done, so the analysis audit must analyze the available
         // data rather than request another scrape (prevents a scrape→analyze loop).
-        auditContext: { slackContext, drsScrapeRequested: true },
+        // timings carry the DRS phase boundaries so the analysis can report scrape duration.
+        auditContext: {
+          slackContext,
+          drsScrapeRequested: true,
+          ...(Number.isFinite(drsStartedAt) && { timings: { drsStartedAt, drsCompletedAt } }),
+        },
       });
       log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
       handled.push(type);
@@ -179,7 +189,7 @@ async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context) 
  *   error: string|undefined}>} statuses - Resolved per-job statuses
  * @returns {string} Slack message text
  */
-function buildSummary(baseURL, statuses) {
+function buildSummary(baseURL, statuses, drsStartedAt) {
   const allTerminal = statuses.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
   const header = allTerminal
     ? `:checkered_flag: *offsite-brand-presence* DRS jobs *complete* for *${baseURL}*:`
@@ -194,6 +204,10 @@ function buildSummary(baseURL, statuses) {
     } else {
       lines.push(`• ${label} → ${s.status}`);
     }
+  }
+  const elapsed = Number.isFinite(drsStartedAt) ? formatDuration(Date.now() - drsStartedAt) : null;
+  if (elapsed) {
+    lines.push(`• DRS scraping elapsed: ~${elapsed}`);
   }
   return lines.join('\n');
 }
@@ -220,7 +234,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { Configuration } = dataAccess;
   const { siteId, auditContext = {} } = message;
   const {
-    baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [],
+    baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [], drsStartedAt,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
 
@@ -253,7 +267,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   let handled = [];
   try {
     const readyTypes = computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered);
-    handled = await triggerAnalysisAudits(readyTypes, siteId, slackContext, context);
+    handled = await triggerAnalysisAudits(readyTypes, siteId, slackContext, context, drsStartedAt);
   } catch (err) {
     log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
   }
@@ -284,7 +298,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // before the message is deleted could redeliver and post the summary twice. There is
   // no idempotency key; a duplicate Slack summary is preferable to the complexity of
   // deduplication for a best-effort notification.
-  await postMessageOptional(context, channelId, buildSummary(baseURL, statuses), { threadTs });
+  const summary = buildSummary(baseURL, statuses, drsStartedAt);
+  await postMessageOptional(context, channelId, summary, { threadTs });
   log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
 
   return ok();

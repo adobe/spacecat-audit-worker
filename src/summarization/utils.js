@@ -59,6 +59,10 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
     const keyPointsPrompts = Array.isArray(suggestion.keyPointsPrompts)
       ? suggestion.keyPointsPrompts : [];
 
+    // depthLift is a page-level signal (mean burial weight of facts behind prompts, 0..1).
+    // Stored on both suggestion records so the UI can use it for High Impact URL ranking.
+    const depthLift = Number.isFinite(suggestion.depthLift) ? suggestion.depthLift : 0;
+
     // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
     const pageSummaryAlreadyPresent = suggestion.page_summary_present === true
@@ -75,6 +79,13 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         scrapedAt,
         contentHash,
         prompts: summaryPrompts,
+        depthLift,
+        // Verbatim raw-page sentences the summary was derived from (captured by the
+        // gen_summary_crew QA task). Persisted here so the on-demand prompt-regeneration
+        // path (build_summarization_inputs) can use them as summary_sources without
+        // needing to re-fetch the raw page.
+        sourceEvidence: Array.isArray(suggestion.pageSummary?.source_evidence)
+          ? suggestion.pageSummary.source_evidence.filter((e) => typeof e === 'string').slice(0, 50) : [],
       });
     }
 
@@ -94,6 +105,12 @@ export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
         scrapedAt,
         contentHash,
         prompts: keyPointsPrompts,
+        depthLift,
+        // Verbatim raw-page sentences each key point was derived from (parallel to
+        // keyPoints.items). Persisted so on-demand regeneration can use them as
+        // kp_sources without re-fetching the raw page.
+        sourceEvidence: Array.isArray(suggestion.keyPoints?.source_evidence)
+          ? suggestion.keyPoints.source_evidence.filter((e) => typeof e === 'string').slice(0, 50) : [],
       });
     }
   });

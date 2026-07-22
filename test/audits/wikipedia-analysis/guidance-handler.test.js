@@ -22,7 +22,11 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Wikipedia Analysis Guidance Handler', () => {
+describe('Wikipedia Analysis Guidance Handler', function () {
+  // esmock deep-loads the handler tree under coverage instrumentation, so the first
+  // beforeEach can exceed mocha's 2s default.
+  this.timeout(10000);
+
   let sandbox;
   let context;
   let mockSite;
@@ -663,6 +667,129 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include('1 suggestion processed');
+    });
+
+    it('reports that the audit could not run when no Wikipedia page was found', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: { company: 'Example Corp', suggestions: [], wikipediaUrl: '' } },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':warning:');
+      expect(callText).to.include(baseURL);
+      expect(callText).to.include("couldn't run");
+      expect(callText).to.include('no Wikipedia page was found');
+    });
+
+    it('reports a finished-but-empty result when a Wikipedia page was analyzed with no suggestions', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            company: 'Example Corp',
+            suggestions: [],
+            wikipediaUrl: 'https://en.wikipedia.org/wiki/Example_Corp',
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':white_check_mark:');
+      expect(callText).to.include('audit finished');
+      expect(callText).to.include('no improvement suggestions found');
+    });
+
+    it('reports that the audit could not run when Mystique returns an error', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { error: true, errorMessage: 'Wikipedia analysis failed' },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':warning:');
+      expect(callText).to.include("couldn't run");
+      expect(callText).to.include('Wikipedia analysis failed');
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/Mystique returned an error/));
+    });
+
+    it('reports a Mystique error without a parenthetical when no errorMessage is provided', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { error: true },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include("couldn't run");
+      expect(callText).to.not.include('(');
+    });
+
+    it('does not crash the handler when the Slack-context lookup fails', async () => {
+      // A notification side-effect must never turn a graceful noContent into a 500.
+      // The data.error path posts before any audit-existence lookup, so the only
+      // Audit.findById is the guarded one inside the helper.
+      context.dataAccess.Audit.findById.rejects(new Error('DB down'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: { error: true, errorMessage: 'Wikipedia analysis failed' },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(mockPostMessageOptional).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to post outcome to Slack/));
+    });
+
+    it('does not post an outcome message for an empty result when there is no slackContext', async () => {
+      mockAudit.getAuditResult.returns({});
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: { company: 'Example Corp', suggestions: [], wikipediaUrl: '' } },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(mockPostMessageOptional).to.not.have.been.called;
     });
   });
 
