@@ -1580,13 +1580,15 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify suggestions were retrieved
     expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
 
-    // Only NEW + PENDING_VALIDATION should be outdated; terminal statuses preserved
+    // NEW / PENDING_VALIDATION / SKIPPED / REJECTED all transition to OUTDATED
+    // when the underlying issue is gone (SITES-44646).
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
     const [passedSuggestions, targetStatus] = context.dataAccess.Suggestion
       .bulkUpdateStatus.firstCall.args;
     expect(targetStatus).to.equal('OUTDATED');
-    expect(passedSuggestions).to.have.members([activeSuggestion, pendingSuggestion]);
-    expect(passedSuggestions).to.not.include.members([skippedSuggestion, rejectedSuggestion]);
+    expect(passedSuggestions).to.have.members([
+      activeSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
+    ]);
     expect(existingOpportunity.save).to.have.been.calledOnce;
 
     expect(result.status).to.equal('complete');
