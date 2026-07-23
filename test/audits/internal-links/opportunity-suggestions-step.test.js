@@ -688,7 +688,7 @@ describe('internal-links opportunity suggestions step', () => {
       };
     }
 
-    it('outdates NEW/PENDING_VALIDATION/SKIPPED/REJECTED and preserves FIXED/APPROVED/IN_PROGRESS (SITES-44646)', async () => {
+    it('outdates NEW/PENDING_VALIDATION suggestions and preserves terminal statuses (SITES-44646)', async () => {
       const suggestions = [
         { getStatus: () => suggestionStatuses.NEW, id: 'new-1' },
         { getStatus: () => suggestionStatuses.PENDING_VALIDATION, id: 'pending-1' },
@@ -710,20 +710,18 @@ describe('internal-links opportunity suggestions step', () => {
       const [passedSuggestions, targetStatus] = bulkUpdateStatus.firstCall.args;
       expect(targetStatus).to.equal(suggestionStatuses.OUTDATED);
       const passedIds = passedSuggestions.map((s) => s.id);
-      // NEW / PENDING_VALIDATION / SKIPPED / REJECTED all transition to OUTDATED
-      // (issue is gone → legitimate state change, updatedAt bumps).
-      expect(passedIds).to.have.members(['new-1', 'pending-1', 'skipped-1', 'rejected-1']);
-      // FIXED / OUTDATED / APPROVED / IN_PROGRESS / ERROR are preserved.
+      expect(passedIds).to.have.members(['new-1', 'pending-1']);
       expect(passedIds).to.not.include.members([
-        'fixed-1', 'outdated-1', 'approved-1', 'in-progress-1', 'error-1',
+        'skipped-1', 'rejected-1', 'fixed-1', 'outdated-1',
+        'approved-1', 'in-progress-1', 'error-1',
       ]);
     });
 
-    it('skips bulkUpdateStatus entirely when every existing suggestion is FIXED / APPROVED / IN_PROGRESS', async () => {
+    it('skips bulkUpdateStatus entirely when every existing suggestion is terminal', async () => {
       const suggestions = [
+        { getStatus: () => suggestionStatuses.SKIPPED, id: 'skipped-1' },
+        { getStatus: () => suggestionStatuses.REJECTED, id: 'rejected-1' },
         { getStatus: () => suggestionStatuses.FIXED, id: 'fixed-1' },
-        { getStatus: () => suggestionStatuses.APPROVED, id: 'approved-1' },
-        { getStatus: () => suggestionStatuses.IN_PROGRESS, id: 'in-progress-1' },
       ];
 
       const { opportunity, bulkUpdateStatus } = await runResolveFlow(suggestions);

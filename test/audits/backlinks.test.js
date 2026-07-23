@@ -879,7 +879,7 @@ describe('Backlinks Tests', function () {
       expect(mockOpportunity.save).to.have.been.calledOnce;
     });
 
-    it('marks NEW / PENDING_VALIDATION / SKIPPED / REJECTED as OUTDATED, preserving FIXED (SITES-44646)', async () => {
+    it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({ success: true, brokenBacklinks: [] });
 
@@ -905,15 +905,10 @@ describe('Backlinks Tests', function () {
 
       await generateSuggestionData(context);
 
-      // SKIPPED and REJECTED transition to OUTDATED alongside NEW/PENDING_VALIDATION
-      // (issue disappeared → legitimate state change → updatedAt bump).
-      expect(bulkUpdateStatusStub).to.have.been.calledOnce;
-      const [passed, targetStatus] = bulkUpdateStatusStub.firstCall.args;
-      expect(targetStatus).to.equal('OUTDATED');
-      expect(passed).to.have.members([
-        newSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
-      ]);
-      expect(passed).to.not.include(fixedSuggestion);
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
     });
 
     it('logs error and still returns complete when opportunity lookup fails on no-backlinks path', async () => {

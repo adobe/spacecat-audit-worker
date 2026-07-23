@@ -1269,9 +1269,10 @@ describe('data-access', () => {
         .calledOnceWith([existingSuggestions[0]]);
     });
 
-    it('marks SKIPPED/REJECTED as OUTDATED when they no longer appear in the audit (SITES-44646)', async () => {
+    it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
+      // Existing REJECTED suggestion that doesn't appear in new audit
       const existingSuggestions = [
         {
           id: '1',
@@ -1285,20 +1286,14 @@ describe('data-access', () => {
           getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
           getStatus: sinon.stub().returns('NEW'),
         },
-        {
-          id: '3',
-          data: { url: 'https://example.com/page4', key: 'page4' },
-          getData: sinon.stub().returns({ url: 'https://example.com/page4', key: 'page4' }),
-          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.SKIPPED),
-        },
       ];
 
+      // New audit data only has page3 (page1 and page2 are not in new data)
       const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
       const scrapedUrlsSet = new Set([
         'https://example.com/page1',
         'https://example.com/page2',
         'https://example.com/page3',
-        'https://example.com/page4',
       ]);
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -1313,20 +1308,18 @@ describe('data-access', () => {
         scrapedUrlsSet,
       });
 
-      // NEW / SKIPPED / REJECTED all transition to OUTDATED — the issue is gone,
-      // so the state IS changing and the updatedAt bump is legitimate.
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
-      const [passed, targetStatus] = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args;
-      expect(targetStatus).to.equal('OUTDATED');
-      expect(passed).to.have.members([
-        existingSuggestions[0], existingSuggestions[1], existingSuggestions[2],
-      ]);
-      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 3');
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
-    it('marks SKIPPED/REJECTED as OUTDATED even when scrapedUrlsSet is null (SITES-44646)', async () => {
+    it('should not mark REJECTED suggestions as OUTDATED even when scrapedUrlsSet is null', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
+      // Existing REJECTED and NEW suggestions that don't appear in new audit
       const existingSuggestions = [
         {
           id: '1',
@@ -1340,15 +1333,11 @@ describe('data-access', () => {
           getData: sinon.stub().returns({ key: 'page2' }),
           getStatus: sinon.stub().returns('NEW'),
         },
-        {
-          id: '3',
-          data: { url: 'https://example.com/page4', key: 'page4' },
-          getData: sinon.stub().returns({ key: 'page4' }),
-          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.SKIPPED),
-        },
       ];
 
+      // New audit data only has page3 (page1 and page2 are not in new data)
       const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      // scrapedUrlsSet is null (no URL filtering)
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
 
@@ -1358,16 +1347,15 @@ describe('data-access', () => {
         context,
         buildKey: buildKeyWithUrl,
         mapNewSuggestion,
-        scrapedUrlsSet: null,
+        scrapedUrlsSet: null, // Explicitly null
       });
 
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
-      const [passed, targetStatus] = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args;
-      expect(targetStatus).to.equal('OUTDATED');
-      expect(passed).to.have.members([
-        existingSuggestions[0], existingSuggestions[1], existingSuggestions[2],
-      ]);
-      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 3');
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
     it('should not mark APPROVED or IN_PROGRESS suggestions as OUTDATED', async () => {
@@ -3770,18 +3758,14 @@ describe('data-access', () => {
       expect(bulkUpdateStatusStub).to.not.have.been.called;
     });
 
-    it('resolves matching opportunity and marks NEW/PENDING_VALIDATION/SKIPPED/REJECTED as OUTDATED (SITES-44646)', async () => {
+    it('resolves matching opportunity and marks NEW/PENDING_VALIDATION suggestions OUTDATED', async () => {
       const newSuggestion = { getId: () => 's-new', getStatus: () => 'NEW' };
       const pendingSuggestion = { getId: () => 's-pending', getStatus: () => 'PENDING_VALIDATION' };
-      const skippedSuggestion = { getId: () => 's-skipped', getStatus: () => 'SKIPPED' };
-      const rejectedSuggestion = { getId: () => 's-rejected', getStatus: () => 'REJECTED' };
       const opportunity = {
         getId: sinon.stub().returns('oppty-1'),
         getType: () => 'canonical',
         setStatus: sinon.stub(),
-        getSuggestions: sinon.stub().resolves([
-          newSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
-        ]),
+        getSuggestions: sinon.stub().resolves([newSuggestion, pendingSuggestion]),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
       };
@@ -3790,27 +3774,23 @@ describe('data-access', () => {
       await resolveOpportunityIfNoIssues('site-1', 'canonical', dataAccess, log);
 
       expect(opportunity.setStatus).to.have.been.calledOnce;
-      // SKIPPED and REJECTED transition to OUTDATED alongside NEW / PENDING_VALIDATION
-      // (issue disappeared → legitimate state change → updatedAt bump).
-      expect(bulkUpdateStatusStub).to.have.been.calledOnce;
-      const [passed, targetStatus] = bulkUpdateStatusStub.firstCall.args;
-      expect(targetStatus).to.equal('OUTDATED');
-      expect(passed).to.have.members([
-        newSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
-      ]);
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
+        [newSuggestion, pendingSuggestion],
+        'OUTDATED',
+      );
       expect(opportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
       expect(opportunity.save).to.have.been.calledOnce;
     });
 
-    it('preserves FIXED / APPROVED / IN_PROGRESS suggestions and does not call bulkUpdateStatus when only those exist', async () => {
+    it('preserves FIXED, SKIPPED, REJECTED suggestions and does not call bulkUpdateStatus', async () => {
       const opportunity = {
         getId: sinon.stub().returns('oppty-1'),
         getType: () => 'canonical',
         setStatus: sinon.stub(),
         getSuggestions: sinon.stub().resolves([
           { getId: () => 's-fixed', getStatus: () => 'FIXED' },
-          { getId: () => 's-approved', getStatus: () => 'APPROVED' },
-          { getId: () => 's-in-progress', getStatus: () => 'IN_PROGRESS' },
+          { getId: () => 's-skipped', getStatus: () => 'SKIPPED' },
+          { getId: () => 's-rejected', getStatus: () => 'REJECTED' },
         ]),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
