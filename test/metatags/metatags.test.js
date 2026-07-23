@@ -2062,7 +2062,7 @@ describe('Meta Tags', () => {
         expect(metatagsOppty.save).to.have.been.calledOnce;
       });
 
-      it('should only mark NEW and PENDING_VALIDATION suggestions OUTDATED, preserving FIXED/SKIPPED/REJECTED (metatags)', async () => {
+      it('marks NEW / PENDING_VALIDATION / SKIPPED / REJECTED as OUTDATED, preserving FIXED (metatags, SITES-44646)', async () => {
         const mockValidateDetectedIssues = sinon.stub().resolves({});
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { calculateCPCValue: sinon.stub().resolves(2) },
@@ -2083,10 +2083,15 @@ describe('Meta Tags', () => {
 
         await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-          [newSuggestion, pendingSuggestion],
-          'OUTDATED',
-        );
+        // SKIPPED and REJECTED transition to OUTDATED alongside NEW/PENDING_VALIDATION
+        // (issue disappeared → legitimate state change → updatedAt bump).
+        expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+        const [passed, targetStatus] = dataAccessStub.Suggestion.bulkUpdateStatus.firstCall.args;
+        expect(targetStatus).to.equal('OUTDATED');
+        expect(passed).to.have.members([
+          newSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]);
+        expect(passed).to.not.include(fixedSuggestion);
       });
 
       it('should log error and still return complete when opportunity lookup fails on no-issues path (metatags)', async () => {
