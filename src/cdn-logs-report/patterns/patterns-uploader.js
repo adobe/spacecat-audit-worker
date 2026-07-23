@@ -12,7 +12,9 @@
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
-import { replaceAgenticUrlClassificationRules } from '../utils/report-utils.js';
+import { replaceAgenticUrlClassificationRules, fetchReferralTopUrls } from '../utils/report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../common/agentic-url-classification-rules.js';
+import { isCatastrophicQuantifier } from '../../llmo-referral-traffic-daily/classify.js';
 
 const SAMPLE_URLS_CAP = 20;
 // sample_urls clamp — a bad element aborts the whole-site replace RPC batch.
@@ -43,6 +45,15 @@ function isValidGeneratedRegex(regex, name, log, paths = null) {
   const altBranches = (regex.match(/\|/g) || []).length + 1;
   if (altBranches > MAX_ALTERNATION_BRANCHES) {
     log?.warn?.(`patterns: dropping rule "${name}" — ${altBranches} alternation branches > ${MAX_ALTERNATION_BRANCHES} (catch-all / locale-enumeration)`);
+    return false;
+  }
+  // Reject catastrophic-backtracking (ReDoS) shapes at rule-write time so no rule with
+  // one is ever stored — this closes the JS/SQL cross-engine parity gap at the source
+  // (M3): the SQL-side _safe_regex_match only catches uncompilable regexes, not
+  // catastrophic ones, so keeping the shape out of the table is what keeps every engine
+  // in agreement.
+  if (isCatastrophicQuantifier(regex)) {
+    log?.warn?.(`patterns: dropping rule "${name}" — catastrophic-backtracking regex shape (ReDoS)`);
     return false;
   }
   let compiled;
@@ -231,4 +242,67 @@ export async function generatePatternsWorkbook(options) {
     log.error(`Failed to generate patterns: ${error.message}`);
     return false;
   }
+}
+
+/**
+ * Generates a non-CDN site's shared category rules (create-if-missing) from its
+ * referral URL corpus, reusing the agentic rule-generation machinery. LLMO-6257 P2.
+ *
+ * This ONLY (re)generates the shared agentic_url_category_rules — it does not
+ * classify or write any classification table. Category materialization is
+ * write-time-in-service: the daily runner computes category in JS and the
+ * projector imports it into referral_url_classifications (Option A in the spec).
+ *
+ * Create-if-missing: if the site already has category rules (a CDN/agentic site,
+ * or a prior referral run), it does nothing — re-hitting the LLM or re-running the
+ * whole-site replace RPC would reset created_by/created_at and purge soft-deletes.
+ * Returns true only when fresh rules were generated and persisted.
+ */
+export async function generateReferralCategoryRules({ site, context }) {
+  const { log } = context;
+
+  const paths = await fetchReferralTopUrls({ site, context });
+  if (paths.length === 0) {
+    log.info('No referral URLs found in DB - skipping referral pattern generation');
+    return false;
+  }
+  log.info(`Fetched ${paths.length} referral URLs for pattern generation`);
+
+  const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+  if (existingPatterns && existingPatterns.error) {
+    log.info(`Skipping referral patterns for ${site.getId()}; DB rule fetch failed`);
+    return false;
+  }
+
+  const existingPagePatterns = Array.isArray(existingPatterns?.pagePatterns)
+    ? existingPatterns.pagePatterns
+    : [];
+  const existingTopicPatterns = Array.isArray(existingPatterns?.topicPatterns)
+    ? existingPatterns.topicPatterns
+    : [];
+
+  if (existingTopicPatterns.length > 0) {
+    log.info(`Referral category rules already exist for site ${site.getId()} - skipping generation`);
+    return false;
+  }
+
+  const domain = new URL(site.getBaseURL()).hostname;
+  const productRegexes = await analyzeProducts(domain, paths, context);
+
+  const categoryRules = mergePatternRules(existingTopicPatterns, productRegexes, paths, log);
+  if (categoryRules.length === 0) {
+    log.warn('No referral category rules available after merge');
+    return false;
+  }
+
+  await replaceAgenticUrlClassificationRules({
+    site,
+    context,
+    categoryRules,
+    pageTypeRules: existingPagePatterns,
+    updatedBy: 'audit-worker:referral-patterns',
+  });
+
+  log.info(`Generated referral category rules for site ${site.getId()}: ${categoryRules.length} rules`);
+  return true;
 }
