@@ -17,6 +17,8 @@ import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
+import { buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath } from '../llmo-referral-traffic-daily/classify.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
@@ -55,6 +57,11 @@ function getCsvKey(siteId, trafficDate) {
   return `referral-traffic-cdn-daily-export/csvs/${siteId}/${year}/${month}/${day}/data.csv`;
 }
 
+function getClassificationCsvKey(siteId, trafficDate) {
+  const [year, month, day] = trafficDate.split('-');
+  return `referral-traffic-cdn-daily-export/csvs/${siteId}/${year}/${month}/${day}/classifications.csv`;
+}
+
 async function ensureAthenaDatabase(athenaClient, databaseName) {
   const sqlDb = await loadSql('create-database', { database: databaseName });
   await athenaClient.execute(sqlDb, databaseName, `[Athena Query] Create database ${databaseName}`);
@@ -76,8 +83,10 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
     const region = row.region || 'GLOBAL';
     const rowPageviews = row.pageviews;
 
-    const urlPath = rawPath.split('?')[0];
-    const url = joinBaseAndPath(baseURL, urlPath || '/');
+    // Canonical url_path (chunk 7) — one form shared with the optel producer so the
+    // same page never fragments across sources and the read-RPC join resolves.
+    const urlPath = canonicalizeUrlPath(rawPath);
+    const url = joinBaseAndPath(baseURL, urlPath);
 
     const { type, category, vendor } = classifyTrafficSource(
       url,
@@ -100,7 +109,7 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
         grouped.set(key, {
           traffic_date: normalizedDate,
           host: effectiveHost,
-          url_path: urlPath || '/',
+          url_path: urlPath,
           trf_platform: normalizedVendor,
           device,
           region,
@@ -135,9 +144,86 @@ async function getAnalyticsQueueUrl(context) {
   return configuration?.getQueues?.().analytics || '';
 }
 
+/**
+ * Classifies this run's CDN referral URLs against the site's active category rules
+ * and emits them for the projector to import into referral_url_classifications
+ * (LLMO-6257 P2, write-time-in-service). Separate CSV + projector message from the
+ * traffic export; all sources serialize on the referral_url_classifications:<siteId>
+ * FIFO group, so the dedup id is namespaced with the source (`:cdn`) to avoid
+ * colliding with another source's classification message for the same site/date.
+ * Uses the importer S3 client (us-east-1), like the traffic export.
+ */
+async function emitReferralClassifications({
+  site, context, rows, trafficDate, bucket, queueUrl, s3Client,
+}) {
+  const { log } = context;
+  const siteId = site.getId();
+
+  const rulesResult = await fetchAgenticUrlClassificationRules(site, context);
+  if (rulesResult?.error) {
+    // A DB rule-fetch failure is NOT the same as a rule-less site; log it distinctly.
+    log.warn(`[cdn-logs-report] Category rule fetch failed for site ${siteId}; skipping classification emit`);
+    return { classified: 0 };
+  }
+  const rules = Array.isArray(rulesResult?.topicPatterns) ? rulesResult.topicPatterns : [];
+  if (rules.length === 0) {
+    log.info(`[cdn-logs-report] No category rules for site ${siteId}; skipping classification emit`);
+    return { classified: 0 };
+  }
+
+  const classificationRows = buildClassificationRows(rows, rules, 'spacecat:cdn');
+  if (classificationRows.length === 0) {
+    log.info(`[cdn-logs-report] No referral URLs matched a category rule for site ${siteId}`);
+    return { classified: 0 };
+  }
+
+  const classificationKey = getClassificationCsvKey(siteId, trafficDate);
+  const classificationUri = `s3://${bucket}/${classificationKey}`;
+
+  const dedupId = createHash('sha256')
+    .update(`${siteId}:${trafficDate}:referral_url_classifications:cdn`)
+    .digest('hex');
+  const messageGroupId = `referral_url_classifications:${siteId}`;
+
+  const message = {
+    type: 'batch.completed',
+    correlationId: dedupId,
+    pipeline_id: 'referral_url_classifications',
+    s3_uri: classificationUri,
+    site_id: siteId,
+    start_date: trafficDate,
+    end_date: trafficDate,
+    row_count: classificationRows.length,
+  };
+
+  if (site.getOrganizationId?.()) {
+    message.org_id = site.getOrganizationId();
+  }
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: classificationKey,
+      Body: serializeClassificationCsv(classificationRows),
+      ContentType: 'text/csv',
+    }));
+
+    await context.sqs.sendMessage(queueUrl, message, messageGroupId, 0, dedupId);
+  } catch (err) {
+    await cleanupCsvFromS3({
+      s3Client, bucket, csvKey: classificationKey, log,
+    });
+    throw err;
+  }
+
+  log.info(`[cdn-logs-report] Dispatched ${classificationRows.length} referral classifications for site ${siteId} on ${trafficDate}`);
+  return { classified: classificationRows.length };
+}
+
 export const testHelpers = {
   cleanupCsvFromS3,
   escapeCsvValue,
+  emitReferralClassifications,
 };
 
 export async function runDailyReferralExport({
@@ -231,6 +317,17 @@ export async function runDailyReferralExport({
       s3Client, bucket, csvKey, log,
     });
     throw err;
+  }
+
+  // Classify this run's referral URLs and emit them for import into
+  // referral_url_classifications (LLMO-6257 P2). Best-effort: the traffic export has
+  // already succeeded, so a classification hiccup must not fail the audit.
+  try {
+    await emitReferralClassifications({
+      site, context, rows, trafficDate, bucket, queueUrl, s3Client,
+    });
+  } catch (err) {
+    log.warn(`[cdn-logs-report] Referral URL classification emit failed for site ${siteId}: ${err.message}`);
   }
 
   log.info(

@@ -1,3 +1,10 @@
+# [1.505.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.2...v1.505.0) (2026-07-23)
+
+
+### Features
+
+* **referral-traffic:** generate + classify referral URL categories write-time-in-service (optel + cdn) | LLMO-6257 ([#2798](https://github.com/adobe/spacecat-audit-worker/issues/2798)) ([974750e](https://github.com/adobe/spacecat-audit-worker/commit/974750e31ac85257b727dd3ff9e6d2d59da28291)), closes [Hi#level](https://github.com/Hi/issues/level) [#836](https://github.com/adobe/spacecat-audit-worker/issues/836) [#836](https://github.com/adobe/spacecat-audit-worker/issues/836)
+
 ## [1.504.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.1...v1.504.2) (2026-07-23)
 
 
