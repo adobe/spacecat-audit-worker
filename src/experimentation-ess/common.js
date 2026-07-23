@@ -726,9 +726,26 @@ export async function postProcessor(auditUrl, auditData, context) {
           }
         }
       }
+      // update the existing record in place instead of inserting a duplicate: under v3
+      // (Aurora/PostgREST) Experiment.create is a strict INSERT, so re-running the audit
+      // would violate the unique_site_exp (site_id, exp_id) constraint. v2 (DynamoDB)
+      // create was an upsert, which masked this (SITES-47215).
+      existingExperiment
+        .setName(experimentData.name)
+        .setUrl(experimentData.url)
+        .setStartDate(experimentData.startDate)
+        .setEndDate(experimentData.endDate)
+        .setStatus(experimentData.status)
+        .setType(experimentData.type)
+        .setVariants(experimentData.variants)
+        .setConversionEventName(experimentData.conversionEventName)
+        .setConversionEventValue(experimentData.conversionEventValue);
+      // eslint-disable-next-line no-await-in-loop
+      await existingExperiment.save();
+    } else {
+      // eslint-disable-next-line no-await-in-loop
+      await Experiment.create(experimentData);
     }
-    // eslint-disable-next-line no-await-in-loop
-    await Experiment.create(experimentData);
   }
   log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }
