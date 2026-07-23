@@ -106,6 +106,16 @@ describe('referral URL classification', () => {
       const rows = [{ host: 'example.com', url_path: '/electronics' }];
       expect(buildClassificationRows(rows, rules, 'spacecat:optel')).to.deep.equal([]);
     });
+
+    it('yields no rows when rules is not an array (compiles to an empty rule set)', () => {
+      const rows = [{ host: 'example.com', url_path: '/shoes' }];
+      expect(buildClassificationRows(rows, null, 'spacecat:optel')).to.deep.equal([]);
+    });
+
+    it('skips rows whose url_path is not a string', () => {
+      const rows = [{ host: 'example.com', url_path: 123 }];
+      expect(buildClassificationRows(rows, rules, 'spacecat:optel')).to.deep.equal([]);
+    });
   });
 
   describe('isCatastrophicQuantifier', () => {
