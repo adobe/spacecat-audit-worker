@@ -19,12 +19,15 @@ const DAYS = 180;
 
 let log = console;
 
-async function persistOnlyMetadata(auditData, context) {
+export async function persistOnlyMetadata(auditData, context) {
   // persists only the audit metadata, as the
   // whole audit result will be bigger than the allowed size in dynamo
   const { dataAccess } = context;
   const { Audit } = dataAccess;
-  await Audit.create({
+  // must return the created Audit: the framework (base-audit.js processAuditResult)
+  // dereferences the persister's return value via audit.getId(). Returning undefined
+  // here throws "Cannot read properties of undefined (reading 'getId')" (SITES-47215).
+  return Audit.create({
     ...auditData,
     auditResult: [], // deliberately overrides the result
   });
