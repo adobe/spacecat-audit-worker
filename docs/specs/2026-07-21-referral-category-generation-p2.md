@@ -50,9 +50,9 @@ The grounded population path (mirrors how agentic classifications already ride t
 
 Rejected alternatives: **B** (bundle-ify the referral traffic import — changes the single-file contract for all 5 sources, high blast radius); **C** (`category_name` column on the traffic fact CSV — spec explicitly rejects a category column on fact tables, decision 2); **D** (`postSuccessMessage` cascade — carries no row data, so it can only populate via the in-DB classify RPC, i.e. the rejected mechanism).
 
-### 3. Canonicalization contract
+### 3. Canonicalization contract — implemented (chunk 7)
 
-Rules match `url_path`, so the form written must be consistent. The DRS-side cross-language concern is **moot** now that DRS classifies in-DB against the same `url_path` the traffic import stored — the read-RPC join keys line up by construction, no JS/Python parity needed. What remains is **within audit-worker (JS)**: optel emits `url_path = row.path` **raw** (`handler.js`) while the CDN path strips the query string (`referral-daily-export.js`) — these two producers must converge on one canonical form (host-stripped, query-stripped, leading slash, no trailing slash except root) before optel/CDN category rows are consistent for the same URL. Chunk 6.
+Rules match `url_path`, so the form written must be consistent. The DRS-side cross-language concern is **moot** because DRS classifies in-DB against the same `url_path` the traffic import stored — the read-RPC join keys line up by construction, no JS/Python parity needed. The remaining concern was **within audit-worker (JS)**: optel emitted `url_path = row.path` **raw** while the CDN path stripped only the query string, so the same page fragmented into different `referral_url_classifications` rows across sources. Resolved by a single shared `canonicalizeUrlPath(path)` in `classify.js` (host-stripped, query- and fragment-stripped, duplicate slashes collapsed, one leading slash, no trailing slash except root), applied **at each producer's `url_path` derivation** — `buildCsvRows` (optel) and `mapToReferralCsvRows` (cdn) — so the value flows identically into both that source's traffic export and its classification emit. That keeps each source's exact-match read-RPC join (`ruc.url_path = referral_traffic_<source>.url_path`) intact while converging optel and cdn on one form. As a bonus, optel now consolidates query-string variants of the same page (matching long-standing cdn behaviour).
 
 ## Chunks (each its own PR)
 
@@ -62,7 +62,7 @@ Rules match `url_path`, so the form written must be consistent. The DRS-side cro
 4. **projector config** — route the `referral_url_classifications` pipeline. ✅ done.
 5. **data-service in-DB classify — GA4/AA/CJA** — `wrpc_apply_referral_categories`, invoked by `wrpc_import_referral_traffic` (DRS can't read rules, so this replaced the planned "same idiom in Python"). ✅ done.
 6. **audit-worker classify + emit — cdn** (this repo) — reuse `classify.js` + the emit pattern in `cdn-logs-report`'s referral daily export, `updated_by='spacecat:cdn'`. ✅ done.
-7. **canonicalization contract** — converge optel (raw `row.path`) and cdn (query-stripped) on one `url_path` form (JS only; DRS moot per §3). *Remaining.*
+7. **canonicalization contract** — shared `canonicalizeUrlPath` (`classify.js`) applied at optel's `buildCsvRows` and cdn's `mapToReferralCsvRows` so both converge on one `url_path` form (JS only; DRS moot per §3). ✅ done.
 
 ## Decisions
 
@@ -74,5 +74,5 @@ Rules match `url_path`, so the form written must be consistent. The DRS-side cro
 
 - **Option A contract** — ✅ confirmed by @cwjwisse (2026-07-22, "everything is in spec"); the DRS in-DB pivot (`wrpc_apply_referral_categories`) is a data-service-local decision that reuses the same `referral_url_classifications` sink — a courtesy heads-up to @cwjwisse is owed since it is technically in-DB.
 - **P1 dependency** — `referral_url_classifications` ships in P1 (#827, approved + merged); the cross-service chunks validate end-to-end once P1 is on `main`. Unit tests mock the RPC/emit.
-- **Canonicalization (chunk 7)** — only remaining chunk: converge optel (raw) and cdn (query-stripped) `url_path` in this repo. DRS no longer participates (in-DB).
+- **Canonicalization (chunk 7)** — ✅ done: shared `canonicalizeUrlPath` in `classify.js` applied at both audit-worker producers' `url_path` derivation. DRS does not participate (in-DB, moot per §3).
 - **Precedence when a site later gains CDN** — create-if-missing means first-writer-wins; documented as intended.

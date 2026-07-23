@@ -39,6 +39,42 @@ function compileRuleRegex(regex) {
   return new RegExp(source, 'i');
 }
 
+// Canonical url_path form shared by every audit-worker referral producer (LLMO-6257
+// P2, chunk 7). Each source writes url_path into BOTH its traffic export and its
+// classification emit, and the referral read-RPC joins them on an exact
+// ruc.url_path = referral_traffic_<source>.url_path match, so a single producer must
+// use one form on both sides. Before this, optel emitted row.path raw (query kept)
+// while cdn stripped only the query — so the same page fragmented into different rows
+// across sources. Canonical form: host-stripped (a full URL collapses to its
+// pathname), query- and fragment-stripped, duplicate slashes collapsed, exactly one
+// leading slash, and no trailing slash except the root '/'. DRS (ga4/aa/cja) does not
+// use this — it classifies in-DB against the same url_path it stored, so its join
+// lines up by construction (spec §3).
+export function canonicalizeUrlPath(path) {
+  if (typeof path !== 'string' || path === '') {
+    return '/';
+  }
+  let p = path;
+  // A full URL -> pathname only (host-stripped); a bare path won't have a scheme.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
+    try {
+      p = new URL(p).pathname;
+    } catch {
+      // not a parseable URL; fall through with the raw string
+    }
+  }
+  // Drop fragment then query.
+  [p] = p.split('#');
+  [p] = p.split('?');
+  // Collapse duplicate slashes and force exactly one leading slash.
+  p = `/${p.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`;
+  // Strip a trailing slash, but never reduce the root below '/'.
+  if (p.length > 1) {
+    p = p.replace(/\/+$/, '');
+  }
+  return p;
+}
+
 /**
  * Resolves the category for a single URL path against a site's active rules.
  * @param {Array<{name: string, regex: string}>} rules pre-sorted category rules

@@ -11,7 +11,9 @@
  */
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { classifyUrlPath, buildClassificationRows, serializeClassificationCsv } from '../../../src/llmo-referral-traffic-daily/classify.js';
+import {
+  classifyUrlPath, buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath,
+} from '../../../src/llmo-referral-traffic-daily/classify.js';
 
 describe('referral URL classification', () => {
   describe('classifyUrlPath', () => {
@@ -102,6 +104,50 @@ describe('referral URL classification', () => {
     it('returns an empty array when nothing matches', () => {
       const rows = [{ host: 'example.com', url_path: '/electronics' }];
       expect(buildClassificationRows(rows, rules, 'spacecat:optel')).to.deep.equal([]);
+    });
+  });
+
+  describe('canonicalizeUrlPath', () => {
+    it('returns root for a non-string input', () => {
+      expect(canonicalizeUrlPath(null)).to.equal('/');
+      expect(canonicalizeUrlPath(undefined)).to.equal('/');
+    });
+
+    it('returns root for an empty string', () => {
+      expect(canonicalizeUrlPath('')).to.equal('/');
+    });
+
+    it('leaves the root path unchanged', () => {
+      expect(canonicalizeUrlPath('/')).to.equal('/');
+    });
+
+    it('strips the query string', () => {
+      expect(canonicalizeUrlPath('/shoes?utm=abc&x=1')).to.equal('/shoes');
+    });
+
+    it('strips the fragment', () => {
+      expect(canonicalizeUrlPath('/shoes#reviews')).to.equal('/shoes');
+    });
+
+    it('removes a trailing slash except on the root', () => {
+      expect(canonicalizeUrlPath('/shoes/')).to.equal('/shoes');
+    });
+
+    it('adds a leading slash when missing', () => {
+      expect(canonicalizeUrlPath('shoes/sneakers')).to.equal('/shoes/sneakers');
+    });
+
+    it('collapses duplicate slashes', () => {
+      expect(canonicalizeUrlPath('//shoes///sneakers//')).to.equal('/shoes/sneakers');
+    });
+
+    it('host-strips a full URL down to its pathname', () => {
+      expect(canonicalizeUrlPath('https://example.com/shoes/sneakers?x=1#top')).to.equal('/shoes/sneakers');
+    });
+
+    it('falls back to the raw string when a scheme-like value will not parse as a URL', () => {
+      // Exercises the URL-parse catch branch; output is deterministic, not meaningful.
+      expect(canonicalizeUrlPath('http://')).to.be.a('string').that.matches(/^\//);
     });
   });
 

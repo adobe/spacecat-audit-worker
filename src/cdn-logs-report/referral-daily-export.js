@@ -17,7 +17,7 @@ import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
-import { buildClassificationRows, serializeClassificationCsv } from '../llmo-referral-traffic-daily/classify.js';
+import { buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath } from '../llmo-referral-traffic-daily/classify.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
@@ -83,8 +83,10 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
     const region = row.region || 'GLOBAL';
     const rowPageviews = row.pageviews;
 
-    const urlPath = rawPath.split('?')[0];
-    const url = joinBaseAndPath(baseURL, urlPath || '/');
+    // Canonical url_path (chunk 7) — one form shared with the optel producer so the
+    // same page never fragments across sources and the read-RPC join resolves.
+    const urlPath = canonicalizeUrlPath(rawPath);
+    const url = joinBaseAndPath(baseURL, urlPath);
 
     const { type, category, vendor } = classifyTrafficSource(
       url,
@@ -107,7 +109,7 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
         grouped.set(key, {
           traffic_date: normalizedDate,
           host: effectiveHost,
-          url_path: urlPath || '/',
+          url_path: urlPath,
           trf_platform: normalizedVendor,
           device,
           region,

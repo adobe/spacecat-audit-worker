@@ -19,7 +19,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { generateReferralCategoryRules } from '../cdn-logs-report/patterns/patterns-uploader.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
-import { buildClassificationRows, serializeClassificationCsv } from './classify.js';
+import { buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath } from './classify.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -81,7 +81,10 @@ function buildCsvRows(records, host) {
   for (const row of records) {
     if (row.trf_type === 'earned' && row.trf_channel === 'llm') {
       const trafficDate = row.date || '';
-      const urlPath = row.path || '';
+      // Canonical url_path (chunk 7) — written to both the traffic export and the
+      // classification emit so they converge with the cdn producer and the read-RPC
+      // join resolves. Consolidates query-string variants of the same page.
+      const urlPath = canonicalizeUrlPath(row.path);
       const trfPlatform = row.trf_platform || '';
       const device = row.device || '';
       const region = extractCountryCode(urlPath);
