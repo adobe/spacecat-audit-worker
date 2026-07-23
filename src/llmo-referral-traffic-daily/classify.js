@@ -27,16 +27,28 @@
 // the data-service side is bounded by statement_timeout.
 const CATASTROPHIC_QUANTIFIER = /[*+}]\)[*+{]/;
 
+/**
+ * True when a regex source has an adjacent/nested unbounded quantifier — (a+)+, (a*)*,
+ * (.*)+, (\w+){2,} — that can backtrack catastrophically (ReDoS). Shared so the rule
+ * GENERATOR can reject the shape at write-time (nothing unsafe is ever stored, closing
+ * the JS/SQL cross-engine parity gap at the source) and the classifier can skip it
+ * defensively at match-time. Strips a leading (?i) first, mirroring compilation.
+ * @param {string} regex the rule regex source
+ * @returns {boolean}
+ */
+export function isCatastrophicQuantifier(regex) {
+  return CATASTROPHIC_QUANTIFIER.test(String(regex).replace(/^\(\?i\)/, ''));
+}
+
 // (?i) is an inline modifier Postgres ~* honors; JS RegExp needs it stripped + /i.
 // Mirrors compileAthenaRegex so JS classification matches the SQL/read-path behaviour.
 // Returns null for an unsafe (catastrophic-backtracking) shape; throws for an
 // otherwise-uncompilable pattern — the caller treats both as no-match.
 function compileRuleRegex(regex) {
-  const source = String(regex).replace(/^\(\?i\)/, '');
-  if (CATASTROPHIC_QUANTIFIER.test(source)) {
+  if (isCatastrophicQuantifier(regex)) {
     return null;
   }
-  return new RegExp(source, 'i');
+  return new RegExp(String(regex).replace(/^\(\?i\)/, ''), 'i');
 }
 
 // Canonical url_path form shared by every audit-worker referral producer (LLMO-6257

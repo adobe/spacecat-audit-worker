@@ -344,6 +344,26 @@ describe('Patterns Uploader', () => {
     expect(mockReplaceRules).to.not.have.been.called;
   });
 
+  it('drops a catastrophic-backtracking (ReDoS) regex at rule-write, keeping the safe rule (M3)', async () => {
+    // A (a+)+-shaped regex compiles fine and matches few paths, so it clears the
+    // empty/alternation/uncompilable/coverage checks — only the ReDoS-shape guard
+    // rejects it, keeping the shape out of the table so no engine ever evaluates it.
+    const paths = ['/shoes/sneaker', '/deep/aaa'].map((url) => ({ url }));
+
+    mockAnalyzeProducts.resolves({ footwear: '/shoes', redos: '(a+)+' });
+    mockAnalyzePageTypes.resolves({});
+
+    const options = createMockOptions({
+      athenaClient: { query: sandbox.stub().resolves(paths) },
+    });
+    const result = await generatePatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    const names = mockReplaceRules.getCall(0).args[0].categoryRules.map((r) => r.name);
+    expect(names).to.include('footwear');
+    expect(names).to.not.include('redos');
+  });
+
   it('LLMO-5036: scheduled run reuses existing rules and preserves provenance fields', async () => {
     const existingPatterns = {
       topicPatterns: [{

@@ -13,6 +13,7 @@
 import { expect } from 'chai';
 import {
   classifyUrlPath, buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath,
+  isCatastrophicQuantifier,
 } from '../../../src/llmo-referral-traffic-daily/classify.js';
 
 describe('referral URL classification', () => {
@@ -104,6 +105,23 @@ describe('referral URL classification', () => {
     it('returns an empty array when nothing matches', () => {
       const rows = [{ host: 'example.com', url_path: '/electronics' }];
       expect(buildClassificationRows(rows, rules, 'spacecat:optel')).to.deep.equal([]);
+    });
+  });
+
+  describe('isCatastrophicQuantifier', () => {
+    it('flags adjacent/nested unbounded quantifiers', () => {
+      expect(isCatastrophicQuantifier('(a+)+')).to.equal(true);
+      expect(isCatastrophicQuantifier('(.*)+')).to.equal(true);
+      expect(isCatastrophicQuantifier('(\\w+){2,}')).to.equal(true);
+    });
+
+    it('does not flag ordinary rule regexes', () => {
+      expect(isCatastrophicQuantifier('/shoes/sneakers')).to.equal(false);
+      expect(isCatastrophicQuantifier('/(shoes|boots)')).to.equal(false);
+    });
+
+    it('strips a leading (?i) before testing the shape', () => {
+      expect(isCatastrophicQuantifier('(?i)(a+)+')).to.equal(true);
     });
   });
 

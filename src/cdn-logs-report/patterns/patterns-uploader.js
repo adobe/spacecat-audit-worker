@@ -14,6 +14,7 @@ import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 import { replaceAgenticUrlClassificationRules, fetchReferralTopUrls } from '../utils/report-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../../common/agentic-url-classification-rules.js';
+import { isCatastrophicQuantifier } from '../../llmo-referral-traffic-daily/classify.js';
 
 const SAMPLE_URLS_CAP = 20;
 // sample_urls clamp — a bad element aborts the whole-site replace RPC batch.
@@ -44,6 +45,15 @@ function isValidGeneratedRegex(regex, name, log, paths = null) {
   const altBranches = (regex.match(/\|/g) || []).length + 1;
   if (altBranches > MAX_ALTERNATION_BRANCHES) {
     log?.warn?.(`patterns: dropping rule "${name}" — ${altBranches} alternation branches > ${MAX_ALTERNATION_BRANCHES} (catch-all / locale-enumeration)`);
+    return false;
+  }
+  // Reject catastrophic-backtracking (ReDoS) shapes at rule-write time so no rule with
+  // one is ever stored — this closes the JS/SQL cross-engine parity gap at the source
+  // (M3): the SQL-side _safe_regex_match only catches uncompilable regexes, not
+  // catastrophic ones, so keeping the shape out of the table is what keeps every engine
+  // in agreement.
+  if (isCatastrophicQuantifier(regex)) {
+    log?.warn?.(`patterns: dropping rule "${name}" — catastrophic-backtracking regex shape (ReDoS)`);
     return false;
   }
   let compiled;
