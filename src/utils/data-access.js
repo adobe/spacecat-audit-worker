@@ -715,6 +715,7 @@ export async function reconcileDisappearedSuggestions({
     // write failure leaves the suggestion in its prior state for the next audit
     // to retry — preferring "under-report" to "credit-without-attribution".
     const fixEntityObjects = [];
+    let payloadThrows = 0;
     if (typeof buildFixEntityPayload === 'function') {
       for (const suggestion of fixedSuggestions) {
         try {
@@ -723,8 +724,16 @@ export async function reconcileDisappearedSuggestions({
             fixEntityObjects.push(fixEntity);
           }
         } catch (e) {
+          payloadThrows += 1;
           log.warn(`Failed building fix entity for suggestion ${suggestion?.getId?.()}: ${e.message}`);
         }
+      }
+      // Defensive (batch-wide throw): if EVERY payload build threw, do not flip
+      // suggestion status. Otherwise we would land FIXED with no FixEntity —
+      // the exact drift the reorder prevents.
+      if (payloadThrows > 0 && payloadThrows === fixedSuggestions.length) {
+        log.warn(`[reconcileDisappearedSuggestions] All ${payloadThrows} payload builds threw; leaving suggestions unchanged for next-audit retry`);
+        return;
       }
     }
 

@@ -2906,5 +2906,20 @@ describe('Backlinks Tests', function () {
       const result = await checkIfBacklinkResolvedOnProduction(suggestion, mockLog);
       expect(result).to.be.false;
     });
+
+    it('should accept camelCase urlTo when data is UI-edited (SITES-48410)', async () => {
+      nock('https://example.com')
+        .get('/edited-was-broken')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          urlTo: 'https://example.com/edited-was-broken',   // camelCase (UI-edited)
+          isEdited: true,
+        }),
+      };
+      const result = await checkIfBacklinkResolvedOnProduction(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
   });
 });

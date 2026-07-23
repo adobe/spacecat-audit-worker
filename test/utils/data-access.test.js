@@ -3142,6 +3142,36 @@ describe('data-access', () => {
       expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
     });
 
+    it('should NOT flip suggestion status when ALL buildFixEntityPayload calls throw (no drift)', async () => {
+      // Guards against the batch-wide-throw drift: if every payload build throws,
+      // fixEntityObjects stays empty, the addFixEntities guard is skipped, and
+      // without the defensive return we would flip status FIXED with no FixEntity.
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-payload-fail'),
+        getData: sinon.stub().returns({ key: 'pf' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub().throws(new Error('Payload always throws')),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/All 1 payload builds threw; leaving suggestions unchanged/),
+      );
+    });
+
     it('should NOT flip suggestion status when addFixEntities throws (no drift)', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-fe-fail'),
