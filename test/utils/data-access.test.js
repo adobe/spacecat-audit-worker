@@ -21,6 +21,7 @@ import {
   getAuditTargetUrls,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
+  handleOutdatedSuggestions,
   getImsOrgId,
   retrieveAuditById,
   keepSameDataFunction,
@@ -2139,6 +2140,40 @@ describe('data-access', () => {
           'OUTDATED',
         );
         expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should not mark a manually-edited suggestion as OUTDATED even when its key disappears', async () => {
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+            getUpdatedBy: sinon.stub().returns('customer@example.com'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+            getUpdatedBy: sinon.stub().returns(null),
+          },
+        ];
+
+        const newDataKeys = new Set();
+
+        await handleOutdatedSuggestions({
+          context,
+          existingSuggestions,
+          newDataKeys,
+          buildKey: (data) => data.key,
+        });
+
+        // Only suggestion 2 (not manually edited) should be marked OUTDATED
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+        const [outdatedList] = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args;
+        expect(outdatedList).to.have.lengthOf(1);
+        expect(outdatedList[0].id).to.equal('2');
       });
 
       it('should handle mixed scenario: some URLs scraped, some not', async () => {

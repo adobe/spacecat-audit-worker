@@ -312,7 +312,8 @@ export const handleOutdatedSuggestions = async ({
         return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
       }
       return true;
-    });
+    })
+    .filter((existing) => !isManuallyEditedSuggestion(existing));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
