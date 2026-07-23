@@ -1053,7 +1053,7 @@ describe('data-access', () => {
       );
     });
 
-    it('should not overwrite a manually-edited suggestion (updatedBy is a user email)', async () => {
+    it('should not overwrite a manually-edited NEW suggestion (updatedBy is a user email)', async () => {
       const suggestionsData = [
         { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
       ];
@@ -1088,10 +1088,119 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
       const debugMessages = mockLogger.debug.args.map((a) => a[0]);
-      const found = debugMessages.some(
+      const skipMsg = debugMessages.find(
         (msg) => /Skipping manually-edited suggestion/.test(msg),
       );
-      expect(found).to.be.true;
+      expect(skipMsg).to.be.a('string');
+      // Must not log the customer email (PII)
+      expect(skipMsg).to.not.include('customer@example.com');
+    });
+
+    it('should not overwrite a manually-edited deployed (APPROVED) suggestion', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.APPROVED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('should not overwrite a manually-edited deployed (IN_PROGRESS) suggestion', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('should update a suggestion when updatedBy is null (legacy, not manually edited)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns(null),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
     });
 
     it('should update a suggestion when updatedBy is system (not manually edited)', async () => {

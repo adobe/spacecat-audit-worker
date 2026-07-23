@@ -35,6 +35,20 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * True when a suggestion was last touched by a non-system actor (typically a
+ * customer email stamped by the API). Used to skip regenerating/overwriting
+ * that suggestion's data on subsequent audits (LLMO-6483).
+ * Applies regardless of suggestion status (NEW, APPROVED/deployed, etc.).
+ *
+ * @param {Object} suggestion - Suggestion entity (or mock).
+ * @returns {boolean}
+ */
+export function isManuallyEditedSuggestion(suggestion) {
+  const updatedBy = suggestion?.getUpdatedBy?.();
+  return Boolean(updatedBy && updatedBy !== 'system');
+}
+
+/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -412,7 +426,10 @@ export const isTBYBSite = checkIsTBYBSite;
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
- * For REJECTED suggestions that appear again, preserves REJECTED status
+ * For REJECTED suggestions that appear again, preserves REJECTED status.
+ * Suggestions with updatedBy set to a non-system actor (customer edits) are not
+ * regenerated on re-audit — data/status/rank are left unchanged. Applies to both
+ * NEW and deployed (e.g. APPROVED / IN_PROGRESS) suggestions (LLMO-6483).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -526,11 +543,11 @@ export async function syncSuggestions({
       return;
     }
 
-    // Suggestions manually edited by a customer (updatedBy is set to their
-    // email, not 'system') must not have their data overwritten by a re-audit.
-    const updatedBy = existing.getUpdatedBy?.();
-    if (updatedBy && updatedBy !== 'system') {
-      log.debug(`Skipping manually-edited suggestion ${existingKey} (updatedBy: ${updatedBy})`);
+    // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
+    // Applies to NEW and deployed statuses alike. updatedBy may be a user email
+    // — never log it (PII).
+    if (isManuallyEditedSuggestion(existing)) {
+      log.debug(`Skipping manually-edited suggestion ${existingKey}`);
       return;
     }
 
