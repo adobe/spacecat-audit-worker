@@ -1,3 +1,10 @@
+## [1.505.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.0...v1.505.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** bump mysticat-shared-seo-client to 1.8.0 ([#2804](https://github.com/adobe/spacecat-audit-worker/issues/2804)) ([8311400](https://github.com/adobe/spacecat-audit-worker/commit/8311400c4d771180ef585540fa34e50f44854ac6))
+
 # [1.505.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.2...v1.505.0) (2026-07-23)
 
 
