@@ -164,6 +164,33 @@ async function filterOutValidBacklinks(backlinks, log) {
 }
 
 /**
+ * Normalises a suggestion's data payload against the historical schema drift
+ * between the audit-worker (snake_case: `url_to`, `url_from`, `urls_suggested`,
+ * `traffic_domain`) and the ASO UI edit mutation (camelCase: `urlTo`, `urlFrom`,
+ * `urlsSuggested`, `trafficDomain`). Edited-in-UI records lose their snake_case
+ * fields, causing every audit-side consumer that reads snake_case to silently
+ * short-circuit on `undefined`. This helper accepts either casing.
+ *
+ * Precedence is uniform: snake_case (the form the audit-worker writes) is
+ * preferred; camelCase is the UI-mutation fallback. `urlEdited` and `isEdited`
+ * are intentionally asymmetric — they are UI-only fields that the audit-worker
+ * never writes, so there is no snake_case equivalent to fall back to.
+ *
+ * @param {Object} data - The suggestion's `.getData()` payload.
+ * @returns {{urlTo: string|undefined, urlFrom: string|undefined,
+ *            urlsSuggested: string[], urlEdited: string|undefined}}
+ */
+function normaliseBacklinkFields(data) {
+  const urlsSuggestedRaw = data?.urls_suggested ?? data?.urlsSuggested;
+  return {
+    urlTo: data?.url_to ?? data?.urlTo,
+    urlFrom: data?.url_from ?? data?.urlFrom,
+    urlsSuggested: Array.isArray(urlsSuggestedRaw) ? urlsSuggestedRaw : [],
+    urlEdited: data?.urlEdited, // UI-only field; no snake_case equivalent
+  };
+}
+
+/**
  * Checks if a broken backlink issue was fixed using our AI suggestion.
  * Verifies if the broken URL now redirects to one of the suggested targets.
  *
@@ -172,12 +199,8 @@ async function filterOutValidBacklinks(backlinks, log) {
  * @returns {Promise<boolean>} - True if the issue was fixed with our suggestion.
  */
 export async function checkIfBacklinkFixedWithSuggestion(suggestion, log) {
-  const data = suggestion?.getData?.();
-  const urlTo = data?.url_to;
-  const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
-  const targets = data?.urlEdited
-    ? [data.urlEdited, ...suggestedTargets]
-    : suggestedTargets;
+  const { urlTo, urlsSuggested, urlEdited } = normaliseBacklinkFields(suggestion?.getData?.());
+  const targets = urlEdited ? [urlEdited, ...urlsSuggested] : urlsSuggested;
   if (!urlTo || targets.length === 0) {
     return false;
   }
@@ -207,7 +230,9 @@ export async function checkIfBacklinkFixedWithSuggestion(suggestion, log) {
  * @returns {Object} - The fix entity payload.
  */
 export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorOnly, site) {
-  const data = suggestion?.getData?.();
+  const {
+    urlTo, urlFrom, urlsSuggested, urlEdited,
+  } = normaliseBacklinkFields(suggestion?.getData?.());
   return {
     opportunityId: opportunity.getId(),
     status: isAuthorOnly
@@ -217,9 +242,9 @@ export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorO
     executedAt: new Date().toISOString(),
     changeDetails: {
       system: site.getDeliveryType(),
-      pagePath: data?.url_from,
-      oldValue: data?.url_to || '',
-      updatedValue: data?.urlEdited || data?.urlsSuggested?.[0] || '',
+      pagePath: urlFrom,
+      oldValue: urlTo || '',
+      updatedValue: urlEdited || urlsSuggested[0] || '',
     },
     suggestions: [suggestion?.getId?.()],
   };
@@ -234,11 +259,11 @@ export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorO
  * @returns {Promise<boolean>} - True if the issue is resolved on production.
  */
 export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
-  const url = suggestion?.getData?.()?.url_to;
-  if (!url) {
+  const { urlTo } = normaliseBacklinkFields(suggestion?.getData?.());
+  if (!urlTo) {
     return false;
   }
-  const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+  const stillBrokenItems = await filterOutValidBacklinks([{ url_to: urlTo }], log);
   return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
 
