@@ -677,5 +677,26 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(deleteCall, 'classification CSV cleaned up').to.exist;
       expect(deleteCall.args[0].Key).to.include('classifications.csv');
     });
+
+    it('warns distinctly and returns {classified:0} when the rule fetch errored', async () => {
+      // A DB rule-fetch failure must be logged distinctly from a legitimately rule-less site.
+      mockFetchRules.resolves({ error: true });
+      const result = await handlerModule.emitReferralClassifications(baseArgs());
+      expect(result).to.deep.equal({ classified: 0 });
+      expect(sqsSendMessageStub).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/Category rule fetch failed/);
+    });
+
+    it('rethrows the original dispatch error even when the CSV cleanup delete also fails', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/shoes' }] });
+      s3ClientStub.send.callsFake((cmd) => (cmd._type === 'DeleteObjectCommand'
+        ? Promise.reject(new Error('delete boom'))
+        : Promise.resolve({})));
+      sqsSendMessageStub.rejects(new Error('sqs boom'));
+
+      await expect(handlerModule.emitReferralClassifications(baseArgs()))
+        .to.be.rejectedWith('sqs boom');
+      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to clean up classification CSV/);
+    });
   });
 });

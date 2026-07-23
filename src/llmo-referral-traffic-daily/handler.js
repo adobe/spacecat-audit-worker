@@ -203,6 +203,12 @@ export async function emitReferralClassifications({
   const siteId = site.getId();
 
   const rulesResult = await fetchAgenticUrlClassificationRules(site, context);
+  if (rulesResult?.error) {
+    // A DB rule-fetch failure is NOT the same as a rule-less site; log it distinctly
+    // so a real outage isn't silently indistinguishable from "no rules".
+    log.warn(`[llmo-referral-traffic-daily] Category rule fetch failed for site ${siteId}; skipping classification emit`);
+    return { classified: 0 };
+  }
   const rules = Array.isArray(rulesResult?.topicPatterns) ? rulesResult.topicPatterns : [];
   if (rules.length === 0) {
     log.info(`[llmo-referral-traffic-daily] No category rules for site ${siteId}; skipping classification emit`);
@@ -249,7 +255,12 @@ export async function emitReferralClassifications({
     await sqs.sendMessage(queueUrl, message, messageGroupId, 0, dedupId);
   } catch (err) {
     log.error(`[llmo-referral-traffic-daily] Classification SQS dispatch failed for site ${siteId}; cleaning up uploaded CSV`);
-    await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: classificationKey }));
+    try {
+      await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: classificationKey }));
+    } catch (cleanupErr) {
+      // Never let a cleanup failure mask the original dispatch error (parity with cdn).
+      log.warn(`[llmo-referral-traffic-daily] Failed to clean up classification CSV for site ${siteId}: ${cleanupErr.message}`);
+    }
     throw err;
   }
 

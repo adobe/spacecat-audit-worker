@@ -160,6 +160,11 @@ async function emitReferralClassifications({
   const siteId = site.getId();
 
   const rulesResult = await fetchAgenticUrlClassificationRules(site, context);
+  if (rulesResult?.error) {
+    // A DB rule-fetch failure is NOT the same as a rule-less site; log it distinctly.
+    log.warn(`[cdn-logs-report] Category rule fetch failed for site ${siteId}; skipping classification emit`);
+    return { classified: 0 };
+  }
   const rules = Array.isArray(rulesResult?.topicPatterns) ? rulesResult.topicPatterns : [];
   if (rules.length === 0) {
     log.info(`[cdn-logs-report] No category rules for site ${siteId}; skipping classification emit`);

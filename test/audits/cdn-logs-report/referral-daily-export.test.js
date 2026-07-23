@@ -921,6 +921,22 @@ describe('referral daily export', function referralDailyExportTests() {
       );
     });
 
+    it('warns distinctly and skips the classification emit when the rule fetch errored', async () => {
+      // A DB rule-fetch failure must be logged distinctly from a legitimately rule-less site.
+      const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+      const rulesStub = sandbox.stub().resolves({ error: true });
+      const module = await loadModule(classifyStub, {}, {}, rulesStub);
+      const context = makeContext();
+
+      await exportWith(module, context);
+
+      // Traffic emit still happens; only the classification emit is skipped.
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWith(
+        '[cdn-logs-report] Category rule fetch failed for site site-abc; skipping classification emit',
+      );
+    });
+
     it('does not fail the audit when the classification emit throws (best-effort)', async () => {
       const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
       const rulesStub = sandbox.stub().resolves({ topicPatterns: [{ name: 'Products', regex: '/products' }] });
