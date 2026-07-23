@@ -526,6 +526,14 @@ export async function syncSuggestions({
       return;
     }
 
+    // Suggestions manually edited by a customer (updatedBy is set to their
+    // email, not 'system') must not have their data overwritten by a re-audit.
+    const updatedBy = existing.getUpdatedBy?.();
+    if (updatedBy && updatedBy !== 'system') {
+      log.debug(`Skipping manually-edited suggestion ${existingKey} (updatedBy: ${updatedBy})`);
+      return;
+    }
+
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly

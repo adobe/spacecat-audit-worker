@@ -1053,6 +1053,82 @@ describe('data-access', () => {
       );
     });
 
+    it('should not overwrite a manually-edited suggestion (updatedBy is a user email)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      const debugMessages = mockLogger.debug.args.map((a) => a[0]);
+      const found = debugMessages.some(
+        (msg) => /Skipping manually-edited suggestion/.test(msg),
+      );
+      expect(found).to.be.true;
+    });
+
+    it('should update a suggestion when updatedBy is system (not manually edited)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('system'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
     it('should allow FIXED suggestion to be updated when custom mergeStatusFunction detects regression', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', url: 'https://example.com/page1' },
