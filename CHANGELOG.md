@@ -1,3 +1,10 @@
+## [1.504.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.1...v1.504.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** normalise camelCase/snake_case data + harden reconcile (SITES-48410) ([#2789](https://github.com/adobe/spacecat-audit-worker/issues/2789)) ([4562b69](https://github.com/adobe/spacecat-audit-worker/commit/4562b69c4f1402c9d21a392e3cdf216425790e58)), closes [hi#confidence](https://github.com/hi/issues/confidence)
+
 ## [1.504.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.0...v1.504.1) (2026-07-22)
 
 
