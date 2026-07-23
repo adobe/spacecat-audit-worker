@@ -1093,8 +1093,14 @@ describe('data-access', () => {
         (msg) => /Skipping manually-edited suggestion/.test(msg),
       );
       expect(skipMsg).to.be.a('string');
-      // Must not log the customer email (PII)
-      expect(skipMsg).to.not.include('customer@example.com');
+      // Must not log the customer email (PII) in ANY log call
+      const allLogMessages = [
+        ...mockLogger.debug.args,
+        ...mockLogger.info.args,
+        ...mockLogger.warn.args,
+      ].flat().filter((a) => typeof a === 'string');
+      const piiLeak = allLogMessages.find((msg) => msg.includes('customer@example.com'));
+      expect(piiLeak, 'customer email must not appear in any log message').to.be.undefined;
     });
 
     it('should not overwrite a manually-edited deployed (APPROVED) suggestion', async () => {

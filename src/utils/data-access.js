@@ -36,9 +36,12 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 
 /**
  * True when a suggestion was last touched by a non-system actor (typically a
- * customer email stamped by the API). Used to skip regenerating/overwriting
+ * customer email stamped by the PATCH API). Used to skip regenerating/overwriting
  * that suggestion's data on subsequent audits (LLMO-6483).
- * Applies regardless of suggestion status (NEW, APPROVED/deployed, etc.).
+ *
+ * This checks the entity-level `updatedBy` field — distinct from the alt-text
+ * domain-specific `data.recommendations[].isManuallyEdited` flag used in
+ * image-alt-text handlers.
  *
  * @param {Object} suggestion - Suggestion entity (or mock).
  * @returns {boolean}
@@ -428,9 +431,11 @@ export const isTBYBSite = checkIsTBYBSite;
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
  * For REJECTED suggestions that appear again, preserves REJECTED status.
- * Suggestions with updatedBy set to a non-system actor (customer edits) are not
- * regenerated on re-audit — data/status/rank are left unchanged. Applies to both
- * NEW and deployed (e.g. APPROVED / IN_PROGRESS) suggestions (LLMO-6483).
+ * Suggestions with updatedBy set to a non-system actor (customer edits) are
+ * protected from data overwrites when they are still present in the current
+ * audit data (matched-key path). They are also excluded from the OUTDATED and
+ * reconcile-disappeared paths. Note: this is distinct from the alt-text
+ * domain-specific `isManuallyEdited` data flag (LLMO-6483).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -710,6 +715,9 @@ export async function reconcileDisappearedSuggestions({
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
     const candidates = disappearedSuggestions.filter((s) => {
+      if (isManuallyEditedSuggestion(s)) {
+        return false;
+      }
       const status = s?.getStatus?.();
       if (newStatus && status === newStatus) {
         return true;
