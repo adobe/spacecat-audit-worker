@@ -11,17 +11,32 @@
  */
 
 // Write-time-in-service category classification for referral URLs (LLMO-6257 P2).
-// The JS analogue of the data-service SQL matcher (wrpc_classify_referral_urls /
-// _safe_regex_match): rules are pre-sorted (sort_order ASC, name ASC) by
-// fetchAgenticUrlClassificationRules, the first compilable rule whose regex matches
-// wins, an uncompilable regex is treated as no-match, and an unmatched URL gets no
-// classification (null). The result is imported into referral_url_classifications
-// through the projector single-writer FIFO.
+// The JS analogue of the data-service SQL matcher (_safe_regex_match): rules are
+// pre-sorted (sort_order ASC, name ASC) by fetchAgenticUrlClassificationRules, the
+// first compilable rule whose regex matches wins, an uncompilable/unsafe regex is
+// treated as no-match, and an unmatched URL gets no classification (null). The result
+// is imported into referral_url_classifications through the projector single-writer
+// FIFO. This module is shared by both producers (optel llmo-referral-traffic-daily +
+// cdn cdn-logs-report).
+
+// A regex source with an adjacent/nested unbounded quantifier — (a+)+, (a*)*, (.*)+,
+// (\w+){2,} — can backtrack catastrophically (ReDoS). Node's RegExp has no execution
+// timeout, so reject that shape BEFORE compiling and treat it as a no-match, exactly
+// like an uncompilable regex. Conservative — a literal (a\+)+ is also skipped, which
+// only drops a classification, never errors. Defense-in-depth for the JS classifier;
+// the data-service side is bounded by statement_timeout.
+const CATASTROPHIC_QUANTIFIER = /[*+}]\)[*+{]/;
 
 // (?i) is an inline modifier Postgres ~* honors; JS RegExp needs it stripped + /i.
 // Mirrors compileAthenaRegex so JS classification matches the SQL/read-path behaviour.
+// Returns null for an unsafe (catastrophic-backtracking) shape; throws for an
+// otherwise-uncompilable pattern — the caller treats both as no-match.
 function compileRuleRegex(regex) {
-  return new RegExp(String(regex).replace(/^\(\?i\)/, ''), 'i');
+  const source = String(regex).replace(/^\(\?i\)/, '');
+  if (CATASTROPHIC_QUANTIFIER.test(source)) {
+    return null;
+  }
+  return new RegExp(source, 'i');
 }
 
 /**
@@ -78,4 +93,28 @@ export function buildClassificationRows(rows, rules, updatedBy) {
   }
 
   return classifications;
+}
+
+// Category-only classification CSV (host,url_path,category_name,updated_by) — the
+// single serializer shared by both producers (optel + cdn), imported into
+// referral_url_classifications by the projector via wrpc_import_referral_url_classifications.
+export const CLASSIFICATION_CSV_COLUMNS = ['host', 'url_path', 'category_name', 'updated_by'];
+
+function escapeCsvValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const normalized = String(value);
+  if (/["\r\n,]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+export function serializeClassificationCsv(rows) {
+  const header = CLASSIFICATION_CSV_COLUMNS.join(',');
+  const body = rows.map(
+    (row) => CLASSIFICATION_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
+  );
+  return [header, ...body].join('\r\n');
 }

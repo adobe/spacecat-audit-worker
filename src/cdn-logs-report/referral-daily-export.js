@@ -17,7 +17,7 @@ import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
-import { buildClassificationRows } from '../llmo-referral-traffic-daily/classify.js';
+import { buildClassificationRows, serializeClassificationCsv } from '../llmo-referral-traffic-daily/classify.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
 const CDN_REFERRAL_CSV_COLUMNS = [
@@ -25,10 +25,6 @@ const CDN_REFERRAL_CSV_COLUMNS = [
   'pageviews', 'referrer', 'utm_source', 'utm_medium', 'tracking_param',
   'trf_type', 'trf_channel', 'updated_by',
 ];
-
-// Category-only classification CSV (LLMO-6257 P2) — imported into
-// referral_url_classifications by the projector via wrpc_import_referral_url_classifications.
-const CLASSIFICATION_CSV_COLUMNS = ['host', 'url_path', 'category_name', 'updated_by'];
 
 function escapeCsvValue(value) {
   if (value === null || value === undefined) {
@@ -45,14 +41,6 @@ function serializeCsv(rows) {
   const header = CDN_REFERRAL_CSV_COLUMNS.join(',');
   const body = rows.map(
     (row) => CDN_REFERRAL_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
-  );
-  return [header, ...body].join('\r\n');
-}
-
-function serializeClassificationCsv(rows) {
-  const header = CLASSIFICATION_CSV_COLUMNS.join(',');
-  const body = rows.map(
-    (row) => CLASSIFICATION_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
   );
   return [header, ...body].join('\r\n');
 }

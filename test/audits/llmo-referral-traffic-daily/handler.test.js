@@ -645,6 +645,13 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(message.row_count).to.equal(1);
       expect(message.org_id).to.equal('org-456');
       expect(groupId).to.equal('referral_url_classifications:site-123');
+      // Dedup id is source-namespaced (:optel) so it can't collide with the cdn
+      // classification message on the shared referral_url_classifications FIFO group.
+      const expectedDedupId = createHash('sha256')
+        .update('site-123:2026-04-29:referral_url_classifications:optel')
+        .digest('hex');
+      expect(message.correlationId).to.equal(expectedDedupId);
+      expect(sqsSendMessageStub.getCall(0).args[4]).to.equal(expectedDedupId);
     });
 
     it('omits org_id when the site has no organization', async () => {

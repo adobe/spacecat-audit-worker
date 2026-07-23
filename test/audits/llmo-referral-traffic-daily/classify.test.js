@@ -11,7 +11,7 @@
  */
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { classifyUrlPath, buildClassificationRows } from '../../../src/llmo-referral-traffic-daily/classify.js';
+import { classifyUrlPath, buildClassificationRows, serializeClassificationCsv } from '../../../src/llmo-referral-traffic-daily/classify.js';
 
 describe('referral URL classification', () => {
   describe('classifyUrlPath', () => {
@@ -46,6 +46,19 @@ describe('referral URL classification', () => {
         { name: 'footwear', regex: '/shoes', sort_order: 1 },
       ];
       expect(classifyUrlPath(withBad, '/shoes')).to.equal('footwear');
+    });
+
+    it('treats a catastrophic-backtracking regex as a no-match (ReDoS guard) and keeps scanning', () => {
+      const withRedos = [
+        { name: 'redos', regex: '(a+)+', sort_order: 0 },
+        { name: 'valid', regex: '/aaa', sort_order: 1 },
+      ];
+      // (a+)+ would match '/aaa' if compiled; the guard skips it and the next rule wins.
+      expect(classifyUrlPath(withRedos, '/aaa')).to.equal('valid');
+    });
+
+    it('returns null when the only matching rule has an unsafe (ReDoS) regex', () => {
+      expect(classifyUrlPath([{ name: 'redos', regex: '(.*)+' }], '/anything')).to.equal(null);
     });
 
     it('skips malformed rules (missing regex or name)', () => {
@@ -89,6 +102,29 @@ describe('referral URL classification', () => {
     it('returns an empty array when nothing matches', () => {
       const rows = [{ host: 'example.com', url_path: '/electronics' }];
       expect(buildClassificationRows(rows, rules, 'spacecat:optel')).to.deep.equal([]);
+    });
+  });
+
+  describe('serializeClassificationCsv', () => {
+    it('serializes rows to a header-first CSV with the classification columns', () => {
+      const csv = serializeClassificationCsv([
+        {
+          host: 'example.com', url_path: '/shoes', category_name: 'footwear', updated_by: 'spacecat:optel',
+        },
+      ]);
+      expect(csv).to.equal(
+        'host,url_path,category_name,updated_by\r\nexample.com,/shoes,footwear,spacecat:optel',
+      );
+    });
+
+    it('escapes values with commas/quotes and renders null/undefined as empty', () => {
+      const csv = serializeClassificationCsv([
+        {
+          host: 'example.com', url_path: '/a,b', category_name: 'has "quote"', updated_by: null,
+        },
+      ]);
+      const [, row] = csv.split('\r\n');
+      expect(row).to.equal('example.com,"/a,b","has ""quote""",');
     });
   });
 });

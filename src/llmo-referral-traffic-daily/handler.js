@@ -19,7 +19,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { generateReferralCategoryRules } from '../cdn-logs-report/patterns/patterns-uploader.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
-import { buildClassificationRows } from './classify.js';
+import { buildClassificationRows, serializeClassificationCsv } from './classify.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -72,18 +72,6 @@ function escapeCsvValue(value) {
 export function serializeCsv(rows) {
   const header = CSV_COLUMNS.join(',');
   const body = rows.map((row) => CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','));
-  return [header, ...body].join('\r\n');
-}
-
-// Category-only classification CSV (LLMO-6257 P2) — imported into
-// referral_url_classifications by the projector via wrpc_import_referral_url_classifications.
-const CLASSIFICATION_CSV_COLUMNS = ['host', 'url_path', 'category_name', 'updated_by'];
-
-export function serializeClassificationCsv(rows) {
-  const header = CLASSIFICATION_CSV_COLUMNS.join(',');
-  const body = rows.map(
-    (row) => CLASSIFICATION_CSV_COLUMNS.map((col) => escapeCsvValue(row[col])).join(','),
-  );
   return [header, ...body].join('\r\n');
 }
 
@@ -235,7 +223,7 @@ export async function emitReferralClassifications({
   }));
 
   const dedupId = createHash('sha256')
-    .update(`${siteId}:${date}:referral_url_classifications`)
+    .update(`${siteId}:${date}:referral_url_classifications:optel`)
     .digest('hex');
   const messageGroupId = `referral_url_classifications:${siteId}`;
 
