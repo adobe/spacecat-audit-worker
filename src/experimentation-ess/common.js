@@ -36,13 +36,16 @@ let log = console;
 /**
  * Retrieves the content of metadata tags.
  * @param {string} name The metadata name (or property)
- * @param {Document} doc Document object to query for metadata. Defaults to the window's document
+ * @param {import('cheerio').CheerioAPI} $ Cheerio instance for the loaded page (see cheerioLoad)
  * @returns {string} The metadata value(s)
  */
-function getMetadata(name, doc) {
+export function getMetadata(name, $) {
   const attr = name && name.includes(':') ? 'property' : 'name';
-  const meta = [...doc.head.querySelectorAll(`meta[${attr}="${name}"]`)]
-    .map((m) => m.content)
+  // Pages are parsed with cheerio (cheerioLoad), not a DOM Document, so query via the
+  // cheerio API rather than doc.head.querySelectorAll (SITES-47215).
+  const meta = $(`head meta[${attr}="${name}"]`)
+    .map((_, el) => $(el).attr('content') ?? '')
+    .get()
     .join(', ');
   return meta || '';
 }
