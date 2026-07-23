@@ -540,38 +540,41 @@ describe('Missing Alt Text Guidance Handler', () => {
     );
   });
 
-  it('outdates SKIPPED/REJECTED when Mystique reports issue resolved; preserves FIXED (SITES-44646)', async () => {
-    const skippedSuggestion = {
-      getData: () => ({
-        recommendations: [{
-          id: 'suggestion-1',
-          pageUrl: 'https://example.com/page1',
-          imageUrl: 'https://example.com/image1.jpg',
-        }],
-      }),
-      getStatus: () => 'SKIPPED',
-    };
-    const fixedSuggestion = {
-      getData: () => ({
-        recommendations: [{
-          id: 'suggestion-2',
-          pageUrl: 'https://example.com/page2',
-          imageUrl: 'https://example.com/image2.jpg',
-        }],
-      }),
-      getStatus: () => 'FIXED',
-    };
-    const rejectedSuggestion = {
-      getData: () => ({
-        recommendations: [{
-          id: 'suggestion-3',
-          pageUrl: 'https://example.com/page1',
-          imageUrl: 'https://example.com/image3.jpg',
-        }],
-      }),
-      getStatus: () => 'REJECTED',
-    };
-    const existingSuggestions = [skippedSuggestion, fixedSuggestion, rejectedSuggestion];
+  it('should handle case when no existing suggestions need to be removed', async () => {
+    // Terminal statuses SKIPPED / REJECTED / FIXED must not be flipped to OUTDATED
+    // by guidance replies (SITES-44646).
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-1',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image1.jpg',
+          }],
+        }),
+        getStatus: () => 'SKIPPED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-2',
+            pageUrl: 'https://example.com/page2',
+            imageUrl: 'https://example.com/image2.jpg',
+          }],
+        }),
+        getStatus: () => 'FIXED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-3',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image3.jpg',
+          }],
+        }),
+        getStatus: () => 'REJECTED',
+      },
+    ];
 
     mockOpportunity.getSuggestions.returns(existingSuggestions);
 
@@ -579,14 +582,7 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(result.status).to.equal(200);
 
-    // SKIPPED and REJECTED transition to OUTDATED (real state change → updatedAt bump);
-    // FIXED is preserved (no state change).
-    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
-    const [passedSuggestions, targetStatus] = context.dataAccess.Suggestion
-      .bulkUpdateStatus.firstCall.args;
-    expect(targetStatus).to.equal('OUTDATED');
-    expect(passedSuggestions).to.have.members([skippedSuggestion, rejectedSuggestion]);
-    expect(passedSuggestions).to.not.include(fixedSuggestion);
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
   });
 

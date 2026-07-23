@@ -422,13 +422,9 @@ export async function processAltTextWithMystique(context) {
 
       // Filter suggestions with URLs not in current pageUrls
       const pageUrlSet = new Set(pageUrls);
-      // Rule (SITES-44646): don't bump updatedAt on suggestions whose state
-      // isn't changing. FIXED / OUTDATED remain as-is; NEW / PENDING_VALIDATION /
-      // SKIPPED / REJECTED transition to OUTDATED when the page falls out of
-      // scope — that IS a legitimate state change (issue no longer detected),
-      // so the updatedAt bump is expected. Preserving SKIPPED / REJECTED here
-      // would leave them stuck on a non-existent issue.
-      const IGNORED_STATUSES = ['FIXED', 'OUTDATED'];
+      // REJECTED preserved alongside SKIPPED — both are operator decisions
+      // whose updatedAt must not be bumped by subsequent audit runs (SITES-44646).
+      const IGNORED_STATUSES = ['SKIPPED', 'REJECTED', 'FIXED', 'OUTDATED'];
 
       const suggestionsToOutdate = existingSuggestions.filter((suggestion) => {
         const rec = suggestion.getData()?.recommendations?.[0];
