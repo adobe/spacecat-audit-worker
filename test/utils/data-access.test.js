@@ -3506,6 +3506,30 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.not.have.been.called;
     });
 
+    it('should forward outdateInProgress to the underlying syncSuggestions call', async () => {
+      const inProgressSuggestion = {
+        id: '1',
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+      };
+      mockOpportunity.getSuggestions.resolves([inProgressSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        outdateInProgress: true,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [inProgressSuggestion],
+        'OUTDATED',
+      );
+    });
+
     it('should only call getSuggestions once to avoid duplicate DB queries', async () => {
       const existingSuggestion = {
         id: '1',

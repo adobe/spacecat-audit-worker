@@ -5378,6 +5378,7 @@ describe('createIndividualOpportunitySuggestions - OUTDATED lifecycle (end-to-en
       getId: () => 'oppty-1',
       getType: () => 'a11y-assistive',
       getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('IN_PROGRESS')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
     };
 
     // Issue no longer detected on this re-scan.
@@ -5403,6 +5404,7 @@ describe('createIndividualOpportunitySuggestions - OUTDATED lifecycle (end-to-en
       getId: () => 'oppty-1',
       getType: () => 'a11y-assistive',
       getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('IN_PROGRESS')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
     };
 
     // Issue still present on this re-scan.
@@ -5424,6 +5426,7 @@ describe('createIndividualOpportunitySuggestions - OUTDATED lifecycle (end-to-en
       getId: () => 'oppty-1',
       getType: () => 'a11y-assistive',
       getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('SKIPPED')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
     };
 
     const aggregatedData = { data: [] };

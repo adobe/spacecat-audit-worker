@@ -883,6 +883,7 @@ export async function syncSuggestionsWithPublishDetection({
   mergeStatusFunction,
   statusToSetForOutdated,
   scrapedUrlsSet,
+  outdateInProgress = false,
   // Publish detection params
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
@@ -948,6 +949,7 @@ export async function syncSuggestionsWithPublishDetection({
     mergeStatusFunction,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    outdateInProgress,
     existingSuggestions,
   });
 }
