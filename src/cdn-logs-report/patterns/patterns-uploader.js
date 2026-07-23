@@ -261,13 +261,11 @@ export async function generatePatternsWorkbook(options) {
 export async function generateReferralCategoryRules({ site, context }) {
   const { log } = context;
 
-  const paths = await fetchReferralTopUrls({ site, context });
-  if (paths.length === 0) {
-    log.info('No referral URLs found in DB - skipping referral pattern generation');
-    return false;
-  }
-  log.info(`Fetched ${paths.length} referral URLs for pattern generation`);
-
+  // Create-if-missing gate FIRST: a site that already has category rules skips
+  // before the corpus fetch. fetchReferralTopUrls runs a 5-source partitioned
+  // scan, so fetching it up front would pay that cost on every daily run for
+  // every site even once rules exist. Check existing rules, then fetch the corpus
+  // only when we actually need to generate.
   const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
   if (existingPatterns && existingPatterns.error) {
     log.info(`Skipping referral patterns for ${site.getId()}; DB rule fetch failed`);
@@ -285,6 +283,13 @@ export async function generateReferralCategoryRules({ site, context }) {
     log.info(`Referral category rules already exist for site ${site.getId()} - skipping generation`);
     return false;
   }
+
+  const paths = await fetchReferralTopUrls({ site, context });
+  if (paths.length === 0) {
+    log.info('No referral URLs found in DB - skipping referral pattern generation');
+    return false;
+  }
+  log.info(`Fetched ${paths.length} referral URLs for pattern generation`);
 
   const domain = new URL(site.getBaseURL()).hostname;
   const productRegexes = await analyzeProducts(domain, paths, context);
