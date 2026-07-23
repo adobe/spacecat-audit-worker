@@ -98,9 +98,12 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     }
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
-    // REJECTED preserved alongside SKIPPED — both are operator decisions
-    // whose updatedAt must not be bumped by guidance replies (SITES-44646).
-    const IGNORED_STATUSES = ['SKIPPED', 'REJECTED', 'FIXED', 'OUTDATED'];
+    // Rule (SITES-44646): don't bump updatedAt on suggestions whose state
+    // isn't changing. FIXED / OUTDATED stay as-is; NEW / PENDING_VALIDATION /
+    // SKIPPED / REJECTED transition to OUTDATED here because Mystique reported
+    // the issue as resolved for these pages — a real state change, so the
+    // updatedAt bump is legitimate.
+    const IGNORED_STATUSES = ['FIXED', 'OUTDATED'];
     return !IGNORED_STATUSES.includes(suggestion.getStatus());
   });
 

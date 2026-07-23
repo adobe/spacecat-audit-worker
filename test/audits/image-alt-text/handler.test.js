@@ -543,44 +543,45 @@ describe('Image Alt Text Handler', () => {
         );
       });
 
-      it('should NOT re-process suggestions already in SKIPPED, REJECTED, FIXED, or OUTDATED status', async () => {
+      it('outdates NEW/PENDING_VALIDATION/SKIPPED/REJECTED when page is off-scan; preserves FIXED/OUTDATED (SITES-44646)', async () => {
+        const skippedSuggestion = {
+          getData: () => ({
+            recommendations: [{
+              pageUrl: 'https://example.com/old-page',
+              imageUrl: 'https://example.com/image1.jpg',
+            }],
+          }),
+          getStatus: () => 'SKIPPED',
+        };
+        const fixedSuggestion = {
+          getData: () => ({
+            recommendations: [{
+              pageUrl: 'https://example.com/another-old-page',
+              imageUrl: 'https://example.com/image2.jpg',
+            }],
+          }),
+          getStatus: () => 'FIXED',
+        };
+        const outdatedSuggestion = {
+          getData: () => ({
+            recommendations: [{
+              pageUrl: 'https://example.com/third-old-page',
+              imageUrl: 'https://example.com/image3.jpg',
+            }],
+          }),
+          getStatus: () => 'OUTDATED',
+        };
+        const rejectedSuggestion = {
+          getData: () => ({
+            recommendations: [{
+              pageUrl: 'https://example.com/rejected-page',
+              imageUrl: 'https://example.com/image4.jpg',
+            }],
+          }),
+          getStatus: () => 'REJECTED',
+        };
         const existingSuggestions = [
-          {
-            getData: () => ({
-              recommendations: [{
-                pageUrl: 'https://example.com/old-page',
-                imageUrl: 'https://example.com/image1.jpg',
-              }],
-            }),
-            getStatus: () => 'SKIPPED',
-          },
-          {
-            getData: () => ({
-              recommendations: [{
-                pageUrl: 'https://example.com/another-old-page',
-                imageUrl: 'https://example.com/image2.jpg',
-              }],
-            }),
-            getStatus: () => 'FIXED',
-          },
-          {
-            getData: () => ({
-              recommendations: [{
-                pageUrl: 'https://example.com/third-old-page',
-                imageUrl: 'https://example.com/image3.jpg',
-              }],
-            }),
-            getStatus: () => 'OUTDATED',
-          },
-          {
-            getData: () => ({
-              recommendations: [{
-                pageUrl: 'https://example.com/rejected-page',
-                imageUrl: 'https://example.com/image4.jpg',
-              }],
-            }),
-            getStatus: () => 'REJECTED',
-          },
+          skippedSuggestion, fixedSuggestion, outdatedSuggestion, rejectedSuggestion,
         ];
 
         const mockOpportunity = {
@@ -600,8 +601,13 @@ describe('Image Alt Text Handler', () => {
 
         await handlerModule.processAltTextWithMystique(context);
 
-        // bulkUpdateStatus should NOT be called since all suggestions are in ignored statuses
-        expect(bulkUpdateStatusStub).to.not.have.been.called;
+        // SKIPPED and REJECTED get outdated (issue no longer detected for these pages);
+        // FIXED and OUTDATED are preserved (no state change).
+        expect(bulkUpdateStatusStub).to.have.been.calledOnce;
+        const [passedSuggestions, targetStatus] = bulkUpdateStatusStub.firstCall.args;
+        expect(targetStatus).to.equal('OUTDATED');
+        expect(passedSuggestions).to.have.members([skippedSuggestion, rejectedSuggestion]);
+        expect(passedSuggestions).to.not.include.members([fixedSuggestion, outdatedSuggestion]);
       });
 
       it('should pass imageUrlsWithAltText from existing NEW suggestions to Mystique', async () => {
