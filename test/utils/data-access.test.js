@@ -3143,6 +3143,29 @@ describe('data-access', () => {
       expect(mockOpportunity.addFixEntities).to.have.been.called;
     });
 
+    it('should skip manually-edited NEW suggestions even when issue is fixed', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+    });
+
     it('should skip suggestions not in NEW status', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
