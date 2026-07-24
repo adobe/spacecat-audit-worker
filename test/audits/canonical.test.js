@@ -2968,7 +2968,7 @@ describe('Canonical URL Tests', () => {
         expect(mockOpportunity.save).to.have.been.calledOnce;
       });
 
-      it('should only mark NEW and PENDING_VALIDATION suggestions as OUTDATED, preserving FIXED/SKIPPED/REJECTED', async () => {
+      it('marks NEW/PENDING_VALIDATION/SKIPPED/REJECTED as OUTDATED, preserving FIXED (SITES-44646 Case B)', async () => {
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -3028,10 +3028,15 @@ describe('Canonical URL Tests', () => {
 
         await processScrapedContentMocked(testContext);
 
-        expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(
-          [newSuggestion, pendingSuggestion],
-          'OUTDATED',
-        );
+        // SKIPPED and REJECTED transition to OUTDATED alongside NEW/PENDING_VALIDATION
+        // (audit no longer detects the issue → legitimate state change → updatedAt bump).
+        expect(bulkUpdateStatusStub).to.have.been.calledOnce;
+        const [passed, targetStatus] = bulkUpdateStatusStub.firstCall.args;
+        expect(targetStatus).to.equal('OUTDATED');
+        expect(passed).to.have.members([
+          newSuggestion, pendingSuggestion, skippedSuggestion, rejectedSuggestion,
+        ]);
+        expect(passed).to.not.include(fixedSuggestion);
       });
 
       it('should log error and still return success when opportunity lookup fails on no-issues path', async () => {
