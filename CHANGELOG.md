@@ -1,3 +1,10 @@
+## [1.505.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.1...v1.505.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* **internal-links:** freeze SKIPPED/REJECTED suggestions in custom sync loop (SITES-44646) ([#2787](https://github.com/adobe/spacecat-audit-worker/issues/2787)) ([a50f32c](https://github.com/adobe/spacecat-audit-worker/commit/a50f32cc125168993723e099e3070e584545b2e2)), closes [#2758](https://github.com/adobe/spacecat-audit-worker/issues/2758)
+
 ## [1.505.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.0...v1.505.1) (2026-07-23)
 
 
