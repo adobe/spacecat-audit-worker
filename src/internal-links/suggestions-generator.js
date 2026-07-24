@@ -371,12 +371,10 @@ export async function syncBrokenInternalLinksSuggestions({
     return merged;
   };
 
+  // Note: SKIPPED and REJECTED suggestions never reach this function — they are
+  // frozen upstream by the FROZEN_STATUSES filter on toUpdate below (SITES-44646).
   const mergeStatusFunction = (existing) => {
     const currentStatus = existing.getStatus();
-    if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
-      return null;
-    }
-
     if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
       const requiresValidation = Boolean(context.site?.requiresValidation);
       return requiresValidation
@@ -404,8 +402,24 @@ export async function syncBrokenInternalLinksSuggestions({
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
   });
 
+  // SKIPPED and REJECTED suggestions are operator decisions that must not be
+  // overwritten by subsequent scans — their updatedAt must reflect the moment
+  // the operator acted. Mirrors the FROZEN_STATUSES guard in the shared
+  // syncSuggestions (SITES-44646).
+  const FROZEN_STATUSES = [
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+  ];
+
   const toUpdate = existingSuggestions
-    .filter((existing) => newDataKeys.has(buildKey(existing.getData())));
+    .filter((existing) => newDataKeys.has(buildKey(existing.getData())))
+    .filter((existing) => {
+      if (FROZEN_STATUSES.includes(existing.getStatus())) {
+        log.debug(`[internal-links] Skipping ${existing.getStatus()} suggestion - terminal status suggestions are never updated`);
+        return false;
+      }
+      return true;
+    });
 
   toUpdate.forEach((existing) => {
     const newDataItem = newDataByKey.get(buildKey(existing.getData()));

@@ -613,4 +613,128 @@ describe('internal-links opportunity suggestions step', () => {
     expect(suggestionLookup.firstCall.args[1]).to.equal('NEW');
     expect(suggestionLookup.secondCall.args[1]).to.equal('PENDING_VALIDATION');
   });
+
+  describe('resolves opportunity when no broken links are found', () => {
+    const suggestionStatuses = {
+      NEW: 'NEW',
+      OUTDATED: 'OUTDATED',
+      FIXED: 'FIXED',
+      ERROR: 'ERROR',
+      SKIPPED: 'SKIPPED',
+      REJECTED: 'REJECTED',
+      APPROVED: 'APPROVED',
+      IN_PROGRESS: 'IN_PROGRESS',
+      PENDING_VALIDATION: 'PENDING_VALIDATION',
+    };
+
+    // Runs the step with an existing RESOLVED-triggering opportunity carrying
+    // the provided suggestions, and returns the bulkUpdateStatus stub.
+    async function runResolveFlow(existingSuggestions) {
+      const opportunity = {
+        getId: () => 'oppty-existing',
+        getType: () => 'broken-internal-links',
+        setStatus: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves(existingSuggestions),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const Opportunity = {
+        allBySiteIdAndStatus: sinon.stub().resolves([opportunity]),
+      };
+      const bulkUpdateStatus = sinon.stub().resolves();
+
+      const step = createOpportunityAndSuggestionsStep({
+        auditType: 'broken-internal-links',
+        opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+        suggestionStatuses,
+        isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+        createContextLogger: (log) => log,
+        calculateKpiDeltasForAudit: sinon.stub().returns({}),
+        convertToOpportunity: sinon.stub(),
+        createOpportunityData: sinon.stub(),
+        syncBrokenInternalLinksSuggestions: sinon.stub(),
+        filterByAuditScope: (pages) => pages,
+        extractPathPrefix: () => null,
+        isUnscrapeable: () => false,
+        filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+        BrightDataClient: { createFrom: sinon.stub() },
+        buildLocaleSearchUrl: sinon.stub(),
+        sleep: sinon.stub().resolves(),
+        updateAuditResult: sinon.stub().resolves(),
+        isCanonicalOrHreflangLink: () => false,
+      });
+
+      const result = await step({
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          error: sinon.stub(),
+          debug: sinon.stub(),
+        },
+        site: {
+          getId: () => 'site-1',
+          getConfig: () => ({ getHandlers: () => ({}) }),
+        },
+        audit: {
+          getId: () => 'audit-1',
+          getAuditResult: () => ({ success: true, brokenInternalLinks: [] }),
+        },
+        dataAccess: { Opportunity, Suggestion: { bulkUpdateStatus } },
+        env: {},
+      });
+
+      return {
+        result, opportunity, bulkUpdateStatus,
+      };
+    }
+
+    it('outdates everything except SKIPPED and REJECTED on the RESOLVED path (SITES-44646)', async () => {
+      const suggestions = [
+        { getStatus: () => suggestionStatuses.NEW, id: 'new-1' },
+        { getStatus: () => suggestionStatuses.PENDING_VALIDATION, id: 'pending-1' },
+        { getStatus: () => suggestionStatuses.SKIPPED, id: 'skipped-1' },
+        { getStatus: () => suggestionStatuses.REJECTED, id: 'rejected-1' },
+        { getStatus: () => suggestionStatuses.FIXED, id: 'fixed-1' },
+        { getStatus: () => suggestionStatuses.APPROVED, id: 'approved-1' },
+        { getStatus: () => suggestionStatuses.IN_PROGRESS, id: 'in-progress-1' },
+        { getStatus: () => suggestionStatuses.ERROR, id: 'error-1' },
+      ];
+
+      const { result, opportunity, bulkUpdateStatus } = await runResolveFlow(suggestions);
+
+      expect(result).to.deep.equal({ status: 'complete', reportedBrokenLinks: [] });
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+
+      const [passedSuggestions, targetStatus] = bulkUpdateStatus.firstCall.args;
+      expect(targetStatus).to.equal(suggestionStatuses.OUTDATED);
+      const passedIds = passedSuggestions.map((s) => s.id);
+      // Only SKIPPED and REJECTED are protected — pre-existing behavior for
+      // everything else (NEW / PENDING_VALIDATION / FIXED / APPROVED /
+      // IN_PROGRESS / ERROR) is preserved from before this PR.
+      expect(passedIds).to.not.include.members(['skipped-1', 'rejected-1']);
+      expect(passedIds).to.have.members([
+        'new-1', 'pending-1', 'fixed-1', 'approved-1', 'in-progress-1', 'error-1',
+      ]);
+    });
+
+    it('skips bulkUpdateStatus entirely when every existing suggestion is SKIPPED or REJECTED', async () => {
+      const suggestions = [
+        { getStatus: () => suggestionStatuses.SKIPPED, id: 'skipped-1' },
+        { getStatus: () => suggestionStatuses.REJECTED, id: 'rejected-1' },
+      ];
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlow(suggestions);
+
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('handles getSuggestions returning null without throwing', async () => {
+      const { opportunity, bulkUpdateStatus } = await runResolveFlow(null);
+
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+  });
 });

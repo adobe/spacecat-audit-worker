@@ -1761,7 +1761,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     );
   });
 
-  it('keeps rejected suggestions unchanged on rerun', async () => {
+  it('does not save REJECTED suggestions on rerun (frozen updatedAt, SITES-44646)', async () => {
     const existingSuggestion = {
       getData: testSandbox.stub().returns({
         urlFrom: 'https://example.com/from1',
@@ -1786,7 +1786,40 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     });
 
     expect(existingSuggestion.setStatus).to.not.have.been.called;
-    expect(testContext.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    expect(existingSuggestion.setData).to.not.have.been.called;
+    expect(existingSuggestion.setUpdatedBy).to.not.have.been.called;
+    expect(testContext.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('does not save SKIPPED suggestions on rerun (frozen updatedAt, SITES-44646)', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.SKIPPED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 42,
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(existingSuggestion.setStatus).to.not.have.been.called;
+    expect(existingSuggestion.setData).to.not.have.been.called;
+    expect(existingSuggestion.setUpdatedBy).to.not.have.been.called;
+    expect(testContext.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
 
   it('does not preserve urlEdited when edit metadata is incomplete', async () => {
