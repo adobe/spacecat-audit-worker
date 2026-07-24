@@ -237,11 +237,19 @@ export function isExcludedCitedHost(hostname, brandTokens) {
 /**
  * Error thrown when DRS successfully responded but reported no available scraped content.
  * Signals that scraping has not completed yet for any of the requested URLs.
+ *
+ * @param {string} message
+ * @param {{total: number, available: number, scraping: number, notFound: number,
+ *   determined: boolean}} [counts] - DRS status breakdown at the time of the failure, so
+ *   callers can report why nothing was available (e.g. "67 not yet scraped"). Exposed as a
+ *   constructor parameter rather than a post-hoc property so the contract is explicit and
+ *   survives re-throwing / serialization.
  */
 export class DrsNoContentAvailableError extends Error {
-  constructor(message) {
+  constructor(message, counts) {
     super(message);
     this.name = 'DrsNoContentAvailableError';
+    this.counts = counts;
   }
 }
 
@@ -419,11 +427,10 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
   };
 
   if (available === 0) {
-    const error = new DrsNoContentAvailableError(
+    throw new DrsNoContentAvailableError(
       `No scraped content available in DRS for datasets [${datasetIds.join(', ')}] and siteId: ${siteId}`,
+      counts,
     );
-    error.counts = counts;
-    throw error;
   }
 
   const filtered = urls.filter((item) => availableUrls.has(item.url));

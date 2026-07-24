@@ -88,6 +88,15 @@ describe('offsite-audit-utils', () => {
       expect(error).to.be.instanceOf(Error);
       expect(error.name).to.equal('DrsNoContentAvailableError');
       expect(error.message).to.equal('nothing ready');
+      expect(error.counts).to.be.undefined;
+    });
+
+    it('exposes the DRS status breakdown passed to the constructor', () => {
+      const counts = {
+        total: 70, available: 0, scraping: 3, notFound: 67, determined: true,
+      };
+      const error = new DrsNoContentAvailableError('nothing ready', counts);
+      expect(error.counts).to.deep.equal(counts);
     });
   });
 
