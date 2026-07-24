@@ -317,30 +317,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const message = applyBrandScope(baseMessage, brand);
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
-
-    // TEMP DEBUG (LLMO-5531): verifying enableBrandProfile reaches this point, without
-    // sending to the real Mystique queue yet. Remove this block (and uncomment the
-    // sqs.sendMessage call + logging below) once confirmed in the Slack thread.
-    const debugSlackContext = auditResult?.slackContext;
-    const debugPayload = JSON.stringify(message, null, 2);
-    await postMessageOptional(
-      context,
-      debugSlackContext?.channelId,
-      `:mag: *[ENABLE_BRAND_PROFILE_DEBUG] reddit-analysis* enableBrandProfile=${message.data.enableBrandProfile}\n`
-        + `\`\`\`${debugPayload.slice(0, 3000)}${debugPayload.length > 3000 ? '\n... (truncated)' : ''}\`\`\``,
-      { threadTs: debugSlackContext?.threadTs },
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    const scopeForLog = brand
+      ? ` brandId=${brand.brandId}`
+      : '';
+    log.info(
+      `${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} `
+        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
     );
     return auditData;
-
-    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    // const scopeForLog = brand
-    //   ? ` brandId=${brand.brandId}`
-    //   : '';
-    // log.info(
-    //   `${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} `
-    //     + `with ${enrichedUrls.length} URLs${scopeForLog}`,
-    // );
-    // return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
