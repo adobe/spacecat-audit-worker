@@ -1,3 +1,10 @@
+## [1.505.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.5...v1.505.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* **form-a11y:** compute a real per-form selector instead of a generic 'form' ([#2814](https://github.com/adobe/spacecat-audit-worker/issues/2814)) ([47baeb9](https://github.com/adobe/spacecat-audit-worker/commit/47baeb9ba55ec882aa0bf279141224fc8cb42472))
+
 ## [1.505.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.4...v1.505.5) (2026-07-24)
 
 
