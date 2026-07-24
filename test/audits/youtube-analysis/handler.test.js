@@ -93,7 +93,16 @@ describe('YouTube Analysis Handler', function () {
     };
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
-    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => ({
+      urls,
+      counts: {
+        total: urls.length,
+        available: urls.length,
+        scraping: 0,
+        notFound: 0,
+        determined: true,
+      },
+    }));
 
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
@@ -388,7 +397,12 @@ describe('YouTube Analysis Handler', function () {
 
     it('should filter URLs by DRS availability before returning store data', async () => {
       const availableUrl = mockUrls[0];
-      mockFilterUrlsByDrsStatus.callsFake(async () => [availableUrl]);
+      mockFilterUrlsByDrsStatus.callsFake(async () => ({
+        urls: [availableUrl],
+        counts: {
+          total: mockUrls.length, available: 1, scraping: 0, notFound: mockUrls.length - 1, determined: true,
+        },
+      }));
 
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
@@ -475,7 +489,7 @@ describe('YouTube Analysis Handler', function () {
       expect(mockPostMessageOptional).to.have.been.calledWithMatch(
         context,
         'C-test',
-        /no scrape job needed, sending to Mystique/,
+        /reusing previously scraped DRS content .* no new scrape needed\. Sending to Mystique/,
         { threadTs: '1700000000.123456' },
       );
     });
@@ -489,8 +503,26 @@ describe('YouTube Analysis Handler', function () {
       expect(mockPostMessageOptional).to.have.been.calledWithMatch(
         context,
         undefined,
-        /no scrape job needed, sending to Mystique/,
+        /reusing previously scraped DRS content .* no new scrape needed\. Sending to Mystique/,
         { threadTs: undefined },
+      );
+    });
+
+    it('reports a fresh scrape when DRS timings are present (poll-dispatched)', async () => {
+      const slackContext = { channelId: 'C-test', threadTs: '1700000000.123456' };
+      const result = await youtubeAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { slackContext, timings: { drsStartedAt: 1000, drsCompletedAt: 2000 } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-test',
+        /DRS scrape finished; .* scraped URL\(s\) ready\. Sending to Mystique/,
+        { threadTs: '1700000000.123456' },
       );
     });
   });

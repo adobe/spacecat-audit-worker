@@ -109,7 +109,7 @@ export function buildOffsiteTimingLines(timings, nowMs = Date.now()) {
   const drs = hasDrs ? formatDuration(drsMs) : null;
 
   if (drs === null) {
-    return '• DRS scrape: already scraped (n/a)\n'
+    return '• DRS scrape: reused prior scrape (n/a)\n'
       + `• Suggestion generation (Mystique): ${mystique}\n`
       + `• Total: ${mystique}`;
   }
@@ -246,17 +246,108 @@ export class DrsNoContentAvailableError extends Error {
 }
 
 /**
- * Filters an array of URL objects to only those whose content is already available in DRS.
+ * Builds a per-URL DRS status breakdown that could not be determined (DRS unconfigured or
+ * every lookup failed). The URLs are passed through unfiltered, so they are all treated as
+ * "available" for downstream purposes, but `determined: false` lets callers omit misleading
+ * counts from their logs and Slack messages.
  *
- * Runs one `lookupScrapeResults` call per dataset ID. A URL passes the filter when it has
- * `status === 'available'` in **at least one** of the provided datasets, meaning Mystique
- * will be able to retrieve its scraped content.
+ * @param {number} total
+ * @returns {{total: number, available: number, scraping: number, notFound: number,
+ *   determined: boolean}}
+ */
+function undeterminedDrsCounts(total) {
+  return {
+    total, available: total, scraping: 0, notFound: 0, determined: false,
+  };
+}
+
+/**
+ * Renders the non-available portion of a DRS status breakdown as a short parenthetical,
+ * e.g. ` (3 still scraping, 2 not yet scraped — proceeding with 70 ready)`. Returns '' when
+ * the breakdown is undetermined or every URL is already available, so callers can append it
+ * unconditionally without adding noise to the common case.
  *
- * Falls back gracefully (returns the original list unchanged) when DRS is not configured or
- * every dataset lookup fails / returns null — i.e. when DRS availability cannot be determined.
+ * @param {{available: number, scraping: number, notFound: number, determined: boolean}} [counts]
+ * @returns {string}
+ */
+export function formatDrsExtras(counts) {
+  if (!counts || counts.determined === false) {
+    return '';
+  }
+  const parts = [];
+  if (counts.scraping > 0) {
+    parts.push(`${counts.scraping} still scraping`);
+  }
+  if (counts.notFound > 0) {
+    parts.push(`${counts.notFound} not yet scraped`);
+  }
+  return parts.length > 0
+    ? ` (${parts.join(', ')} — proceeding with ${counts.available} ready)`
+    : '';
+}
+
+/**
+ * Builds the Slack line an analysis audit posts when it has DRS content ready to send to
+ * Mystique. The wording is conditioned on whether a DRS scrape actually ran *this cycle*:
+ *  - `scrapedThisCycle` true  → "DRS scrape finished; N scraped URL(s) ready …" (the offsite
+ *    run scraped this cycle and the poll dispatched this analysis on completion).
+ *  - `scrapedThisCycle` false → "reusing previously scraped DRS content …; no new scrape
+ *    needed" (a direct/scheduled analysis run consuming a prior scrape).
  *
- * Throws a `DrsNoContentAvailableError` when DRS is reachable and successfully responded but
- * reported zero available URLs, meaning scraping has not completed yet.
+ * This replaces the previous unconditional "DRS content already available … no scrape job
+ * needed" wording, which contradicted the offsite run's own "scraping started"/"scrape
+ * complete" messages in the same Slack thread.
+ *
+ * @param {object} params
+ * @param {string} params.analysisName - e.g. 'reddit-analysis'
+ * @param {string} params.baseUrl
+ * @param {number} params.urlCount - number of available URLs being sent to Mystique
+ * @param {object} [params.counts] - DRS status breakdown from {@link filterUrlsByDrsStatus}
+ * @param {boolean} params.scrapedNow - whether a DRS scrape ran during this cycle
+ * @returns {string}
+ */
+export function buildAnalysisScrapeStatusMessage({
+  analysisName, baseUrl, urlCount, counts, scrapedNow,
+}) {
+  const extras = formatDrsExtras(counts);
+  if (scrapedNow) {
+    return `:mag: *${analysisName}* for *${baseUrl}* — DRS scrape finished; `
+      + `*${urlCount}* scraped URL(s) ready${extras}. Sending to Mystique.`;
+  }
+  return `:mag: *${analysisName}* for *${baseUrl}* — reusing previously scraped DRS content `
+    + `(*${urlCount}* URL(s) available${extras}); no new scrape needed. Sending to Mystique.`;
+}
+
+/**
+ * Whether a DRS scrape ran during this audit cycle, inferred from the phase-timing anchors
+ * threaded onto `auditContext.timings` by the offsite-brand-presence DRS status poll. Both
+ * anchors are present only when the poll dispatched this analysis after a scrape completed;
+ * a direct/scheduled run (reusing prior content) has neither.
+ *
+ * @param {object} [auditContext]
+ * @returns {boolean}
+ */
+export function scrapedThisCycle(auditContext) {
+  const t = auditContext?.timings;
+  return Number.isFinite(t?.drsStartedAt) && Number.isFinite(t?.drsCompletedAt);
+}
+
+/**
+ * Filters an array of URL objects to only those whose content is already available in DRS,
+ * and returns a per-URL status breakdown alongside the filtered list.
+ *
+ * Runs one `lookupScrapeResults` call per dataset ID. A URL is counted as `available` when it
+ * has `status === 'available'` in **at least one** of the provided datasets (Mystique can then
+ * retrieve its scraped content); as `scraping` when it is not available anywhere but is
+ * `scraping` in at least one dataset; otherwise it is `notFound`.
+ *
+ * Falls back gracefully (returns the original list unchanged, `counts.determined === false`)
+ * when DRS is not configured or every dataset lookup fails / returns null — i.e. when DRS
+ * availability cannot be determined.
+ *
+ * Throws a `DrsNoContentAvailableError` (with the breakdown attached as `.counts`) when DRS is
+ * reachable and successfully responded but reported zero available URLs, meaning scraping has
+ * not completed yet.
  *
  * @param {Array<{url: string}>} urls - URL objects from the URL Store
  * @param {string[]} datasetIds - DRS dataset IDs to check
@@ -265,7 +356,8 @@ export class DrsNoContentAvailableError extends Error {
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
  * @param {object} [log]
  * @param {string} [logPrefix]
- * @returns {Promise<Array<{url: string}>>} Filtered URL objects
+ * @returns {Promise<{urls: Array<{url: string}>, counts: {total: number, available: number,
+ *   scraping: number, notFound: number, determined: boolean}}>}
  * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, logPrefix) {
@@ -273,11 +365,12 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
 
   if (!drsClient || !drsClient.isConfigured()) {
     log?.info(`${prefix} DRS client not configured, skipping availability filter`);
-    return urls;
+    return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
 
   const rawUrls = urls.map((item) => item.url);
   const availableUrls = new Set();
+  const scrapingUrls = new Set();
   let atLeastOneLookupSucceeded = false;
 
   for (const datasetId of datasetIds) {
@@ -293,11 +386,14 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       for (const result of response.results) {
         if (result.status === 'available') {
           availableUrls.add(result.url);
+        } else if (result.status === 'scraping') {
+          scrapingUrls.add(result.url);
         }
       }
       log?.info(
         `${prefix} DRS lookup datasetId=${datasetId}: `
-        + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available`,
+        + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available, `
+        + `${response.summary?.scraping ?? 0} scraping, ${response.summary?.not_found ?? 0} not-found`,
       );
     } catch (error) {
       log?.warn(`${prefix} DRS lookup failed for datasetId=${datasetId}: ${error.message}, skipping`);
@@ -306,21 +402,33 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
 
   if (!atLeastOneLookupSucceeded) {
     log?.warn(`${prefix} All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`);
-    return urls;
+    return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
 
-  if (availableUrls.size === 0) {
-    throw new DrsNoContentAvailableError(
+  const total = urls.length;
+  const available = availableUrls.size;
+  // A URL only counts as "scraping" when it is not already available in any dataset — an
+  // in-progress scrape for a URL we can already read shouldn't inflate the scraping tally.
+  const scraping = [...scrapingUrls].filter((url) => !availableUrls.has(url)).length;
+  const notFound = Math.max(0, total - available - scraping);
+  const counts = {
+    total, available, scraping, notFound, determined: true,
+  };
+
+  if (available === 0) {
+    const error = new DrsNoContentAvailableError(
       `No scraped content available in DRS for datasets [${datasetIds.join(', ')}] and siteId: ${siteId}`,
     );
+    error.counts = counts;
+    throw error;
   }
 
   const filtered = urls.filter((item) => availableUrls.has(item.url));
-  const removed = urls.length - filtered.length;
+  const removed = total - filtered.length;
   if (removed > 0) {
-    log?.info(`${prefix} DRS availability filter: removed ${removed} URL(s) not yet scraped, ${filtered.length} remaining`);
+    log?.info(`${prefix} DRS availability filter: removed ${removed} URL(s) not yet scraped (${scraping} scraping, ${notFound} not-found), ${filtered.length} remaining`);
   }
-  return filtered;
+  return { urls: filtered, counts };
 }
 
 export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
