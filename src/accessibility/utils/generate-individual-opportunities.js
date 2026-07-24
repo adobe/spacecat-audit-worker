@@ -675,6 +675,11 @@ export async function createIndividualOpportunitySuggestions(
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
       scrapedUrlsSet,
+      // Accessibility has no auto-fix flow to confirm a suggestion was actually resolved
+      // externally, so IN_PROGRESS is not exempt here the way it is for other audits
+      // (e.g. CWV, prerender): a suggestion no longer detected on re-scan is outdated
+      // regardless of status.
+      outdateInProgress: true,
     });
 
     return { success: true };

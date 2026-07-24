@@ -243,6 +243,9 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
  * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
+ * @param {boolean} [params.outdateInProgress] - Defaults to false, preserving today's
+ *   behavior of leaving IN_PROGRESS suggestions alone. Pass true to also outdate them
+ *   when no longer detected.
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
@@ -252,21 +255,24 @@ export const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  outdateInProgress = false,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
 
+  const excludedStatuses = [
+    SuggestionDataAccess.STATUSES.OUTDATED,
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.ERROR,
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+    SuggestionDataAccess.STATUSES.APPROVED,
+    ...(outdateInProgress ? [] : [SuggestionDataAccess.STATUSES.IN_PROGRESS]),
+  ];
+
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-    .filter((existing) => ![
-      SuggestionDataAccess.STATUSES.OUTDATED,
-      SuggestionDataAccess.STATUSES.FIXED,
-      SuggestionDataAccess.STATUSES.ERROR,
-      SuggestionDataAccess.STATUSES.SKIPPED,
-      SuggestionDataAccess.STATUSES.REJECTED,
-      SuggestionDataAccess.STATUSES.APPROVED,
-      SuggestionDataAccess.STATUSES.IN_PROGRESS,
-    ].includes(existing.getStatus()))
+    .filter((existing) => !excludedStatuses.includes(existing.getStatus()))
     .filter((existing) => {
       // Preserve prerender suggestions that are already deployed or covered by
       // domain-wide deployment. Domain-wide rows are synthetic aggregate records,
@@ -430,6 +436,7 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
+ * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -445,6 +452,7 @@ export async function syncSuggestions({
   existingSuggestions: prefetchedSuggestions = null,
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
+  outdateInProgress = false,
 }) {
   if (!context) {
     return;
@@ -476,6 +484,7 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    outdateInProgress,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
@@ -903,6 +912,7 @@ export async function syncSuggestionsWithPublishDetection({
   mergeStatusFunction,
   statusToSetForOutdated,
   scrapedUrlsSet,
+  outdateInProgress = false,
   // Publish detection params
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
@@ -968,6 +978,7 @@ export async function syncSuggestionsWithPublishDetection({
     mergeStatusFunction,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    outdateInProgress,
     existingSuggestions,
   });
 }
