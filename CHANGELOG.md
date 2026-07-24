@@ -1,3 +1,17 @@
+## [1.505.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.3...v1.505.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* **sync:** LLMO-6483 preserve manually-edited suggestions during re-audit ([#2803](https://github.com/adobe/spacecat-audit-worker/issues/2803)) ([9159749](https://github.com/adobe/spacecat-audit-worker/commit/9159749af215a46d18f8a6955bfe3ada1fca6fe7))
+
+## [1.505.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.2...v1.505.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **a11y:** mark suggestions OUTDATED when no longer detected on re-scan ([#2797](https://github.com/adobe/spacecat-audit-worker/issues/2797)) ([658e7cb](https://github.com/adobe/spacecat-audit-worker/commit/658e7cb57195c8d39fdfc0ce0841585fef1f8e02))
+
 ## [1.505.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.1...v1.505.2) (2026-07-24)
 
 

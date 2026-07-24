@@ -35,6 +35,23 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * True when a suggestion was last touched by a non-system actor (typically a
+ * customer email stamped by the PATCH API). Used to skip regenerating/overwriting
+ * that suggestion's data on subsequent audits (LLMO-6483).
+ *
+ * This checks the entity-level `updatedBy` field — distinct from the alt-text
+ * domain-specific `data.recommendations[].isManuallyEdited` flag used in
+ * image-alt-text handlers.
+ *
+ * @param {Object} suggestion - Suggestion entity (or mock).
+ * @returns {boolean}
+ */
+export function isManuallyEditedSuggestion(suggestion) {
+  const updatedBy = suggestion?.getUpdatedBy?.();
+  return Boolean(updatedBy && updatedBy !== 'system');
+}
+
+/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -304,7 +321,8 @@ export const handleOutdatedSuggestions = async ({
         return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
       }
       return true;
-    });
+    })
+    .filter((existing) => !isManuallyEditedSuggestion(existing));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -418,7 +436,12 @@ export const isTBYBSite = checkIsTBYBSite;
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
- * For REJECTED suggestions that appear again, preserves REJECTED status
+ * For REJECTED suggestions that appear again, preserves REJECTED status.
+ * Suggestions with updatedBy set to a non-system actor (customer edits) are
+ * protected from data overwrites when they are still present in the current
+ * audit data (matched-key path). They are also excluded from the OUTDATED and
+ * reconcile-disappeared paths. Note: this is distinct from the alt-text
+ * domain-specific `isManuallyEdited` data flag (LLMO-6483).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -532,6 +555,14 @@ export async function syncSuggestions({
 
     if (FROZEN_STATUSES.includes(existing.getStatus())) {
       log.debug(`Skipping ${existing.getStatus()} suggestion ${existingKey} - terminal status suggestions are never updated`);
+      return;
+    }
+
+    // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
+    // Applies to NEW and deployed statuses alike. updatedBy may be a user email
+    // — never log it (PII).
+    if (isManuallyEditedSuggestion(existing)) {
+      log.debug(`Skipping manually-edited suggestion ${existingKey}`);
       return;
     }
 
@@ -693,6 +724,9 @@ export async function reconcileDisappearedSuggestions({
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
     const candidates = disappearedSuggestions.filter((s) => {
+      if (isManuallyEditedSuggestion(s)) {
+        return false;
+      }
       const status = s?.getStatus?.();
       if (newStatus && status === newStatus) {
         return true;

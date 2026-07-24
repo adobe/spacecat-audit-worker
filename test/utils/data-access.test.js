@@ -21,6 +21,7 @@ import {
   getAuditTargetUrls,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
+  handleOutdatedSuggestions,
   getImsOrgId,
   retrieveAuditById,
   keepSameDataFunction,
@@ -1053,6 +1054,197 @@ describe('data-access', () => {
       );
     });
 
+    it('should not overwrite a manually-edited NEW suggestion (updatedBy is a user email)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      const debugMessages = mockLogger.debug.args.map((a) => a[0]);
+      const skipMsg = debugMessages.find(
+        (msg) => /Skipping manually-edited suggestion/.test(msg),
+      );
+      expect(skipMsg).to.be.a('string');
+      // Must not log the customer email (PII) in ANY log call
+      const allLogMessages = [
+        ...mockLogger.debug.args,
+        ...mockLogger.info.args,
+        ...mockLogger.warn.args,
+      ].flat().filter((a) => typeof a === 'string');
+      const piiLeak = allLogMessages.find((msg) => msg.includes('customer@example.com'));
+      expect(piiLeak, 'customer email must not appear in any log message').to.be.undefined;
+    });
+
+    it('should not overwrite a manually-edited deployed (APPROVED) suggestion', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.APPROVED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('should not overwrite a manually-edited deployed (IN_PROGRESS) suggestion', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'customer edited title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'LLM regenerated title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('should update a suggestion when updatedBy is null (legacy, not manually edited)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns(null),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
+    it('should update a suggestion when updatedBy is system (not manually edited)', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        getUpdatedBy: sinon.stub().returns('system'),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
     it('should allow FIXED suggestion to be updated when custom mergeStatusFunction detects regression', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', url: 'https://example.com/page1' },
@@ -2001,6 +2193,40 @@ describe('data-access', () => {
           'OUTDATED',
         );
         expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should not mark a manually-edited suggestion as OUTDATED even when its key disappears', async () => {
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+            getUpdatedBy: sinon.stub().returns('customer@example.com'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+            getUpdatedBy: sinon.stub().returns(null),
+          },
+        ];
+
+        const newDataKeys = new Set();
+
+        await handleOutdatedSuggestions({
+          context,
+          existingSuggestions,
+          newDataKeys,
+          buildKey: (data) => data.key,
+        });
+
+        // Only suggestion 2 (not manually edited) should be marked OUTDATED
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+        const [outdatedList] = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args;
+        expect(outdatedList).to.have.lengthOf(1);
+        expect(outdatedList[0].id).to.equal('2');
       });
 
       it('should handle mixed scenario: some URLs scraped, some not', async () => {
@@ -2962,6 +3188,29 @@ describe('data-access', () => {
       expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
       expect(mockSuggestionCollection.saveMany).to.have.been.called;
       expect(mockOpportunity.addFixEntities).to.have.been.called;
+    });
+
+    it('should skip manually-edited NEW suggestions even when issue is fixed', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getUpdatedBy: sinon.stub().returns('customer@example.com'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
     });
 
     it('should skip suggestions not in NEW status', async () => {
