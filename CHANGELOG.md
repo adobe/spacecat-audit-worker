@@ -1,3 +1,10 @@
+## [1.505.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.2...v1.505.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **a11y:** mark suggestions OUTDATED when no longer detected on re-scan ([#2797](https://github.com/adobe/spacecat-audit-worker/issues/2797)) ([658e7cb](https://github.com/adobe/spacecat-audit-worker/commit/658e7cb57195c8d39fdfc0ce0841585fef1f8e02))
+
 ## [1.505.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.1...v1.505.2) (2026-07-24)
 
 
