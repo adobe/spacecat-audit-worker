@@ -259,11 +259,12 @@ export const handleOutdatedSuggestions = async ({
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     // SITES-44646: when a suggestion's issue is no longer detected, transition
-    // it to OUTDATED — including SKIPPED and REJECTED (operator decisions on a
-    // now non-existent issue is a nonsense state; the state IS changing so the
-    // updatedAt bump is legitimate). Preserve FIXED (customer already resolved),
-    // APPROVED / IN_PROGRESS (in-flight work), OUTDATED (already terminal),
-    // and ERROR (needs re-dispatch via defaultMergeStatusFunction).
+    // it to OUTDATED — including SKIPPED and REJECTED (an operator decision
+    // that referred to an issue no longer detected is stale; the state IS
+    // changing so the updatedAt bump is legitimate). Preserve FIXED (customer
+    // already resolved), APPROVED / IN_PROGRESS (in-flight work), OUTDATED
+    // (already terminal), and ERROR (needs re-dispatch via
+    // defaultMergeStatusFunction).
     .filter((existing) => ![
       SuggestionDataAccess.STATUSES.OUTDATED,
       SuggestionDataAccess.STATUSES.FIXED,
@@ -979,9 +980,10 @@ export async function syncSuggestionsWithPublishDetection({
 /**
  * Resolves the existing NEW opportunity for the given site and audit type when no issues are
  * detected. Marks NEW / PENDING_VALIDATION / SKIPPED / REJECTED suggestions as OUTDATED —
- * SKIPPED and REJECTED are operator decisions on a now non-existent issue, so transitioning
- * them to OUTDATED is a legitimate state change (SITES-44646). Preserves FIXED (customer
- * already resolved), APPROVED / IN_PROGRESS (in-flight work), and existing OUTDATED / ERROR.
+ * SKIPPED and REJECTED are operator decisions referring to an issue that is no longer
+ * detected, so transitioning them to OUTDATED is a legitimate state change (SITES-44646).
+ * Preserves FIXED (customer already resolved), APPROVED / IN_PROGRESS (in-flight work),
+ * and existing OUTDATED / ERROR.
  *
  * @param {string} siteId - The site ID.
  * @param {string} auditType - The audit type (e.g. 'canonical', 'broken-backlinks').
