@@ -688,14 +688,13 @@ describe('internal-links opportunity suggestions step', () => {
       };
     }
 
-    it('outdates NEW/PENDING_VALIDATION suggestions and preserves terminal statuses (SITES-44646)', async () => {
+    it('outdates everything except SKIPPED and REJECTED on the RESOLVED path (SITES-44646)', async () => {
       const suggestions = [
         { getStatus: () => suggestionStatuses.NEW, id: 'new-1' },
         { getStatus: () => suggestionStatuses.PENDING_VALIDATION, id: 'pending-1' },
         { getStatus: () => suggestionStatuses.SKIPPED, id: 'skipped-1' },
         { getStatus: () => suggestionStatuses.REJECTED, id: 'rejected-1' },
         { getStatus: () => suggestionStatuses.FIXED, id: 'fixed-1' },
-        { getStatus: () => suggestionStatuses.OUTDATED, id: 'outdated-1' },
         { getStatus: () => suggestionStatuses.APPROVED, id: 'approved-1' },
         { getStatus: () => suggestionStatuses.IN_PROGRESS, id: 'in-progress-1' },
         { getStatus: () => suggestionStatuses.ERROR, id: 'error-1' },
@@ -710,18 +709,19 @@ describe('internal-links opportunity suggestions step', () => {
       const [passedSuggestions, targetStatus] = bulkUpdateStatus.firstCall.args;
       expect(targetStatus).to.equal(suggestionStatuses.OUTDATED);
       const passedIds = passedSuggestions.map((s) => s.id);
-      expect(passedIds).to.have.members(['new-1', 'pending-1']);
-      expect(passedIds).to.not.include.members([
-        'skipped-1', 'rejected-1', 'fixed-1', 'outdated-1',
-        'approved-1', 'in-progress-1', 'error-1',
+      // Only SKIPPED and REJECTED are protected — pre-existing behavior for
+      // everything else (NEW / PENDING_VALIDATION / FIXED / APPROVED /
+      // IN_PROGRESS / ERROR) is preserved from before this PR.
+      expect(passedIds).to.not.include.members(['skipped-1', 'rejected-1']);
+      expect(passedIds).to.have.members([
+        'new-1', 'pending-1', 'fixed-1', 'approved-1', 'in-progress-1', 'error-1',
       ]);
     });
 
-    it('skips bulkUpdateStatus entirely when every existing suggestion is terminal', async () => {
+    it('skips bulkUpdateStatus entirely when every existing suggestion is SKIPPED or REJECTED', async () => {
       const suggestions = [
         { getStatus: () => suggestionStatuses.SKIPPED, id: 'skipped-1' },
         { getStatus: () => suggestionStatuses.REJECTED, id: 'rejected-1' },
-        { getStatus: () => suggestionStatuses.FIXED, id: 'fixed-1' },
       ];
 
       const { opportunity, bulkUpdateStatus } = await runResolveFlow(suggestions);

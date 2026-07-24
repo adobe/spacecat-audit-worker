@@ -100,18 +100,12 @@ export function createOpportunityAndSuggestionsStep({
         log.info('no broken internal links found, updating opportunity to RESOLVED');
         await opportunity.setStatus(opptyStatuses.RESOLVED);
         const suggestions = await opportunity.getSuggestions();
-        // Preserve operator decisions: SKIPPED / REJECTED (and other terminal
-        // statuses) must not be flipped to OUTDATED — that would both destroy
-        // the decision and bump updatedAt, corrupting the ASO "Moved to
-        // Rejected / Skipped" metrics (SITES-44646).
+        // Preserve operator decisions on SKIPPED / REJECTED — flipping those to
+        // OUTDATED would destroy the decision and bump updatedAt, corrupting
+        // the ASO "Moved to Rejected / Skipped" metrics (SITES-44646).
         const suggestionsToOutdate = (suggestions || []).filter((s) => ![
-          suggestionStatuses.OUTDATED,
-          suggestionStatuses.FIXED,
-          suggestionStatuses.ERROR,
           suggestionStatuses.SKIPPED,
           suggestionStatuses.REJECTED,
-          suggestionStatuses.APPROVED,
-          suggestionStatuses.IN_PROGRESS,
         ].includes(s.getStatus()));
         if (isNonEmptyArray(suggestionsToOutdate)) {
           await Suggestion.bulkUpdateStatus(suggestionsToOutdate, suggestionStatuses.OUTDATED);
