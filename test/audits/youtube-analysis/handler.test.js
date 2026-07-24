@@ -489,7 +489,7 @@ describe('YouTube Analysis Handler', function () {
       expect(mockPostMessageOptional).to.have.been.calledWithMatch(
         context,
         'C-test',
-        /reusing previously scraped DRS content .* no new scrape needed\. Sending to Mystique/,
+        /reusing previously scraped DRS content .* Sending .* to Mystique for analysis/,
         { threadTs: '1700000000.123456' },
       );
     });
@@ -503,7 +503,7 @@ describe('YouTube Analysis Handler', function () {
       expect(mockPostMessageOptional).to.have.been.calledWithMatch(
         context,
         undefined,
-        /reusing previously scraped DRS content .* no new scrape needed\. Sending to Mystique/,
+        /reusing previously scraped DRS content .* Sending .* to Mystique for analysis/,
         { threadTs: undefined },
       );
     });
@@ -521,7 +521,7 @@ describe('YouTube Analysis Handler', function () {
       expect(mockPostMessageOptional).to.have.been.calledWithMatch(
         context,
         'C-test',
-        /DRS scrape finished; .* scraped URL\(s\) ready\. Sending to Mystique/,
+        /DRS scrape finished\. Sending .* to Mystique for analysis/,
         { threadTs: '1700000000.123456' },
       );
     });

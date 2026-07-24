@@ -329,19 +329,19 @@ describe('offsite-audit-utils', () => {
     it('reports scraping only', () => {
       expect(formatDrsExtras({
         available: 5, scraping: 3, notFound: 0, determined: true,
-      })).to.equal(' (3 still scraping — proceeding with 5 ready)');
+      })).to.equal(' (3 still scraping)');
     });
 
     it('reports not-found only', () => {
       expect(formatDrsExtras({
         available: 5, scraping: 0, notFound: 2, determined: true,
-      })).to.equal(' (2 not yet scraped — proceeding with 5 ready)');
+      })).to.equal(' (2 not yet scraped)');
     });
 
     it('reports both scraping and not-found', () => {
       expect(formatDrsExtras({
         available: 5, scraping: 3, notFound: 2, determined: true,
-      })).to.equal(' (3 still scraping, 2 not yet scraped — proceeding with 5 ready)');
+      })).to.equal(' (3 still scraping, 2 not yet scraped)');
     });
   });
 
@@ -357,8 +357,8 @@ describe('offsite-audit-utils', () => {
         scrapedNow: true,
       });
       expect(msg).to.equal(
-        ':mag: *reddit-analysis* for *https://example.com* — DRS scrape finished; '
-        + '*12* scraped URL(s) ready. Sending to Mystique.',
+        ':mag: *reddit-analysis* for *https://example.com* — DRS scrape finished. '
+        + 'Sending *12* available URL(s) from the URL store to Mystique for analysis.',
       );
     });
 
@@ -374,8 +374,8 @@ describe('offsite-audit-utils', () => {
       });
       expect(msg).to.equal(
         ':mag: *cited-analysis* for *https://example.com* — reusing previously scraped DRS content '
-        + '(*8* URL(s) available (2 still scraping, 1 not yet scraped — proceeding with 8 ready)); '
-        + 'no new scrape needed. Sending to Mystique.',
+        + '(no new scrape needed). Sending *8* available URL(s) from the URL store to Mystique '
+        + 'for analysis (2 still scraping, 1 not yet scraped).',
       );
     });
   });

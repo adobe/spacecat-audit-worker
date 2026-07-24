@@ -263,11 +263,11 @@ function undeterminedDrsCounts(total) {
 
 /**
  * Renders the non-available portion of a DRS status breakdown as a short parenthetical,
- * e.g. ` (3 still scraping, 2 not yet scraped — proceeding with 70 ready)`. Returns '' when
- * the breakdown is undetermined or every URL is already available, so callers can append it
- * unconditionally without adding noise to the common case.
+ * e.g. ` (3 still scraping, 2 not yet scraped)`. Returns '' when the breakdown is undetermined
+ * or every URL is already available, so callers can append it unconditionally without adding
+ * noise to the common case.
  *
- * @param {{available: number, scraping: number, notFound: number, determined: boolean}} [counts]
+ * @param {{scraping: number, notFound: number, determined: boolean}} [counts]
  * @returns {string}
  */
 export function formatDrsExtras(counts) {
@@ -281,27 +281,31 @@ export function formatDrsExtras(counts) {
   if (counts.notFound > 0) {
     parts.push(`${counts.notFound} not yet scraped`);
   }
-  return parts.length > 0
-    ? ` (${parts.join(', ')} — proceeding with ${counts.available} ready)`
-    : '';
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
 
 /**
  * Builds the Slack line an analysis audit posts when it has DRS content ready to send to
- * Mystique. The wording is conditioned on whether a DRS scrape actually ran *this cycle*:
- *  - `scrapedThisCycle` true  → "DRS scrape finished; N scraped URL(s) ready …" (the offsite
- *    run scraped this cycle and the poll dispatched this analysis on completion).
- *  - `scrapedThisCycle` false → "reusing previously scraped DRS content …; no new scrape
- *    needed" (a direct/scheduled analysis run consuming a prior scrape).
+ * Mystique. Two things the wording must make unambiguous, because both previously confused
+ * readers of the thread:
  *
- * This replaces the previous unconditional "DRS content already available … no scrape job
- * needed" wording, which contradicted the offsite run's own "scraping started"/"scrape
- * complete" messages in the same Slack thread.
+ *  1. Destination — these URLs are sent to *Mystique for analysis*, NOT submitted to DRS for
+ *     scraping. (Scraping is the offsite-brand-presence run's job; this is the consume side.)
+ *  2. Source/scope — `urlCount` is the count of available URLs in the *full* URL store for
+ *     this audit type (accumulated across runs), not this run's freshly-selected scrape batch.
+ *     That is why it can exceed the "selected N to scrape this run" number the offsite run
+ *     reports (e.g. 156 to Mystique vs. 70 selected this run).
+ *
+ * The lead-in is conditioned on whether a DRS scrape actually ran *this cycle*:
+ *  - `scrapedNow` true  → "DRS scrape finished." (the offsite run scraped this cycle and the
+ *    poll dispatched this analysis on completion).
+ *  - `scrapedNow` false → "reusing previously scraped DRS content (no new scrape needed)."
+ *    (a direct/scheduled analysis run consuming a prior scrape).
  *
  * @param {object} params
  * @param {string} params.analysisName - e.g. 'reddit-analysis'
  * @param {string} params.baseUrl
- * @param {number} params.urlCount - number of available URLs being sent to Mystique
+ * @param {number} params.urlCount - available URLs from the full store being sent to Mystique
  * @param {object} [params.counts] - DRS status breakdown from {@link filterUrlsByDrsStatus}
  * @param {boolean} params.scrapedNow - whether a DRS scrape ran during this cycle
  * @returns {string}
@@ -310,12 +314,11 @@ export function buildAnalysisScrapeStatusMessage({
   analysisName, baseUrl, urlCount, counts, scrapedNow,
 }) {
   const extras = formatDrsExtras(counts);
-  if (scrapedNow) {
-    return `:mag: *${analysisName}* for *${baseUrl}* — DRS scrape finished; `
-      + `*${urlCount}* scraped URL(s) ready${extras}. Sending to Mystique.`;
-  }
-  return `:mag: *${analysisName}* for *${baseUrl}* — reusing previously scraped DRS content `
-    + `(*${urlCount}* URL(s) available${extras}); no new scrape needed. Sending to Mystique.`;
+  const leadIn = scrapedNow
+    ? 'DRS scrape finished.'
+    : 'reusing previously scraped DRS content (no new scrape needed).';
+  return `:mag: *${analysisName}* for *${baseUrl}* — ${leadIn} `
+    + `Sending *${urlCount}* available URL(s) from the URL store to Mystique for analysis${extras}.`;
 }
 
 /**

@@ -727,7 +727,8 @@ async function notifyUrlsStored(storedByDomain, baseURL, context, channelId, thr
   await postMessageOptional(
     context,
     channelId,
-    `:package: *offsite-brand-presence* for *${baseURL}* — collected & stored *${total}* URL(s) to scrape (${perBucket}).`,
+    `:package: *offsite-brand-presence* for *${baseURL}* — selected *${total}* top URL(s) to scrape this run (${perBucket}). `
+      + 'The URL store may hold more from earlier runs; each analysis sends the full available store to Mystique.',
     { threadTs },
   );
 }

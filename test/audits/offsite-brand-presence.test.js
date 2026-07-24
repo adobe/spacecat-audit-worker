@@ -1468,7 +1468,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(storeCtx).to.equal(context);
       expect(storeChannelId).to.equal(SLACK_CHANNEL_ID);
       expect(storeOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
-      expect(storeText).to.include('collected & stored');
+      expect(storeText).to.include('selected');
+      expect(storeText).to.include('to scrape this run');
       expect(storeText).to.include(BASE_URL);
 
       const callText = mockPostMessageOptional.secondCall.args[2];
