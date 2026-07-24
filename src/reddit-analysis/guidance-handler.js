@@ -27,6 +27,10 @@ import {
   resolveEvergreenOffsiteOpportunity,
   isSuppressedRun,
 } from '../common/offsite-refresh.js';
+import {
+  prepareSuppressedRunSnapshot,
+  prepareSupersededRunSnapshot,
+} from '../common/offsite-snapshot.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 const LOG_PREFIX = '[Reddit]';
@@ -114,8 +118,27 @@ export default async function handler(message, context) {
     const evergreenOpportunity = await resolveEvergreenOffsiteOpportunity({
       dataAccess, siteId, auditType, log,
     });
+    const suppressedRun = isSuppressedRun(incomingStatus);
+    const preparedOpportunityPersistence = suppressedRun
+      ? await prepareSuppressedRunSnapshot({
+        dataAccess,
+        siteId,
+        auditType,
+        triggerAuditId: auditId,
+        opportunityData,
+        evergreenOpportunity,
+        log,
+      })
+      : await prepareSupersededRunSnapshot({
+        dataAccess,
+        siteId,
+        auditType,
+        triggerAuditId: auditId,
+        opportunityData,
+        evergreenOpportunity,
+        log,
+      });
 
-    // Suppressed runs create a hidden record; surfaced runs reuse the evergreen record.
     const opportunity = await persistOffsiteOpportunity(
       baseUrl,
       {
@@ -126,12 +149,7 @@ export default async function handler(message, context) {
       context,
       createOpportunityData,
       auditType,
-      {
-        opportunityData,
-        existingOpportunity: isSuppressedRun(incomingStatus)
-          ? null
-          : evergreenOpportunity,
-      },
+      preparedOpportunityPersistence,
     );
 
     // Save the scoped opportunity before syncing its suggestions.

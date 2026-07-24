@@ -36,6 +36,10 @@ describe('Cited Analysis Guidance Handler', () => {
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
+  let supersededRunSnapshotCreationStub;
+  let findSnapshotByTriggerAuditIdStub;
+  let prepareSuppressedRunSnapshotStub;
+  let prepareSupersededRunSnapshotStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -70,6 +74,58 @@ describe('Cited Analysis Guidance Handler', () => {
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     // Default: brand resolved with no match. Per-test cases override.
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
+    supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
+    findSnapshotByTriggerAuditIdStub = sandbox.stub().resolves(null);
+    prepareSuppressedRunSnapshotStub = sandbox.stub().callsFake(async ({
+      triggerAuditId,
+      opportunityData,
+      evergreenOpportunity,
+    }) => {
+      const existingSuppressedRunSnapshot = triggerAuditId
+        ? await findSnapshotByTriggerAuditIdStub()
+        : null;
+      return {
+        opportunityToUpdate: existingSuppressedRunSnapshot,
+        opportunityData: {
+          ...opportunityData,
+          tags: [...new Set([...(opportunityData.tags || []), 'offsite-snapshot'])],
+          data: {
+            ...(opportunityData.data || {}),
+            snapshot: {
+              ...(evergreenOpportunity
+                ? { evergreenOpportunityId: evergreenOpportunity.getId() }
+                : {}),
+              kind: 'suppressed-refresh',
+              ...(triggerAuditId ? { triggerAuditId } : {}),
+            },
+          },
+        },
+      };
+    });
+    prepareSupersededRunSnapshotStub = sandbox.stub().callsFake(async ({
+      dataAccess,
+      siteId: refreshSiteId,
+      auditType,
+      triggerAuditId,
+      opportunityData,
+      evergreenOpportunity,
+      log,
+    }) => {
+      if (evergreenOpportunity) {
+        await supersededRunSnapshotCreationStub({
+          dataAccess,
+          siteId: refreshSiteId,
+          auditType,
+          triggerAuditId,
+          evergreenOpportunity,
+          log,
+        });
+        if (!triggerAuditId) {
+          log.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+        }
+      }
+      return { opportunityData, opportunityToUpdate: evergreenOpportunity };
+    });
 
     handler = await esmock('../../../src/cited-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -87,6 +143,10 @@ describe('Cited Analysis Guidance Handler', () => {
         // Use the REAL applyScopeToOpportunity — see import above.
         applyScopeToOpportunity: realApplyScopeToOpportunity,
       },
+      '../../../src/common/offsite-snapshot.js': {
+        prepareSuppressedRunSnapshot: prepareSuppressedRunSnapshotStub,
+        prepareSupersededRunSnapshot: prepareSupersededRunSnapshotStub,
+      },
     });
 
     context = new MockContextBuilder()
@@ -99,10 +159,7 @@ describe('Cited Analysis Guidance Handler', () => {
           Audit: {
             findById: sandbox.stub().resolves(mockAudit),
           },
-          // withOverrides() shallow-replaces the whole dataAccess object, so Opportunity
-          // must be provided here too — otherwise resolveEvergreenOpportunity's internal
-          // Opportunity.allBySiteIdAndStatus call throws on `undefined` for every test in
-          // this file that doesn't set its own dataAccess.Opportunity mock below.
+          // withOverrides() replaces dataAccess, so include the default lookup.
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
@@ -1158,10 +1215,10 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
-      // existingOpportunity is explicitly null so persistOffsiteOpportunity creates a record
+      // opportunityToUpdate is explicitly null so persistOffsiteOpportunity creates a record
       // a new opportunity, never reusing (or re-querying for) the visible one.
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg).to.have.property('existingOpportunity', null);
+      expect(propsArg).to.have.property('opportunityToUpdate', null);
     });
 
     // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
@@ -1188,7 +1245,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg).to.have.property('existingOpportunity', null);
+      expect(propsArg).to.have.property('opportunityToUpdate', null);
     });
 
     it('should hand the resolved evergreen to persistOffsiteOpportunity for a surfaced run', async () => {
@@ -1209,7 +1266,7 @@ describe('Cited Analysis Guidance Handler', () => {
       // A surfaced (NEW) run must reuse the already-resolved evergreen opportunity directly —
       // never trigger a second, independent query inside persistOffsiteOpportunity.
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg.existingOpportunity).to.equal(visibleOpportunity);
+      expect(propsArg.opportunityToUpdate).to.equal(visibleOpportunity);
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
     });
 
@@ -1247,7 +1304,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(saveManyStub.firstCall.args[0]).to.deep.equal([older]);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       // The de-duplicated evergreen opportunity (newer) is what gets reused, not a fresh re-query.
-      expect(convertToOpportunityStub.firstCall.args[5].existingOpportunity).to.equal(newer);
+      expect(convertToOpportunityStub.firstCall.args[5].opportunityToUpdate).to.equal(newer);
     });
 
     it('should propagate the error (badRequest) when duplicate retirement fails, without proceeding', async () => {
@@ -1291,9 +1348,229 @@ describe('Cited Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       // A transient read failure must never be treated as "nothing exists yet" (which
-      // would otherwise create a duplicate NEW opportunity) — conversion is never attempted.
+      // would otherwise create a duplicate NEW opportunity) — persistence is never attempted.
       expect(convertToOpportunityStub).to.not.have.been.called;
       expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+  });
+
+  describe('Suppressed and superseded run snapshots', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('snapshots the evergreen opportunity before a surfaced run overwrites it', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      await handler.default(validMessage(), context);
+
+      expect(supersededRunSnapshotCreationStub).to.have.been.calledOnce;
+      const callArgs = supersededRunSnapshotCreationStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('cited-analysis');
+      expect(callArgs.triggerAuditId).to.equal(auditId);
+      expect(callArgs.evergreenOpportunity).to.equal(visibleOpportunity);
+    });
+
+    it('does not attempt a snapshot on a genuine first-ever run (no evergreen exists yet)', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      await handler.default(validMessage(), context);
+
+      expect(supersededRunSnapshotCreationStub).to.not.have.been.called;
+    });
+
+    it('passes suppressed run snapshot identity in the initial create data, linked to the evergreen', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: {
+              status: 'IGNORED',
+              tags: ['custom-tag'],
+              data: { qa: 'suppressed' },
+            },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include.members(['custom-tag', 'offsite-snapshot']);
+      expect(propsArg.opportunityData.data).to.deep.equal({
+        qa: 'suppressed',
+        snapshot: {
+          evergreenOpportunityId: 'existing-opp-1',
+          kind: 'suppressed-refresh',
+          triggerAuditId: auditId,
+        },
+      });
+    });
+
+    it('passes initial suppressed run snapshot identity without a linked evergreen when none exists yet', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include('offsite-snapshot');
+      expect(propsArg.opportunityData.data.snapshot).to.deep.equal({
+        kind: 'suppressed-refresh',
+        triggerAuditId: auditId,
+      });
+    });
+
+    it('does not label a surfaced (NEW) run as a snapshot', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      await handler.default(validMessage(), context);
+    });
+
+    it('reuses and links an initially-unlinked snapshot when redelivered after an evergreen appears', async () => {
+      const existingSuppressedRunSnapshot = {
+        getId: sandbox.stub().returns('snapshot-opp-1'),
+      };
+      findSnapshotByTriggerAuditIdStub.resolves(existingSuppressedRunSnapshot);
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityToUpdate).to.equal(existingSuppressedRunSnapshot);
+      expect(propsArg.opportunityData.data.snapshot.evergreenOpportunityId)
+        .to.equal('existing-opp-1');
+    });
+
+    it('propagates the error (badRequest) when the suppressed-run snapshot idempotency lookup fails', async () => {
+      findSnapshotByTriggerAuditIdStub.rejects(new Error('DB down'));
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
+    it('creates a superseded snapshot for a surfaced refresh when auditId is missing', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('cited-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await handler.default(validMessage({ auditId: undefined }), context);
+
+      expect(result.status).to.equal(200);
+      expect(supersededRunSnapshotCreationStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWithMatch(/idempotency.*traceability/i);
+    });
+
+    it('creates a managed suppressed snapshot without lookup when auditId is missing', async () => {
+      const message = validMessage({
+        auditId: undefined,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED', data: { qa: 'legacy' } },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(findSnapshotByTriggerAuditIdStub).to.not.have.been.called;
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include('offsite-snapshot');
+      expect(propsArg.opportunityData.data).to.deep.equal({
+        qa: 'legacy',
+        snapshot: { kind: 'suppressed-refresh' },
+      });
+      expect(propsArg.opportunityData.data.snapshot).to.not.have.property('triggerAuditId');
     });
   });
 });
