@@ -1578,6 +1578,29 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
     });
+
+    it('forwards enableBrandProfile to the poll message auditContext when set on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { enableBrandProfile: 'true' },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableBrandProfile).to.equal(true);
+    });
+
+    it('omits enableBrandProfile from the poll message auditContext when absent', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableBrandProfile).to.be.undefined;
+    });
   });
 
   describe('Domain-scoped runs (granular single-audit triggers)', () => {

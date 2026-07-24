@@ -21,6 +21,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveEnableBrandProfile,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
@@ -235,7 +236,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit from Slack)
+ *   (e.g. urlLimit, enableBrandProfile from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
@@ -248,6 +249,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
   log.info(`${LOG_PREFIX} Starting Cited analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
 
   try {
     const citedConfig = getCitedConfig(site);
@@ -297,7 +300,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...citedConfig, urlLimit },
+        config: { ...citedConfig, urlLimit, enableBrandProfile },
         storeData,
         ...(slackContext && { slackContext }),
         timings: { analysisStartedAt, ...(auditContext.timings || {}) },
@@ -334,7 +337,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping cited URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext);
+      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -350,7 +353,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         };
       }
       log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for top-cited`);
-      await requestOffsiteScrape(context, siteId, 'top-cited', auditContext.slackContext);
+      await requestOffsiteScrape(context, siteId, 'top-cited', auditContext.slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -437,6 +440,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
+        enableBrandProfile: config.enableBrandProfile ?? false,
         urls: enrichedUrls,
       },
     };

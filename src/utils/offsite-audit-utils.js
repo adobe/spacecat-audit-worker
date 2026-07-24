@@ -328,6 +328,37 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
 }
 
 /**
+ * Optional `enableBrandProfile` flag from `auditContext.messageData.enableBrandProfile`
+ * (RunnerAudit), same Slack-originated mechanism as {@link resolveMystiqueUrlLimit}.
+ * Runners merge the resolved value into `auditResult.config.enableBrandProfile` for
+ * post-processors, which forward it to Mystique on `data.enableBrandProfile`.
+ *
+ * Slack delivers keyword values as strings, so only the strings 'true'/'false' or real
+ * booleans are accepted; anything else (including absent) resolves to `false`.
+ *
+ * @param {object} [auditContext]
+ * @param {boolean|string} [auditContext.messageData.enableBrandProfile]
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {boolean}
+ */
+export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
+  const prefix = logPrefix ?? '';
+  const ctx = auditContext ?? {};
+  const raw = ctx.messageData?.enableBrandProfile;
+  if (raw === true || raw === 'true') {
+    return true;
+  }
+  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false') {
+    return false;
+  }
+  log?.warn(
+    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw)}), using default false`,
+  );
+  return false;
+}
+
+/**
  * Enqueues a domain-scoped offsite-brand-presence run so a single analysis audit can
  * obtain its own DRS-scraped content when none is available yet. The scoped run
  * collects + scrapes only `domainScope`, then (after DRS completes) re-triggers the
@@ -337,12 +368,21 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
  * @param {string} siteId - The site ID
  * @param {string} domainScope - An OFFSITE_DOMAINS key (e.g. 'reddit.com') or 'top-cited'
  * @param {object} [slackContext] - Forwarded so notifications/results post to the thread
+ * @param {boolean} [enableBrandProfile] - Forwarded so the re-triggered analysis audit (once
+ *   this scoped offsite-brand-presence run completes DRS scraping) still resolves the flag
+ *   originally requested on Slack, instead of losing it across the scrape round-trip.
  *
  * Best-effort: a transient Configuration/SQS failure is logged and swallowed rather than
  * thrown, so the analysis audit degrades to its pending_scrape result instead of failing
  * the run with an opaque infra error.
  */
-export async function requestOffsiteScrape(context, siteId, domainScope, slackContext) {
+export async function requestOffsiteScrape(
+  context,
+  siteId,
+  domainScope,
+  slackContext,
+  enableBrandProfile,
+) {
   const { sqs, dataAccess, log } = context;
   try {
     const configuration = await dataAccess.Configuration.findLatest();
@@ -351,7 +391,7 @@ export async function requestOffsiteScrape(context, siteId, domainScope, slackCo
       siteId,
       auditContext: {
         ...(slackContext && { slackContext }),
-        messageData: { domainScope },
+        messageData: { domainScope, ...(enableBrandProfile && { enableBrandProfile }) },
       },
     });
     log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);
