@@ -543,7 +543,7 @@ describe('Image Alt Text Handler', () => {
         );
       });
 
-      it('should NOT re-process suggestions already in SKIPPED, FIXED, or OUTDATED status', async () => {
+      it('should NOT re-process suggestions already in SKIPPED, REJECTED, FIXED, or OUTDATED status', async () => {
         const existingSuggestions = [
           {
             getData: () => ({
@@ -571,6 +571,15 @@ describe('Image Alt Text Handler', () => {
               }],
             }),
             getStatus: () => 'OUTDATED',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/rejected-page',
+                imageUrl: 'https://example.com/image4.jpg',
+              }],
+            }),
+            getStatus: () => 'REJECTED',
           },
         ];
 

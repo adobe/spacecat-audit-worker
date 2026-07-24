@@ -541,7 +541,8 @@ describe('Missing Alt Text Guidance Handler', () => {
   });
 
   it('should handle case when no existing suggestions need to be removed', async () => {
-    // Set up existing suggestions that are all SKIPPED or FIXED
+    // Terminal statuses SKIPPED / REJECTED / FIXED must not be flipped to OUTDATED
+    // by guidance replies (SITES-44646).
     const existingSuggestions = [
       {
         getData: () => ({
@@ -562,6 +563,16 @@ describe('Missing Alt Text Guidance Handler', () => {
           }],
         }),
         getStatus: () => 'FIXED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-3',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image3.jpg',
+          }],
+        }),
+        getStatus: () => 'REJECTED',
       },
     ];
 

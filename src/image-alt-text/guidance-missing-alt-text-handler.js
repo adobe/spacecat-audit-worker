@@ -98,7 +98,9 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     }
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
-    const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
+    // REJECTED preserved alongside SKIPPED — both are operator decisions
+    // whose updatedAt must not be bumped by guidance replies (SITES-44646).
+    const IGNORED_STATUSES = ['SKIPPED', 'REJECTED', 'FIXED', 'OUTDATED'];
     return !IGNORED_STATUSES.includes(suggestion.getStatus());
   });
 
