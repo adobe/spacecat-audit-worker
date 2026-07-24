@@ -232,6 +232,12 @@ export default async function handler(message, context) {
       };
     },
     mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set before
+      // edgeDeployed) (LLMO-4010, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return { ...existingData };
+      }
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,
