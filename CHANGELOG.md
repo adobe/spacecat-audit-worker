@@ -1,3 +1,10 @@
+## [1.505.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.4...v1.505.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* **llmo-4010:** guard edge-deployed suggestions in summarization and … ([#2811](https://github.com/adobe/spacecat-audit-worker/issues/2811)) ([023f918](https://github.com/adobe/spacecat-audit-worker/commit/023f918f46b9ecbc241f292f9531fc8f241e5069)), closes [#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)
+
 ## [1.505.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.3...v1.505.4) (2026-07-24)
 
 
