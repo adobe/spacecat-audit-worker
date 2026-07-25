@@ -179,7 +179,11 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...redditConfig, urlLimit, enableBrandProfile },
+        config: {
+          ...redditConfig,
+          urlLimit,
+          ...(enableBrandProfile !== undefined && { enableBrandProfile }),
+        },
         storeData,
         ...(slackContext && { slackContext }),
         timings: { analysisStartedAt, ...(auditContext.timings || {}) },
@@ -303,7 +307,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
-        enableBrandProfile: config.enableBrandProfile ?? false,
+        ...(config.enableBrandProfile !== undefined
+          && { enableBrandProfile: config.enableBrandProfile }),
         urls: enrichedUrls,
       },
     };

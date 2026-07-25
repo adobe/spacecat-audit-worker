@@ -264,11 +264,11 @@ describe('offsite-audit-utils', () => {
   });
 
   describe('resolveEnableBrandProfile', () => {
-    it('returns false when auditContext or messageData is absent', () => {
-      expect(resolveEnableBrandProfile({})).to.equal(false);
-      expect(resolveEnableBrandProfile(undefined)).to.equal(false);
-      expect(resolveEnableBrandProfile(null)).to.equal(false);
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: '' } })).to.equal(false);
+    it('returns undefined when auditContext or messageData is absent, so the flag is omitted', () => {
+      expect(resolveEnableBrandProfile({})).to.be.undefined;
+      expect(resolveEnableBrandProfile(undefined)).to.be.undefined;
+      expect(resolveEnableBrandProfile(null)).to.be.undefined;
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: '' } })).to.be.undefined;
     });
 
     it('returns true for boolean true or the string "true"', () => {
@@ -289,16 +289,16 @@ describe('offsite-audit-utils', () => {
       )).to.equal(false);
     });
 
-    it('returns false and warns when enableBrandProfile is invalid', () => {
+    it('returns undefined and warns when enableBrandProfile is invalid', () => {
       const log = { warn: sandbox.stub() };
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, log, '[T]')).to.equal(false);
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, log, '[T]')).to.be.undefined;
       expect(log.warn).to.have.been.calledOnce;
     });
 
-    it('returns false and warns for numeric values (e.g. 0), same as any other invalid input', () => {
+    it('returns undefined and warns for numeric values (e.g. 0), same as any other invalid input', () => {
       const log = { warn: sandbox.stub() };
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 0 } }, log, '[T]')).to.equal(false);
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 1 } }, log, '[T]')).to.equal(false);
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 0 } }, log, '[T]')).to.be.undefined;
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 1 } }, log, '[T]')).to.be.undefined;
       expect(log.warn).to.have.been.calledTwice;
     });
   });

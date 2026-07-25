@@ -333,14 +333,17 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
  * Runners merge the resolved value into `auditResult.config.enableBrandProfile` for
  * post-processors, which forward it to Mystique on `data.enableBrandProfile`.
  *
+ * Tri-state by design: an explicit `true`/`false` overrides Mystique's own default
+ * logic for this flag, while `undefined` (absent, empty, or invalid input) means the
+ * flag is omitted entirely from the outgoing message so Mystique's default applies.
  * Slack delivers keyword values as strings, so only the strings 'true'/'false' or real
- * booleans are accepted; anything else (including absent) resolves to `false`.
+ * booleans are accepted as explicit values; anything else resolves to `undefined`.
  *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableBrandProfile]
  * @param {object} [log]
  * @param {string} [logPrefix]
- * @returns {boolean}
+ * @returns {boolean|undefined}
  */
 export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
   const prefix = logPrefix ?? '';
@@ -349,13 +352,16 @@ export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
   if (raw === true || raw === 'true') {
     return true;
   }
-  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false') {
+  if (raw === false || raw === 'false') {
     return false;
   }
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
   log?.warn(
-    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw).slice(0, 100)}), using default false`,
+    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
   );
-  return false;
+  return undefined;
 }
 
 /**

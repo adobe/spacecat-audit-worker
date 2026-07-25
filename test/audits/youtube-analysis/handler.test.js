@@ -219,7 +219,7 @@ describe('YouTube Analysis Handler', function () {
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
       expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(result.auditResult.config.enableBrandProfile).to.equal(false);
+      expect(result.auditResult.config.enableBrandProfile).to.be.undefined;
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
@@ -285,7 +285,7 @@ describe('YouTube Analysis Handler', function () {
       expect(queueUrl).to.equal('audits-queue-url');
       expect(msg.type).to.equal('offsite-brand-presence');
       expect(msg.siteId).to.equal(siteId);
-      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com' });
     });
 
     it('forwards enableBrandProfile on the scoped scrape request when DRS has no available content yet', async () => {
@@ -544,7 +544,7 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.data).to.not.have.keys('topics', 'guidelines');
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
-      expect(sentMessage.data.enableBrandProfile).to.equal(false);
+      expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
         `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );

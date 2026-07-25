@@ -218,7 +218,7 @@ describe('Reddit Analysis Handler', function () {
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
       expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(result.auditResult.config.enableBrandProfile).to.equal(false);
+      expect(result.auditResult.config.enableBrandProfile).to.be.undefined;
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
@@ -284,7 +284,7 @@ describe('Reddit Analysis Handler', function () {
       expect(msg.siteId).to.equal(siteId);
       // Slack context is forwarded so the scoped run's results post to the same thread.
       expect(msg.auditContext.slackContext).to.deep.equal(slackContext);
-      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableBrandProfile: false });
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com' });
     });
 
     it('forwards enableBrandProfile on the scoped scrape request when DRS has no available content yet', async () => {
@@ -562,7 +562,7 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage.data).to.not.have.keys('topics', 'guidelines');
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
-      expect(sentMessage.data.enableBrandProfile).to.equal(false);
+      expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
         `[Reddit] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
