@@ -284,7 +284,7 @@ describe('Reddit Analysis Handler', function () {
       expect(msg.siteId).to.equal(siteId);
       // Slack context is forwarded so the scoped run's results post to the same thread.
       expect(msg.auditContext.slackContext).to.deep.equal(slackContext);
-      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com' });
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableBrandProfile: false });
     });
 
     it('forwards enableBrandProfile on the scoped scrape request when DRS has no available content yet', async () => {

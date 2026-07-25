@@ -353,7 +353,7 @@ export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
     return false;
   }
   log?.warn(
-    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw)}), using default false`,
+    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw).slice(0, 100)}), using default false`,
   );
   return false;
 }
@@ -391,7 +391,7 @@ export async function requestOffsiteScrape(
       siteId,
       auditContext: {
         ...(slackContext && { slackContext }),
-        messageData: { domainScope, ...(enableBrandProfile && { enableBrandProfile }) },
+        messageData: { domainScope, ...(enableBrandProfile != null && { enableBrandProfile }) },
       },
     });
     log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);

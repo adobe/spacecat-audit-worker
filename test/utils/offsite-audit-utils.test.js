@@ -294,6 +294,13 @@ describe('offsite-audit-utils', () => {
       expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, log, '[T]')).to.equal(false);
       expect(log.warn).to.have.been.calledOnce;
     });
+
+    it('returns false and warns for numeric values (e.g. 0), same as any other invalid input', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 0 } }, log, '[T]')).to.equal(false);
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 1 } }, log, '[T]')).to.equal(false);
+      expect(log.warn).to.have.been.calledTwice;
+    });
   });
 
   describe('requestOffsiteScrape', () => {
@@ -337,11 +344,11 @@ describe('offsite-audit-utils', () => {
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableBrandProfile: true });
     });
 
-    it('omits enableBrandProfile in messageData when false', async () => {
+    it('forwards explicit enableBrandProfile:false in messageData (distinct from absent)', async () => {
       await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
-      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com' });
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
     });
 
     it('swallows and logs a warning when the send fails', async () => {

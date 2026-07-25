@@ -186,7 +186,7 @@ async function triggerAnalysisAudits(
           slackContext,
           drsScrapeRequested: true,
           ...(Number.isFinite(drsStartedAt) && { timings: { drsStartedAt, drsCompletedAt } }),
-          ...(enableBrandProfile && { messageData: { enableBrandProfile } }),
+          ...(enableBrandProfile != null && { messageData: { enableBrandProfile } }),
         },
       });
       log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);

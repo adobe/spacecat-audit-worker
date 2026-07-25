@@ -783,7 +783,7 @@ async function scheduleDrsStatusPoll(
       jobs,
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
       drsStartedAt,
-      ...(enableBrandProfile && { enableBrandProfile }),
+      ...(enableBrandProfile != null && { enableBrandProfile }),
     },
   }, null, DRS_POLL_INTERVAL_SECONDS);
 

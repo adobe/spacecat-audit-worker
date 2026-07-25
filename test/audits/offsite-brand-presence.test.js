@@ -1592,14 +1592,14 @@ describe('Offsite Brand Presence Handler', () => {
       expect(msg.auditContext.enableBrandProfile).to.equal(true);
     });
 
-    it('omits enableBrandProfile from the poll message auditContext when absent', async () => {
+    it('forwards explicit enableBrandProfile:false to the poll message auditContext when absent on Slack', async () => {
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
       const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
-      expect(msg.auditContext.enableBrandProfile).to.be.undefined;
+      expect(msg.auditContext.enableBrandProfile).to.equal(false);
     });
   });
 

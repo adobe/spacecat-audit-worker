@@ -308,7 +308,7 @@ describe('Cited Analysis Handler', function () {
       expect(queueUrl).to.equal('audits-queue-url');
       expect(msg.type).to.equal('offsite-brand-presence');
       expect(msg.siteId).to.equal(siteId);
-      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited' });
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', enableBrandProfile: false });
     });
 
     it('forwards enableBrandProfile on the scoped scrape request when DRS has no available content yet', async () => {

@@ -280,15 +280,17 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(timings.drsCompletedAt).to.be.a('number').and.to.be.at.least(drsStartedAt);
     });
 
-    it('forwards enableBrandProfile as messageData on the triggered analysis audit when set', async () => {
+    it('forwards enableBrandProfile as messageData on every triggered analysis audit when set', async () => {
       mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
 
       await handler.default(buildMessage({ enableBrandProfile: true }), context);
 
-      const reddit = context.sqs.sendMessage.getCalls()
-        .find((c) => c.args[1].type === 'reddit-analysis');
+      const calls = context.sqs.sendMessage.getCalls();
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      const youtube = calls.find((c) => c.args[1].type === 'youtube-analysis');
       expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableBrandProfile: true });
+      expect(youtube.args[1].auditContext.messageData).to.deep.equal({ enableBrandProfile: true });
     });
 
     it('omits messageData on the triggered analysis audit when enableBrandProfile is absent', async () => {
@@ -300,6 +302,17 @@ describe('offsite-brand-presence DRS status handler', () => {
       const reddit = context.sqs.sendMessage.getCalls()
         .find((c) => c.args[1].type === 'reddit-analysis');
       expect(reddit.args[1].auditContext.messageData).to.be.undefined;
+    });
+
+    it('forwards explicit enableBrandProfile:false as messageData (distinct from absent)', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableBrandProfile: false }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableBrandProfile: false });
     });
 
     it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
