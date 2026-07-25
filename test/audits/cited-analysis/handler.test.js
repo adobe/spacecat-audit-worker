@@ -1125,8 +1125,9 @@ describe('Cited Analysis Handler', function () {
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('Message must be shorter than 262144 bytes');
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const [, channelId, text, opts] = mockPostMessageOptional.firstCall.args;
+      // First call is the TEMP debug post (LLMO-5531); second is the real SQS-failure notification.
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const [, channelId, text, opts] = mockPostMessageOptional.secondCall.args;
       expect(channelId).to.equal('C12345');
       expect(text).to.include(':x:');
       expect(text).to.include(baseURL);
@@ -1149,12 +1150,13 @@ describe('Cited Analysis Handler', function () {
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const [, , text] = mockPostMessageOptional.firstCall.args;
+      // First call is the TEMP debug post (LLMO-5531); second is the real SQS-failure notification.
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const [, , text] = mockPostMessageOptional.secondCall.args;
       expect(text).to.include(siteId);
     });
 
-    it('should not post to Slack when SQS send fails without slackContext', async () => {
+    it('should not post a Slack failure message when SQS send fails without slackContext', async () => {
       context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
       const auditData = {
@@ -1168,7 +1170,11 @@ describe('Cited Analysis Handler', function () {
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(mockPostMessageOptional).to.not.have.been.called;
+      // Only the TEMP debug post (LLMO-5531) fires; no slackContext means the real
+      // failure-notification branch in the catch block is skipped.
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [, , text] = mockPostMessageOptional.firstCall.args;
+      expect(text).to.include('[DEBUG]');
     });
 
     // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)

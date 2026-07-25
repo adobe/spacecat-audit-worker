@@ -496,6 +496,20 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
+
+    // TEMP DEBUG (LLMO-5531): posts the built message to the triggering Slack thread, in
+    // addition to (not instead of) the real send below, for quick manual verification.
+    // Remove once confirmed.
+    const debugSlackContext = auditResult?.slackContext;
+    const debugPayload = JSON.stringify(message, null, 2);
+    await postMessageOptional(
+      context,
+      debugSlackContext?.channelId,
+      ':mag: *[DEBUG] cited-analysis* message to Mystique\n'
+        + `\`\`\`${debugPayload.slice(0, 3000)}${debugPayload.length > 3000 ? '\n... (truncated)' : ''}\`\`\``,
+      { threadTs: debugSlackContext?.threadTs },
+    );
+
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
       ? ` brandId=${brand.brandId}`

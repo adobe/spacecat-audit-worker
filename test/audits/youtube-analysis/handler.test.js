@@ -577,6 +577,28 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.data.enableBrandProfile).to.equal(true);
     });
 
+    // TEMP (LLMO-5531): covers the debug post's Slack thread targeting while the debug
+    // block is in place; remove alongside that block.
+    it('should post the debug message to the triggering Slack thread', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test', enableBrandProfile: true },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+          slackContext: { channelId: 'C12345', threadTs: '1234567890.000100' },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const [, channelId, text, opts] = mockPostMessageOptional.firstCall.args;
+      expect(channelId).to.equal('C12345');
+      expect(text).to.include('[DEBUG]');
+      expect(opts.threadTs).to.equal('1234567890.000100');
+    });
+
     it('should slice URLs using config.urlLimit', async () => {
       const auditData = {
         siteId,
