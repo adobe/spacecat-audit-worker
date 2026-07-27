@@ -21,6 +21,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveEnableBrandProfile,
   requestOffsiteScrape,
 } from '../utils/offsite-audit-utils.js';
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
@@ -120,7 +121,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit from Slack)
+ *   (e.g. urlLimit, enableBrandProfile from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
@@ -133,6 +134,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
   log.info(`${LOG_PREFIX} Starting YouTube analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -176,7 +179,11 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...youtubeConfig, urlLimit },
+        config: {
+          ...youtubeConfig,
+          urlLimit,
+          ...(enableBrandProfile !== undefined && { enableBrandProfile }),
+        },
         storeData,
         ...(slackContext && { slackContext }),
         timings: { analysisStartedAt, ...(auditContext.timings || {}) },
@@ -213,7 +220,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping YouTube URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext);
+      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -229,7 +236,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         };
       }
       log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for youtube.com`);
-      await requestOffsiteScrape(context, siteId, 'youtube.com', auditContext.slackContext);
+      await requestOffsiteScrape(context, siteId, 'youtube.com', auditContext.slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -300,6 +307,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
+        ...(config.enableBrandProfile !== undefined
+          && { enableBrandProfile: config.enableBrandProfile }),
         urls: enrichedUrls,
       },
     };
