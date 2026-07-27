@@ -1,3 +1,10 @@
+## [1.507.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.0...v1.507.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **cwv:** limit top-pages analyzed by ASO tier (10 paid / 3 PLG) ([#2815](https://github.com/adobe/spacecat-audit-worker/issues/2815)) ([193d416](https://github.com/adobe/spacecat-audit-worker/commit/193d416ee11bf443bb2465533f77dbb2b91df34f)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
 # [1.507.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.1...v1.507.0) (2026-07-27)
 
 
