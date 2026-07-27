@@ -134,5 +134,114 @@ describe('CWV Audit Result', () => {
       expect(result.auditResult.cwv.find((e) => e.type === 'group')).to.exist;
       expect(fetchStub.callCount).to.equal(1);
     });
+
+    describe('tier-based top-pages limit', () => {
+      const EntitlementStub = {
+        PRODUCT_CODES: { ASO: 'aso-product-code' },
+        TIERS: { PAID: 'PAID', PLG: 'PLG' },
+      };
+
+      // 12 non-homepage pages, all below the 7000-pageview threshold guard so only the
+      // tier-based top-N limit (not the threshold rule) determines how many are kept.
+      const nonHomepagePages = Array.from({ length: 12 }, (_, i) => ({
+        type: 'url',
+        url: `https://www.example.com/page-${i}`,
+        pageviews: 6000 - i * 100,
+        organic: 0,
+        metrics: [],
+      }));
+      const homepage = {
+        type: 'url', url: 'https://www.example.com', pageviews: 100000, organic: 0, metrics: [],
+      };
+
+      const site = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({ getGroupedURLs: () => [] }),
+      };
+
+      async function buildWithTierClient(tierClientStub) {
+        return esmock('../../../src/cwv/cwv-audit-result.js', {
+          '@adobe/spacecat-shared-rum-api-client': {
+            default: {
+              createFrom: sandbox.stub().returns({
+                query: sandbox.stub().resolves([homepage, ...nonHomepagePages]),
+              }),
+            },
+          },
+          '@adobe/spacecat-shared-tier-client': { TierClient: tierClientStub },
+          '@adobe/spacecat-shared-data-access': { Entitlement: EntitlementStub },
+        });
+      }
+
+      beforeEach(() => {
+        fetchStub.resolves({ status: 200 });
+      });
+
+      it('limits top pages to 3 for a PLG-tier site', async () => {
+        const tierClientStub = {
+          createForSite: sandbox.stub().resolves({
+            checkValidEntitlement: sandbox.stub().resolves({
+              entitlement: { getTier: () => 'PLG' },
+            }),
+          }),
+        };
+        const { buildCWVAuditResult: build } = await buildWithTierClient(tierClientStub);
+
+        const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.have.length(4); // homepage + top 3
+        expect(urls).to.include(homepage.url);
+        expect(urls).to.include(nonHomepagePages[0].url);
+        expect(urls).to.include(nonHomepagePages[2].url);
+        expect(urls).to.not.include(nonHomepagePages[3].url);
+      });
+
+      it('limits top pages to 10 for a paid-tier site', async () => {
+        const tierClientStub = {
+          createForSite: sandbox.stub().resolves({
+            checkValidEntitlement: sandbox.stub().resolves({
+              entitlement: { getTier: () => 'PAID' },
+            }),
+          }),
+        };
+        const { buildCWVAuditResult: build } = await buildWithTierClient(tierClientStub);
+
+        const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.have.length(11); // homepage + top 10
+        expect(urls).to.include(nonHomepagePages[9].url);
+        expect(urls).to.not.include(nonHomepagePages[10].url);
+      });
+
+      it('defaults to the paid limit when no entitlement is found', async () => {
+        const tierClientStub = {
+          createForSite: sandbox.stub().resolves({
+            checkValidEntitlement: sandbox.stub().resolves({}),
+          }),
+        };
+        const { buildCWVAuditResult: build } = await buildWithTierClient(tierClientStub);
+
+        const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.have.length(11); // homepage + top 10
+      });
+
+      it('defaults to the paid limit and logs a warning when tier lookup fails', async () => {
+        const tierClientStub = {
+          createForSite: sandbox.stub().rejects(new Error('tier lookup failed')),
+        };
+        const { buildCWVAuditResult: build } = await buildWithTierClient(tierClientStub);
+
+        const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.have.length(11); // homepage + top 10
+        expect(log.warn.calledWithMatch(/Failed to determine ASO tier/)).to.be.true;
+      });
+    });
   });
 });

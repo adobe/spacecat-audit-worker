@@ -11,13 +11,17 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
-// The number of top pages with issues that will be included in the report
-const TOP_PAGES_COUNT = 15;
+// The number of top pages with issues that will be included in the report, by ASO tier.
+// Kept low for now since CWV guidance isn't being actively acted on by customers yet -
+// no point spending audit/LLM cycles on more pages than that until adoption picks up.
+const TOP_PAGES_COUNT_PAID = 10;
+const TOP_PAGES_COUNT_PLG = 3;
 const HEAD_REQUEST_TIMEOUT_MS = 10000;
 
 /**
@@ -68,6 +72,29 @@ function isHomepage(data, baseURL) {
 }
 
 /**
+ * Determines how many top-pages-by-traffic are included in the CWV report, based on the
+ * site's ASO entitlement tier. Defaults to the paid limit if the tier can't be determined.
+ * @param {Object} context - Context object (needs site, dataAccess and log)
+ * @returns {Promise<number>} Top pages count for this site's tier
+ */
+async function getTopPagesCount(context) {
+  const { site, log } = context;
+  try {
+    const tierClient = await TierClient.createForSite(
+      context,
+      site,
+      Entitlement.PRODUCT_CODES.ASO,
+    );
+    const { entitlement } = await tierClient.checkValidEntitlement();
+    const tier = entitlement?.getTier() ?? null;
+    return tier === Entitlement.TIERS.PLG ? TOP_PAGES_COUNT_PLG : TOP_PAGES_COUNT_PAID;
+  } catch (err) {
+    log.warn(`[audit-worker-cwv] siteId: ${site.getId()} | Failed to determine ASO tier, defaulting to paid top-pages limit: ${err.message}`);
+    return TOP_PAGES_COUNT_PAID;
+  }
+}
+
+/**
  * Builds CWV audit result by collecting and filtering RUM data
  * @param {Object} context - Context object (needs site, finalUrl, env.RUM_ADMIN_KEY and log)
  * @returns {Promise<Object>} Audit result with filtered CWV data
@@ -77,6 +104,7 @@ export async function buildCWVAuditResult(context) {
   const siteId = site.getId();
   const baseURL = removeTrailingSlash(site.getBaseURL());
 
+  const topPagesCount = await getTopPagesCount(context);
   const rumApiClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
@@ -101,7 +129,7 @@ export async function buildCWVAuditResult(context) {
       }
 
       // 2) Top N by pageviews (excluding homepage)
-      if (stats.topNCount < TOP_PAGES_COUNT) {
+      if (stats.topNCount < topPagesCount) {
         list.push(item);
         stats.topNCount += 1;
         return list;
@@ -119,7 +147,7 @@ export async function buildCWVAuditResult(context) {
   log.info(
     `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
     + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
-    + `Top${TOP_PAGES_COUNT} pages: ${stats.topNCount} | `
+    + `Top${topPagesCount} pages: ${stats.topNCount} | `
     + `Pages above threshold: ${stats.thresholdCount}`,
   );
 
