@@ -57,13 +57,45 @@ DRS runs in a separate AWS account and cannot read the database directly, so:
 - **A single shared classify library vs mirrored JS + Python** — chose mirrored implementations kept honest by **parity fixtures**, because DRS is Python in a separate AWS account and there is no clean way to share the JS code.
 - **Push rules to DRS vs DRS pulls them** — chose DRS **pulls** via the new api-service endpoint, since DRS already calls the api-service and cannot read the database directly.
 
-## 7. Open questions (to resolve in review)
+## 7. Decisions (options considered → chosen)
 
-1. **Ownership / scope.** Which pieces are Omair's vs DRS-team's? (Fix A + the api endpoint are JS; the DRS Python classify is DRS-side.)
-2. **Where does the decoupled rule-gen run?** A scheduled job that loops sites with referral traffic, or a new audit type, or extend an existing daily run? And **how often** (rules don't need daily regeneration — once per site? weekly? on first referral data?).
-3. **LLM cost gating** — rule-gen calls an LLM; running it for many more sites has a cost. What's the budget/guard?
-4. **Canonicalization parity** — the exact `url_path` cleanup rules the Python side must match the JS side byte-for-byte. Where do the shared **parity fixtures** live?
-5. **Rules endpoint shape + auth** — exact request/response, and how DRS authenticates to the api-service.
+Each decision lists the options weighed, the chosen one, and the reasoning. These are proposals for review.
+
+**7.1 — Where the decoupled rule-gen runs**
+- Options: (A) a scheduled "sweeper" job that walks every site with referral traffic; (B) rule-gen as its own audit type; (C) bolt rule-gen onto each source's existing job.
+- **Chosen: A — scheduled sweeper.** A timer job walks every referral site and ensures each has a rulebook (create-if-missing).
+- Why: covers every referral site uniformly, including DRS-only, and keeps rule-gen in one JS place. Option C breaks for DRS-only sites — DRS is Python in a separate account and cannot call the JS rule-gen.
+
+**7.2 — How often rules regenerate**
+- Options: (A) once per site; (B) weekly; (C) daily.
+- **Chosen: a weekly sweep that generates once per site.** The weekly sweep picks up new sites within a week; because generation is create-if-missing, sites that already have rules are cheap no-ops.
+- Why: a site's URL structure barely changes, so daily is wasteful; weekly balances coverage against cost.
+
+**7.3 — LLM cost gating**
+- Options: (A) only call the LLM when a site has no rules yet; (B) regenerate every cycle; (C) cap the number of sites per run.
+- **Chosen: A + C.** Only invoke the LLM for sites with no rules (one-time per site), and cap how many sites a single sweep processes.
+- Why: makes the expensive LLM step one-time per site and prevents a single sweep from hammering the LLM.
+
+**7.4 — Canonicalization parity + where the fixtures live**
+- Options (source of truth): (A) the JS `canonicalizeUrlPath` is the reference and Python mirrors it; (B) a language-neutral spec both follow.
+- Options (fixtures location): (A) the same case-list committed in both repos; (B) one shared file both pull from.
+- **Chosen: JS is the reference (A); an identical case-list committed in both repos (A), kept in sync (a CI check can flag drift).**
+- Why: JS shipped first (Phase 1), so it is the natural source of truth; a duplicated case-list is the simplest way to guarantee byte-for-byte parity.
+
+**7.5 — Rules endpoint (shape + auth)**
+- Options (shape): (A) a new dedicated GET rules endpoint; (B) extend an existing referral endpoint.
+- Options (auth): (A) reuse the cross-account path DRS already uses to call the api-service; (B) a new auth mechanism.
+- **Chosen: a new GET rules endpoint (A); reuse DRS's existing auth (A).**
+- Why: mirrors the existing referral read endpoints and avoids inventing new auth.
+
+**7.6 — Ownership**
+- Options: (A) split — Omair owns the JS pieces, the DRS team owns the Python classify; (B) a single owner for everything.
+- **Chosen: A — Omair owns the JS pieces (sweeper + api endpoint); the DRS team owns the Python classify.** (Subject to confirmation.)
+- Why: keeps the JS work where the code and familiarity are, and Python-in-DRS with its owners.
+
+**How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via a simple new endpoint and classifies in Python against the JS-defined canonical form. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
+
+**Known limitation (accepted for now):** rules are generated once and do **not** auto-refresh. If a site later adds many new URL types, its rulebook can go stale until a forced regeneration. Rule refresh/evolution is deferred to a later phase.
 
 ## 8. Success criteria
 
@@ -82,3 +114,4 @@ DRS runs in a separate AWS account and cannot read the database directly, so:
 
 - No changes to the projector, data-service tables/RPCs, api read RPCs, or UI (all reused from Phase 1).
 - No re-classification/backfill of historical DRS traffic beyond what the normal daily flow covers (matches the Phase-1 "self-healing, no backfill" decision).
+- No automatic rule refresh/evolution — rules are generated once per site; refreshing stale rulebooks is deferred to a later phase (see §7.2 / the limitation in §7).
