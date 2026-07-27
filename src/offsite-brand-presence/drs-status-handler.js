@@ -13,9 +13,8 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
-import { formatDuration } from '../utils/offsite-audit-utils.js';
+import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
-  DRS_POLL_INTERVAL_SECONDS,
   DRS_TERMINAL_STATUSES,
   DRS_SUCCESS_STATUSES,
   OFFSITE_DOMAINS,
@@ -141,9 +140,19 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  * @param {object} slackContext - { channelId, threadTs } forwarded to the triggered audits
  * @param {object} context - Universal context (sqs, dataAccess, log)
  * @param {number} [drsStartedAt] - Epoch ms when DRS scraping was triggered (phase timing)
+ * @param {boolean} [enableBrandProfile] - Forwarded from the originating Slack request (see
+ *   offsite-brand-presence/handler.js) so it reaches the Mystique message the re-triggered
+ *   analysis audit ultimately sends, instead of being lost across the scrape round-trip.
  * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
-async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context, drsStartedAt) {
+async function triggerAnalysisAudits(
+  auditTypes,
+  siteId,
+  slackContext,
+  context,
+  drsStartedAt,
+  enableBrandProfile,
+) {
   const { sqs, dataAccess, log } = context;
 
   const handled = [];
@@ -176,6 +185,7 @@ async function triggerAnalysisAudits(auditTypes, siteId, slackContext, context, 
           slackContext,
           drsScrapeRequested: true,
           ...(Number.isFinite(drsStartedAt) && { timings: { drsStartedAt, drsCompletedAt } }),
+          ...(enableBrandProfile != null && { messageData: { enableBrandProfile } }),
         },
       });
       log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
@@ -221,9 +231,10 @@ function buildSummary(baseURL, statuses, drsStartedAt) {
 }
 
 /**
- * Polls DRS for the status of the offsite-brand-presence scrape jobs created for a
- * manual Slack run. Re-enqueues itself with an SQS delay until every job is terminal
- * or the deadline passes, then posts a single completion summary to the Slack thread.
+ * Polls DRS for the offsite-brand-presence scrape jobs and fans out the downstream analysis
+ * audits as their data becomes ready — regardless of how the run was triggered. Re-enqueues
+ * itself until every job is terminal or the deadline passes; attended (Slack) runs also post a
+ * completion summary and poll more often than unattended ones (see resolveDrsPollIntervalSeconds).
  *
  * Each downstream analysis audit is dispatched as soon as its own dataset(s) reach a
  * terminal success status, rather than waiting for every bucket to finish. This keeps a
@@ -232,8 +243,8 @@ function buildSummary(baseURL, statuses, drsStartedAt) {
  * already-dispatched audit types travels with the re-enqueued poll message so each type is
  * triggered at most once across the poll lifecycle.
  *
- * @param {object} message - SQS message with auditContext { baseURL, slackContext,
- *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes? }
+ * @param {object} message - SQS message with auditContext { baseURL, slackContext?,
+ *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes?, enableBrandProfile? }
  * @param {object} context - Universal context (log, sqs, dataAccess, env)
  * @returns {Promise<Response>}
  */
@@ -243,17 +254,23 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { siteId, auditContext = {} } = message;
   const {
     baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [], drsStartedAt,
+    enableBrandProfile,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
 
-  if (!channelId || !threadTs || jobs.length === 0) {
-    log.warn(`${LOG_PREFIX} Missing Slack context or jobs, skipping (site ${siteId})`);
+  if (jobs.length === 0) {
+    log.warn(`${LOG_PREFIX} No jobs to poll, skipping (site ${siteId})`);
     return ok();
   }
 
   const drsClient = DrsClient.createFrom(context);
 
   const statuses = await Promise.all(jobs.map(async (job) => {
+    // Terminal jobs never change — carry forward instead of re-calling getJob (avoids
+    // redundant DRS traffic while the poll waits on a slow bucket like top-cited).
+    if (DRS_TERMINAL_STATUSES.has(job.status)) {
+      return job;
+    }
     try {
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
@@ -275,7 +292,14 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   let handled = [];
   try {
     const readyTypes = computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered);
-    handled = await triggerAnalysisAudits(readyTypes, siteId, slackContext, context, drsStartedAt);
+    handled = await triggerAnalysisAudits(
+      readyTypes,
+      siteId,
+      slackContext,
+      context,
+      drsStartedAt,
+      enableBrandProfile,
+    );
   } catch (err) {
     log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
   }
@@ -285,14 +309,19 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // already-dispatched audit types forward so they are not re-triggered on later polls.
   if (!allTerminal && !deadlineReached) {
     const delaySeconds = Math.min(
-      DRS_POLL_INTERVAL_SECONDS,
+      resolveDrsPollIntervalSeconds(slackContext),
       Math.max(0, Math.ceil((deadline - now) / 1000)),
       SQS_MAX_DELAY_SECONDS,
     );
     const configuration = await Configuration.findLatest();
     const nextMessage = {
       ...message,
-      auditContext: { ...auditContext, triggeredAuditTypes: nextTriggered },
+      auditContext: {
+        ...auditContext,
+        // Persist resolved statuses so the next poll skips getJob for already-terminal jobs.
+        jobs: statuses,
+        triggeredAuditTypes: nextTriggered,
+      },
     };
     await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     log.info(`${LOG_PREFIX} ${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`);

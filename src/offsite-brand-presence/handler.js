@@ -18,7 +18,12 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
-import { computeBrandTokens, isExcludedCitedHost } from '../utils/offsite-audit-utils.js';
+import {
+  computeBrandTokens,
+  isExcludedCitedHost,
+  resolveDrsPollIntervalSeconds,
+  resolveEnableBrandProfile,
+} from '../utils/offsite-audit-utils.js';
 import {
   DRS_URLS_LIMIT,
   RETRIABLE_STATUSES,
@@ -29,7 +34,6 @@ import {
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
   TOP_CITED_EXCLUDED_DOMAINS,
-  DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_MAX_WAIT_SECONDS,
   DRS_STATUS_AUDIT_TYPE,
 } from './constants.js';
@@ -728,19 +732,21 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
 }
 
 /**
- * Schedules a delayed DRS status poll for the jobs that were submitted successfully.
- * Only runs for manual Slack runs (channelId + threadTs present) with at least one
- * job_id to track; scheduled runs and submission-only failures are skipped. The poll
- * message carries the job list, Slack context, and an absolute deadline so each poll
- * invocation is self-describing.
+ * Schedules a delayed DRS status poll for the successfully submitted jobs (skipped when none
+ * have a job_id). Runs regardless of how the audit was triggered; Slack context is forwarded
+ * only when present so the poll can post to that thread. Attended runs poll more often than
+ * unattended ones — see {@link resolveDrsPollIntervalSeconds}.
  *
  * @param {Array} drsResults - DRS job results from triggerDrsScraping
  * @param {string} baseURL - The site's base URL
  * @param {string} siteId - The site ID
  * @param {object} context - The execution context (sqs, dataAccess, log)
- * @param {string} channelId - Slack channel ID
- * @param {string} threadTs - Slack thread timestamp
+ * @param {string} [channelId] - Slack channel ID (attended runs only)
+ * @param {string} [threadTs] - Slack thread timestamp (attended runs only)
  * @param {number} drsStartedAt - Epoch ms when DRS scraping was triggered (phase timing)
+ * @param {boolean} [enableBrandProfile] - Forwarded so the analysis audits triggered once DRS
+ *   scraping completes (see drs-status-handler.js) still resolve the flag originally
+ *   requested on Slack, instead of losing it across the scrape round-trip.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -750,12 +756,9 @@ async function scheduleDrsStatusPoll(
   channelId,
   threadTs,
   drsStartedAt,
+  enableBrandProfile,
 ) {
   const { sqs, dataAccess, log } = context;
-
-  if (!channelId || !threadTs) {
-    return;
-  }
 
   const jobs = drsResults
     .filter((r) => r.status === 'success' && r.response?.job_id)
@@ -765,20 +768,24 @@ async function scheduleDrsStatusPoll(
     return;
   }
 
+  const slackContext = channelId && threadTs ? { channelId, threadTs } : undefined;
+  const pollIntervalSeconds = resolveDrsPollIntervalSeconds(slackContext);
+
   const configuration = await dataAccess.Configuration.findLatest();
   await sqs.sendMessage(configuration.getQueues().audits, {
     type: DRS_STATUS_AUDIT_TYPE,
     siteId,
     auditContext: {
       baseURL,
-      slackContext: { channelId, threadTs },
+      ...(slackContext && { slackContext }),
       jobs,
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
       drsStartedAt,
+      ...(enableBrandProfile != null && { enableBrandProfile }),
     },
-  }, null, DRS_POLL_INTERVAL_SECONDS);
+  }, null, pollIntervalSeconds);
 
-  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs)`);
+  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs, every ${pollIntervalSeconds}s)`);
 }
 
 /**
@@ -806,6 +813,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // content) scope collection + scraping to one bucket so only that audit re-triggers.
   const domainScope = messageData?.domainScope;
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
+  // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
+  // scraping completes, so a Slack-requested flag survives the scrape round-trip.
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -920,6 +930,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         channelId,
         threadTs,
         drsStartedAt,
+        enableBrandProfile,
       );
     } catch (err) {
       log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);

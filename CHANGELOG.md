@@ -1,3 +1,38 @@
+# [1.507.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.1...v1.507.0) (2026-07-27)
+
+
+### Features
+
+* **offsite:** trigger analysis audits on every run, tune DRS polling ([#2820](https://github.com/adobe/spacecat-audit-worker/issues/2820)) ([1e8d2f9](https://github.com/adobe/spacecat-audit-worker/commit/1e8d2f9758efa5a22c577f21a6ee26351373e177))
+
+## [1.506.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.0...v1.506.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **llmo:** populate previousConfigVersion in drs-prompt-generation handler ([#2818](https://github.com/adobe/spacecat-audit-worker/issues/2818)) ([495d22f](https://github.com/adobe/spacecat-audit-worker/commit/495d22fbd45014c6b13aa5acace4912e983f7f1e)), closes [#llmo-onboarding-automation](https://github.com/adobe/spacecat-audit-worker/issues/llmo-onboarding-automation)
+
+# [1.506.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.7...v1.506.0) (2026-07-27)
+
+
+### Features
+
+* add enableBrandProfile slackbot flag for cited audits (LLMO-5531) ([#2812](https://github.com/adobe/spacecat-audit-worker/issues/2812)) ([eed03c6](https://github.com/adobe/spacecat-audit-worker/commit/eed03c62012ed782e127b3866a38cd84e5bc99e3))
+
+## [1.505.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.6...v1.505.7) (2026-07-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2816](https://github.com/adobe/spacecat-audit-worker/issues/2816)) ([0e324a3](https://github.com/adobe/spacecat-audit-worker/commit/0e324a33adafb1e8456ca96133213c733cbb8fc3))
+
+## [1.505.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.5...v1.505.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* **form-a11y:** compute a real per-form selector instead of a generic 'form' ([#2814](https://github.com/adobe/spacecat-audit-worker/issues/2814)) ([47baeb9](https://github.com/adobe/spacecat-audit-worker/commit/47baeb9ba55ec882aa0bf279141224fc8cb42472))
+
 ## [1.505.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.4...v1.505.5) (2026-07-24)
 
 
