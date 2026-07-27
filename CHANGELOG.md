@@ -1,3 +1,10 @@
+# [1.506.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.7...v1.506.0) (2026-07-27)
+
+
+### Features
+
+* add enableBrandProfile slackbot flag for cited audits (LLMO-5531) ([#2812](https://github.com/adobe/spacecat-audit-worker/issues/2812)) ([eed03c6](https://github.com/adobe/spacecat-audit-worker/commit/eed03c62012ed782e127b3866a38cd84e5bc99e3))
+
 ## [1.505.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.6...v1.505.7) (2026-07-25)
 
 
