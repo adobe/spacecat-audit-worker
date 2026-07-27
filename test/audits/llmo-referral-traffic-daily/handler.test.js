@@ -88,6 +88,8 @@ describe('LLMO Referral Traffic Daily Handler', function () {
   let sqsSendMessageStub;
   let parquetReadObjectsStub;
   let handlerModule;
+  let mockGenerateReferralCategoryRules;
+  let mockFetchRules;
 
   before(() => {
     sandbox = sinon.createSandbox();
@@ -97,6 +99,8 @@ describe('LLMO Referral Traffic Daily Handler', function () {
     s3ClientStub = { send: sandbox.stub() };
     sqsSendMessageStub = sandbox.stub().resolves();
     parquetReadObjectsStub = sandbox.stub().resolves([PARQUET_ROW]);
+    mockGenerateReferralCategoryRules = sandbox.stub().resolves(true);
+    mockFetchRules = sandbox.stub().resolves(null);
 
     site = {
       getId: sandbox.stub().returns('site-123'),
@@ -139,6 +143,12 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         GetObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'GetObjectCommand' })),
         PutObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'PutObjectCommand' })),
         DeleteObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'DeleteObjectCommand' })),
+      },
+      '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+        generateReferralCategoryRules: mockGenerateReferralCategoryRules,
+      },
+      '../../../src/common/agentic-url-classification-rules.js': {
+        fetchAgenticUrlClassificationRules: mockFetchRules,
       },
     });
   });
@@ -241,6 +251,30 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       });
       await expect(handlerModule.referralTrafficDailyRunner(context))
         .to.be.rejectedWith('Invalid date format: not-a-date');
+    });
+
+    it('generates the site category rules (create-if-missing) before exporting', async () => {
+      const noSuchKeyError = new Error('NoSuchKey');
+      noSuchKeyError.name = 'NoSuchKey';
+      s3ClientStub.send.rejects(noSuchKeyError);
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(mockGenerateReferralCategoryRules).to.have.been.calledWithMatch({ site });
+    });
+
+    it('logs a warning but still runs the export when rule generation throws', async () => {
+      mockGenerateReferralCategoryRules.rejects(new Error('gen boom'));
+      const noSuchKeyError = new Error('NoSuchKey');
+      noSuchKeyError.name = 'NoSuchKey';
+      s3ClientStub.send.rejects(noSuchKeyError);
+
+      const result = await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(result.auditResult.rowCount).to.equal(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Referral category rule generation failed for site site-123: gen boom/),
+      );
     });
 
     it('should return early with rowCount 0 when parquet does not exist (NoSuchKey)', async () => {
@@ -529,6 +563,140 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const putCall = s3ClientStub.send.secondCall.args[0];
       expect(putCall.Body).to.include('"platform,with,commas"');
       expect(putCall.Body).to.include('"device""with""quotes"');
+    });
+
+    it('classifies matched referral URLs and emits a classification event', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/page1', sort_order: 0 }] });
+      parquetReadObjectsStub.resolves([PARQUET_ROW]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const classificationCall = sqsSendMessageStub.getCalls()
+        .find((c) => c.args[1]?.pipeline_id === 'referral_url_classifications');
+      expect(classificationCall, 'classification event dispatched').to.exist;
+      expect(classificationCall.args[2]).to.equal('referral_url_classifications:site-123');
+      expect(classificationCall.args[1].row_count).to.equal(1);
+    });
+
+    it('is best-effort: a classification emit failure logs a warning but still returns', async () => {
+      mockFetchRules.rejects(new Error('rules boom'));
+      parquetReadObjectsStub.resolves([PARQUET_ROW]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .resolves({});
+
+      const result = await handlerModule.referralTrafficDailyRunner(context);
+
+      expect(result.auditResult.rowCount).to.equal(1);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Referral URL classification emit failed for site site-123: rules boom/),
+      );
+    });
+  });
+
+  describe('emitReferralClassifications', () => {
+    const baseArgs = () => ({
+      site,
+      context,
+      rows: [{ host: 'example.com', url_path: '/shoes' }],
+      date: '2026-04-29',
+      year: 2026,
+      month: 4,
+      day: 29,
+      bucket: 'test-bucket',
+      queueUrl: 'https://sqs/analytics.fifo',
+    });
+
+    it('returns {classified:0} and does not emit when the site has no rules', async () => {
+      mockFetchRules.resolves({ topicPatterns: [] });
+      const result = await handlerModule.emitReferralClassifications(baseArgs());
+      expect(result).to.deep.equal({ classified: 0 });
+      expect(sqsSendMessageStub).to.not.have.been.called;
+    });
+
+    it('returns {classified:0} when no URL matches a rule', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/electronics' }] });
+      const result = await handlerModule.emitReferralClassifications(baseArgs());
+      expect(result).to.deep.equal({ classified: 0 });
+      expect(sqsSendMessageStub).to.not.have.been.called;
+    });
+
+    it('uploads a classification CSV and emits a referral_url_classifications event', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/shoes' }] });
+      s3ClientStub.send.resolves({});
+
+      const result = await handlerModule.emitReferralClassifications(baseArgs());
+
+      expect(result).to.deep.equal({ classified: 1 });
+      const putCall = s3ClientStub.send.getCall(0).args[0];
+      expect(putCall.Key).to.include('classifications.csv');
+      expect(putCall.Body).to.include('host,url_path,category_name,updated_by');
+      expect(putCall.Body).to.include('example.com,/shoes,footwear,spacecat:optel');
+      const [queue, message, groupId] = sqsSendMessageStub.getCall(0).args;
+      expect(queue).to.equal('https://sqs/analytics.fifo');
+      expect(message.pipeline_id).to.equal('referral_url_classifications');
+      expect(message.row_count).to.equal(1);
+      expect(message.org_id).to.equal('org-456');
+      expect(groupId).to.equal('referral_url_classifications:site-123');
+      // Dedup id is source-namespaced (:optel) so it can't collide with the cdn
+      // classification message on the shared referral_url_classifications FIFO group.
+      const expectedDedupId = createHash('sha256')
+        .update('site-123:2026-04-29:referral_url_classifications:optel')
+        .digest('hex');
+      expect(message.correlationId).to.equal(expectedDedupId);
+      expect(sqsSendMessageStub.getCall(0).args[4]).to.equal(expectedDedupId);
+    });
+
+    it('omits org_id when the site has no organization', async () => {
+      site.getOrganizationId.returns(undefined);
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/shoes' }] });
+      s3ClientStub.send.resolves({});
+
+      await handlerModule.emitReferralClassifications(baseArgs());
+
+      expect(sqsSendMessageStub.getCall(0).args[1].org_id).to.be.undefined;
+    });
+
+    it('cleans up the uploaded CSV and rethrows when the SQS dispatch fails', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/shoes' }] });
+      s3ClientStub.send.resolves({});
+      sqsSendMessageStub.rejects(new Error('sqs boom'));
+
+      await expect(handlerModule.emitReferralClassifications(baseArgs()))
+        .to.be.rejectedWith('sqs boom');
+
+      const deleteCall = s3ClientStub.send.getCalls()
+        .find((c) => c.args[0]._type === 'DeleteObjectCommand');
+      expect(deleteCall, 'classification CSV cleaned up').to.exist;
+      expect(deleteCall.args[0].Key).to.include('classifications.csv');
+    });
+
+    it('warns distinctly and returns {classified:0} when the rule fetch errored', async () => {
+      // A DB rule-fetch failure must be logged distinctly from a legitimately rule-less site.
+      mockFetchRules.resolves({ error: true });
+      const result = await handlerModule.emitReferralClassifications(baseArgs());
+      expect(result).to.deep.equal({ classified: 0 });
+      expect(sqsSendMessageStub).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/Category rule fetch failed/);
+    });
+
+    it('rethrows the original dispatch error even when the CSV cleanup delete also fails', async () => {
+      mockFetchRules.resolves({ topicPatterns: [{ name: 'footwear', regex: '/shoes' }] });
+      s3ClientStub.send.callsFake((cmd) => (cmd._type === 'DeleteObjectCommand'
+        ? Promise.reject(new Error('delete boom'))
+        : Promise.resolve({})));
+      sqsSendMessageStub.rejects(new Error('sqs boom'));
+
+      await expect(handlerModule.emitReferralClassifications(baseArgs()))
+        .to.be.rejectedWith('sqs boom');
+      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to clean up classification CSV/);
     });
   });
 });

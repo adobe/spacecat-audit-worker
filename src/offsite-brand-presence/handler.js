@@ -22,6 +22,7 @@ import {
   computeBrandTokens,
   isExcludedCitedHost,
   resolveDrsPollIntervalSeconds,
+  resolveEnableBrandProfile,
 } from '../utils/offsite-audit-utils.js';
 import {
   DRS_URLS_LIMIT,
@@ -743,6 +744,9 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  * @param {string} [channelId] - Slack channel ID (attended runs only)
  * @param {string} [threadTs] - Slack thread timestamp (attended runs only)
  * @param {number} drsStartedAt - Epoch ms when DRS scraping was triggered (phase timing)
+ * @param {boolean} [enableBrandProfile] - Forwarded so the analysis audits triggered once DRS
+ *   scraping completes (see drs-status-handler.js) still resolve the flag originally
+ *   requested on Slack, instead of losing it across the scrape round-trip.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -752,6 +756,7 @@ async function scheduleDrsStatusPoll(
   channelId,
   threadTs,
   drsStartedAt,
+  enableBrandProfile,
 ) {
   const { sqs, dataAccess, log } = context;
 
@@ -776,6 +781,7 @@ async function scheduleDrsStatusPoll(
       jobs,
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
       drsStartedAt,
+      ...(enableBrandProfile != null && { enableBrandProfile }),
     },
   }, null, pollIntervalSeconds);
 
@@ -807,6 +813,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // content) scope collection + scraping to one bucket so only that audit re-triggers.
   const domainScope = messageData?.domainScope;
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
+  // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
+  // scraping completes, so a Slack-requested flag survives the scrape round-trip.
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -921,6 +930,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         channelId,
         threadTs,
         drsStartedAt,
+        enableBrandProfile,
       );
     } catch (err) {
       log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);

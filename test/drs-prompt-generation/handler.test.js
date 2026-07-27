@@ -26,6 +26,7 @@ describe('DRS Prompt Generation Handler', () => {
   let drsPromptGenerationHandler;
   let mockPostMessageSafe;
   let mockWriteDrsPromptsToLlmoConfig;
+  let mockLlmoConfig;
 
   const AUDITS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue';
   const PRESIGNED_URL = 'https://drs-bucket.s3.amazonaws.com/results/job-1/data.json?X-Amz-Signature=abc';
@@ -47,10 +48,12 @@ describe('DRS Prompt Generation Handler', () => {
   beforeEach(async () => {
     mockPostMessageSafe = sandbox.stub().resolves({ success: true });
     mockWriteDrsPromptsToLlmoConfig = sandbox.stub().resolves({ success: true, version: 'v1' });
+    mockLlmoConfig = { readConfig: sandbox.stub().resolves({ exists: false }) };
 
     const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
       '../../src/utils/slack-utils.js': { postMessageSafe: mockPostMessageSafe },
       '../../src/drs-prompt-generation/drs-config-writer.js': { default: mockWriteDrsPromptsToLlmoConfig },
+      '@adobe/spacecat-shared-utils': { llmoConfig: mockLlmoConfig },
     });
     drsPromptGenerationHandler = handler.default;
 
@@ -201,6 +204,109 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.auditContext.configVersion).to.equal('v1');
     expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
     expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
+  });
+
+  it('includes previousConfigVersion when a prior LLMO config version exists', async () => {
+    mockLlmoConfig.readConfig.resolves({ exists: true, version: 'v0' });
+
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+      },
+    };
+
+    await drsPromptGenerationHandler(message, context);
+
+    expect(mockLlmoConfig.readConfig).to.have.been.calledWith(
+      'site-456',
+      context.s3Client,
+      { s3Bucket: 'importer-bucket' },
+    );
+
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.auditContext.previousConfigVersion).to.equal('v0');
+    // The version written by *this* job stays distinct from the prior one.
+    expect(sentMessage.auditContext.configVersion).to.equal('v1');
+  });
+
+  it('omits previousConfigVersion for a genuine first-time onboarding (no prior config)', async () => {
+    mockLlmoConfig.readConfig.resolves({ exists: false });
+
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+      },
+    };
+
+    await drsPromptGenerationHandler(message, context);
+
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.auditContext).to.not.have.property('previousConfigVersion');
+  });
+
+  it('includes imsOrgId in the audit context when present', async () => {
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+        imsOrgId: 'IMS-ORG-123',
+      },
+    };
+
+    await drsPromptGenerationHandler(message, context);
+
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.auditContext.imsOrgId).to.equal('IMS-ORG-123');
+  });
+
+  it('does not read the LLMO config version for non-onboarding sources', async () => {
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'manual',
+      },
+    };
+
+    await drsPromptGenerationHandler(message, context);
+
+    expect(mockLlmoConfig.readConfig).to.not.have.been.called;
+  });
+
+  it('logs a warning and omits previousConfigVersion when reading the prior config fails', async () => {
+    mockLlmoConfig.readConfig.rejects(new Error('S3 unavailable'));
+
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+      },
+    };
+
+    const result = await drsPromptGenerationHandler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(
+      'Failed to read existing LLMO config version for site site-456: S3 unavailable',
+    );
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.auditContext).to.not.have.property('previousConfigVersion');
   });
 
   it('skips v1 config write for v2 onboarding but still triggers llmo-customer-analysis', async () => {

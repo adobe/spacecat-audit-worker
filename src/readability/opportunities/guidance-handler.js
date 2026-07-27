@@ -232,6 +232,12 @@ export default async function handler(message, context) {
       };
     },
     mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set before
+      // edgeDeployed) (LLMO-4010, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return { ...existingData };
+      }
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,
@@ -260,10 +266,17 @@ export default async function handler(message, context) {
       delete merged.seoImpact;
       return enrichSuggestionDataForAutoOptimize(merged);
     },
-    mergeStatusFunction: (existing, newDataItem, mergeCtx) => (
-      newDataItem.shouldExclude
+    mergeStatusFunction: (existing, newDataItem, mergeCtx) => {
+      // Do not flip status (e.g. to a terminal SKIPPED) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment — keep the deployed state (LLMO-4010, LLMO-6168)
+      const existingData = existing.getData?.() || {};
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return null;
+      }
+      return newDataItem.shouldExclude
         ? SuggestionModel.STATUSES.SKIPPED
-        : defaultMergeStatusFunction(existing, newDataItem, mergeCtx)),
+        : defaultMergeStatusFunction(existing, newDataItem, mergeCtx);
+    },
   });
 
   // Delete the S3 response file only after syncSuggestions succeeds

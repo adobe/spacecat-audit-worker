@@ -152,3 +152,34 @@ export async function replaceAgenticUrlClassificationRules({
 
   return Array.isArray(data) ? data[0] : data;
 }
+
+/**
+ * Fetches a site's top referral URL paths (by pageviews) from the data service.
+ * The corpus for referral category-rule generation (LLMO-6257 P2) — the Postgres
+ * analogue of the CDN top-URLs Athena query.
+ */
+export async function fetchReferralTopUrls({ site, context, limit = 200 }) {
+  const siteId = site.getId();
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+
+  if (!postgrestClient?.rpc) {
+    throw new Error('PostgREST client is required to fetch referral top URLs');
+  }
+
+  const { data, error } = await postgrestClient.rpc(
+    'rpc_referral_traffic_top_urls',
+    {
+      p_site_id: siteId,
+      p_limit: limit,
+    },
+  );
+
+  if (error) {
+    context?.log?.error?.(`Failed to fetch referral top URLs for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => row?.url_path)
+    .filter((path) => typeof path === 'string' && path.length > 0);
+}

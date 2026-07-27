@@ -20,6 +20,8 @@ import {
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
   resolveDrsPollIntervalSeconds,
+  resolveEnableBrandProfile,
+  requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
   toApexHost,
@@ -289,6 +291,103 @@ describe('offsite-audit-utils', () => {
       expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 1.5 } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(log.warn).to.have.been.calledTwice;
+    });
+  });
+
+  describe('resolveEnableBrandProfile', () => {
+    it('returns undefined when auditContext or messageData is absent, so the flag is omitted', () => {
+      expect(resolveEnableBrandProfile({})).to.be.undefined;
+      expect(resolveEnableBrandProfile(undefined)).to.be.undefined;
+      expect(resolveEnableBrandProfile(null)).to.be.undefined;
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: '' } })).to.be.undefined;
+    });
+
+    it('returns true for boolean true or the string "true"', () => {
+      expect(resolveEnableBrandProfile(
+        { messageData: { enableBrandProfile: true } },
+      )).to.equal(true);
+      expect(resolveEnableBrandProfile(
+        { messageData: { enableBrandProfile: 'true' } },
+      )).to.equal(true);
+    });
+
+    it('returns false for boolean false or the string "false"', () => {
+      expect(resolveEnableBrandProfile(
+        { messageData: { enableBrandProfile: false } },
+      )).to.equal(false);
+      expect(resolveEnableBrandProfile(
+        { messageData: { enableBrandProfile: 'false' } },
+      )).to.equal(false);
+    });
+
+    it('returns undefined and warns when enableBrandProfile is invalid', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, log, '[T]')).to.be.undefined;
+      expect(log.warn).to.have.been.calledOnce;
+    });
+
+    it('returns undefined and warns for numeric values (e.g. 0), same as any other invalid input', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 0 } }, log, '[T]')).to.be.undefined;
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 1 } }, log, '[T]')).to.be.undefined;
+      expect(log.warn).to.have.been.calledTwice;
+    });
+  });
+
+  describe('requestOffsiteScrape', () => {
+    let context;
+
+    beforeEach(() => {
+      context = {
+        sqs: { sendMessage: sandbox.stub().resolves() },
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              getQueues: () => ({ audits: 'audits-queue-url' }),
+            }),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+    });
+
+    it('sends a scoped offsite-brand-presence message without enableBrandProfile by default', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' });
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('audits-queue-url');
+      expect(msg).to.deep.equal({
+        type: 'offsite-brand-presence',
+        siteId: 'site-1',
+        auditContext: {
+          slackContext: { channelId: 'C1', threadTs: 'T1' },
+          messageData: { domainScope: 'top-cited' },
+        },
+      });
+    });
+
+    it('forwards enableBrandProfile in messageData when true', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.slackContext).to.be.undefined;
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableBrandProfile: true });
+    });
+
+    it('forwards explicit enableBrandProfile:false in messageData (distinct from absent)', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
+    });
+
+    it('swallows and logs a warning when the send fails', async () => {
+      context.dataAccess.Configuration.findLatest.rejects(new Error('boom'));
+
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true);
+
+      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
     });
   });
 

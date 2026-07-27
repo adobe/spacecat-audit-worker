@@ -415,4 +415,83 @@ describe('CDN Logs Report Utils', () => {
       expect(first).to.equal(second);
     });
   });
+
+  describe('fetchReferralTopUrls', () => {
+    const mockSite = { getId: () => 'test-site-id' };
+
+    it('throws when no PostgREST RPC client is available', async () => {
+      await expect(reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: {},
+      })).to.be.rejectedWith('PostgREST client is required to fetch referral top URLs');
+    });
+
+    it('calls the read RPC and maps rows to a flat path array', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ url_path: '/shoes' }, { url_path: '/boots' }],
+        error: null,
+      });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal(['/shoes', '/boots']);
+      expect(rpc).to.have.been.calledWith(
+        'rpc_referral_traffic_top_urls',
+        { p_site_id: 'test-site-id', p_limit: 200 },
+      );
+    });
+
+    it('honors a custom limit', async () => {
+      const rpc = sandbox.stub().resolves({ data: [], error: null });
+
+      await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        limit: 50,
+      });
+
+      expect(rpc.firstCall.args[1].p_limit).to.equal(50);
+    });
+
+    it('drops empty and non-string paths', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ url_path: '/shoes' }, { url_path: '' }, { url_path: null }, {}],
+        error: null,
+      });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal(['/shoes']);
+    });
+
+    it('returns an empty array when the RPC returns no data', async () => {
+      const rpc = sandbox.stub().resolves({ data: null, error: null });
+
+      const result = await reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      });
+
+      expect(result).to.deep.equal([]);
+    });
+
+    it('throws and logs RPC errors', async () => {
+      const rpc = sandbox.stub().resolves({ data: null, error: new Error('read boom') });
+      const log = { error: sandbox.stub() };
+
+      await expect(reportUtils.fetchReferralTopUrls({
+        site: mockSite,
+        context: { log, dataAccess: { services: { postgrestClient: { rpc } } } },
+      })).to.be.rejectedWith('read boom');
+      expect(log.error).to.have.been.calledWith(
+        'Failed to fetch referral top URLs for site test-site-id: read boom',
+      );
+    });
+  });
 });

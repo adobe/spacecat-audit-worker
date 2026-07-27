@@ -35,6 +35,23 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * True when a suggestion was last touched by a non-system actor (typically a
+ * customer email stamped by the PATCH API). Used to skip regenerating/overwriting
+ * that suggestion's data on subsequent audits (LLMO-6483).
+ *
+ * This checks the entity-level `updatedBy` field — distinct from the alt-text
+ * domain-specific `data.recommendations[].isManuallyEdited` flag used in
+ * image-alt-text handlers.
+ *
+ * @param {Object} suggestion - Suggestion entity (or mock).
+ * @returns {boolean}
+ */
+export function isManuallyEditedSuggestion(suggestion) {
+  const updatedBy = suggestion?.getUpdatedBy?.();
+  return Boolean(updatedBy && updatedBy !== 'system');
+}
+
+/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -243,6 +260,9 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
  * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
+ * @param {boolean} [params.outdateInProgress] - Defaults to false, preserving today's
+ *   behavior of leaving IN_PROGRESS suggestions alone. Pass true to also outdate them
+ *   when no longer detected.
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
@@ -252,21 +272,24 @@ export const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  outdateInProgress = false,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
 
+  const excludedStatuses = [
+    SuggestionDataAccess.STATUSES.OUTDATED,
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.ERROR,
+    SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.REJECTED,
+    SuggestionDataAccess.STATUSES.APPROVED,
+    ...(outdateInProgress ? [] : [SuggestionDataAccess.STATUSES.IN_PROGRESS]),
+  ];
+
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
-    .filter((existing) => ![
-      SuggestionDataAccess.STATUSES.OUTDATED,
-      SuggestionDataAccess.STATUSES.FIXED,
-      SuggestionDataAccess.STATUSES.ERROR,
-      SuggestionDataAccess.STATUSES.SKIPPED,
-      SuggestionDataAccess.STATUSES.REJECTED,
-      SuggestionDataAccess.STATUSES.APPROVED,
-      SuggestionDataAccess.STATUSES.IN_PROGRESS,
-    ].includes(existing.getStatus()))
+    .filter((existing) => !excludedStatuses.includes(existing.getStatus()))
     .filter((existing) => {
       // Preserve prerender suggestions that are already deployed or covered by
       // domain-wide deployment. Domain-wide rows are synthetic aggregate records,
@@ -298,7 +321,8 @@ export const handleOutdatedSuggestions = async ({
         return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
       }
       return true;
-    });
+    })
+    .filter((existing) => !isManuallyEditedSuggestion(existing));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -412,7 +436,12 @@ export const isTBYBSite = checkIsTBYBSite;
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
- * For REJECTED suggestions that appear again, preserves REJECTED status
+ * For REJECTED suggestions that appear again, preserves REJECTED status.
+ * Suggestions with updatedBy set to a non-system actor (customer edits) are
+ * protected from data overwrites when they are still present in the current
+ * audit data (matched-key path). They are also excluded from the OUTDATED and
+ * reconcile-disappeared paths. Note: this is distinct from the alt-text
+ * domain-specific `isManuallyEdited` data flag (LLMO-6483).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -430,6 +459,7 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
+ * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -445,6 +475,7 @@ export async function syncSuggestions({
   existingSuggestions: prefetchedSuggestions = null,
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
+  outdateInProgress = false,
 }) {
   if (!context) {
     return;
@@ -476,6 +507,7 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    outdateInProgress,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
@@ -523,6 +555,14 @@ export async function syncSuggestions({
 
     if (FROZEN_STATUSES.includes(existing.getStatus())) {
       log.debug(`Skipping ${existing.getStatus()} suggestion ${existingKey} - terminal status suggestions are never updated`);
+      return;
+    }
+
+    // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
+    // Applies to NEW and deployed statuses alike. updatedBy may be a user email
+    // — never log it (PII).
+    if (isManuallyEditedSuggestion(existing)) {
+      log.debug(`Skipping manually-edited suggestion ${existingKey}`);
       return;
     }
 
@@ -644,8 +684,19 @@ export function getDisappearedSuggestions(existingSuggestions, newDataKeys, buil
 
 /**
  * Reconciles disappeared suggestions by checking if issues were fixed externally.
- * For suggestions in NEW status that have disappeared from audit data, this function
- * checks if the issue was resolved using the AI suggestion and marks them as FIXED.
+ *
+ * Candidates:
+ *   - Suggestions in NEW status that disappeared from the fresh audit data.
+ *   - Suggestions in OUTDATED status whose data has `isEdited === true` — these
+ *     are second-chance candidates for customer-deployed fixes that landed after
+ *     a prior audit swept them to OUTDATED. `isEdited: true` means the customer
+ *     explicitly picked a target in the ASO UI, so a live match against that
+ *     target is high-confidence attribution.
+ *
+ * For each candidate, calls `isIssueFixedWithAISuggestion` and, on success,
+ * writes the FixEntity FIRST and only then flips the suggestion status to
+ * FIXED. This ordering avoids the "status=FIXED with no FixEntity" drift that
+ * happens when the FixEntity write fails after the status is already committed.
  *
  * @param {Object} params - The parameters object.
  * @param {Object} params.opportunity - The opportunity object with addFixEntities method.
@@ -667,13 +718,23 @@ export async function reconcileDisappearedSuggestions({
 }) {
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
+    const outdatedStatus = SuggestionDataAccess?.STATUSES?.OUTDATED;
 
-    // From disappeared suggestions, only process those in NEW status
+    // Accept NEW suggestions, plus OUTDATED suggestions with `isEdited: true`
+    // (customer explicitly picked a redirect target, so a live match is
+    // high-confidence attribution — see function docstring).
     const candidates = disappearedSuggestions.filter((s) => {
-      if (!newStatus || s?.getStatus?.() !== newStatus) {
+      if (isManuallyEditedSuggestion(s)) {
         return false;
       }
-      return true;
+      const status = s?.getStatus?.();
+      if (newStatus && status === newStatus) {
+        return true;
+      }
+      if (outdatedStatus && status === outdatedStatus && s?.getData?.()?.isEdited === true) {
+        return true;
+      }
+      return false;
     });
 
     if (candidates.length === 0) {
@@ -693,7 +754,43 @@ export async function reconcileDisappearedSuggestions({
       return;
     }
 
-    // Batch-save all fixed suggestions instead of individual saves
+    // Build fix-entity payloads BEFORE flipping suggestion status, so a FixEntity
+    // write failure leaves the suggestion in its prior state for the next audit
+    // to retry — preferring "under-report" to "credit-without-attribution".
+    const fixEntityObjects = [];
+    let payloadThrows = 0;
+    if (typeof buildFixEntityPayload === 'function') {
+      for (const suggestion of fixedSuggestions) {
+        try {
+          const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
+          if (fixEntity) {
+            fixEntityObjects.push(fixEntity);
+          }
+        } catch (e) {
+          payloadThrows += 1;
+          log.warn(`Failed building fix entity for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+        }
+      }
+      // Defensive (batch-wide throw): if EVERY payload build threw, do not flip
+      // suggestion status. Otherwise we would land FIXED with no FixEntity —
+      // the exact drift the reorder prevents.
+      if (payloadThrows > 0 && payloadThrows === fixedSuggestions.length) {
+        log.warn(`[reconcileDisappearedSuggestions] All ${payloadThrows} payload builds threw; leaving suggestions unchanged for next-audit retry`);
+        return;
+      }
+    }
+
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+        log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
+      } catch (e) {
+        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}; leaving suggestions unchanged for next-audit retry: ${e.message}`);
+        return;
+      }
+    }
+
+    // FixEntities persisted (or none to persist) — now flip suggestion status.
     fixedSuggestions.forEach((suggestion) => {
       log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
       suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
@@ -704,31 +801,6 @@ export async function reconcileDisappearedSuggestions({
       await Suggestion.saveMany(fixedSuggestions);
     } catch (e) {
       log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
-      return;
-    }
-
-    // Build fix entities for all successfully saved suggestions
-    const fixEntityObjects = [];
-    if (typeof buildFixEntityPayload === 'function') {
-      for (const suggestion of fixedSuggestions) {
-        try {
-          const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
-          if (fixEntity) {
-            fixEntityObjects.push(fixEntity);
-          }
-        } catch (e) {
-          log.warn(`Failed building fix entity for suggestion ${suggestion?.getId?.()}: ${e.message}`);
-        }
-      }
-    }
-
-    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
-      try {
-        await opportunity.addFixEntities(fixEntityObjects);
-        log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
-      } catch (e) {
-        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
-      }
     }
   } catch (e) {
     log.warn(`Failed reconciliation for disappeared suggestions: ${e.message}`);
@@ -874,6 +946,7 @@ export async function syncSuggestionsWithPublishDetection({
   mergeStatusFunction,
   statusToSetForOutdated,
   scrapedUrlsSet,
+  outdateInProgress = false,
   // Publish detection params
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
@@ -939,6 +1012,7 @@ export async function syncSuggestionsWithPublishDetection({
     mergeStatusFunction,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    outdateInProgress,
     existingSuggestions,
   });
 }

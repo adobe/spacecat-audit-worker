@@ -57,6 +57,15 @@ async function addSuggestions(
       rank: 10,
       data: suggestion,
     }),
+    mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set before
+      // edgeDeployed) (LLMO-4010, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return { ...existingData };
+      }
+      return { ...existingData, ...newData };
+    },
     scrapedUrlsSet,
   });
 }

@@ -1,3 +1,80 @@
+## [1.506.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.0...v1.506.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **llmo:** populate previousConfigVersion in drs-prompt-generation handler ([#2818](https://github.com/adobe/spacecat-audit-worker/issues/2818)) ([495d22f](https://github.com/adobe/spacecat-audit-worker/commit/495d22fbd45014c6b13aa5acace4912e983f7f1e)), closes [#llmo-onboarding-automation](https://github.com/adobe/spacecat-audit-worker/issues/llmo-onboarding-automation)
+
+# [1.506.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.7...v1.506.0) (2026-07-27)
+
+
+### Features
+
+* add enableBrandProfile slackbot flag for cited audits (LLMO-5531) ([#2812](https://github.com/adobe/spacecat-audit-worker/issues/2812)) ([eed03c6](https://github.com/adobe/spacecat-audit-worker/commit/eed03c62012ed782e127b3866a38cd84e5bc99e3))
+
+## [1.505.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.6...v1.505.7) (2026-07-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2816](https://github.com/adobe/spacecat-audit-worker/issues/2816)) ([0e324a3](https://github.com/adobe/spacecat-audit-worker/commit/0e324a33adafb1e8456ca96133213c733cbb8fc3))
+
+## [1.505.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.5...v1.505.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* **form-a11y:** compute a real per-form selector instead of a generic 'form' ([#2814](https://github.com/adobe/spacecat-audit-worker/issues/2814)) ([47baeb9](https://github.com/adobe/spacecat-audit-worker/commit/47baeb9ba55ec882aa0bf279141224fc8cb42472))
+
+## [1.505.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.4...v1.505.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* **llmo-4010:** guard edge-deployed suggestions in summarization and … ([#2811](https://github.com/adobe/spacecat-audit-worker/issues/2811)) ([023f918](https://github.com/adobe/spacecat-audit-worker/commit/023f918f46b9ecbc241f292f9531fc8f241e5069)), closes [#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)
+
+## [1.505.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.3...v1.505.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* **sync:** LLMO-6483 preserve manually-edited suggestions during re-audit ([#2803](https://github.com/adobe/spacecat-audit-worker/issues/2803)) ([9159749](https://github.com/adobe/spacecat-audit-worker/commit/9159749af215a46d18f8a6955bfe3ada1fca6fe7))
+
+## [1.505.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.2...v1.505.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **a11y:** mark suggestions OUTDATED when no longer detected on re-scan ([#2797](https://github.com/adobe/spacecat-audit-worker/issues/2797)) ([658e7cb](https://github.com/adobe/spacecat-audit-worker/commit/658e7cb57195c8d39fdfc0ce0841585fef1f8e02))
+
+## [1.505.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.1...v1.505.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* **internal-links:** freeze SKIPPED/REJECTED suggestions in custom sync loop (SITES-44646) ([#2787](https://github.com/adobe/spacecat-audit-worker/issues/2787)) ([a50f32c](https://github.com/adobe/spacecat-audit-worker/commit/a50f32cc125168993723e099e3070e584545b2e2)), closes [#2758](https://github.com/adobe/spacecat-audit-worker/issues/2758)
+
+## [1.505.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.0...v1.505.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** bump mysticat-shared-seo-client to 1.8.0 ([#2804](https://github.com/adobe/spacecat-audit-worker/issues/2804)) ([8311400](https://github.com/adobe/spacecat-audit-worker/commit/8311400c4d771180ef585540fa34e50f44854ac6))
+
+# [1.505.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.2...v1.505.0) (2026-07-23)
+
+
+### Features
+
+* **referral-traffic:** generate + classify referral URL categories write-time-in-service (optel + cdn) | LLMO-6257 ([#2798](https://github.com/adobe/spacecat-audit-worker/issues/2798)) ([974750e](https://github.com/adobe/spacecat-audit-worker/commit/974750e31ac85257b727dd3ff9e6d2d59da28291)), closes [Hi#level](https://github.com/Hi/issues/level) [#836](https://github.com/adobe/spacecat-audit-worker/issues/836) [#836](https://github.com/adobe/spacecat-audit-worker/issues/836)
+
+## [1.504.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.1...v1.504.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** normalise camelCase/snake_case data + harden reconcile (SITES-48410) ([#2789](https://github.com/adobe/spacecat-audit-worker/issues/2789)) ([4562b69](https://github.com/adobe/spacecat-audit-worker/commit/4562b69c4f1402c9d21a392e3cdf216425790e58)), closes [hi#confidence](https://github.com/hi/issues/confidence)
+
 ## [1.504.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.504.0...v1.504.1) (2026-07-22)
 
 
