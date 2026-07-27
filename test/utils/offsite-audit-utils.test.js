@@ -19,6 +19,7 @@ import {
   NON_EARNED_EXCLUDED_DOMAINS,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
   requestOffsiteScrape,
   computeBrandTokens,
@@ -27,6 +28,10 @@ import {
   formatDuration,
   buildOffsiteTimingLines,
 } from '../../src/utils/offsite-audit-utils.js';
+import {
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
+} from '../../src/offsite-brand-presence/constants.js';
 
 use(sinonChai);
 
@@ -39,6 +44,32 @@ describe('offsite-audit-utils', () => {
 
   afterEach(() => {
     sandbox.restore();
+  });
+
+  describe('resolveDrsPollIntervalSeconds', () => {
+    it('returns the short (attended) interval when a full Slack context is present', () => {
+      expect(resolveDrsPollIntervalSeconds({ channelId: 'C123', threadTs: '111.222' }))
+        .to.equal(DRS_POLL_INTERVAL_SECONDS);
+    });
+
+    it('returns the long (unattended) interval when there is no Slack context', () => {
+      expect(resolveDrsPollIntervalSeconds(undefined))
+        .to.equal(DRS_POLL_INTERVAL_UNATTENDED_SECONDS);
+      expect(resolveDrsPollIntervalSeconds({}))
+        .to.equal(DRS_POLL_INTERVAL_UNATTENDED_SECONDS);
+    });
+
+    it('treats a partial Slack context (missing threadTs or channelId) as unattended', () => {
+      // A half-populated context can't post to a thread, so it should not get the fast cadence.
+      expect(resolveDrsPollIntervalSeconds({ channelId: 'C123' }))
+        .to.equal(DRS_POLL_INTERVAL_UNATTENDED_SECONDS);
+      expect(resolveDrsPollIntervalSeconds({ threadTs: '111.222' }))
+        .to.equal(DRS_POLL_INTERVAL_UNATTENDED_SECONDS);
+    });
+
+    it('uses a longer interval for unattended runs than for attended ones', () => {
+      expect(DRS_POLL_INTERVAL_UNATTENDED_SECONDS).to.be.greaterThan(DRS_POLL_INTERVAL_SECONDS);
+    });
   });
 
   describe('MYSTIQUE_URLS_LIMIT', () => {

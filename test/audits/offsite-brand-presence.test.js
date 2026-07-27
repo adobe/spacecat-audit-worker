@@ -1552,10 +1552,17 @@ describe('Offsite Brand Presence Handler', () => {
       expect(delaySeconds).to.equal(300);
     });
 
-    it('does not enqueue a poll message without a Slack thread context', async () => {
+    it('enqueues a poll message without a Slack thread, at the unattended interval', async () => {
+      // Unattended run still schedules the poll (no slackContext carried) at the 900s cadence.
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, msg, , delaySeconds] = context.sqs.sendMessage.firstCall.args;
+      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
+      expect(msg.auditContext).to.not.have.property('slackContext');
+      expect(delaySeconds).to.equal(900);
     });
 
     it('does not enqueue a poll message when all DRS jobs failed (no successful job_id)', async () => {

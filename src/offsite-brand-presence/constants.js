@@ -65,7 +65,9 @@ export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;
 
 // DRS job completion polling (offsite-brand-presence-drs-status handler).
-export const DRS_POLL_INTERVAL_SECONDS = 300; // 5 minutes between polls
+export const DRS_POLL_INTERVAL_SECONDS = 300; // 5 min — attended (Slack) runs
+// Longer cadence for unattended runs to cut poll overhead (900s = SQS max delay).
+export const DRS_POLL_INTERVAL_UNATTENDED_SECONDS = 900; // 15 min — unattended runs
 // The top-cited bucket scrapes arbitrary third-party web pages via BrightData, which is
 // substantially slower than the structured youtube/reddit collectors and can exceed an
 // hour. Each analysis audit is now dispatched as soon as its own bucket finishes (see the
