@@ -1,3 +1,10 @@
+# [1.507.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.1...v1.507.0) (2026-07-27)
+
+
+### Features
+
+* **offsite:** trigger analysis audits on every run, tune DRS polling ([#2820](https://github.com/adobe/spacecat-audit-worker/issues/2820)) ([1e8d2f9](https://github.com/adobe/spacecat-audit-worker/commit/1e8d2f9758efa5a22c577f21a6ee26351373e177))
+
 ## [1.506.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.0...v1.506.1) (2026-07-27)
 
 
