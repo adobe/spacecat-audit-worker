@@ -30,7 +30,7 @@ Today `generateReferralCategoryRules` only runs when the optel handler runs. Cha
 
 **Fix B — DRS classifies its own URLs write-time, in Python.**
 DRS runs in a separate AWS account and cannot read the database directly, so:
-- Add a small **read endpoint on the api-service** that returns a site's active category rules (the "rules proxy"). DRS already calls the api-service, so this is the natural bridge.
+- **Reuse the existing api-service endpoint** `GET /sites/:siteId/agentic-categories`, which already returns a site's active category rules as `{ name, regex, sortOrder, ... }` (verified in `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`. DRS already calls the api-service, so it just calls this — **no new endpoint needed.** The only remaining piece is **authorizing DRS** to call it (provision `site:read` / the S2S capability), an auth/provisioning task rather than endpoint code.
 - In DRS (Python), after it imports GA4/AA/CJA traffic, it fetches the rules via that endpoint, classifies each URL (mirroring the JS `classify.js` logic, including the same `url_path` canonicalization), writes the same category CSV, and drops it into the existing pipeline.
 
 **Reuse (no new work):** the projector (already accepts `referral_url_classifications`), the data-service (the import RPC + tables), the api read RPCs, and the UI are all unchanged — they already handle this data for optel/cdn.
@@ -50,7 +50,7 @@ flowchart TB
 
   subgraph TRACK2["Track 2 — Apply the rulebook (Fix B: DRS classifies in Python)"]
     direction TB
-    DRS["DRS: imports GA4, AA, CJA"] -->|"1. GET rules"| EP["api-service: rules endpoint (new)"]
+    DRS["DRS: imports GA4, AA, CJA"] -->|"1. GET rules"| EP["api-service: GET /sites/{siteId}/agentic-categories (existing)"]
     EP -->|"rules JSON"| DRS
     DRS -->|"2. classify (Python)  3. write CSV to S3"| PROJ["projector: routes the S3 drop, calls import RPC (reused)"]
     PROJ --> CLS["data-service: referral_url_classifications = THE TAGS (reused)"]
@@ -68,7 +68,7 @@ The DRS→projector hand-off uses the **same transport as optel/cdn**: the produ
 | Piece | Status |
 |---|---|
 | Weekly **sweeper** (Track 1) | 🆕 new — re-triggers the existing `generateReferralCategoryRules` (create-if-missing) |
-| **Rules endpoint** (api-service) | 🆕 new — a small read endpoint |
+| **Rules endpoint** (api-service) | ♻️ reused — existing `GET /sites/{siteId}/agentic-categories` (returns name/regex/sortOrder, `site:read`); only DRS auth to provision |
 | **DRS Python classify** | 🆕 new — DRS team |
 | Corpus RPC + rulebook table | ♻️ reused (already shipped) |
 | projector → data-service → api → UI | ♻️ reused, untouched |
@@ -123,14 +123,14 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 - Why: JS shipped first (Phase 1), so it is the natural source of truth; a duplicated case-list is the simplest way to guarantee byte-for-byte parity.
 
 **7.5 — Rules endpoint (shape + auth)**
-- Options (shape): (A) a new dedicated GET rules endpoint; (B) extend an existing referral endpoint.
-- Options (auth): (A) reuse the cross-account path DRS already uses to call the api-service; (B) a new auth mechanism.
-- **Chosen: a new GET rules endpoint (A); reuse DRS's existing auth (A).**
-- Why: mirrors the existing referral read endpoints and avoids inventing new auth.
+- Options (shape): (A) build a new dedicated rules endpoint; (B) **reuse the existing** `GET /sites/:siteId/agentic-categories`.
+- Options (auth): (A) reuse the access path DRS already uses; (B) a new auth mechanism.
+- **Chosen: B (reuse endpoint) + A (reuse auth).** The existing `GET /sites/:siteId/agentic-categories` already returns each active rule as `{ name, regex, sortOrder }` (verified against `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`, so **no new endpoint is needed**. Remaining: provision DRS with `site:read` (auth/provisioning, not endpoint code).
+- Why: the endpoint already exists and returns exactly what DRS needs; building a new one would duplicate it.
 
 **7.6 — Ownership**
 - Options: (A) split — Omair owns the JS pieces, the DRS team owns the Python classify; (B) a single owner for everything.
-- **Chosen: A — Omair owns the JS pieces (sweeper + api endpoint); the DRS team owns the Python classify.** (Subject to confirmation.)
+- **Chosen: A — Omair owns the JS pieces (the rule-gen sweeper + confirming/provisioning DRS's auth on the existing rules endpoint); the DRS team owns the Python classify.** (Subject to confirmation.)
 - Why: keeps the JS work where the code and familiarity are, and Python-in-DRS with its owners.
 
 **How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via a simple new endpoint and classifies in Python against the JS-defined canonical form. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
