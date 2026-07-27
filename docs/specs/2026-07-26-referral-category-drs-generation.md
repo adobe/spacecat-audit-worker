@@ -52,7 +52,7 @@ flowchart TB
     direction TB
     DRS["DRS: imports GA4, AA, CJA"] -->|"1. GET rules"| EP["api-service: rules endpoint (new)"]
     EP -->|"rules JSON"| DRS
-    DRS -->|"2. classify in Python, 3. write CSV"| PROJ["projector: single doorman (reused)"]
+    DRS -->|"2. classify (Python)  3. write CSV to S3"| PROJ["projector: routes the S3 drop, calls import RPC (reused)"]
     PROJ --> CLS["data-service: referral_url_classifications = THE TAGS (reused)"]
     CLS --> API["api-service: referral read endpoints (reused)"]
     API --> UI["UI: Category dropdown (reused)"]
@@ -60,6 +60,8 @@ flowchart TB
 
   EP -.->|"reads"| RB
 ```
+
+The DRS→projector hand-off uses the **same transport as optel/cdn**: the producer drops the classification CSV in **S3**, and the projector imports it via `wrpc_import_referral_url_classifications`. So "write CSV" in the diagram means the S3 drop, not a direct DB write.
 
 **New vs reused:**
 
