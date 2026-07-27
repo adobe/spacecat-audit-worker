@@ -106,12 +106,13 @@ describe('collectCWVDataAndImportCode Tests', () => {
       ),
     ).to.be.true;
 
-    // With new logic: top 15 pages by pageviews are always included
-    // rumData has 31 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
+    // Top pages by pageviews are always included, up to the tier's limit.
+    // No entitlement is mocked in this context, so getTopPagesCount falls back to the
+    // paid default (10). rumData has 31 entries, top 10 will be selected.
     const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
+    const expectedData = sortedData.slice(0, 10);
 
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
     expect(result.fullAuditRef).to.equal(auditUrl);
@@ -132,30 +133,30 @@ describe('collectCWVDataAndImportCode Tests', () => {
     );
 
     // With default threshold (1000 * 7 = 7000), 4 entries meet threshold
-    // But top 15 are always included, so result should have 15 entries
+    // But top 10 (paid default, no entitlement mocked) are always included
     const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
-    
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    const expectedData = sortedData.slice(0, 10);
+
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
-  it('includes pages beyond top 15 if they meet threshold', async () => {
+  it('includes pages beyond top 10 if they meet threshold', async () => {
     // With default threshold (1000 * 7 = 7000), check pages that meet threshold
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // At least top 15 should be included
-    expect(result.auditResult.cwv.length).to.be.at.least(15);
-    
+    // At least top 10 (paid default, no entitlement mocked) should be included
+    expect(result.auditResult.cwv.length).to.be.at.least(10);
+
     // Verify sorted by pageviews descending
     for (let i = 1; i < result.auditResult.cwv.length; i++) {
       expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
     }
-    
-    // Verify that pages beyond top 15 meet the threshold
-    if (result.auditResult.cwv.length > 15) {
-      for (let i = 15; i < result.auditResult.cwv.length; i++) {
+
+    // Verify that pages beyond top 10 meet the threshold
+    if (result.auditResult.cwv.length > 10) {
+      for (let i = 10; i < result.auditResult.cwv.length; i++) {
         expect(result.auditResult.cwv[i].pageviews).to.be.at.least(7000);
       }
     }
@@ -247,12 +248,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(thresholdPages[2].url).to.equal('https://example.com/threshold3');
   });
 
-  it('always includes homepage even if not in top 15 or meeting threshold', async () => {
-    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
+  it('always includes homepage even if not in top 10 or meeting threshold', async () => {
+    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 10)
     const homepageData = {
       type: 'url',
       url: baseURL,
-      pageviews: 50, // Very low pageviews (below threshold and below top 15)
+      pageviews: 50, // Very low pageviews (below threshold and below top 10)
       organic: 10,
       metrics: [
         {
@@ -276,9 +277,9 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // Should have top 15 + homepage (16 total)
-    expect(result.auditResult.cwv).to.have.lengthOf(16);
-    
+    // Should have top 10 (paid default, no entitlement mocked) + homepage (11 total)
+    expect(result.auditResult.cwv).to.have.lengthOf(11);
+
     // Verify homepage is included
     const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
     expect(homepageInResult).to.exist;
@@ -289,7 +290,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
     const groupedData = {
       type: 'group', // Not 'url' - should not match homepage logic
       // url field is absent for grouped entries (they have pattern instead)
-      pageviews: 50, // Low pageviews - not in top 15, below threshold
+      pageviews: 50, // Low pageviews - not in top 10, below threshold
       organic: 10,
       metrics: [
         {
@@ -312,8 +313,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
     context.rumApiClient.query.resolves(dataWithGrouped);
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
-    // Should only have top 15 (grouped entry excluded: type !== 'url')
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    // Should only have top 10 (paid default, no entitlement mocked); grouped entry excluded: type !== 'url'
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
   });
 
   describe('CWV audit to oppty conversion', () => {
