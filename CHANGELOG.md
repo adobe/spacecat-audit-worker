@@ -1,3 +1,10 @@
+## [1.506.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.0...v1.506.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **llmo:** populate previousConfigVersion in drs-prompt-generation handler ([#2818](https://github.com/adobe/spacecat-audit-worker/issues/2818)) ([495d22f](https://github.com/adobe/spacecat-audit-worker/commit/495d22fbd45014c6b13aa5acace4912e983f7f1e)), closes [#llmo-onboarding-automation](https://github.com/adobe/spacecat-audit-worker/issues/llmo-onboarding-automation)
+
 # [1.506.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.7...v1.506.0) (2026-07-27)
 
 
