@@ -16,7 +16,24 @@
  * and DRS availability filtering to ensure only already-scraped URLs are sent for analysis.
  */
 
+import {
+  DRS_POLL_INTERVAL_SECONDS,
+  DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
+} from '../offsite-brand-presence/constants.js';
+
 export const MYSTIQUE_URLS_LIMIT = 50;
+
+/**
+ * DRS status-poll interval (seconds): attended (Slack) runs poll frequently for quick feedback,
+ * unattended runs poll less often to cut overhead.
+ *
+ * @param {object} [slackContext] - `{ channelId, threadTs }` when the run is attended
+ * @returns {number} Poll interval in seconds
+ */
+export function resolveDrsPollIntervalSeconds(slackContext) {
+  const attended = Boolean(slackContext?.channelId && slackContext?.threadTs);
+  return attended ? DRS_POLL_INTERVAL_SECONDS : DRS_POLL_INTERVAL_UNATTENDED_SECONDS;
+}
 
 /**
  * Social, search, and deal-aggregator domains that are NOT earned third-party

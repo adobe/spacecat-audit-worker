@@ -228,13 +228,34 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(mockPostMessageOptional.firstCall.args[2]).to.include('still running (timed out waiting)');
   });
 
-  it('no-ops when slackContext is missing', async () => {
+  it('still polls and fans out without Slack context, posting no summary', async () => {
+    // Unattended poll must not bail; summary goes to postMessageOptional with no channel (no-op).
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
     const result = await handler.default(buildMessage({ slackContext: {} }), context);
 
     expect(result.status).to.equal(200);
-    expect(mockGetJob).to.not.have.been.called;
-    expect(mockPostMessageOptional).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(mockGetJob).to.have.been.calledTwice;
+    const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+    expect(types).to.have.members(['reddit-analysis', 'youtube-analysis']);
+    expect(mockPostMessageOptional).to.have.been.calledOnce;
+    expect(mockPostMessageOptional.firstCall.args[1]).to.be.undefined;
+  });
+
+  it('re-enqueues at the unattended interval (900s) when there is no Slack context', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+    await handler.default(
+      buildMessage({ slackContext: {}, deadline: Date.now() + 3600000 }),
+      context,
+    );
+
+    const pollCall = context.sqs.sendMessage.getCalls()
+      .find((c) => c.args[1].type === 'offsite-brand-presence-drs-status');
+    expect(pollCall).to.not.be.undefined;
+    expect(pollCall.args[3]).to.equal(900);
   });
 
   it('no-ops when there are no jobs to track', async () => {
@@ -482,6 +503,87 @@ describe('offsite-brand-presence DRS status handler', () => {
       const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
       expect(sentTypes).to.include('youtube-analysis');
       expect(mockPostMessageOptional).to.have.been.calledOnce;
+    });
+  });
+
+  describe('skipping re-polls of already-terminal jobs', () => {
+    it('re-polls only the unresolved job, skipping one already terminal from a prior poll', async () => {
+      // reddit finished + was dispatched on the previous poll; only youtube needs a fresh getJob.
+      mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'reddit.com', datasetId: 'reddit_comments', jobId: 'job-1', status: 'COMPLETED' },
+          { domain: 'youtube.com', datasetId: 'youtube_videos', jobId: 'job-2' },
+        ],
+        triggeredAuditTypes: ['reddit-analysis'],
+      }), context);
+
+      expect(mockGetJob).to.have.been.calledOnce;
+      expect(mockGetJob).to.have.been.calledWith('job-2');
+      expect(mockGetJob).to.not.have.been.calledWith('job-1');
+      // youtube still running, budget remains → poll re-enqueued, no summary, no re-dispatch.
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.deep.equal(['offsite-brand-presence-drs-status']);
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('persists resolved job statuses onto the re-enqueued poll message', async () => {
+      // Carry each job's resolved status forward so the next poll can skip the finished one.
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+      await handler.default(buildMessage(), context);
+
+      const pollCall = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'offsite-brand-presence-drs-status');
+      expect(pollCall).to.not.be.undefined;
+      const carriedJobs = pollCall.args[1].auditContext.jobs;
+      expect(carriedJobs.find((j) => j.jobId === 'job-1').status).to.equal('COMPLETED');
+      expect(carriedJobs.find((j) => j.jobId === 'job-2').status).to.equal('RUNNING');
+    });
+
+    it('finalizes from carried-forward statuses (success and failure) without re-fetching them', async () => {
+      // reddit (COMPLETED) and top-cited (FAILED) resolved earlier; only youtube finishes now.
+      mockGetJob.withArgs('job-y').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'reddit.com', datasetId: 'reddit_comments', jobId: 'job-r', status: 'COMPLETED' },
+          {
+            domain: 'top-cited', datasetId: 'top_cited', jobId: 'job-c', status: 'FAILED', error: 'brightdata boom',
+          },
+          { domain: 'youtube.com', datasetId: 'youtube_videos', jobId: 'job-y' },
+        ],
+        triggeredAuditTypes: ['reddit-analysis'],
+      }), context);
+
+      expect(mockGetJob).to.have.been.calledOnce;
+      expect(mockGetJob).to.have.been.calledWith('job-y');
+      // Summary reflects the carried statuses (not fresh getJob calls).
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const text = mockPostMessageOptional.firstCall.args[2];
+      expect(text).to.include('reddit_comments');
+      expect(text).to.include('COMPLETED');
+      expect(text).to.include('FAILED');
+      expect(text).to.include('brightdata boom');
+      const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
+      expect(types).to.deep.equal(['youtube-analysis']);
+    });
+
+    it('makes no getJob calls when every job is already terminal on arrival', async () => {
+      // SQS redelivery of an already-finalized poll: finalize with zero DRS calls, no re-dispatch.
+      await handler.default(buildMessage({
+        jobs: [
+          { domain: 'reddit.com', datasetId: 'reddit_comments', jobId: 'job-1', status: 'COMPLETED' },
+          { domain: 'youtube.com', datasetId: 'youtube_videos', jobId: 'job-2', status: 'COMPLETED' },
+        ],
+        triggeredAuditTypes: ['reddit-analysis', 'youtube-analysis'],
+      }), context);
+
+      expect(mockGetJob).to.not.have.been.called;
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
   });
 });
