@@ -35,6 +35,44 @@ DRS runs in a separate AWS account and cannot read the database directly, so:
 
 **Reuse (no new work):** the projector (already accepts `referral_url_classifications`), the data-service (the import RPC + tables), the api read RPCs, and the UI are all unchanged — they already handle this data for optel/cdn.
 
+### Architecture (with the chosen options)
+
+Two tracks: **Track 1** builds each site's rulebook (Fix A — the sweeper); **Track 2** applies it to DRS traffic (Fix B). Everything from the projector down is reused from Phase 1.
+
+```mermaid
+flowchart TB
+  subgraph TRACK1["Track 1 — Build the rulebook (Fix A: weekly sweeper)"]
+    direction TB
+    SCH["Scheduler (weekly)"] --> SW["audit-worker: sweeper job (new)"]
+    SW -->|"fetch top URLs"| CORP["rpc_referral_traffic_top_urls (corpus, all 5 sources)"]
+    SW -->|"no rules yet: LLM builds them"| RB["data-service: agentic_url_category_rules = THE RULEBOOK"]
+  end
+
+  subgraph TRACK2["Track 2 — Apply the rulebook (Fix B: DRS classifies in Python)"]
+    direction TB
+    DRS["DRS: imports GA4, AA, CJA"] -->|"1. GET rules"| EP["api-service: rules endpoint (new)"]
+    EP -->|"rules JSON"| DRS
+    DRS -->|"2. classify in Python, 3. write CSV"| PROJ["projector: single doorman (reused)"]
+    PROJ --> CLS["data-service: referral_url_classifications = THE TAGS (reused)"]
+    CLS --> API["api-service: referral read endpoints (reused)"]
+    API --> UI["UI: Category dropdown (reused)"]
+  end
+
+  EP -.->|"reads"| RB
+```
+
+**New vs reused:**
+
+| Piece | Status |
+|---|---|
+| Weekly **sweeper** (Track 1) | 🆕 new — re-triggers the existing `generateReferralCategoryRules` (create-if-missing) |
+| **Rules endpoint** (api-service) | 🆕 new — a small read endpoint |
+| **DRS Python classify** | 🆕 new — DRS team |
+| Corpus RPC + rulebook table | ♻️ reused (already shipped) |
+| projector → data-service → api → UI | ♻️ reused, untouched |
+
+*(This shows Option A. Under Option B only the "sweeper job" node becomes a "dedicated rule-gen audit"; the rest of the diagram is identical.)*
+
 ## 4. How it works (trace one GA4 URL end-to-end)
 
 1. DRS imports GA4 referral traffic for a site (as it does today).
