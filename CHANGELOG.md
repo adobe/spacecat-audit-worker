@@ -1,3 +1,10 @@
+# [1.509.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.2...v1.509.0) (2026-07-28)
+
+
+### Features
+
+* **offsite:** log LLM cost at end of offsite audits ([#2822](https://github.com/adobe/spacecat-audit-worker/issues/2822)) ([4870809](https://github.com/adobe/spacecat-audit-worker/commit/48708091dc4efb7f58cdc1f75524a4688574663f))
+
 ## [1.508.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.1...v1.508.2) (2026-07-28)
 
 
