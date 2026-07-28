@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { deepEqual, isObject } from '@adobe/spacecat-shared-utils';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 import { METRICS, THRESHOLDS } from './kpi-metrics.js';
 
@@ -41,6 +42,24 @@ function getFailingMetricInfo(allMetrics) {
   };
 }
 
+/**
+ * Deterministic "dispatch fingerprint" describing the inputs that justify (re)sending a
+ * CWV suggestion to Mystique. Stamped on the suggestion after a NEW dispatch and compared
+ * on the next weekly audit so we only re-dispatch when a relevant input changed:
+ * - the set of failing metrics grew/changed (e.g. CLS newly goes bad), or
+ * - site code became available (`hadCodeInfo` false -> true) so a code patch that couldn't
+ *   be generated before might now succeed.
+ * Both the guard (read) and `processAutoSuggest` (stamp) build it identically so a stamped
+ * marker re-compares exactly next run. Mirrors the V2/blackboard `idea_fingerprint` idea.
+ *
+ * @param {string[]} failingMetrics - metrics failing this run (lcp/cls/inp)
+ * @param {boolean} hasCodeInfo - whether a code repo/path is available for this site
+ * @returns {{ failingMetrics: string[], hadCodeInfo: boolean }}
+ */
+function buildDispatchFingerprint(failingMetrics, hasCodeInfo) {
+  return { failingMetrics: [...failingMetrics].sort(), hadCodeInfo: !!hasCodeInfo };
+}
+
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 
 /**
@@ -69,10 +88,17 @@ const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
  * is nothing for the SME to review and the suggestion can never be approved.
  *
  * For NEW, we dispatch whenever no code patch has been produced yet
- * (`data.isCodeChangeAvailable !== true`). We deliberately ignore
- * `issues[*].value` here — text guidance being present is not proof that a code
- * patch ran successfully, and `mergeCwvData` preserves that field across every
- * re-audit, which used to silently block retries forever.
+ * (`data.isCodeChangeAvailable !== true`) AND a relevant input has changed since the
+ * last dispatch. Cost control (same flagged metric week after week shouldn't pay for
+ * fresh guidance every audit): we SUPPRESS the re-dispatch when the currently-failing
+ * metric set is already fully covered by existing guidance (`data.issues[*].type`) AND
+ * the dispatch fingerprint is unchanged from the last stamped one
+ * (`data.autoSuggestDispatch`). We still re-dispatch when a new bad metric appears or
+ * when site code becomes available (both flip the fingerprint), and — crucially — when
+ * guidance never actually arrived for a still-failing metric (`allFailingGuided` false),
+ * so a slow/failed Mystique run is still retried. We deliberately ignore
+ * `issues[*].value` (its mere presence is not proof a code patch ran) — the retry is
+ * bounded by the fingerprint + code-patch availability, not by guidance text existing.
  *
  * For PENDING_VALIDATION, re-dispatch is gated on the existing guidance being
  * missing or in the legacy aggregated format (no per-issue `source_index`), so a
@@ -82,9 +108,11 @@ const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
  * Group filtering and "page is all-green" filtering happen in `processAutoSuggest`.
  *
  * @param {Object} suggestion - Suggestion object
+ * @param {boolean} [hasCodeInfo=false] - whether site code is available this run; part of
+ *   the dispatch fingerprint so a NEW page re-dispatches once when code first appears.
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
-export function shouldSendAutoSuggestForSuggestion(suggestion) {
+export function shouldSendAutoSuggestForSuggestion(suggestion, hasCodeInfo = false) {
   const status = suggestion.getStatus();
   if (status !== 'NEW' && status !== 'PENDING_VALIDATION') {
     return false;
@@ -98,6 +126,23 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
     const hasGranularGuidance = Array.isArray(issues) && issues.length > 0
       && issues.some((i) => Number.isInteger(i.source_index));
     return !hasGranularGuidance;
+  }
+
+  // status === 'NEW': suppress the weekly re-dispatch unless an input changed.
+  const { failingMetrics } = getFailingMetricInfo(data.metrics || []);
+  if (failingMetrics.length === 0) {
+    // All-green: dispatch decision defers to processAutoSuggest, which owns the skip+log.
+    return true;
+  }
+  const guidedMetrics = new Set(
+    (Array.isArray(data.issues) ? data.issues : []).map((i) => i.type),
+  );
+  const allFailingGuided = failingMetrics.every((m) => guidedMetrics.has(m));
+  const stored = data.autoSuggestDispatch;
+  const fingerprintUnchanged = isObject(stored)
+    && deepEqual(stored, buildDispatchFingerprint(failingMetrics, hasCodeInfo));
+  if (allFailingGuided && fingerprintUnchanged) {
+    return false;
   }
   return true;
 }
@@ -124,8 +169,9 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
  */
 export async function processAutoSuggest(context, opportunity, site) {
   const {
-    log, sqs, env,
+    log, sqs, env, dataAccess,
   } = context;
+  const Suggestion = dataAccess?.Suggestion;
 
   try {
     const siteId = opportunity.getSiteId();
@@ -138,10 +184,15 @@ export async function processAutoSuggest(context, opportunity, site) {
     const codeInfo = site ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
+    // NEW suggestions we dispatched this run, stamped with a fresh dispatch fingerprint so
+    // the next weekly audit can suppress an identical re-dispatch. Persisted in one batched
+    // saveMany (never per-item save — see the repo N+1 guidance).
+    const dispatchedNew = [];
+
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
       // Skip suggestions that don't need auto-suggest
-      if (!shouldSendAutoSuggestForSuggestion(suggestion)) {
+      if (!shouldSendAutoSuggestForSuggestion(suggestion, hasCodeInfo)) {
         // eslint-disable-next-line no-continue
         continue;
       }
@@ -205,6 +256,22 @@ export async function processAutoSuggest(context, opportunity, site) {
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
       log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (opportunityId: ${opportunityId}, suggestionId: ${suggestionId}, url: ${url}), message: \n${JSON.stringify(sqsMessage, null, 2)}`);
+
+      // Stamp the dispatch fingerprint on NEW suggestions so an unchanged re-audit next
+      // week is suppressed. NEW only: a leftover PENDING_VALIDATION-era fingerprint must
+      // not suppress the first post-SME-approval NEW dispatch (that dispatch is what
+      // authorizes Mystique code-fix generation via suggestionStatus).
+      if (Suggestion && suggestion.getStatus() === 'NEW') {
+        suggestion.setData({
+          ...suggestionData,
+          autoSuggestDispatch: buildDispatchFingerprint(failingMetrics, hasCodeInfo),
+        });
+        dispatchedNew.push(suggestion);
+      }
+    }
+
+    if (dispatchedNew.length > 0) {
+      await Suggestion.saveMany(dispatchedNew);
     }
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Completed sending CWV auto-suggest messages, opportunityId: ${opportunityId}`);

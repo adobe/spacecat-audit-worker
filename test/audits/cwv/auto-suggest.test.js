@@ -827,4 +827,188 @@ describe('CWV Auto-Suggest', () => {
       expect(result).to.be.false;
     });
   });
+
+  describe('shouldSendAutoSuggestForSuggestion — suppress unless inputs changed (NEW)', () => {
+    const newSuggestion = (data) => ({ getStatus: () => 'NEW', getData: () => data });
+
+    it('suppresses re-dispatch when failing metrics are unchanged and already guided', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        issues: [{ type: 'lcp', value: 'x' }],
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.false;
+    });
+
+    it('dispatches when there is no stored dispatch fingerprint yet (first run / legacy)', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        issues: [{ type: 'lcp', value: 'x' }],
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.true;
+    });
+
+    it('dispatches when guidance has not arrived for the failing metric (empty issues)', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        issues: [],
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.true;
+    });
+
+    it('dispatches when issues is not an array', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.true;
+    });
+
+    it('dispatches when a new bad metric appears that is not yet guided', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 300 }], // lcp + inp
+        issues: [{ type: 'lcp', value: 'x' }],
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.true;
+    });
+
+    it('dispatches once when site code becomes available (fingerprint hadCodeInfo flips)', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        issues: [{ type: 'lcp', value: 'x' }],
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, true)).to.be.true;
+    });
+
+    it('dispatches when the stored failing-metric set differs from the current one', () => {
+      const suggestion = newSuggestion({
+        metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+        issues: [{ type: 'lcp', value: 'x' }],
+        autoSuggestDispatch: { failingMetrics: ['cls'], hadCodeInfo: false },
+      });
+      expect(shouldSendAutoSuggestForSuggestion(suggestion, false)).to.be.true;
+    });
+  });
+
+  describe('processAutoSuggest — dispatch fingerprint stamping', () => {
+    let saveManyStub;
+    let daContext;
+
+    const makeOpp = (suggestions) => ({
+      getSiteId: () => 'site-123',
+      getAuditId: () => 'audit-456',
+      getId: () => 'oppty-789',
+      getType: () => 'cwv',
+      getSuggestions: () => Promise.resolve(suggestions),
+    });
+
+    beforeEach(() => {
+      saveManyStub = sandbox.stub().resolves();
+      daContext = { ...context, dataAccess: { Suggestion: { saveMany: saveManyStub } } };
+    });
+
+    it('stamps a dispatch fingerprint and batch-saves NEW dispatches', async () => {
+      const setDataStub = sandbox.stub();
+      const suggestion = {
+        getId: () => 'sugg-001',
+        getStatus: () => 'NEW',
+        getData: () => ({
+          type: 'url',
+          url: 'https://example.com/page1',
+          metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+          issues: [],
+        }),
+        setData: setDataStub,
+      };
+
+      await processAutoSuggest(daContext, makeOpp([suggestion]), null);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(setDataStub).to.have.been.calledOnceWithExactly(sinon.match({
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+      }));
+      expect(saveManyStub).to.have.been.calledOnceWithExactly([suggestion]);
+    });
+
+    it('suppresses an unchanged, already-guided re-dispatch (no SQS, no save)', async () => {
+      const suggestion = {
+        getId: () => 'sugg-001',
+        getStatus: () => 'NEW',
+        getData: () => ({
+          type: 'url',
+          url: 'https://example.com/page1',
+          metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+          issues: [{ type: 'lcp', value: 'x' }],
+          autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+        }),
+        setData: sandbox.stub(),
+      };
+
+      await processAutoSuggest(daContext, makeOpp([suggestion]), null);
+
+      expect(sqsStub.called).to.be.false;
+      expect(saveManyStub.called).to.be.false;
+    });
+
+    it('does not stamp PENDING_VALIDATION dispatches', async () => {
+      const suggestion = {
+        getId: () => 'sugg-001',
+        getStatus: () => 'PENDING_VALIDATION',
+        getData: () => ({
+          type: 'url',
+          url: 'https://example.com/page1',
+          metrics: [{ deviceType: 'mobile', lcp: 3500 }],
+          issues: [],
+        }),
+        setData: sandbox.stub(),
+      };
+
+      await processAutoSuggest(daContext, makeOpp([suggestion]), null);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(saveManyStub.called).to.be.false;
+    });
+
+    it('re-dispatches and re-stamps hadCodeInfo:true when site code becomes available', async () => {
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/site/repo.zip',
+      });
+      const { processAutoSuggest: processWithCode } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/accessibility/utils/data-processing.js': { getCodeInfo: getCodeInfoStub },
+      });
+      const setDataStub = sandbox.stub();
+      const suggestion = {
+        getId: () => 'sugg-001',
+        getStatus: () => 'NEW',
+        getData: () => ({
+          type: 'url',
+          url: 'https://example.com/page1',
+          metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+          issues: [{ type: 'lcp', value: 'x' }],
+          autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: false },
+        }),
+        setData: setDataStub,
+      };
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github', owner: 'o', repo: 'r', ref: 'main',
+        }),
+      };
+
+      await processWithCode(daContext, makeOpp([suggestion]), siteWithCode);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(setDataStub).to.have.been.calledOnceWithExactly(sinon.match({
+        autoSuggestDispatch: { failingMetrics: ['lcp'], hadCodeInfo: true },
+      }));
+      expect(saveManyStub).to.have.been.calledOnce;
+    });
+  });
 });
