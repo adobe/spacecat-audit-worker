@@ -1,3 +1,10 @@
+## [1.508.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.1...v1.508.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **prerender:** strip tracking query params from RCV dedup keys ([#2819](https://github.com/adobe/spacecat-audit-worker/issues/2819)) ([231496c](https://github.com/adobe/spacecat-audit-worker/commit/231496c11adaaefe5e24fbd5400a141314c4f4ff))
+
 ## [1.508.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.0...v1.508.1) (2026-07-28)
 
 
