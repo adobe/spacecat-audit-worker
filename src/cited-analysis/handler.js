@@ -304,6 +304,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         analysisName: 'cited-analysis',
         baseUrl: site.getBaseURL(),
         urlCount: storeData.urls.length,
+        urlLimit,
         counts: storeData.drsCounts,
         scrapedNow,
       }),

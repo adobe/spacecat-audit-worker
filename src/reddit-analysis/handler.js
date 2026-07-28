@@ -190,6 +190,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
         analysisName: 'reddit-analysis',
         baseUrl: site.getBaseURL(),
         urlCount: storeData.urls.length,
+        urlLimit,
         counts: storeData.drsCounts,
         scrapedNow,
       }),
