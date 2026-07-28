@@ -120,6 +120,34 @@ export function buildOffsiteTimingLines(timings, nowMs = Date.now()) {
     + `• Total (DRS + Mystique): ${total}`;
 }
 
+/**
+ * Logs the LLM cost/usage Mystique reported for an offsite analysis, at the end of
+ * the run. Mystique stamps `opportunity.llmUsage`
+ * ({ totalLlmCalls, totalTokens, totalCostUsd }) into the BO JSON; this surfaces it
+ * as a structured, greppable log line alongside the timing lines.
+ *
+ * No-ops when `llmUsage` is absent or not an object (e.g. an analysis that doesn't
+ * track token usage, or a tracking-degraded run) so the caller never has to guard.
+ * Numeric fields are coerced defensively so a malformed payload can't throw.
+ *
+ * @param {object} log - Logger with an `info` method
+ * @param {string} logPrefix - Per-audit log prefix (e.g. '[Cited]')
+ * @param {string} siteId - The site the analysis ran for
+ * @param {object} [llmUsage] - { totalLlmCalls, totalTokens, totalCostUsd } from Mystique
+ */
+export function logOffsiteLlmUsage(log, logPrefix, siteId, llmUsage) {
+  if (!llmUsage || typeof llmUsage !== 'object') {
+    return;
+  }
+  const calls = Number(llmUsage.totalLlmCalls) || 0;
+  const tokens = Number(llmUsage.totalTokens) || 0;
+  const cost = Number(llmUsage.totalCostUsd) || 0;
+  log.info(
+    `${logPrefix} LLM usage for siteId: ${siteId}: ${calls} calls, `
+    + `${tokens} tokens, est. cost $${cost.toFixed(4)}`,
+  );
+}
+
 // Tokens shorter than this are dropped from brand-token matching: a 1-2 char
 // substring would match almost any host and turn the branded filter into a
 // blunt instrument.

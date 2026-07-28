@@ -20,7 +20,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
-import { buildOffsiteTimingLines } from '../utils/offsite-audit-utils.js';
+import { buildOffsiteTimingLines, logOffsiteLlmUsage } from '../utils/offsite-audit-utils.js';
 import {
   isValidOffsiteAnalysis,
   persistOffsiteOpportunity,
@@ -157,6 +157,7 @@ export default async function handler(message, context) {
     });
 
     log.info(`${LOG_PREFIX} Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    logOffsiteLlmUsage(log, LOG_PREFIX, siteId, opportunityData.llmUsage);
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);

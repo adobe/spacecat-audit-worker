@@ -27,6 +27,7 @@ import {
   toApexHost,
   formatDuration,
   buildOffsiteTimingLines,
+  logOffsiteLlmUsage,
   formatDrsExtras,
   buildAnalysisScrapeStatusMessage,
   scrapedThisCycle,
@@ -683,6 +684,52 @@ describe('offsite-audit-utils', () => {
     it('returns empty string when the elapsed Mystique time is not computable', () => {
       // analysisStartedAt in the future → negative elapsed → no usable duration.
       expect(buildOffsiteTimingLines({ analysisStartedAt: now + 5_000 }, now)).to.equal('');
+    });
+  });
+
+  describe('logOffsiteLlmUsage', () => {
+    let log;
+
+    beforeEach(() => {
+      log = { info: sandbox.spy() };
+    });
+
+    it('logs calls, tokens, and 4-decimal cost when llmUsage is present', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', {
+        totalLlmCalls: 10,
+        totalTokens: 326070,
+        totalCostUsd: 1.468751,
+      });
+      expect(log.info).to.have.been.calledOnce;
+      expect(log.info.firstCall.args[0]).to.equal(
+        '[Cited] LLM usage for siteId: site-123: 10 calls, 326070 tokens, est. cost $1.4688',
+      );
+    });
+
+    it('logs nothing when llmUsage is undefined', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', undefined);
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('logs nothing when llmUsage is null', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', null);
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('logs nothing when llmUsage is not an object', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', 'oops');
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('coerces missing or malformed numeric fields to 0 without throwing', () => {
+      logOffsiteLlmUsage(log, '[YouTube]', 'site-999', {
+        totalLlmCalls: 'x',
+        totalCostUsd: undefined,
+      });
+      expect(log.info).to.have.been.calledOnce;
+      expect(log.info.firstCall.args[0]).to.equal(
+        '[YouTube] LLM usage for siteId: site-999: 0 calls, 0 tokens, est. cost $0.0000',
+      );
     });
   });
 });
