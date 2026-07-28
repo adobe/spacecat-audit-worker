@@ -190,6 +190,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         analysisName: 'youtube-analysis',
         baseUrl: site.getBaseURL(),
         urlCount: storeData.urls.length,
+        urlLimit,
         counts: storeData.drsCounts,
         scrapedNow,
       }),

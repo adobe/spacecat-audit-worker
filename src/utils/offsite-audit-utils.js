@@ -148,6 +148,28 @@ export function logOffsiteLlmUsage(log, logPrefix, siteId, llmUsage) {
   );
 }
 
+/**
+ * Builds the Slack bullet line reporting the LLM cost/usage Mystique stamped onto
+ * `opportunity.llmUsage`, for the "audit finished" summary. Mirrors {@link logOffsiteLlmUsage}
+ * so the Slack line and the CloudWatch log line stay in sync: same fields, same 4-decimal cost.
+ *
+ * Returns an empty string when `llmUsage` is absent or not an object (e.g. an analysis that
+ * doesn't track token usage, or a tracking-degraded run) so callers can append it
+ * unconditionally. Numeric fields are coerced defensively so a malformed payload can't throw.
+ *
+ * @param {object} [llmUsage] - { totalLlmCalls, totalTokens, totalCostUsd } from Mystique
+ * @returns {string} A Slack bullet line, or '' when there is nothing to report
+ */
+export function buildOffsiteLlmUsageLine(llmUsage) {
+  if (!llmUsage || typeof llmUsage !== 'object') {
+    return '';
+  }
+  const calls = Number(llmUsage.totalLlmCalls) || 0;
+  const tokens = Number(llmUsage.totalTokens) || 0;
+  const cost = Number(llmUsage.totalCostUsd) || 0;
+  return `• :moneybag: LLM usage: ${calls} calls, ${tokens} tokens, est. cost $${cost.toFixed(4)}`;
+}
+
 // Tokens shorter than this are dropped from brand-token matching: a 1-2 char
 // substring would match almost any host and turn the branded filter into a
 // blunt instrument.
@@ -331,6 +353,10 @@ export function formatDrsExtras(counts) {
  *     this audit type (accumulated across runs), not this run's freshly-selected scrape batch.
  *     That is why it can exceed the "selected N to scrape this run" number the offsite run
  *     reports (e.g. 156 to Mystique vs. 70 selected this run).
+ *  3. Cap — the post-processor caps the payload at `urlLimit` (MYSTIQUE_URLS_LIMIT, or a Slack
+ *     override) before sending. When the store exceeds the cap, report BOTH the sent count and
+ *     the store total (e.g. "50 of 68") so the line matches what Mystique actually receives
+ *     rather than overstating it as the full store size.
  *
  * The lead-in is conditioned on whether a DRS scrape actually ran *this cycle*:
  *  - `scrapedNow` true  → "DRS scrape finished." (the offsite run scraped this cycle and the
@@ -341,20 +367,27 @@ export function formatDrsExtras(counts) {
  * @param {object} params
  * @param {string} params.analysisName - e.g. 'reddit-analysis'
  * @param {string} params.baseUrl
- * @param {number} params.urlCount - available URLs from the full store being sent to Mystique
+ * @param {number} params.urlCount - available URLs from the full store
+ * @param {number} [params.urlLimit] - cap the post-processor applies before sending to Mystique
  * @param {object} [params.counts] - DRS status breakdown from {@link filterUrlsByDrsStatus}
  * @param {boolean} params.scrapedNow - whether a DRS scrape ran during this cycle
  * @returns {string}
  */
 export function buildAnalysisScrapeStatusMessage({
-  analysisName, baseUrl, urlCount, counts, scrapedNow,
+  analysisName, baseUrl, urlCount, urlLimit, counts, scrapedNow,
 }) {
   const extras = formatDrsExtras(counts);
   const leadIn = scrapedNow
     ? 'DRS scrape finished.'
     : 'reusing previously scraped DRS content (no new scrape needed).';
+  // When the store holds more than the cap, the post-processor only sends `urlLimit` of them,
+  // so show both counts; otherwise the plain store count is exactly what gets sent.
+  const capped = Number.isFinite(urlLimit) && urlCount > urlLimit;
+  const countPhrase = capped
+    ? `Sending *${urlLimit}* of *${urlCount}* available URL(s)`
+    : `Sending *${urlCount}* available URL(s)`;
   return `:mag: *${analysisName}* for *${baseUrl}* — ${leadIn} `
-    + `Sending *${urlCount}* available URL(s) from the URL store to Mystique for analysis${extras}.`;
+    + `${countPhrase} from the URL store to Mystique for analysis${extras}.`;
 }
 
 /**
