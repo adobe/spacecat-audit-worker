@@ -1,3 +1,10 @@
+# [1.508.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.1...v1.508.0) (2026-07-28)
+
+
+### Features
+
+* **referral-traffic:** rule-gen sweeper audit for all referral sites (llmo-referral-category-rules) | LLMO-6257 ([#2821](https://github.com/adobe/spacecat-audit-worker/issues/2821)) ([5daf4d0](https://github.com/adobe/spacecat-audit-worker/commit/5daf4d034e56e5cf5d908f93840b12be84a57b69)), closes [adobe/spacecat-audit-worker#2817](https://github.com/adobe/spacecat-audit-worker/issues/2817)
+
 ## [1.507.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.0...v1.507.1) (2026-07-27)
 
 
