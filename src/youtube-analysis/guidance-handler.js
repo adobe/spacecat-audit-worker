@@ -18,7 +18,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
-import { buildOffsiteTimingLines } from '../utils/offsite-audit-utils.js';
+import { buildOffsiteTimingLines, logOffsiteLlmUsage, buildOffsiteLlmUsageLine } from '../utils/offsite-audit-utils.js';
 import {
   isValidOffsiteAnalysis,
   persistOffsiteOpportunity,
@@ -155,6 +155,7 @@ export default async function handler(message, context) {
     });
 
     log.info(`${LOG_PREFIX} Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    logOffsiteLlmUsage(log, LOG_PREFIX, siteId, opportunityData.llmUsage);
 
     if (auditId) {
       const audit = await AuditModel.findById(auditId);
@@ -173,9 +174,14 @@ export default async function handler(message, context) {
           verdict: opportunityData.qaVerdict,
         });
 
-        // Append DRS / Mystique / total phase timings (from anchors on the audit result).
+        // Append DRS / Mystique / total phase timings and the LLM cost Mystique reported.
+        // Each is omitted when its data is absent (no timing anchors / no llmUsage stamp).
         const timingLines = buildOffsiteTimingLines(auditResultData?.timings);
-        const fullMessage = timingLines ? `${slackMessage}\n${timingLines}` : slackMessage;
+        const llmUsageLine = buildOffsiteLlmUsageLine(opportunityData.llmUsage);
+        const extraLines = [timingLines, llmUsageLine].filter(Boolean);
+        const fullMessage = extraLines.length
+          ? `${slackMessage}\n${extraLines.join('\n')}`
+          : slackMessage;
 
         await postMessageOptional(context, channelId, fullMessage, { threadTs });
       }

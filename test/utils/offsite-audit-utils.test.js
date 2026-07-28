@@ -27,6 +27,8 @@ import {
   toApexHost,
   formatDuration,
   buildOffsiteTimingLines,
+  logOffsiteLlmUsage,
+  buildOffsiteLlmUsageLine,
   formatDrsExtras,
   buildAnalysisScrapeStatusMessage,
   scrapedThisCycle,
@@ -387,6 +389,41 @@ describe('offsite-audit-utils', () => {
         + 'for analysis (2 still scraping, 1 not yet scraped).',
       );
     });
+
+    it('reports both sent and store counts when the store exceeds the cap', () => {
+      const msg = buildAnalysisScrapeStatusMessage({
+        analysisName: 'cited-analysis',
+        baseUrl: 'https://lilly.com',
+        urlCount: 68,
+        urlLimit: 50,
+        counts: {
+          available: 68, scraping: 0, notFound: 2, determined: true,
+        },
+        scrapedNow: false,
+      });
+      expect(msg).to.equal(
+        ':mag: *cited-analysis* for *https://lilly.com* — reusing previously scraped DRS content '
+        + '(no new scrape needed). Sending *50* of *68* available URL(s) '
+        + 'from the URL store to Mystique for analysis (2 not yet scraped).',
+      );
+    });
+
+    it('reports the plain store count when it is within the cap', () => {
+      const msg = buildAnalysisScrapeStatusMessage({
+        analysisName: 'reddit-analysis',
+        baseUrl: 'https://example.com',
+        urlCount: 12,
+        urlLimit: 50,
+        counts: {
+          available: 12, scraping: 0, notFound: 0, determined: true,
+        },
+        scrapedNow: true,
+      });
+      expect(msg).to.equal(
+        ':mag: *reddit-analysis* for *https://example.com* — DRS scrape finished. '
+        + 'Sending *12* available URL(s) from the URL store to Mystique for analysis.',
+      );
+    });
   });
 
   describe('scrapedThisCycle', () => {
@@ -683,6 +720,75 @@ describe('offsite-audit-utils', () => {
     it('returns empty string when the elapsed Mystique time is not computable', () => {
       // analysisStartedAt in the future → negative elapsed → no usable duration.
       expect(buildOffsiteTimingLines({ analysisStartedAt: now + 5_000 }, now)).to.equal('');
+    });
+  });
+
+  describe('logOffsiteLlmUsage', () => {
+    let log;
+
+    beforeEach(() => {
+      log = { info: sandbox.spy() };
+    });
+
+    it('logs calls, tokens, and 4-decimal cost when llmUsage is present', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', {
+        totalLlmCalls: 10,
+        totalTokens: 326070,
+        totalCostUsd: 1.468751,
+      });
+      expect(log.info).to.have.been.calledOnce;
+      expect(log.info.firstCall.args[0]).to.equal(
+        '[Cited] LLM usage for siteId: site-123: 10 calls, 326070 tokens, est. cost $1.4688',
+      );
+    });
+
+    it('logs nothing when llmUsage is undefined', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', undefined);
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('logs nothing when llmUsage is null', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', null);
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('logs nothing when llmUsage is not an object', () => {
+      logOffsiteLlmUsage(log, '[Cited]', 'site-123', 'oops');
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('coerces missing or malformed numeric fields to 0 without throwing', () => {
+      logOffsiteLlmUsage(log, '[YouTube]', 'site-999', {
+        totalLlmCalls: 'x',
+        totalCostUsd: undefined,
+      });
+      expect(log.info).to.have.been.calledOnce;
+      expect(log.info.firstCall.args[0]).to.equal(
+        '[YouTube] LLM usage for siteId: site-999: 0 calls, 0 tokens, est. cost $0.0000',
+      );
+    });
+  });
+
+  describe('buildOffsiteLlmUsageLine', () => {
+    it('builds a bullet line with calls, tokens, and 4-decimal cost when present', () => {
+      expect(buildOffsiteLlmUsageLine({
+        totalLlmCalls: 10,
+        totalTokens: 326070,
+        totalCostUsd: 1.468751,
+      })).to.equal('• :moneybag: LLM usage: 10 calls, 326070 tokens, est. cost $1.4688');
+    });
+
+    it('returns an empty string when llmUsage is absent or not an object', () => {
+      expect(buildOffsiteLlmUsageLine(undefined)).to.equal('');
+      expect(buildOffsiteLlmUsageLine(null)).to.equal('');
+      expect(buildOffsiteLlmUsageLine('oops')).to.equal('');
+    });
+
+    it('coerces missing or malformed numeric fields to 0 without throwing', () => {
+      expect(buildOffsiteLlmUsageLine({
+        totalLlmCalls: 'x',
+        totalCostUsd: undefined,
+      })).to.equal('• :moneybag: LLM usage: 0 calls, 0 tokens, est. cost $0.0000');
     });
   });
 });
