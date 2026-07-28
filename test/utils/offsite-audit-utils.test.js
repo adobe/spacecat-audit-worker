@@ -27,6 +27,9 @@ import {
   toApexHost,
   formatDuration,
   buildOffsiteTimingLines,
+  formatDrsExtras,
+  buildAnalysisScrapeStatusMessage,
+  scrapedThisCycle,
 } from '../../src/utils/offsite-audit-utils.js';
 import {
   DRS_POLL_INTERVAL_SECONDS,
@@ -85,6 +88,15 @@ describe('offsite-audit-utils', () => {
       expect(error).to.be.instanceOf(Error);
       expect(error.name).to.equal('DrsNoContentAvailableError');
       expect(error.message).to.equal('nothing ready');
+      expect(error.counts).to.be.undefined;
+    });
+
+    it('exposes the DRS status breakdown passed to the constructor', () => {
+      const counts = {
+        total: 70, available: 0, scraping: 3, notFound: 67, determined: true,
+      };
+      const error = new DrsNoContentAvailableError('nothing ready', counts);
+      expect(error.counts).to.deep.equal(counts);
     });
   });
 
@@ -97,16 +109,20 @@ describe('offsite-audit-utils', () => {
     const datasetIds = ['dataset_one', 'dataset_two'];
     const siteId = 'site-123';
 
-    it('returns original list when drsClient is null', async () => {
+    it('returns original list with undetermined counts when drsClient is null', async () => {
       const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, null);
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.counts).to.deep.equal({
+        total: 3, available: 3, scraping: 0, notFound: 0, determined: false,
+      });
     });
 
     it('returns original list when drsClient is not configured', async () => {
       const log = { info: sandbox.stub() };
       const drsClient = { isConfigured: sandbox.stub().returns(false) };
       const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.counts.determined).to.equal(false);
       expect(log.info).to.have.been.calledWith('[T] DRS client not configured, skipping availability filter');
     });
 
@@ -141,12 +157,15 @@ describe('offsite-audit-utils', () => {
 
       const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
 
-      expect(result).to.have.lengthOf(2);
-      expect(result.map((u) => u.url)).to.include.members([
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls.map((u) => u.url)).to.include.members([
         'https://example.com/a',
         'https://example.com/b',
       ]);
-      expect(log.info).to.have.been.calledWith('[T] DRS availability filter: removed 1 URL(s) not yet scraped, 2 remaining');
+      expect(result.counts).to.deep.equal({
+        total: 3, available: 2, scraping: 0, notFound: 1, determined: true,
+      });
+      expect(log.info).to.have.been.calledWith('[T] DRS availability filter: removed 1 URL(s) not yet scraped (0 scraping, 1 not-found), 2 remaining');
     });
 
     it('logs summary per dataset', async () => {
@@ -163,7 +182,32 @@ describe('offsite-audit-utils', () => {
 
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
 
-      expect(log.info).to.have.been.calledWith('[T] DRS lookup datasetId=ds1: 1/3 available');
+      expect(log.info).to.have.been.calledWith('[T] DRS lookup datasetId=ds1: 1/3 available, 0 scraping, 2 not-found');
+    });
+
+    it('counts still-scraping URLs separately from not-found ones', async () => {
+      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const drsClient = {
+        isConfigured: sandbox.stub().returns(true),
+        lookupScrapeResults: sandbox.stub().resolves({
+          results: [
+            { url: 'https://example.com/a', status: 'available' },
+            { url: 'https://example.com/b', status: 'scraping' },
+            { url: 'https://example.com/c', status: 'not_found' },
+          ],
+          summary: {
+            total: 3, available: 1, scraping: 1, not_found: 1,
+          },
+        }),
+      };
+
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+
+      expect(result.urls.map((u) => u.url)).to.deep.equal(['https://example.com/a']);
+      expect(result.counts).to.deep.equal({
+        total: 3, available: 1, scraping: 1, notFound: 1, determined: true,
+      });
+      expect(log.info).to.have.been.calledWith('[T] DRS availability filter: removed 2 URL(s) not yet scraped (1 scraping, 1 not-found), 1 remaining');
     });
 
     it('throws DrsNoContentAvailableError when DRS responded but no URLs are available', async () => {
@@ -178,9 +222,17 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      await expect(
-        filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]'),
-      ).to.be.rejectedWith(DrsNoContentAvailableError);
+      let thrown;
+      try {
+        await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).to.be.instanceOf(DrsNoContentAvailableError);
+      // The status breakdown is attached so callers can report why no content was available.
+      expect(thrown.counts).to.deep.equal({
+        total: 3, available: 0, scraping: 0, notFound: 3, determined: true,
+      });
     });
 
     it('falls back to full list when all lookups return null', async () => {
@@ -192,7 +244,8 @@ describe('offsite-audit-utils', () => {
 
       const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
 
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.counts.determined).to.equal(false);
       expect(log.warn).to.have.been.calledWithMatch(/DRS lookup returned null/);
       expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
     });
@@ -206,7 +259,8 @@ describe('offsite-audit-utils', () => {
 
       const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
 
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.counts.determined).to.equal(false);
       expect(log.warn).to.have.been.calledWithMatch(/DRS lookup failed for datasetId=ds1/);
       expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
     });
@@ -225,7 +279,10 @@ describe('offsite-audit-utils', () => {
 
       const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log);
 
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.counts).to.deep.equal({
+        total: 3, available: 3, scraping: 0, notFound: 0, determined: true,
+      });
       expect(log.info).to.not.have.been.calledWithMatch(/DRS availability filter: removed/);
     });
 
@@ -242,8 +299,8 @@ describe('offsite-audit-utils', () => {
 
       const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient);
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('https://example.com/a');
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0].url).to.equal('https://example.com/a');
     });
 
     it('falls back to rawUrls.length in summary log when response.summary is absent', async () => {
@@ -258,8 +315,89 @@ describe('offsite-audit-utils', () => {
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
 
       expect(log.info).to.have.been.calledWith(
-        `[T] DRS lookup datasetId=ds1: 0/${urls.length} available`,
+        `[T] DRS lookup datasetId=ds1: 0/${urls.length} available, 0 scraping, 0 not-found`,
       );
+    });
+  });
+
+  describe('formatDrsExtras', () => {
+    it('returns empty string for undetermined counts', () => {
+      expect(formatDrsExtras({ determined: false })).to.equal('');
+    });
+
+    it('returns empty string when counts are missing', () => {
+      expect(formatDrsExtras(undefined)).to.equal('');
+    });
+
+    it('returns empty string when every URL is available', () => {
+      expect(formatDrsExtras({
+        available: 5, scraping: 0, notFound: 0, determined: true,
+      })).to.equal('');
+    });
+
+    it('reports scraping only', () => {
+      expect(formatDrsExtras({
+        available: 5, scraping: 3, notFound: 0, determined: true,
+      })).to.equal(' (3 still scraping)');
+    });
+
+    it('reports not-found only', () => {
+      expect(formatDrsExtras({
+        available: 5, scraping: 0, notFound: 2, determined: true,
+      })).to.equal(' (2 not yet scraped)');
+    });
+
+    it('reports both scraping and not-found', () => {
+      expect(formatDrsExtras({
+        available: 5, scraping: 3, notFound: 2, determined: true,
+      })).to.equal(' (3 still scraping, 2 not yet scraped)');
+    });
+  });
+
+  describe('buildAnalysisScrapeStatusMessage', () => {
+    it('describes a fresh scrape that finished this cycle', () => {
+      const msg = buildAnalysisScrapeStatusMessage({
+        analysisName: 'reddit-analysis',
+        baseUrl: 'https://example.com',
+        urlCount: 12,
+        counts: {
+          available: 12, scraping: 0, notFound: 0, determined: true,
+        },
+        scrapedNow: true,
+      });
+      expect(msg).to.equal(
+        ':mag: *reddit-analysis* for *https://example.com* — DRS scrape finished. '
+        + 'Sending *12* available URL(s) from the URL store to Mystique for analysis.',
+      );
+    });
+
+    it('describes reused prior content and appends the pending breakdown', () => {
+      const msg = buildAnalysisScrapeStatusMessage({
+        analysisName: 'cited-analysis',
+        baseUrl: 'https://example.com',
+        urlCount: 8,
+        counts: {
+          available: 8, scraping: 2, notFound: 1, determined: true,
+        },
+        scrapedNow: false,
+      });
+      expect(msg).to.equal(
+        ':mag: *cited-analysis* for *https://example.com* — reusing previously scraped DRS content '
+        + '(no new scrape needed). Sending *8* available URL(s) from the URL store to Mystique '
+        + 'for analysis (2 still scraping, 1 not yet scraped).',
+      );
+    });
+  });
+
+  describe('scrapedThisCycle', () => {
+    it('is true when both DRS timing anchors are present', () => {
+      expect(scrapedThisCycle({ timings: { drsStartedAt: 1, drsCompletedAt: 2 } })).to.equal(true);
+    });
+
+    it('is false when timing anchors are missing (reused prior content)', () => {
+      expect(scrapedThisCycle({ timings: { analysisStartedAt: 1 } })).to.equal(false);
+      expect(scrapedThisCycle({})).to.equal(false);
+      expect(scrapedThisCycle(undefined)).to.equal(false);
     });
   });
 
@@ -536,7 +674,7 @@ describe('offsite-audit-utils', () => {
 
     it('reports DRS as n/a when no scrape ran this cycle', () => {
       const lines = buildOffsiteTimingLines({ analysisStartedAt: now - 45_000 }, now);
-      expect(lines).to.include('• DRS scrape: already scraped (n/a)');
+      expect(lines).to.include('• DRS scrape: reused prior scrape (n/a)');
       expect(lines).to.include('• Suggestion generation (Mystique): 45s');
       expect(lines).to.include('• Total: 45s');
       expect(lines).to.not.include('DRS + Mystique');
