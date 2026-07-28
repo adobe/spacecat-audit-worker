@@ -1,3 +1,31 @@
+## [1.508.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.1...v1.508.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **prerender:** strip tracking query params from RCV dedup keys ([#2819](https://github.com/adobe/spacecat-audit-worker/issues/2819)) ([231496c](https://github.com/adobe/spacecat-audit-worker/commit/231496c11adaaefe5e24fbd5400a141314c4f4ff))
+
+## [1.508.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.0...v1.508.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **offsite:** describe each flow step accurately in Slack/logs ([#2813](https://github.com/adobe/spacecat-audit-worker/issues/2813)) ([4a9d807](https://github.com/adobe/spacecat-audit-worker/commit/4a9d807e5dd2f6583d178230e72456d8abb052ff))
+
+# [1.508.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.1...v1.508.0) (2026-07-28)
+
+
+### Features
+
+* **referral-traffic:** rule-gen sweeper audit for all referral sites (llmo-referral-category-rules) | LLMO-6257 ([#2821](https://github.com/adobe/spacecat-audit-worker/issues/2821)) ([5daf4d0](https://github.com/adobe/spacecat-audit-worker/commit/5daf4d034e56e5cf5d908f93840b12be84a57b69)), closes [adobe/spacecat-audit-worker#2817](https://github.com/adobe/spacecat-audit-worker/issues/2817)
+
+## [1.507.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.0...v1.507.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **cwv:** limit top-pages analyzed by ASO tier (10 paid / 3 PLG) ([#2815](https://github.com/adobe/spacecat-audit-worker/issues/2815)) ([193d416](https://github.com/adobe/spacecat-audit-worker/commit/193d416ee11bf443bb2465533f77dbb2b91df34f)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
 # [1.507.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.1...v1.507.0) (2026-07-27)
 
 

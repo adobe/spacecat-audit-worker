@@ -705,6 +705,35 @@ async function notifyDrsSkipped(reason, baseURL, context, channelId, threadTs) {
 }
 
 /**
+ * Sends a Slack notification for the URL-Store step: how many URLs were selected and stored
+ * for scraping, broken down per bucket. This makes the first phase of the flow (URL Store)
+ * visible in the thread before the DRS scraping messages. No-ops when nothing was stored
+ * (e.g. a scoped run whose bucket is empty) or on scheduled runs (channelId absent).
+ *
+ * @param {Object<string, string[]>} storedByDomain - Stored URLs keyed by bucket
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyUrlsStored(storedByDomain, baseURL, context, channelId, threadTs) {
+  const total = Object.values(storedByDomain).reduce((sum, urls) => sum + urls.length, 0);
+  if (total === 0) {
+    return;
+  }
+  const perBucket = Object.entries(storedByDomain)
+    .map(([domain, urls]) => `${domain}: ${urls.length}`)
+    .join(', ');
+  await postMessageOptional(
+    context,
+    channelId,
+    `:package: *offsite-brand-presence* for *${baseURL}* — selected *${total}* top URL(s) to scrape this run (${perBucket}). `
+      + 'The URL store may hold more from earlier runs; each analysis sends the full available store to Mystique.',
+    { threadTs },
+  );
+}
+
+/**
  * Sends a Slack notification summarizing DRS job results.
  *
  * @param {Array} drsResults - Array of DRS job result objects
@@ -721,10 +750,12 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
   const succeeded = drsResults.filter((r) => r.status === 'success');
   const failed = drsResults.filter((r) => r.status === 'error');
   const lines = [
-    `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+    `:hourglass_flowing_sand: *offsite-brand-presence* for *${baseURL}* — *DRS scraping started*: `
+      + `submitted ${succeeded.length} scrape job(s), running in the background. `
+      + 'Each bucket\'s analysis (reddit/youtube/cited) is sent to Mystique as soon as its scrape finishes:',
     ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response?.job_id}\``),
     ...(failed.length > 0 ? [
-      `:x: *Failed (${failed.length}):*`,
+      `:x: *Failed to submit (${failed.length}):*`,
       ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
     ] : []),
   ];
@@ -902,6 +933,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
+  await notifyUrlsStored(storedByDomain, baseURL, context, channelId, threadTs);
   // Phase timing anchor: when DRS scraping is triggered. Threaded through the poll and
   // the downstream analysis audits so each can report how long its scrape took.
   const drsStartedAt = Date.now();

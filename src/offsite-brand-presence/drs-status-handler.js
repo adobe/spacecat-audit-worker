@@ -207,11 +207,11 @@ async function triggerAnalysisAudits(
  *   error: string|undefined}>} statuses - Resolved per-job statuses
  * @returns {string} Slack message text
  */
-function buildSummary(baseURL, statuses, drsStartedAt) {
+function buildSummary(baseURL, statuses, drsStartedAt, triggeredAuditTypes = []) {
   const allTerminal = statuses.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
   const header = allTerminal
-    ? `:checkered_flag: *offsite-brand-presence* DRS jobs *complete* for *${baseURL}*:`
-    : `:hourglass_flowing_sand: *offsite-brand-presence* DRS jobs *status update* for *${baseURL}* (timed out waiting):`;
+    ? `:checkered_flag: *offsite-brand-presence* — *DRS scraping complete* for *${baseURL}*:`
+    : `:hourglass_flowing_sand: *offsite-brand-presence* — *DRS scraping status update* for *${baseURL}* (timed out waiting):`;
   const lines = [header];
   for (const s of statuses) {
     const label = `\`${s.domain}\` / \`${s.datasetId}\``;
@@ -226,6 +226,9 @@ function buildSummary(baseURL, statuses, drsStartedAt) {
   const elapsed = Number.isFinite(drsStartedAt) ? formatDuration(Date.now() - drsStartedAt) : null;
   if (elapsed) {
     lines.push(`• DRS scraping elapsed: ~${elapsed}`);
+  }
+  if (triggeredAuditTypes.length > 0) {
+    lines.push(`• Analysis dispatched to Mystique for: ${triggeredAuditTypes.join(', ')}`);
   }
   return lines.join('\n');
 }
@@ -335,7 +338,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // before the message is deleted could redeliver and post the summary twice. There is
   // no idempotency key; a duplicate Slack summary is preferable to the complexity of
   // deduplication for a best-effort notification.
-  const summary = buildSummary(baseURL, statuses, drsStartedAt);
+  const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
   log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
 
