@@ -384,7 +384,7 @@ export function buildAnalysisScrapeStatusMessage({
   // so show both counts; otherwise the plain store count is exactly what gets sent.
   const capped = Number.isFinite(urlLimit) && urlCount > urlLimit;
   const countPhrase = capped
-    ? `Sending *${urlLimit}* of *${urlCount}* available URL(s) (capped at *${urlLimit}*)`
+    ? `Sending *${urlLimit}* of *${urlCount}* available URL(s)`
     : `Sending *${urlCount}* available URL(s)`;
   return `:mag: *${analysisName}* for *${baseUrl}* — ${leadIn} `
     + `${countPhrase} from the URL store to Mystique for analysis${extras}.`;

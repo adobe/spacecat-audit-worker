@@ -403,7 +403,7 @@ describe('offsite-audit-utils', () => {
       });
       expect(msg).to.equal(
         ':mag: *cited-analysis* for *https://lilly.com* — reusing previously scraped DRS content '
-        + '(no new scrape needed). Sending *50* of *68* available URL(s) (capped at *50*) '
+        + '(no new scrape needed). Sending *50* of *68* available URL(s) '
         + 'from the URL store to Mystique for analysis (2 not yet scraped).',
       );
     });
