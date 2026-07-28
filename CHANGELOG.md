@@ -1,3 +1,10 @@
+## [1.508.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.0...v1.508.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **offsite:** describe each flow step accurately in Slack/logs ([#2813](https://github.com/adobe/spacecat-audit-worker/issues/2813)) ([4a9d807](https://github.com/adobe/spacecat-audit-worker/commit/4a9d807e5dd2f6583d178230e72456d8abb052ff))
+
 # [1.508.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.1...v1.508.0) (2026-07-28)
 
 
