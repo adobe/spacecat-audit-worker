@@ -1,3 +1,10 @@
+# [1.510.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.509.0...v1.510.0) (2026-07-28)
+
+
+### Features
+
+* **offsite:** show capped URL count and LLM cost in analysis Slack messages ([#2824](https://github.com/adobe/spacecat-audit-worker/issues/2824)) ([c554342](https://github.com/adobe/spacecat-audit-worker/commit/c55434214003a772b99c3b4579e61c79d24626ca)), closes [#2822](https://github.com/adobe/spacecat-audit-worker/issues/2822)
+
 # [1.509.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.2...v1.509.0) (2026-07-28)
 
 
