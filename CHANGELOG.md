@@ -1,3 +1,10 @@
+## [1.511.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.3...v1.511.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cwv:** suppress redundant guidance re-dispatch for unchanged failing metrics ([#2823](https://github.com/adobe/spacecat-audit-worker/issues/2823)) ([a7a6ba2](https://github.com/adobe/spacecat-audit-worker/commit/a7a6ba2dc8d81ec5f5f2fd15f011e23a4b94e163))
+
 ## [1.511.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.2...v1.511.3) (2026-07-29)
 
 
