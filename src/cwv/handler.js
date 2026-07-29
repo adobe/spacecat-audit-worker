@@ -59,6 +59,22 @@ export async function syncOpportunityAndSuggestionsStep(context) {
   const { Suggestion } = dataAccess;
   const siteId = site.getId();
 
+  // Legacy-source bow-out (Spec 009-04 / ADR-0022). When a site's CWV opportunity is owned
+  // by the Mystique blackboard engine (deliveryConfig.cwvEngine === 'blackboard'), this
+  // legacy audit must NOT create the shared type:"cwv" opportunity / CODE_CHANGE suggestion
+  // rows or send the guidance:cwv message — otherwise the two flows write the same SpaceCat
+  // rows and collide (the blackboard projector keys its parent on
+  // (type, scope_type='site', scope_id), so it creates a *second* active cwv opportunity
+  // rather than reusing this null-scoped one). The blackboard producer cascade owns
+  // detection→guidance→autofix and projects the customer-facing suggestions itself.
+  const cwvEngine = site.getDeliveryConfig?.()?.cwvEngine;
+  if (cwvEngine === 'blackboard') {
+    log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: bowing out — deliveryConfig.cwvEngine=blackboard, CWV opportunity is Mystique-owned; skipping opportunity/suggestion sync and auto-suggest`);
+    return {
+      status: 'complete',
+    };
+  }
+
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
 
   const opportunity = await syncOpportunitiesAndSuggestions(context);

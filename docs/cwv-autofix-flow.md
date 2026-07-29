@@ -72,6 +72,23 @@ generation on SME approval (`NEW` → code-fix; `PENDING_VALIDATION` → guidanc
 
 Both flags are checked in this repo. The autofix-worker also checks `cwv-auto-fix` independently — both must be enabled for the chain to complete.
 
+## Blackboard engine bow-out (`deliveryConfig.cwvEngine`)
+
+Mystique is migrating CWV per-site off this legacy flow and onto its own blackboard
+producer cascade (detection → guidance → autofix → verified projection). Both flows write
+the **same** SpaceCat `type: "cwv"` opportunity + suggestion rows, so for a migrated site
+exactly one flow must be authoritative or the rows collide/duplicate.
+
+The switch is one field both systems read: `deliveryConfig.cwvEngine ∈ { "legacy"
+(default/absent), "blackboard" }` (mirrors `altTextEngine` / `formsA11yEngine`). When
+`cwvEngine === "blackboard"`, the CWV audit's `syncOpportunityAndSuggestionsStep`
+(`src/cwv/handler.js`) **bows out**: it creates no opportunity/suggestion rows and sends no
+`guidance:cwv` message. Mystique's blackboard cascade then owns those rows for the site.
+The migration action is flipping `cwvEngine`; flipping it back to `legacy` restores this
+flow on the next audit. The full cross-repo contract, the projector-ownership rationale, and
+a duplicate-row detection recipe live in Mystique's
+`docs/opportunities/cwv/design-cwv-blackboard-migration.md` §9.4 (Spec 009-04 / ADR-0022).
+
 ## Key files
 
 - [`src/cwv/handler.js`](../src/cwv/handler.js) — `StepAudit` definition (2 steps)

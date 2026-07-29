@@ -443,6 +443,41 @@ describe('collectCWVDataAndImportCode Tests', () => {
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', null));
     });
 
+    it('bows out (creates no opportunity/suggestion rows, sends no message) when deliveryConfig.cwvEngine === "blackboard" (Spec 009-04)', async () => {
+      site.getDeliveryConfig.returns({ cwvEngine: 'blackboard' });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      const result = await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // No opportunity is fetched or created for a Mystique-owned (blackboard) CWV site.
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      // No guidance:cwv auto-suggest message is sent.
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      // The PLG-alert suggestion count query is not reached either.
+      expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.not.have.been.called;
+
+      site.getDeliveryConfig.returns({});
+    });
+
+    it('does not bow out for a legacy site (cwvEngine absent / deliveryConfig null)', async () => {
+      site.getDeliveryConfig.returns(null);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Null deliveryConfig degrades to the legacy path unchanged: the opportunity is created.
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+
+      site.getDeliveryConfig.returns({});
+    });
+
     it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
