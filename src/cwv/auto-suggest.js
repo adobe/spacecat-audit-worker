@@ -96,9 +96,19 @@ const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
  * (`data.autoSuggestDispatch`). We still re-dispatch when a new bad metric appears or
  * when site code becomes available (both flip the fingerprint), and — crucially — when
  * guidance never actually arrived for a still-failing metric (`allFailingGuided` false),
- * so a slow/failed Mystique run is still retried. We deliberately ignore
+ * so a slow/failed Mystique *guidance* run is still retried. We deliberately ignore
  * `issues[*].value` (its mere presence is not proof a code patch ran) — the retry is
  * bounded by the fingerprint + code-patch availability, not by guidance text existing.
+ *
+ * Bounded limitation: if code was already available at the first dispatch (so
+ * `hadCodeInfo` is already `true` and never flips), guidance succeeded for every failing
+ * metric, but Mystique's *code-fix* generation transiently failed and no patch landed
+ * (`isCodeChangeAvailable` stays `false`), the fingerprint is unchanged and re-dispatch is
+ * suppressed until the failing-metric set changes. The `hadCodeInfo false→true` escape only
+ * covers newly-available code, not a failed generation on already-available code. This is
+ * an accepted trade-off: reintroducing a blanket weekly retry for this case is exactly the
+ * cost this guard removes, and it assumes code-fix generation is reliable whenever guidance
+ * succeeds and code is present.
  *
  * For PENDING_VALIDATION, re-dispatch is gated on the existing guidance being
  * missing or in the legacy aggregated format (no per-issue `source_index`), so a
@@ -271,7 +281,15 @@ export async function processAutoSuggest(context, opportunity, site) {
     }
 
     if (dispatchedNew.length > 0) {
-      await Suggestion.saveMany(dispatchedNew);
+      // Best-effort persistence: every SQS message already went out above, so a failure
+      // here must not fail the audit step. If the stamp doesn't persist, next week's
+      // audit simply re-dispatches (the fingerprint guard sees no stored fingerprint) —
+      // the fail-safe direction. Log a warning instead of propagating to the outer catch.
+      try {
+        await Suggestion.saveMany(dispatchedNew);
+      } catch (stampError) {
+        log.warn(`[audit-worker-cwv] siteId: ${siteId} | Failed to persist dispatch fingerprint for ${dispatchedNew.length} suggestion(s); messages were already sent, will re-dispatch next audit. error: ${stampError.message}`);
+      }
     }
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Completed sending CWV auto-suggest messages, opportunityId: ${opportunityId}`);

@@ -933,6 +933,29 @@ describe('CWV Auto-Suggest', () => {
       expect(saveManyStub).to.have.been.calledOnceWithExactly([suggestion]);
     });
 
+    it('does not fail the audit when the stamp saveMany throws (best-effort persistence)', async () => {
+      saveManyStub.rejects(new Error('dynamo throttled'));
+      const suggestion = {
+        getId: () => 'sugg-001',
+        getStatus: () => 'NEW',
+        getData: () => ({
+          type: 'url',
+          url: 'https://example.com/page1',
+          metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
+          issues: [],
+        }),
+        setData: sandbox.stub(),
+      };
+
+      await processAutoSuggest(daContext, makeOpp([suggestion]), null);
+
+      // Message was already sent; the failed stamp persistence must not propagate.
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(saveManyStub.calledOnce).to.be.true;
+      expect(daContext.log.warn).to.have.been.calledOnce;
+      expect(daContext.log.error).to.not.have.been.called;
+    });
+
     it('suppresses an unchanged, already-guided re-dispatch (no SQS, no save)', async () => {
       const suggestion = {
         getId: () => 'sugg-001',
