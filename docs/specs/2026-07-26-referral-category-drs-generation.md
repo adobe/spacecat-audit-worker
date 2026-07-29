@@ -3,6 +3,10 @@
 **Status:** Draft · **Author:** Omair Temurian · **Date:** 2026-07-26
 **Parent:** LLMO-5440 (Referral Category feature) · **Follows:** LLMO-6257 Phase 1 (optel + cdn, shipped to prod)
 
+> **Supersedes / correction — re: Phase-1 spec (`docs/specs/2026-07-21-referral-category-generation-p2.md`).**
+> Phase-1's "as-built" revision claims DRS *already* classifies its URLs **in-DB** via `wrpc_apply_referral_categories` (invoked by `wrpc_import_referral_traffic`), and that this replaced the planned same-idiom-in-Python path. **That in-DB path was never built** — no `wrpc_apply_referral_categories` exists in `mysticat-data-service` (only `wrpc_backfill_referral_categories`, CDN-only, and `wrpc_import_referral_url_classifications`). This spec returns DRS to the **write-time-in-service (Python)** model specified by the data-service design-of-record (`docs/plans/2026-07-17-llmo-6257-referral-category-generation.md`, which Phase-1 itself names as authoritative), and is the authoritative spec for DRS-source classification going forward.
+> Phase-1's claim that DRS "cannot reach PostgREST to read the rules" **still holds**: DRS cannot reach the **data-service PostgREST**. Fix B (§3) does not contradict it — DRS pulls rules from the **api-service** `GET /sites/:siteId/agentic-categories`, a *different* surface that DRS already calls.
+
 ## 1. Problem
 
 Referral traffic from the DRS sources — **GA4, Adobe Analytics (AA), and CJA (Customer Journey Analytics)** — shows **no category** on the Referral Traffic dashboard. Two reasons:
@@ -26,10 +30,12 @@ Two gaps → two fixes, both reusing the Phase-1 pipeline.
 **Fix A — decouple rule generation from the optel audit.**
 Today `generateReferralCategoryRules` only runs when the optel handler runs. Change the trigger so it runs for **any site that has referral traffic**, regardless of source. The function is already source-agnostic — it builds its corpus from `rpc_referral_traffic_top_urls`, which unions all 5 source tables, and it is create-if-missing (idempotent). So this is a change to *where it's triggered from*, not a rewrite. **Bonus: this also fixes the cdn-only sites broken in prod today.**
 
+> **Status (Fix A): partially shipped.** The per-site rule-gen sweeper audit (`llmo-referral-category-rules`) merged in PR #2821 (2026-07-28). Still pending: the **weekly fan-out** (scheduling the sweep across all referral sites) and the **enablement config**.
+
 > Note: Fix A concerns **rule generation** (building the rulebook) — distinct from *classification* (applying it). It keeps rule-gen exactly where it lives today (the audit-worker) and only broadens which sites trigger it; it does not move anything into the database.
 
 **Fix B — DRS classifies its own URLs write-time, in Python.**
-DRS runs in a separate AWS account and cannot read the database directly, so:
+DRS runs in a separate AWS account and **cannot reach the data-service PostgREST** to read the rules directly. It *can*, however, reach the **api-service** (it already calls it), so:
 - **Reuse the existing api-service endpoint** `GET /sites/:siteId/agentic-categories`, which already returns a site's active category rules as `{ name, regex, sortOrder, ... }` (verified in `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`. DRS already calls the api-service, so it just calls this — **no new endpoint needed.** The only remaining piece is **authorizing DRS** to call it (provision `site:read` / the S2S capability), an auth/provisioning task rather than endpoint code.
 - In DRS (Python), after it imports GA4/AA/CJA traffic, it fetches the rules via that endpoint, classifies each URL (mirroring the JS `classify.js` logic, including the same `url_path` canonicalization), writes the same category CSV, and drops it into the existing pipeline.
 
@@ -67,7 +73,7 @@ The DRS→projector hand-off uses the **same transport as optel/cdn**: the produ
 
 | Piece | Status |
 |---|---|
-| Weekly **sweeper** (Track 1) | 🆕 new — re-triggers the existing `generateReferralCategoryRules` (create-if-missing) |
+| Weekly **sweeper** (Track 1) | 🟡 partially shipped — per-site sweeper audit merged in PR #2821; weekly fan-out + enablement config still pending |
 | **Rules endpoint** (api-service) | ♻️ reused — existing `GET /sites/{siteId}/agentic-categories` (returns name/regex/sortOrder, `site:read`); only DRS auth to provision |
 | **DRS Python classify** | 🆕 new — DRS team |
 | Corpus RPC + rulebook table | ♻️ reused (already shipped) |
@@ -95,7 +101,7 @@ The DRS→projector hand-off uses the **same transport as optel/cdn**: the produ
 - **Audit-worker does a second-pass classify of DRS data** (read DRS traffic back from the DB and classify it) — rejected: that's a batch re-classification of already-stored data — the same shape as the previously-rejected chunk-5 in-DB approach — not write-time in the producing service.
 - **DRS generates its own rules in Python** — rejected: duplicates the rule-generation (LLM) logic in a second language and risks a site ending up with two divergent rulebooks. Chosen instead: generate rules in **one** place (Fix A) and have DRS only classify.
 - **A single shared classify library vs mirrored JS + Python** — chose mirrored implementations kept honest by **parity fixtures**, because DRS is Python in a separate AWS account and there is no clean way to share the JS code.
-- **Push rules to DRS vs DRS pulls them** — chose DRS **pulls** via the new api-service endpoint, since DRS already calls the api-service and cannot read the database directly.
+- **Push rules to DRS vs DRS pulls them** — chose DRS **pulls** via the existing api-service endpoint, since DRS already calls the api-service and cannot reach the data-service PostgREST directly.
 
 ## 7. Decisions (options considered → chosen)
 
@@ -106,7 +112,7 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 - **Chosen: A — scheduled sweeper.** A timer job walks every referral site and ensures each has a rulebook (create-if-missing).
 - Why: covers every referral site uniformly, including DRS-only, and keeps rule-gen in one JS place. Option C breaks for DRS-only sites — DRS is Python in a separate account and cannot call the JS rule-gen.
 
-**7.2 — How often rules regenerate**
+**7.2 — Sweep cadence**
 - Options: (A) once per site; (B) weekly; (C) daily.
 - **Chosen: a weekly sweep that generates once per site.** The weekly sweep picks up new sites within a week; because generation is create-if-missing, sites that already have rules are cheap no-ops.
 - Why: a site's URL structure barely changes, so daily is wasteful; weekly balances coverage against cost.
@@ -133,7 +139,7 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 - **Chosen: A — Omair owns the JS pieces (the rule-gen sweeper + confirming/provisioning DRS's auth on the existing rules endpoint); the DRS team owns the Python classify.** (Subject to confirmation.)
 - Why: keeps the JS work where the code and familiarity are, and Python-in-DRS with its owners.
 
-**How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via a simple new endpoint and classifies in Python against the JS-defined canonical form. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
+**How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via the existing api-service endpoint and classifies in Python against the JS-defined canonical form. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
 
 **Known limitation (accepted for now):** rules are generated once and do **not** auto-refresh. If a site later adds many new URL types, its rulebook can go stale until a forced regeneration. Rule refresh/evolution is deferred to a later phase.
 
