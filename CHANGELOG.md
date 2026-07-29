@@ -1,3 +1,10 @@
+# [1.511.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.510.0...v1.511.0) (2026-07-29)
+
+
+### Features
+
+* **cwv:** bow out of legacy opportunity/suggestion sync when deliveryConfig.cwvEngine=blackboard ([#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825)) ([a50cbda](https://github.com/adobe/spacecat-audit-worker/commit/a50cbda10b60ddc21743ac51929d3e3c4ba2801e))
+
 # [1.510.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.509.0...v1.510.0) (2026-07-28)
 
 
