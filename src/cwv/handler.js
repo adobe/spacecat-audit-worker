@@ -10,7 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Suggestion as SuggestionModel,
+  Opportunity as OpportunityModel,
+} from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { buildCWVAuditResult } from './cwv-audit-result.js';
@@ -20,9 +24,76 @@ import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js'
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+const CWV_BLACKBOARD_ENGINE = 'blackboard';
+
+/**
+ * A site's CWV opportunity is owned by the Mystique blackboard producer cascade — rather
+ * than this legacy audit — when `deliveryConfig.cwvEngine === "blackboard"` (Spec 009-04 /
+ * ADR-0022). Mirrors the `altTextEngine` / `formsA11yEngine` per-site engine switches.
+ * Degrades to legacy on absent / null / any other value.
+ * @param {Object} site - Site with a `getDeliveryConfig()` accessor.
+ * @returns {boolean}
+ */
+export function isCwvBlackboardEngine(site) {
+  return site.getDeliveryConfig?.()?.cwvEngine === CWV_BLACKBOARD_ENGINE;
+}
+
+/**
+ * Bow-out cleanup for a site migrated to the blackboard engine: resolve the pre-existing
+ * legacy `type:"cwv"` opportunity and outdate its still-live suggestions, so the flip does
+ * not strand active legacy rows the customer can no longer act on. Customer-/system-touched
+ * suggestion states (FIXED / SKIPPED / ERROR / already-OUTDATED) are preserved as history;
+ * only NEW / IN_PROGRESS suggestions are outdated. Idempotent: no active NEW opportunity →
+ * no-op (mirrors this audit's own `allBySiteIdAndStatus(..., NEW).find(type==='cwv')`
+ * find-existing, and the resolve pattern in `src/csp/csp.js`).
+ * @param {Object} context - Audit context (dataAccess, log).
+ * @param {Object} site - Site being audited.
+ */
+export async function resolveLegacyCwvOpportunity(context, site) {
+  const { dataAccess, log } = context;
+  const { Opportunity, Suggestion } = dataAccess;
+  const siteId = site.getId();
+
+  const opportunities = await Opportunity.allBySiteIdAndStatus(
+    siteId,
+    OpportunityModel.STATUSES.NEW,
+  );
+  const opportunity = opportunities.find((o) => o.getType() === Audit.AUDIT_TYPES.CWV);
+  if (!opportunity) {
+    return;
+  }
+
+  await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
+  await opportunity.save();
+
+  const suggestions = await opportunity.getSuggestions();
+  const liveSuggestions = suggestions.filter((s) => ![
+    SuggestionModel.STATUSES.OUTDATED,
+    SuggestionModel.STATUSES.FIXED,
+    SuggestionModel.STATUSES.ERROR,
+    SuggestionModel.STATUSES.SKIPPED,
+  ].includes(s.getStatus()));
+  if (liveSuggestions.length > 0) {
+    await Suggestion.bulkUpdateStatus(liveSuggestions, SuggestionModel.STATUSES.OUTDATED);
+  }
+
+  log.info(`[audit-worker-cwv] siteId: ${siteId} | resolved legacy cwv opportunity ${opportunity.getId()} and outdated ${liveSuggestions.length} live suggestion(s) (cwvEngine=blackboard bow-out)`);
+}
+
 /**
  * Step 1: CWV Data Collection and Code Import
- * Builds CWV audit result and triggers code import
+ * Builds CWV audit result and triggers code import.
+ *
+ * Legacy-source bow-out (Spec 009-04 / ADR-0022): for a `cwvEngine === "blackboard"` site
+ * the Mystique blackboard cascade already owns detection + source materialization, so this
+ * step skips the RUM/PSI collection and returns an empty audit result (nothing reads the
+ * persisted `cwv` audit result — trend audits read RUM directly). It also resolves any
+ * pre-existing legacy opportunity here (Step 1 always runs on the initial trigger, so the
+ * resolve is not gated on the import-worker round-trip). The `import-worker` hop itself is
+ * kept (its payload contract requires a valid `type`); to skip the audit entirely for a
+ * migrated site, disable the `cwv` handler for it in `Configuration` (see the coexistence
+ * contract in the Mystique migration design doc §9.4).
+ *
  * @param {Object} context - Context object containing site, finalUrl, log, env
  *                           (with env.RUM_ADMIN_KEY)
  * @returns {Promise<Object>} Object containing auditResult, fullAuditRef (for persister),
@@ -31,6 +102,25 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export async function collectCWVDataAndImportCode(context) {
   const { site, log } = context;
   const siteId = site.getId();
+
+  if (isCwvBlackboardEngine(site)) {
+    log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 1: bowing out — deliveryConfig.cwvEngine=blackboard; resolving any legacy cwv opportunity and skipping RUM collection`);
+    await resolveLegacyCwvOpportunity(context, site);
+    return {
+      // Nothing consumes the persisted cwv audit result (trends read RUM directly);
+      // an empty result is correct for a bowed-out site.
+      auditResult: { cwv: [] },
+      // The StepAudit framework always sets finalUrl via the urlResolver before running the
+      // step, so use it directly — matching how buildCWVAuditResult sets fullAuditRef.
+      fullAuditRef: context.finalUrl,
+      // Import-worker payload contract requires a valid type; keep the hop (harmless for a
+      // migrated site — the download is unused). Skipping it needs an import-worker-side
+      // flag; the clean full-skip is the Configuration cwv handler-disable.
+      type: 'code',
+      siteId,
+      allowCache: false,
+    };
+  }
 
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 1: Collecting CWV data and triggering code import`);
 
@@ -58,6 +148,21 @@ export async function syncOpportunityAndSuggestionsStep(context) {
   const { site, log, dataAccess } = context;
   const { Suggestion } = dataAccess;
   const siteId = site.getId();
+
+  // Legacy-source bow-out (Spec 009-04 / ADR-0022). Defense-in-depth: Step 1 already bows
+  // out + resolves for a blackboard-engine site, but if this step is reached it must NOT
+  // create the shared type:"cwv" opportunity / CODE_CHANGE suggestion rows or send the
+  // guidance:cwv message — otherwise the two flows write the same SpaceCat rows and collide
+  // (the blackboard projector keys its parent on (type, scope_type='site', scope_id), so it
+  // creates a *second* active cwv opportunity rather than reusing this null-scoped one). The
+  // blackboard producer cascade owns detection→guidance→autofix and projects the
+  // customer-facing suggestions itself.
+  if (isCwvBlackboardEngine(site)) {
+    log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: bowing out — deliveryConfig.cwvEngine=blackboard, CWV opportunity is Mystique-owned; skipping opportunity/suggestion sync and auto-suggest`);
+    return {
+      status: 'complete',
+    };
+  }
 
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
 

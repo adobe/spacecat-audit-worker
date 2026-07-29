@@ -15,7 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel, Opportunity as OpportunityModel } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { collectCWVDataAndImportCode, syncOpportunityAndSuggestionsStep } from '../../src/cwv/handler.js';
@@ -140,6 +140,76 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(result.auditResult.cwv).to.have.lengthOf(10);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
+  });
+
+  describe('Step 1 blackboard bow-out (Spec 009-04)', () => {
+    let cwvOpportunity;
+    let newSuggestion;
+    let fixedSuggestion;
+
+    beforeEach(() => {
+      site.getDeliveryConfig.returns({ cwvEngine: 'blackboard' });
+      newSuggestion = { getStatus: () => SuggestionModel.STATUSES.NEW };
+      fixedSuggestion = { getStatus: () => SuggestionModel.STATUSES.FIXED };
+      cwvOpportunity = {
+        getType: () => Audit.AUDIT_TYPES.CWV,
+        getId: () => 'legacy-oppty-id',
+        setStatus: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([newSuggestion, fixedSuggestion]),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([cwvOpportunity]),
+      };
+      context.dataAccess.Suggestion = {
+        bulkUpdateStatus: sandbox.stub().resolves(),
+      };
+    });
+
+    it('skips RUM collection and returns an empty audit result + import trigger', async () => {
+      const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      // RUM/PSI collection is skipped for a blackboard-engine site.
+      expect(context.rumApiClient.query).to.not.have.been.called;
+      expect(result.auditResult).to.deep.equal({ cwv: [] });
+      expect(result.fullAuditRef).to.equal(auditUrl);
+      // Import hop is kept (payload contract requires a valid type).
+      expect(result.type).to.equal('code');
+    });
+
+    it('resolves the pre-existing legacy cwv opportunity and outdates only its live suggestions', async () => {
+      await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus)
+        .to.have.been.calledWith('site-id', OpportunityModel.STATUSES.NEW);
+      expect(cwvOpportunity.setStatus).to.have.been.calledOnceWith(OpportunityModel.STATUSES.RESOLVED);
+      expect(cwvOpportunity.save).to.have.been.calledOnce;
+      // Only the live (NEW) suggestion is outdated; the FIXED one is preserved as history.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus)
+        .to.have.been.calledOnceWith([newSuggestion], SuggestionModel.STATUSES.OUTDATED);
+    });
+
+    it('is a no-op resolve when there is no active legacy cwv opportunity', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(cwvOpportunity.setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+      // Still bows out (empty result, no RUM).
+      expect(context.rumApiClient.query).to.not.have.been.called;
+      expect(result.auditResult).to.deep.equal({ cwv: [] });
+    });
+
+    it('does not resolve when all suggestions are already terminal (FIXED/SKIPPED)', async () => {
+      cwvOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(cwvOpportunity.setStatus).to.have.been.calledOnceWith(OpportunityModel.STATUSES.RESOLVED);
+      // No live suggestions → bulkUpdateStatus not called.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
   });
 
   it('includes pages beyond top 10 if they meet threshold', async () => {
@@ -441,6 +511,41 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // CWV suggestions include jiraLink (null until user saves URL in UI; schema
       // rejects empty string so we default to null).
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', null));
+    });
+
+    it('bows out (creates no opportunity/suggestion rows, sends no message) when deliveryConfig.cwvEngine === "blackboard" (Spec 009-04)', async () => {
+      site.getDeliveryConfig.returns({ cwvEngine: 'blackboard' });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      const result = await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // No opportunity is fetched or created for a Mystique-owned (blackboard) CWV site.
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      // No guidance:cwv auto-suggest message is sent.
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      // The PLG-alert suggestion count query is not reached either.
+      expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.not.have.been.called;
+
+      site.getDeliveryConfig.returns({});
+    });
+
+    it('does not bow out for a legacy site (cwvEngine absent / deliveryConfig null)', async () => {
+      site.getDeliveryConfig.returns(null);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Null deliveryConfig degrades to the legacy path unchanged: the opportunity is created.
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+
+      site.getDeliveryConfig.returns({});
     });
 
     it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
