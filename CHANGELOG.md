@@ -1,3 +1,31 @@
+## [1.511.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.2...v1.511.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* reject base URLs with userinfo when deriving CDN site key ([#2829](https://github.com/adobe/spacecat-audit-worker/issues/2829)) ([77762bb](https://github.com/adobe/spacecat-audit-worker/commit/77762bb665293d4d257cf3a93860623124afb02e))
+
+## [1.511.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.1...v1.511.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* escape base URL host and path in CDN log site filters ([#2828](https://github.com/adobe/spacecat-audit-worker/issues/2828)) ([7cf8e00](https://github.com/adobe/spacecat-audit-worker/commit/7cf8e0014944e5786b07f239c4bad674f6562872))
+
+## [1.511.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.0...v1.511.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* restrict CDN log filter keys to a column allowlist ([#2826](https://github.com/adobe/spacecat-audit-worker/issues/2826)) ([b088e2e](https://github.com/adobe/spacecat-audit-worker/commit/b088e2e8f510dae349dd744a9bce4ceb18d61d83))
+
+# [1.511.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.510.0...v1.511.0) (2026-07-29)
+
+
+### Features
+
+* **cwv:** bow out of legacy opportunity/suggestion sync when deliveryConfig.cwvEngine=blackboard ([#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825)) ([a50cbda](https://github.com/adobe/spacecat-audit-worker/commit/a50cbda10b60ddc21743ac51929d3e3c4ba2801e))
+
 # [1.510.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.509.0...v1.510.0) (2026-07-28)
 
 

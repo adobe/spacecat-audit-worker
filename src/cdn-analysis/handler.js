@@ -26,6 +26,7 @@ import {
   getCdnAwsRuntime,
   pathHasData,
   shouldRecreateTable,
+  escapeForAthenaRegexLiteral,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { weekClosingSundayKey } from '../utils/date-utils.js';
@@ -510,7 +511,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           hour,
           hourFilter,
           bucket: bucketName,
-          host,
+          // host is the site's base-URL host, interpolated into a REGEXP_LIKE
+          // pattern in insert-aggregated.sql; escape it so a crafted base URL
+          // cannot break out of the string literal or broaden the match (VULN-37491).
+          host: escapeForAthenaRegexLiteral(host),
           serviceProvider,
         }),
         loadSql(cdnType, 'insert-aggregated-referral', {
