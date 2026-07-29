@@ -1,3 +1,10 @@
+## [1.511.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.2...v1.511.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* reject base URLs with userinfo when deriving CDN site key ([#2829](https://github.com/adobe/spacecat-audit-worker/issues/2829)) ([77762bb](https://github.com/adobe/spacecat-audit-worker/commit/77762bb665293d4d257cf3a93860623124afb02e))
+
 ## [1.511.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.1...v1.511.2) (2026-07-29)
 
 
