@@ -1,3 +1,10 @@
+## [1.511.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.0...v1.511.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* restrict CDN log filter keys to a column allowlist ([#2826](https://github.com/adobe/spacecat-audit-worker/issues/2826)) ([b088e2e](https://github.com/adobe/spacecat-audit-worker/commit/b088e2e8f510dae349dd744a9bce4ceb18d61d83))
+
 # [1.511.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.510.0...v1.511.0) (2026-07-29)
 
 
