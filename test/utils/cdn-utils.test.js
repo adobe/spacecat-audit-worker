@@ -587,6 +587,25 @@ describe('CDN Utils', () => {
       expect(result).to.include("REGEXP_LIKE(url, '(?i)(x'') OR REGEXP_LIKE(url, ''(?i)(y)')");
     });
 
+    it('escapes single quotes in base URL host to prevent SQL literal breakout (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://x')union(select-1)--.example.com",
+      };
+      const result = buildSiteFilters([], mockSite);
+      // the injected quote must be doubled so it stays inside the string literal
+      expect(result).to.include("x'')union(select-1)--.example.com$'");
+      expect(result).to.not.include("x')union");
+    });
+
+    it('escapes single quotes in base URL path to prevent SQL literal breakout (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://example.com/p')or(1=1)--",
+      };
+      const result = buildSiteFilters([], mockSite);
+      expect(result).to.not.include("p')or");
+      expect(result).to.include("''");
+    });
+
     it('falls back to baseURL when filters are empty', () => {
       const mockSite = {
         getBaseURL: () => 'https://adobe.com',
