@@ -86,12 +86,14 @@ function normalizePathname(pathname, {
  * Extracts and sanitizes a site-specific key from the base URL.
  */
 export function extractSiteKeyFromBaseURL(site) {
-  const baseURL = site.getBaseURL();
   let url;
   try {
-    url = new URL(baseURL);
-  } catch {
-    throw new Error('Invalid base URL');
+    url = new URL(site.getBaseURL());
+  } catch (e) {
+    if (e instanceof TypeError) {
+      throw new Error('Invalid base URL');
+    }
+    throw e;
   }
   if (url.username || url.password) {
     throw new Error('Invalid base URL: userinfo is not permitted');

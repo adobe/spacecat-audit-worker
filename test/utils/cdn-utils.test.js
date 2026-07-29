@@ -103,6 +103,15 @@ describe('CDN Utils', () => {
       const site = { getBaseURL: () => 'not a url' };
       expect(() => extractSiteKeyFromBaseURL(site)).to.throw('Invalid base URL');
     });
+
+    it('propagates non-URL errors from getBaseURL', () => {
+      const site = {
+        getBaseURL: () => {
+          throw new Error('boom');
+        },
+      };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('boom');
+    });
   });
 
   describe('resolveCdnBucketName', () => {
