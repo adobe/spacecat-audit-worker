@@ -310,6 +310,31 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(3);
     });
 
+    it('should collapse URLs that differ only by tracking params when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?utm_source=newsletter&utm_campaign=spring',
+        'https://example.com/page?utm_source=social&utm_campaign=summer',
+        'https://example.com/page?gclid=abc123',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal(urls[0]);
+    });
+
+    it('should still keep non-tracking query-param variants distinct when includeQueryParams is true', () => {
+      const urls = [
+        'https://example.com/page?filter=iphone&utm_source=newsletter',
+        'https://example.com/page?filter=mac&utm_source=social',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls, { includeQueryParams: true });
+
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls).to.deep.equal(urls);
+    });
+
     it('should handle URLs with hash fragments', () => {
       const urls1 = ['https://example.com/page#section1'];
       const urls2 = ['https://example.com/page#section2'];
@@ -502,6 +527,29 @@ describe('Prerender Utils', () => {
 
     it('should preserve percent-encoding and lowercase hex digits (%41BC/Page → %41bc/page)', () => {
       expect(normalizePathnameWithQuery('https://example.com/%41BC/Page')).to.equal('/%41bc/page');
+    });
+
+    it('should strip a single tracking param and drop the "?" when it was the only param', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/test?utm_source=newsletter')).to.equal('/test');
+    });
+
+    it('should strip multiple tracking params from different vendors', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/test?gclid=abc&fbclid=def&msclkid=ghi')).to.equal('/test');
+    });
+
+    it('should strip tracking params while preserving non-tracking params', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/test?utm_source=newsletter&foo=bar')).to.equal('/test?foo=bar');
+    });
+
+    it('should treat URLs differing only by tracking params as identical', () => {
+      const a = normalizePathnameWithQuery('https://adobe.com/test?utm_source=a&utm_campaign=spring');
+      const b = normalizePathnameWithQuery('https://adobe.com/test?utm_source=b&utm_campaign=summer');
+      expect(a).to.equal(b);
+      expect(a).to.equal('/test');
+    });
+
+    it('should not touch non-tracking query strings (order preserved)', () => {
+      expect(normalizePathnameWithQuery('https://adobe.com/test?b=2&a=1')).to.equal('/test?b=2&a=1');
     });
   });
 

@@ -5314,3 +5314,131 @@ describe('sendOpportunitySuggestionsToMystique', () => {
     );
   });
 });
+
+describe('createIndividualOpportunitySuggestions - OUTDATED lifecycle (end-to-end, real syncSuggestions)', () => {
+  // Uses the real syncSuggestions/handleOutdatedSuggestions from src/utils/data-access.js
+  // (nothing in the sync layer is mocked) to prove that without auto-fix, a suggestion no
+  // longer detected on re-scan is marked OUTDATED even if it was previously IN_PROGRESS.
+  let sandbox;
+  let mockLog;
+  let bulkUpdateStatus;
+  let saveMany;
+  let mockContext;
+
+  const pageUrl = 'https://example.com/products/watches/';
+  const issueType = 'aria-allowed-attr';
+  const targetSelector = '.product-list [role="listbox"]';
+
+  const buildUrlData = () => ({
+    url: pageUrl,
+    issues: [
+      {
+        type: issueType,
+        occurrences: 3,
+        htmlWithIssues: [{ target_selector: targetSelector }],
+      },
+    ],
+  });
+
+  const makeExistingSuggestion = (status) => ({
+    getId: () => 'suggestion-1',
+    getData: () => buildUrlData(),
+    getStatus: () => status,
+    setData: sandbox.stub(),
+    setStatus: sandbox.stub(),
+    setUpdatedBy: sandbox.stub(),
+    setRank: sandbox.stub(),
+  });
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    bulkUpdateStatus = sandbox.stub().resolves();
+    saveMany = sandbox.stub().resolves();
+    mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1', getDeliveryType: () => 'aem_edge' },
+      dataAccess: {
+        Suggestion: { bulkUpdateStatus, saveMany },
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('marks an IN_PROGRESS suggestion OUTDATED when the issue is no longer detected on re-scan', async () => {
+    const opportunity = {
+      getId: () => 'oppty-1',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('IN_PROGRESS')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+    };
+
+    // Issue no longer detected on this re-scan.
+    const aggregatedData = { data: [] };
+
+    await generateIndividualOpportunitiesModule.createIndividualOpportunitySuggestions(
+      opportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+      [pageUrl],
+    );
+
+    expect(bulkUpdateStatus).to.have.been.calledOnce;
+    const [suggestionsMarkedOutdated, newStatus] = bulkUpdateStatus.getCall(0).args;
+    expect(newStatus).to.equal('OUTDATED');
+    expect(suggestionsMarkedOutdated).to.have.lengthOf(1);
+    expect(suggestionsMarkedOutdated[0].getId()).to.equal('suggestion-1');
+  });
+
+  it('leaves an IN_PROGRESS suggestion alone when the issue is still detected on re-scan', async () => {
+    const opportunity = {
+      getId: () => 'oppty-1',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('IN_PROGRESS')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+    };
+
+    // Issue still present on this re-scan.
+    const aggregatedData = { data: [buildUrlData()] };
+
+    await generateIndividualOpportunitiesModule.createIndividualOpportunitySuggestions(
+      opportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+      [pageUrl],
+    );
+
+    expect(bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('still protects SKIPPED/REJECTED suggestions from being marked OUTDATED', async () => {
+    const opportunity = {
+      getId: () => 'oppty-1',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([makeExistingSuggestion('SKIPPED')]),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+    };
+
+    const aggregatedData = { data: [] };
+
+    await generateIndividualOpportunitiesModule.createIndividualOpportunitySuggestions(
+      opportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+      [pageUrl],
+    );
+
+    expect(bulkUpdateStatus).to.not.have.been.called;
+  });
+});
