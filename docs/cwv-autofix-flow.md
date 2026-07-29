@@ -67,10 +67,15 @@ generation on SME approval (`NEW` → code-fix; `PENDING_VALIDATION` → guidanc
 
 | Flag | Effect |
 |---|---|
-| `cwv-auto-suggest` | gates whether the `guidance:cwv` SQS message is sent at all |
-| `cwv-auto-fix` | gates whether `codeBucket` / `codePath` are included (so Mystique can do a code fix, not just guidance) |
+| `cwv-auto-fix` | gates whether `codeBucket` / `codePath` are included in the `guidance:cwv` message (so Mystique can do a code fix, not just guidance) |
 
-Both flags are checked in this repo. The autofix-worker also checks `cwv-auto-fix` independently — both must be enabled for the chain to complete.
+> **Note (current behavior):** the CWV audit's `processAutoSuggest` **no longer re-checks**
+> `cwv-auto-suggest` / `cwv-auto-fix` (see `src/cwv/auto-suggest.js`) — per-site enablement of
+> the `cwv` audit is verified upstream via `isHandlerEnabledForSite('cwv', site)`
+> (`src/common/audit-utils.js`), consistent with every other audit type. So disabling CWV for a
+> site is done by disabling the `cwv` handler in `Configuration` (see the bow-out section below),
+> not by flipping `cwv-auto-suggest=false`. The `spacecat-autofix-worker` still checks
+> `cwv-auto-fix` independently to gate whether the Issue/PR is actually opened.
 
 ## Blackboard engine bow-out (`deliveryConfig.cwvEngine`)
 
@@ -81,12 +86,23 @@ exactly one flow must be authoritative or the rows collide/duplicate.
 
 The switch is one field both systems read: `deliveryConfig.cwvEngine ∈ { "legacy"
 (default/absent), "blackboard" }` (mirrors `altTextEngine` / `formsA11yEngine`). When
-`cwvEngine === "blackboard"`, the CWV audit's `syncOpportunityAndSuggestionsStep`
-(`src/cwv/handler.js`) **bows out**: it creates no opportunity/suggestion rows and sends no
-`guidance:cwv` message. Mystique's blackboard cascade then owns those rows for the site.
-The migration action is flipping `cwvEngine`; flipping it back to `legacy` restores this
-flow on the next audit. The full cross-repo contract, the projector-ownership rationale, and
-a duplicate-row detection recipe live in Mystique's
+`cwvEngine === "blackboard"`, the CWV audit (`src/cwv/handler.js`) **bows out** at both steps:
+
+- **Step 1 (`collectCWVDataAndImportCode`)** skips the RUM/PSI collection (nothing consumes the
+  persisted `cwv` audit result — trend audits read RUM directly) and **resolves any pre-existing
+  legacy `type:"cwv"` opportunity**, outdating its still-live (`NEW`/`IN_PROGRESS`) suggestions
+  while preserving customer-/system-touched ones (`FIXED`/`SKIPPED`/`ERROR`). This is done in
+  Step 1 because it always runs on the initial trigger (not gated on the import-worker
+  round-trip). The import-worker hop itself is kept (its payload contract requires a valid
+  `type`) — harmless for a migrated site; to skip the audit *entirely* (RUM + import + sync),
+  disable the `cwv` handler for the site in `Configuration`.
+- **Step 2 (`syncOpportunityAndSuggestionsStep`)** creates no opportunity/suggestion rows and
+  sends no `guidance:cwv` message (defense-in-depth if reached).
+
+Mystique's blackboard cascade then owns those rows for the site. The migration action is
+flipping `cwvEngine`; flipping it back to `legacy` restores this flow on the next audit. The
+full cross-repo contract, the projector-ownership rationale, and a duplicate-row detection
+recipe live in Mystique's
 `docs/opportunities/cwv/design-cwv-blackboard-migration.md` §9.4 (Spec 009-04 / ADR-0022).
 
 ## Key files
