@@ -587,6 +587,27 @@ describe('CDN Utils', () => {
       expect(result).to.include("REGEXP_LIKE(url, '(?i)(x'') OR REGEXP_LIKE(url, ''(?i)(y)')");
     });
 
+    it('escapes SQL quotes and regex metacharacters in base URL host (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://x')union(select-1)--.example.com",
+      };
+      const result = buildSiteFilters([], mockSite);
+      // single quote doubled (no SQL literal breakout) and regex metacharacters
+      // escaped (no alternation/broadening)
+      expect(result).to.not.include("x')union");
+      expect(result).to.include("x''\\)union\\(select-1\\)--\\.example\\.com");
+    });
+
+    it('escapes SQL quotes and regex metacharacters in base URL path (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://example.com/p')or(1=1)--",
+      };
+      const result = buildSiteFilters([], mockSite);
+      expect(result).to.not.include("p')or");
+      expect(result).to.include("''");
+      expect(result).to.include('\\(1=1');
+    });
+
     it('falls back to baseURL when filters are empty', () => {
       const mockSite = {
         getBaseURL: () => 'https://adobe.com',
@@ -594,7 +615,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe\\.com$'))");
     });
 
     it('adds an optional-leading-slash path filter for subpath sites when filters are empty', () => {
@@ -604,7 +625,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us(?:/|$)'))");
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example\\.com$')) AND REGEXP_LIKE(url, '(?i)^/?us(?:/|$)'))");
     });
 
     it('builds nested path filters for multi-segment subpaths', () => {
@@ -614,7 +635,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us/en(?:/|$)'))");
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example\\.com$')) AND REGEXP_LIKE(url, '(?i)^/?us/en(?:/|$)'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {
@@ -624,7 +645,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe\\.com$'))");
     });
 
     it('keeps subdomain and adds optional www prefix', () => {
@@ -634,7 +655,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business.adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business\\.adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business\\.adobe\\.com$'))");
     });
   });
 });

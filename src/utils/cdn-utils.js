@@ -516,11 +516,27 @@ function escapeSqlLiteral(value) {
   return String(value).replace(/'/g, "''");
 }
 
+function escapeRegexMetacharacters(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Base URL host/path are literal values interpolated into an Athena REGEXP_LIKE
+// pattern inside a single-quoted SQL literal. Neutralize both layers: regex
+// metacharacters (so the value matches literally and can't broaden the match via
+// alternation) and single quotes (so it can't break out of the string literal).
+// Order matters: regex-escape first, then SQL-escape the result (VULN-37491).
+export function escapeForAthenaRegexLiteral(value) {
+  return escapeSqlLiteral(escapeRegexMetacharacters(value));
+}
+
 export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
     const { host, pathname } = new URL(baseURL);
-    const rootHost = host.replace(/^www\./, '');
+    // host/pathname come from the customer-controlled base URL and are interpolated
+    // into the Athena regex string literal below. Escape single quotes so they cannot
+    // break out of the literal (VULN-37491, base_url vector).
+    const rootHost = escapeForAthenaRegexLiteral(host.replace(/^www\./, ''));
     const hostFilter = `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
     const normalizedPath = normalizePathname(pathname);
 
@@ -528,7 +544,7 @@ export function buildSiteFilters(filters, site) {
       return hostFilter;
     }
 
-    const escapedPath = normalizedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedPath = escapeForAthenaRegexLiteral(normalizedPath);
     return `(${hostFilter} AND REGEXP_LIKE(url, '(?i)^/?${escapedPath}(?:/|$)'))`;
   }
 
