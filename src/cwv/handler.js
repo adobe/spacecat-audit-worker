@@ -110,7 +110,9 @@ export async function collectCWVDataAndImportCode(context) {
       // Nothing consumes the persisted cwv audit result (trends read RUM directly);
       // an empty result is correct for a bowed-out site.
       auditResult: { cwv: [] },
-      fullAuditRef: context.finalUrl || site.getBaseURL(),
+      // The StepAudit framework always sets finalUrl via the urlResolver before running the
+      // step, so use it directly — matching how buildCWVAuditResult sets fullAuditRef.
+      fullAuditRef: context.finalUrl,
       // Import-worker payload contract requires a valid type; keep the hop (harmless for a
       // migrated site — the download is unused). Skipping it needs an import-worker-side
       // flag; the clean full-skip is the Configuration cwv handler-disable.
