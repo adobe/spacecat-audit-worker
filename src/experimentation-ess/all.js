@@ -19,6 +19,7 @@ const DAYS = 180;
 
 let log = console;
 
+/* c8 ignore stop */
 export async function persistOnlyMetadata(auditData, context) {
   // persists only the audit metadata, as the
   // whole audit result will be bigger than the allowed size in dynamo
@@ -33,6 +34,7 @@ export async function persistOnlyMetadata(auditData, context) {
   });
 }
 
+/* c8 ignore start */
 export async function essExperimentationAllAuditRunner(auditUrl, context, site) {
   log = context.log;
   const { dataAccess } = context;

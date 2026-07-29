@@ -22,7 +22,7 @@
 
 ## Goals
 
-- Compute `{ p_value, power, statsig }` per variant **in-process** in audit-worker, byte-for-byte compatible with the current `statsig` Lambda output (within floating-point tolerance).
+- Compute `{ p_value, power, statsig }` per variant **in-process** in audit-worker, matching the current `statsig` Lambda output **within floating-point tolerance** (exact equality is not achievable with a hand-rolled `erf` vs. Python's `statsmodels`/rounding).
 - Remove the cross-account Lambda invoke (`invokeLambdaFunction`, `SPACECAT_STATISTICS_SERVICE_ARN`, `@aws-sdk/client-lambda`) from the ESS path.
 - No new runtime dependency (hand-rolled numerics), fully unit-tested.
 - Preserve the existing swallow-on-error contract so a stats failure never fails the audit.
@@ -62,7 +62,8 @@ Cleanup: remove `invokeLambdaFunction`, `SPACECAT_STATISTICS_SERVICE_ARN`, and t
 ## Test Plan
 
 - Unit tests (`test/audits/experimentation-ess-statsig.test.js`): reference vectors captured by **running the Python `StatsigHandler` locally** (statsmodels) over representative `rumData`; assert Node output matches `p_value` (±1e-6), `power` (±0.1), and `statsig` exactly.
-- Edge cases: no control → `{error:'No control group'}`; variant missing views/metrics → per-variant `{error}`; zero-conversion / identical-rate → NaN path `{error}`; large N.
+- **Large-N vector required** (`ncp ≳ 500`, e.g. 10000/100000 vs 12000/100000 → power 100): a naive forward-from-`j=0` non-central χ² sum underflows/NaNs here and returns power 0/NaN, so this vector must be in the suite to catch a wrong implementation.
+- Edge cases: no control → `{error:'No control group'}`; variant missing views/metrics → per-variant `{error}`; zero-conversion / identical-rate → NaN / alpha-power path.
 - Cross-check p-values against abtestguide.com (as the Python comment does).
 - Regression: `addPValues` no longer references the Lambda client; a stats error still leaves the audit successful (swallow preserved).
 

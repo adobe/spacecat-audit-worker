@@ -96,4 +96,53 @@ describe('experimentation-ess postProcessor persistence (SITES-47215)', () => {
     expect(existing.setEndDate).to.have.been.calledWith('2026-08-31');
     expect(existing.setUrl).to.have.been.calledWith('https://www.example.com/existing');
   });
+
+  it('keeps audit values when existing has a later start, no url, and audit endDate is empty', async () => {
+    auditData.auditResult[0].endDate = '';
+    auditData.auditResult[0].variants = [{ name: 'control', split: '0.9' }];
+    const existing = {
+      startDate: '2026-08-01', // later than audit start -> audit start wins
+      endDate: '2026-06-01',
+      url: undefined, // no url -> keep audit url
+      variants: [{ name: 'control', split: '0.5' }],
+      save: sandbox.stub().resolves(),
+    };
+    SETTERS.forEach((m) => { existing[m] = sandbox.stub().returns(existing); });
+    Experiment.allBySiteIdAndExpId.resolves([existing]);
+
+    await postProcessor('https://www.example.com/', auditData, context);
+
+    expect(Experiment.create).to.not.have.been.called;
+    expect(existing.save).to.have.been.calledOnce;
+    expect(existing.setStartDate).to.have.been.calledWith('2026-07-01');
+    expect(existing.setEndDate).to.have.been.calledWith('');
+    expect(existing.setUrl).to.have.been.calledWith('https://www.example.com/');
+  });
+
+  it('with multiple existing, matches by url and keeps audit endDate when existing is not later', async () => {
+    auditData.auditResult[0].endDate = '2026-07-31';
+    const match = {
+      startDate: '2026-06-01',
+      endDate: '2026-06-15', // not later than audit -> audit endDate wins
+      url: 'https://www.example.com/',
+      variants: undefined, // exercises the optional-chaining path when filling variant props
+      save: sandbox.stub().resolves(),
+    };
+    SETTERS.forEach((m) => { match[m] = sandbox.stub().returns(match); });
+    Experiment.allBySiteIdAndExpId.resolves([{ url: 'https://other/' }, match]);
+
+    await postProcessor('https://www.example.com/', auditData, context);
+
+    expect(Experiment.create).to.not.have.been.called;
+    expect(match.save).to.have.been.calledOnce;
+    expect(match.setEndDate).to.have.been.calledWith('2026-07-31');
+  });
+
+  it('creates when allBySiteIdAndExpId returns null', async () => {
+    Experiment.allBySiteIdAndExpId.resolves(null);
+
+    await postProcessor('https://www.example.com/', auditData, context);
+
+    expect(Experiment.create).to.have.been.calledOnce;
+  });
 });

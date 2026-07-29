@@ -46,6 +46,10 @@ describe('experimentation-ess common getMetadata', () => {
     expect(getMetadata('og:title', $)).to.equal('Hello');
   });
 
+  it('handles a falsy metadata name (defaults to the name attribute)', () => {
+    expect(getMetadata('', $)).to.equal('');
+  });
+
   it('returns an empty string for a missing tag or a tag without content', () => {
     expect(getMetadata('does-not-exist', $)).to.equal('');
     expect(getMetadata('empty-meta', $)).to.equal('');
