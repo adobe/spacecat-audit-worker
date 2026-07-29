@@ -88,6 +88,21 @@ describe('CDN Utils', () => {
       expect(extractSiteKeyFromBaseURL(hyphenatedSite)).to.equal('example_com_us_en');
       expect(extractSiteKeyFromBaseURL(nestedSite)).to.equal('example_com_us__en');
     });
+
+    it('throws for a base URL containing userinfo (collision guard)', () => {
+      const site = { getBaseURL: () => 'https://1122@www.interactivebrokers.com' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('userinfo is not permitted');
+    });
+
+    it('throws for a base URL with only password userinfo', () => {
+      const site = { getBaseURL: () => 'https://:pass@example.com/abc' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('userinfo is not permitted');
+    });
+
+    it('throws for an unparseable base URL', () => {
+      const site = { getBaseURL: () => 'not a url' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('Invalid base URL');
+    });
   });
 
   describe('resolveCdnBucketName', () => {

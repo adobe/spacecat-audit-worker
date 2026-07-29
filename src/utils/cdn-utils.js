@@ -86,7 +86,16 @@ function normalizePathname(pathname, {
  * Extracts and sanitizes a site-specific key from the base URL.
  */
 export function extractSiteKeyFromBaseURL(site) {
-  const { host, pathname } = new URL(site.getBaseURL());
+  let url;
+  try {
+    url = new URL(site.getBaseURL());
+  } catch {
+    throw new Error('Invalid base URL');
+  }
+  if (url.username || url.password) {
+    throw new Error('Invalid base URL: userinfo is not permitted');
+  }
+  const { host, pathname } = url;
   const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
   const normalizedHost = cleanHost.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
   const normalizedPath = normalizePathname(pathname, {
