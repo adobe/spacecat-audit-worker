@@ -1,3 +1,10 @@
+## [1.511.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.1...v1.511.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* escape base URL host and path in CDN log site filters ([#2828](https://github.com/adobe/spacecat-audit-worker/issues/2828)) ([7cf8e00](https://github.com/adobe/spacecat-audit-worker/commit/7cf8e0014944e5786b07f239c4bad674f6562872))
+
 ## [1.511.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.0...v1.511.1) (2026-07-29)
 
 
