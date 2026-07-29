@@ -640,7 +640,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+      // Two batched saveMany calls: syncSuggestions persists the changed suggestion, then
+      // processAutoSuggest persists the dispatch-fingerprint stamp on the NEW suggestion it
+      // re-dispatched to Mystique (both single batched upserts, not N+1).
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledTwice;
 
       // make sure that 1 new suggestion is created (/docs/ — the only new failing-metric page)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
@@ -770,8 +773,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // on each so the auto-suggest skip ("no failing CWV metrics") doesn't drop them.
       const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
-        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' },
-        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW', setData: sinon.stub() },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW', setData: sinon.stub() }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -899,7 +902,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
             ],
             metrics: failingMetrics,
           }),
-          getStatus: () => 'NEW'
+          getStatus: () => 'NEW',
+          setData: sinon.stub(),
         },
         {
           getId: () => 'sugg-2',
@@ -910,7 +914,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
             issues: [],
             metrics: failingMetrics,
           }),
-          getStatus: () => 'NEW'
+          getStatus: () => 'NEW',
+          setData: sinon.stub(),
         }
       ];
 
