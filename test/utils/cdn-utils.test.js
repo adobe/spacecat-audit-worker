@@ -558,6 +558,35 @@ describe('CDN Utils', () => {
       expect(result).to.include('AND');
     });
 
+    it('rejects a key that is not on the allowlist (VULN-37491)', () => {
+      const maliciousKey = "url, '(?i)(x)')) UNION ALL SELECT CONCAT('https://example.com?schema=', CAST(current_schema AS VARCHAR)), CAST(1 AS BIGINT) -- ";
+      expect(() => buildSiteFilters([
+        { key: maliciousKey, value: ['x'], type: 'include' },
+      ])).to.throw('Invalid CDN log filter key');
+    });
+
+    it('accepts every column on the allowlist', () => {
+      const allowedKeys = ['url', 'host', 'x_forwarded_host', 'user_agent', 'referer', 'cdn_provider'];
+      allowedKeys.forEach((key) => {
+        const result = buildSiteFilters([{ key, value: ['test'], type: 'include' }]);
+        expect(result).to.include(`REGEXP_LIKE(${key}, '(?i)(test)')`);
+      });
+    });
+
+    it('normalizes uppercase column keys to lowercase (Athena is case-insensitive)', () => {
+      const result = buildSiteFilters([
+        { key: 'X_forwarded_host', value: ['example.com'], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(x_forwarded_host, '(?i)(example.com)')");
+    });
+
+    it('escapes single quotes in filter values to prevent literal breakout', () => {
+      const result = buildSiteFilters([
+        { key: 'url', value: ["x') OR REGEXP_LIKE(url, '(?i)(y"], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(url, '(?i)(x'') OR REGEXP_LIKE(url, ''(?i)(y)')");
+    });
+
     it('falls back to baseURL when filters are empty', () => {
       const mockSite = {
         getBaseURL: () => 'https://adobe.com',

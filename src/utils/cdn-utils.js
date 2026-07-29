@@ -499,6 +499,23 @@ export async function shouldRecreateTable(
   }
 }
 
+// Columns present on the aggregated/raw CDN log tables that filters are allowed to
+// target. `key` comes straight from customer-controlled site config (cdnlogsFilter),
+// so it must never be interpolated into the query without being checked against this
+// allowlist (see VULN-37491 - SQL injection via cdnlogsFilter[].key).
+const ALLOWED_FILTER_KEYS = new Set([
+  'url',
+  'host',
+  'x_forwarded_host',
+  'user_agent',
+  'referer',
+  'cdn_provider',
+]);
+
+function escapeSqlLiteral(value) {
+  return String(value).replace(/'/g, "''");
+}
+
 export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
@@ -516,11 +533,17 @@ export function buildSiteFilters(filters, site) {
   }
 
   const clauses = filters.map(({ key, value, type }) => {
-    const regexPattern = value.join('|');
-    if (type === 'exclude') {
-      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    // Athena folds column identifiers to lowercase, so normalize before the
+    // allowlist check (e.g. a stored 'X_forwarded_host' is the same column).
+    const normalizedKey = String(key).toLowerCase();
+    if (!ALLOWED_FILTER_KEYS.has(normalizedKey)) {
+      throw new Error(`Invalid CDN log filter key: ${key}`);
     }
-    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    const regexPattern = value.map(escapeSqlLiteral).join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${normalizedKey}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${normalizedKey}, '(?i)(${regexPattern})')`;
   });
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
