@@ -1,3 +1,17 @@
+## [1.511.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.5...v1.511.6) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** bump @adobe/spacecat-shared-data-access to 4.15.3 ([#2831](https://github.com/adobe/spacecat-audit-worker/issues/2831)) ([2daa817](https://github.com/adobe/spacecat-audit-worker/commit/2daa817e36d66af73a265b7d7b8243b34fe492a2))
+
+## [1.511.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.4...v1.511.5) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** make referral self-referral filter NULL-safe ([#2830](https://github.com/adobe/spacecat-audit-worker/issues/2830)) ([7aebbb1](https://github.com/adobe/spacecat-audit-worker/commit/7aebbb1ba65fdacf79f0cb2f22a6ee9d7a2b8a5a))
+
 ## [1.511.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.3...v1.511.4) (2026-07-29)
 
 
