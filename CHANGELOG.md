@@ -1,3 +1,52 @@
+## [1.511.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.5...v1.511.6) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** bump @adobe/spacecat-shared-data-access to 4.15.3 ([#2831](https://github.com/adobe/spacecat-audit-worker/issues/2831)) ([2daa817](https://github.com/adobe/spacecat-audit-worker/commit/2daa817e36d66af73a265b7d7b8243b34fe492a2))
+
+## [1.511.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.4...v1.511.5) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** make referral self-referral filter NULL-safe ([#2830](https://github.com/adobe/spacecat-audit-worker/issues/2830)) ([7aebbb1](https://github.com/adobe/spacecat-audit-worker/commit/7aebbb1ba65fdacf79f0cb2f22a6ee9d7a2b8a5a))
+
+## [1.511.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.3...v1.511.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cwv:** suppress redundant guidance re-dispatch for unchanged failing metrics ([#2823](https://github.com/adobe/spacecat-audit-worker/issues/2823)) ([a7a6ba2](https://github.com/adobe/spacecat-audit-worker/commit/a7a6ba2dc8d81ec5f5f2fd15f011e23a4b94e163))
+
+## [1.511.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.2...v1.511.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* reject base URLs with userinfo when deriving CDN site key ([#2829](https://github.com/adobe/spacecat-audit-worker/issues/2829)) ([77762bb](https://github.com/adobe/spacecat-audit-worker/commit/77762bb665293d4d257cf3a93860623124afb02e))
+
+## [1.511.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.1...v1.511.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* escape base URL host and path in CDN log site filters ([#2828](https://github.com/adobe/spacecat-audit-worker/issues/2828)) ([7cf8e00](https://github.com/adobe/spacecat-audit-worker/commit/7cf8e0014944e5786b07f239c4bad674f6562872))
+
+## [1.511.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.0...v1.511.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* restrict CDN log filter keys to a column allowlist ([#2826](https://github.com/adobe/spacecat-audit-worker/issues/2826)) ([b088e2e](https://github.com/adobe/spacecat-audit-worker/commit/b088e2e8f510dae349dd744a9bce4ceb18d61d83))
+
+# [1.511.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.510.0...v1.511.0) (2026-07-29)
+
+
+### Features
+
+* **cwv:** bow out of legacy opportunity/suggestion sync when deliveryConfig.cwvEngine=blackboard ([#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825)) ([a50cbda](https://github.com/adobe/spacecat-audit-worker/commit/a50cbda10b60ddc21743ac51929d3e3c4ba2801e))
+
 # [1.510.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.509.0...v1.510.0) (2026-07-28)
 
 

@@ -88,6 +88,30 @@ describe('CDN Utils', () => {
       expect(extractSiteKeyFromBaseURL(hyphenatedSite)).to.equal('example_com_us_en');
       expect(extractSiteKeyFromBaseURL(nestedSite)).to.equal('example_com_us__en');
     });
+
+    it('throws for a base URL containing userinfo (collision guard)', () => {
+      const site = { getBaseURL: () => 'https://1122@www.interactivebrokers.com' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('userinfo is not permitted');
+    });
+
+    it('throws for a base URL with only password userinfo', () => {
+      const site = { getBaseURL: () => 'https://:pass@example.com/abc' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('userinfo is not permitted');
+    });
+
+    it('throws for an unparseable base URL', () => {
+      const site = { getBaseURL: () => 'not a url' };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('Invalid base URL');
+    });
+
+    it('propagates non-URL errors from getBaseURL', () => {
+      const site = {
+        getBaseURL: () => {
+          throw new Error('boom');
+        },
+      };
+      expect(() => extractSiteKeyFromBaseURL(site)).to.throw('boom');
+    });
   });
 
   describe('resolveCdnBucketName', () => {
@@ -558,6 +582,56 @@ describe('CDN Utils', () => {
       expect(result).to.include('AND');
     });
 
+    it('rejects a key that is not on the allowlist (VULN-37491)', () => {
+      const maliciousKey = "url, '(?i)(x)')) UNION ALL SELECT CONCAT('https://example.com?schema=', CAST(current_schema AS VARCHAR)), CAST(1 AS BIGINT) -- ";
+      expect(() => buildSiteFilters([
+        { key: maliciousKey, value: ['x'], type: 'include' },
+      ])).to.throw('Invalid CDN log filter key');
+    });
+
+    it('accepts every column on the allowlist', () => {
+      const allowedKeys = ['url', 'host', 'x_forwarded_host', 'user_agent', 'referer', 'cdn_provider'];
+      allowedKeys.forEach((key) => {
+        const result = buildSiteFilters([{ key, value: ['test'], type: 'include' }]);
+        expect(result).to.include(`REGEXP_LIKE(${key}, '(?i)(test)')`);
+      });
+    });
+
+    it('normalizes uppercase column keys to lowercase (Athena is case-insensitive)', () => {
+      const result = buildSiteFilters([
+        { key: 'X_forwarded_host', value: ['example.com'], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(x_forwarded_host, '(?i)(example.com)')");
+    });
+
+    it('escapes single quotes in filter values to prevent literal breakout', () => {
+      const result = buildSiteFilters([
+        { key: 'url', value: ["x') OR REGEXP_LIKE(url, '(?i)(y"], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(url, '(?i)(x'') OR REGEXP_LIKE(url, ''(?i)(y)')");
+    });
+
+    it('escapes SQL quotes and regex metacharacters in base URL host (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://x')union(select-1)--.example.com",
+      };
+      const result = buildSiteFilters([], mockSite);
+      // single quote doubled (no SQL literal breakout) and regex metacharacters
+      // escaped (no alternation/broadening)
+      expect(result).to.not.include("x')union");
+      expect(result).to.include("x''\\)union\\(select-1\\)--\\.example\\.com");
+    });
+
+    it('escapes SQL quotes and regex metacharacters in base URL path (VULN-37491)', () => {
+      const mockSite = {
+        getBaseURL: () => "https://example.com/p')or(1=1)--",
+      };
+      const result = buildSiteFilters([], mockSite);
+      expect(result).to.not.include("p')or");
+      expect(result).to.include("''");
+      expect(result).to.include('\\(1=1');
+    });
+
     it('falls back to baseURL when filters are empty', () => {
       const mockSite = {
         getBaseURL: () => 'https://adobe.com',
@@ -565,7 +639,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe\\.com$'))");
     });
 
     it('adds an optional-leading-slash path filter for subpath sites when filters are empty', () => {
@@ -575,7 +649,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us(?:/|$)'))");
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example\\.com$')) AND REGEXP_LIKE(url, '(?i)^/?us(?:/|$)'))");
     });
 
     it('builds nested path filters for multi-segment subpaths', () => {
@@ -585,7 +659,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us/en(?:/|$)'))");
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example\\.com$')) AND REGEXP_LIKE(url, '(?i)^/?us/en(?:/|$)'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {
@@ -595,7 +669,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe\\.com$'))");
     });
 
     it('keeps subdomain and adds optional www prefix', () => {
@@ -605,7 +679,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business.adobe.com$'))");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business\\.adobe\\.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business\\.adobe\\.com$'))");
     });
   });
 });
