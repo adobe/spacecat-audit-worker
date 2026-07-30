@@ -732,8 +732,7 @@ describe('Preflight Audit', () => {
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
       retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
-      // Accessibility + form-accessibility mocked (timeouts / SQS). Alt-text stays real — needs
-      // `alt-text-preflight` in getHandlers below so entitlement + fixtures stay aligned.
+      // Accessibility + form-accessibility mocked (timeouts / SQS).
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(),
@@ -782,7 +781,6 @@ describe('Preflight Audit', () => {
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
           'form-accessibility-preflight': { productCodes: ['aem-sites'] },
-          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
@@ -1581,7 +1579,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1600,9 +1598,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 9 calls: 1 metadata update + 7 intermediate saves (incl. alt-text) + 1 final)
+      // (total of 8 calls: 1 metadata update + 6 intermediate saves + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(9);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -4919,7 +4917,6 @@ describe('Preflight Audit', () => {
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
           'form-accessibility-preflight': { productCodes: ['aem-sites'] },
-          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);

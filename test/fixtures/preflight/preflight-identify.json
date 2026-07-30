@@ -127,11 +127,6 @@
         "name": "readability",
         "type": "seo",
         "opportunities": []
-      },
-      {
-        "name": "alt-text",
-        "type": "accessibility",
-        "opportunities": []
       }
     ]
   }

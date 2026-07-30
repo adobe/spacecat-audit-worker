@@ -119,11 +119,6 @@ export const suggestionData = [
         type: 'seo',
         opportunities: [],
       },
-      {
-        name: 'alt-text',
-        type: 'accessibility',
-        opportunities: [],
-      },
     ],
   },
 ];
