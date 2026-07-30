@@ -231,13 +231,19 @@ export async function processReadabilityOpportunities(context) {
           return { ...existingData };
         }
         if (existingData.isEdited) {
-          return {
+          const merged = {
             ...existingData,
             ...newData,
             improvedText: existingData.improvedText,
             originalImprovedText: existingData.originalImprovedText,
             isEdited: true,
           };
+          // Re-derive transformRules.value from preserved improvedText so it stays
+          // consistent with the edit (parity with guidance-handler) (LLMO-6537).
+          if (merged.improvedText && merged.transformRules) {
+            merged.transformRules = { ...merged.transformRules, value: merged.improvedText };
+          }
+          return merged;
         }
         return { ...existingData, ...newData };
       },

@@ -460,13 +460,15 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(deployed.edgeDeployed).to.equal(true);
       expect(deployed.improvedText).to.equal('Deployed.');
 
-      // isEdited → preserve edited text + original snapshot, refresh the rest
+      // isEdited → preserve edited text + original snapshot, refresh the rest,
+      // re-derive transformRules.value from preserved improvedText (LLMO-6537)
       const edited = mergeDataFunction(
         {
           improvedText: 'Customer edited.',
           originalImprovedText: 'System text.',
           isEdited: true,
           rank: 10,
+          transformRules: { value: 'System text.', op: 'replace', selector: 'p' },
         },
         { improvedText: 'Regenerated.', rank: 20 },
       );
@@ -474,6 +476,8 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(edited.improvedText).to.equal('Customer edited.');
       expect(edited.originalImprovedText).to.equal('System text.');
       expect(edited.rank).to.equal(20);
+      expect(edited.transformRules.value).to.equal('Customer edited.');
+      expect(edited.transformRules.op).to.equal('replace');
 
       // neither flag → normal merge
       const merged = mergeDataFunction(
