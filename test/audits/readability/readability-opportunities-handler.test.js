@@ -428,7 +428,7 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(newData[0].seoImpact).to.be.undefined;
     });
 
-    it('should pass a mergeDataFunction that preserves edge/edited suggestions (LLMO-4010)', async () => {
+    it('should pass a mergeDataFunction that preserves edge/edited suggestions (LLMO-6537)', async () => {
       analyzePageReadabilityStub.resolves({
         success: true,
         message: 'Found 1 readability issues',
