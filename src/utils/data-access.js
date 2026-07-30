@@ -322,7 +322,16 @@ export const handleOutdatedSuggestions = async ({
       }
       return true;
     })
-    .filter((existing) => !isManuallyEditedSuggestion(existing));
+    // Never age out a suggestion the customer edited. Two independent signals:
+    // - updatedBy != 'system' (isManuallyEditedSuggestion) — the legacy guard, but
+    //   updatedBy is mutated by non-edit actions (rollback, move Ignored->New, status
+    //   changes) so it can silently clear.
+    // - data.isEdited — the durable, edit-only flag set by the UI edit-save action.
+    //   Required for cases where buildKey drifts on edit (e.g. FAQ buildKey embeds the
+    //   question), so the edited suggestion no longer matches any new item and would
+    //   otherwise be swept to OUTDATED (LLMO-6537).
+    .filter((existing) => !isManuallyEditedSuggestion(existing)
+      && existing.getData?.()?.isEdited !== true);
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);

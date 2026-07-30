@@ -1729,6 +1729,77 @@ describe('FAQs guidance handler', () => {
     expect(result.selector).to.equal('body');
   });
 
+  it('should preserve edge data mid-IVE geo-experiment (edgeOptimizeStatus)', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const mergeDataFn = syncSuggestionsStub.getCall(0).args[0].mergeDataFunction;
+
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      edgeOptimizeStatus: 'in_progress',
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.edgeOptimizeStatus).to.equal('in_progress');
+    expect(result.shouldOptimize).to.equal(true);
+    expect(result.selector).to.equal('main');
+  });
+
+  it('should preserve a customer-edited FAQ item and original snapshot when isEdited is set', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const mergeDataFn = syncSuggestionsStub.getCall(0).args[0].mergeDataFunction;
+
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      isEdited: true,
+      item: { question: 'Customer edited question?', answer: 'Customer edited answer.' },
+      originalItem: { question: 'System question?', answer: 'System answer.' },
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      item: { question: 'Regenerated question?', answer: 'Regenerated answer.' },
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.isEdited).to.equal(true);
+    expect(result.item.question).to.equal('Customer edited question?');
+    expect(result.item.answer).to.equal('Customer edited answer.');
+    expect(result.originalItem.question).to.equal('System question?');
+    // Non-edited fields still refresh
+    expect(result.shouldOptimize).to.equal(false);
+    expect(result.selector).to.equal('body');
+  });
+
   describe('Related URLs week fallback (LLMO-5035)', () => {
     const HEADER_ROW_VALUES = [
       undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',

@@ -232,6 +232,33 @@ export default async function handler(message, context) {
       };
     },
     mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set before
+      // edgeDeployed) (LLMO-6537, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return { ...existingData };
+      }
+      // Do not overwrite a customer-edited improvement, and never re-exclude it.
+      // isEdited is set only by the UI edit-save action (never inferred from
+      // updatedBy). Preserve the edited text + write-once original snapshot and
+      // re-derive transformRules.value from the preserved improvedText so the render
+      // payload stays consistent with the edit (LLMO-6537).
+      if (existingData.isEdited) {
+        const merged = {
+          ...existingData,
+          ...newData,
+          improvedText: existingData.improvedText,
+          originalImprovedText: existingData.originalImprovedText,
+          suggestionStatus: 'completed',
+          isEdited: true,
+          mystiqueProcessingCompleted: new Date().toISOString(),
+        };
+        delete merged.category;
+        delete merged.seoImpact;
+        delete merged.shouldExclude;
+        delete merged.exclusionReason;
+        return enrichSuggestionDataForAutoOptimize(merged);
+      }
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,
@@ -260,10 +287,22 @@ export default async function handler(message, context) {
       delete merged.seoImpact;
       return enrichSuggestionDataForAutoOptimize(merged);
     },
-    mergeStatusFunction: (existing, newDataItem, mergeCtx) => (
-      newDataItem.shouldExclude
+    mergeStatusFunction: (existing, newDataItem, mergeCtx) => {
+      // Do not flip status (e.g. to a terminal SKIPPED) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment — keep the deployed state (LLMO-6537, LLMO-6168)
+      const existingData = existing.getData?.() || {};
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return null;
+      }
+      // Never re-status a customer-edited suggestion (e.g. flip it to SKIPPED when the
+      // new audit marks it shouldExclude) — the edit takes precedence (LLMO-6537).
+      if (existingData.isEdited) {
+        return null;
+      }
+      return newDataItem.shouldExclude
         ? SuggestionModel.STATUSES.SKIPPED
-        : defaultMergeStatusFunction(existing, newDataItem, mergeCtx)),
+        : defaultMergeStatusFunction(existing, newDataItem, mergeCtx);
+    },
   });
 
   // Delete the S3 response file only after syncSuggestions succeeds

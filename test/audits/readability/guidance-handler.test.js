@@ -901,6 +901,162 @@ describe('Readability Opportunities Guidance Handler', () => {
 
       expect(merged.url).to.equal('https://example.com/page1');
     });
+
+    it('should not overwrite data for edge-deployed suggestions', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Previously improved text.',
+        shouldOptimize: true,
+        edgeDeployed: true,
+        transformRules: { op: 'replace', value: 'Previously improved text.', selector: '#content p:nth-child(1)' },
+      };
+      const newData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Newer improved text.',
+        shouldOptimize: false,
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.edgeDeployed).to.equal(true);
+      expect(result.shouldOptimize).to.equal(true);
+      expect(result.improvedText).to.equal('Previously improved text.');
+      expect(result.transformRules.value).to.equal('Previously improved text.');
+    });
+
+    it('should not overwrite data for suggestions mid-IVE geo-experiment (edgeOptimizeStatus)', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Previously improved text.',
+        shouldOptimize: true,
+        edgeOptimizeStatus: 'in_progress',
+        transformRules: { op: 'replace', value: 'Previously improved text.', selector: '#content p:nth-child(1)' },
+      };
+      const newData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Newer improved text.',
+        shouldOptimize: false,
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.edgeOptimizeStatus).to.equal('in_progress');
+      expect(result.shouldOptimize).to.equal(true);
+      expect(result.improvedText).to.equal('Previously improved text.');
+      expect(result.transformRules.value).to.equal('Previously improved text.');
+    });
+
+    it('should not overwrite edge-deployed data even when newData has shouldExclude', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Deployed text.',
+        edgeDeployed: true,
+      };
+      const newData = {
+        shouldExclude: true,
+        exclusionReason: 'citation_block',
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.edgeDeployed).to.equal(true);
+      expect(result.improvedText).to.equal('Deployed text.');
+      expect(result.shouldExclude).to.be.undefined;
+    });
+
+    it('should preserve a customer-edited improvement and original snapshot when isEdited is set', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Customer edited text.',
+        originalImprovedText: 'System improved text.',
+        isEdited: true,
+        transformRules: { op: 'replace', value: 'Customer edited text.', selector: '#content p:nth-child(1)' },
+      };
+      const newData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Newer improved text.',
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.isEdited).to.equal(true);
+      expect(result.improvedText).to.equal('Customer edited text.');
+      expect(result.originalImprovedText).to.equal('System improved text.');
+      // transformRules.value is re-derived from the preserved improvedText
+      expect(result.transformRules.value).to.equal('Customer edited text.');
+    });
+
+    it('should not re-exclude a customer-edited suggestion even when newData has shouldExclude', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Customer edited text.',
+        isEdited: true,
+      };
+      const newData = { shouldExclude: true, exclusionReason: 'citation_block' };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.isEdited).to.equal(true);
+      expect(result.improvedText).to.equal('Customer edited text.');
+      expect(result.shouldExclude).to.be.undefined;
+    });
   });
 
   describe('mergeStatusFunction', () => {
@@ -960,6 +1116,66 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(defaultMergeStatusStub.firstCall.args[0]).to.equal(mockExisting);
       expect(defaultMergeStatusStub.firstCall.args[2]).to.equal(mergeCtx);
       expect(result).to.equal(null);
+    });
+
+    it('should keep status (return null) for edge-deployed suggestions even when excluded', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = {
+        getStatus: () => 'NEW',
+        getData: () => ({ edgeDeployed: true }),
+      };
+      const mergeCtx = { log: logStub, site: {} };
+
+      const result = mergeStatusFunction(mockExisting, { ...newData[0], shouldExclude: true }, mergeCtx);
+
+      expect(result).to.equal(null);
+      expect(defaultMergeStatusStub).to.not.have.been.called;
+    });
+
+    it('should keep status (return null) for suggestions mid-IVE geo-experiment (edgeOptimizeStatus)', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = {
+        getStatus: () => 'NEW',
+        getData: () => ({ edgeOptimizeStatus: 'in_progress' }),
+      };
+      const mergeCtx = { log: logStub, site: {} };
+
+      const result = mergeStatusFunction(mockExisting, { ...newData[0], shouldExclude: true }, mergeCtx);
+
+      expect(result).to.equal(null);
+      expect(defaultMergeStatusStub).to.not.have.been.called;
+    });
+
+    it('should keep status (return null) for a customer-edited suggestion even when excluded', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = {
+        getStatus: () => 'NEW',
+        getData: () => ({ isEdited: true }),
+      };
+      const mergeCtx = { log: logStub, site: {} };
+
+      const result = mergeStatusFunction(mockExisting, { ...newData[0], shouldExclude: true }, mergeCtx);
+
+      expect(result).to.equal(null);
+      expect(defaultMergeStatusStub).to.not.have.been.called;
     });
   });
 });

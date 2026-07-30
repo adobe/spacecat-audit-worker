@@ -57,6 +57,28 @@ async function addSuggestions(
       rank: 10,
       data: suggestion,
     }),
+    mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to
+      // the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set before
+      // edgeDeployed) (LLMO-6537, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return { ...existingData };
+      }
+      // Do not overwrite a customer-edited summary. isEdited is set only by the UI
+      // edit-save action (never inferred from updatedBy); preserve the edited text and
+      // the write-once original snapshot while letting the rest of the data refresh
+      // (LLMO-6537).
+      if (existingData.isEdited) {
+        return {
+          ...existingData,
+          ...newData,
+          summarizationText: existingData.summarizationText,
+          originalSummarizationText: existingData.originalSummarizationText,
+          isEdited: true,
+        };
+      }
+      return { ...existingData, ...newData };
+    },
     scrapedUrlsSet,
   });
 }

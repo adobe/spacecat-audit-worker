@@ -223,6 +223,24 @@ export async function processReadabilityOpportunities(context) {
         rank: data.rank,
         data,
       }),
+      mergeDataFunction: (existingData, newData) => {
+        // Preserve deployed / mid-IVE-experiment suggestions, and customer-edited
+        // improvements. isEdited is set only by the UI edit-save action (never inferred
+        // from updatedBy) (LLMO-6537, LLMO-6168).
+        if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+          return { ...existingData };
+        }
+        if (existingData.isEdited) {
+          return {
+            ...existingData,
+            ...newData,
+            improvedText: existingData.improvedText,
+            originalImprovedText: existingData.originalImprovedText,
+            isEdited: true,
+          };
+        }
+        return { ...existingData, ...newData };
+      },
     });
 
     // Send to Mystique for AI-powered readability improvements

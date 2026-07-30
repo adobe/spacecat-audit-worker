@@ -1508,6 +1508,56 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
+    it('should not mark isEdited suggestions as OUTDATED when they do not appear in new audit data', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing customer-edited suggestion whose key drifted (e.g. FAQ question edit),
+      // so it matches nothing in the new audit. updatedBy is 'system' here to prove the
+      // data.isEdited flag alone keeps it alive (LLMO-4010).
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'edited-key', isEdited: true },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'edited-key', isEdited: true }),
+          getStatus: sinon.stub().returns('NEW'),
+          getUpdatedBy: sinon.stub().returns('system'),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+          getUpdatedBy: sinon.stub().returns('system'),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      // Only the non-edited NEW suggestion is marked OUTDATED; the isEdited one survives
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should not mark REJECTED suggestions as OUTDATED even when scrapedUrlsSet is null', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
