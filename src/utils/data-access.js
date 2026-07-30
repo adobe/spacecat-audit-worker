@@ -35,23 +35,6 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
- * True when a suggestion was last touched by a non-system actor (typically a
- * customer email stamped by the PATCH API). Used to skip regenerating/overwriting
- * that suggestion's data on subsequent audits (LLMO-6483).
- *
- * This checks the entity-level `updatedBy` field — distinct from the alt-text
- * domain-specific `data.recommendations[].isManuallyEdited` flag used in
- * image-alt-text handlers.
- *
- * @param {Object} suggestion - Suggestion entity (or mock).
- * @returns {boolean}
- */
-export function isManuallyEditedSuggestion(suggestion) {
-  const updatedBy = suggestion?.getUpdatedBy?.();
-  return Boolean(updatedBy && updatedBy !== 'system');
-}
-
-/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -322,16 +305,13 @@ export const handleOutdatedSuggestions = async ({
       }
       return true;
     })
-    // Never age out a suggestion the customer edited. Two independent signals:
-    // - updatedBy != 'system' (isManuallyEditedSuggestion) — the legacy guard, but
-    //   updatedBy is mutated by non-edit actions (rollback, move Ignored->New, status
-    //   changes) so it can silently clear.
-    // - data.isEdited — the durable, edit-only flag set by the UI edit-save action.
-    //   Required for cases where buildKey drifts on edit (e.g. FAQ buildKey embeds the
-    //   question), so the edited suggestion no longer matches any new item and would
-    //   otherwise be swept to OUTDATED (LLMO-6537).
-    .filter((existing) => !isManuallyEditedSuggestion(existing)
-      && existing.getData?.()?.isEdited !== true);
+    // Never age out a suggestion the customer edited. data.isEdited is the durable,
+    // edit-only flag set by the UI edit-save action (the TOC pattern) — the only
+    // signal used, never updatedBy (which non-edit actions like rollback or moving
+    // Ignored->New also mutate, so it can't tell an edit from a move). Also covers the
+    // case where buildKey drifts on edit (e.g. FAQ buildKey embeds the question), so
+    // the edited suggestion no longer matches any new item (LLMO-6537).
+    .filter((existing) => existing.getData?.()?.isEdited !== true);
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -446,11 +426,11 @@ export const isTBYBSite = checkIsTBYBSite;
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
  * For REJECTED suggestions that appear again, preserves REJECTED status.
- * Suggestions with updatedBy set to a non-system actor (customer edits) are
- * protected from data overwrites when they are still present in the current
- * audit data (matched-key path). They are also excluded from the OUTDATED and
- * reconcile-disappeared paths. Note: this is distinct from the alt-text
- * domain-specific `isManuallyEdited` data flag (LLMO-6483).
+ * Customer-edited suggestions (`data.isEdited`, set by the UI edit-save action) are
+ * protected from being aged out to OUTDATED and from reconcile-to-FIXED; on the
+ * matched-key path their edited fields are preserved by each handler's
+ * mergeDataFunction (the TOC pattern). Note: this is distinct from the alt-text
+ * domain-specific `isManuallyEdited` data flag (LLMO-6537).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -567,20 +547,11 @@ export async function syncSuggestions({
       return;
     }
 
-    // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
-    // Applies to NEW and deployed statuses alike. updatedBy may be a user email
-    // — never log it (PII).
-    //
-    // Intentional asymmetry with the data.isEdited flag (LLMO-6537): the updatedBy
-    // signal HARD-SKIPS the whole update (no setData/setStatus), whereas isEdited
-    // falls through to mergeDataFunction, which SOFT-MERGES — it preserves the
-    // edited field(s) + original snapshot while letting non-edited metadata refresh.
-    // Both keep the customer's edit; isEdited deliberately allows the rest to update.
-    if (isManuallyEditedSuggestion(existing)) {
-      log.debug(`Skipping manually-edited suggestion ${existingKey}`);
-      return;
-    }
-
+    // Customer-edited suggestions (data.isEdited) are NOT hard-skipped here — they fall
+    // through to mergeDataFunction, which preserves the edited field(s) + original
+    // snapshot while letting non-edited metadata refresh (the TOC pattern). Protection
+    // is per-handler in mergeDataFunction, keyed on data.isEdited, not on updatedBy
+    // (LLMO-6537).
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly
@@ -739,16 +710,12 @@ export async function reconcileDisappearedSuggestions({
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
     const candidates = disappearedSuggestions.filter((s) => {
-      if (isManuallyEditedSuggestion(s)) {
-        return false;
-      }
       const status = s?.getStatus?.();
       const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
-        // Never auto-reconcile a customer-edited NEW suggestion to FIXED. updatedBy
-        // already hard-skips edited rows above, but it can be cleared by non-edit
-        // actions, so the durable isEdited flag protects the NEW case too. The
-        // OUTDATED+isEdited branch below is intentionally exempt (redirect-target
+        // Never auto-reconcile a customer-edited NEW suggestion to FIXED — the durable
+        // data.isEdited flag protects it (the TOC pattern; updatedBy is not consulted).
+        // The OUTDATED+isEdited branch below is intentionally exempt (redirect-target
         // attribution) (LLMO-6537).
         return !isEdited;
       }

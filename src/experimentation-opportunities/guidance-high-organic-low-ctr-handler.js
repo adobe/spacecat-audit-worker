@@ -14,12 +14,20 @@ import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 import { HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE } from './handler.js';
-import { isManuallyEditedSuggestion, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const MAX_HIGH_ORGANIC_LOW_CTR_OPPORTUNITIES = 3;
 
+/**
+ * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
+ * @param {Array} suggestions - Array of suggestion objects
+ * @returns {boolean} - True if any suggestion was manually modified
+ */
 function hasManuallyModifiedSuggestions(suggestions) {
-  return suggestions.some(isManuallyEditedSuggestion);
+  return suggestions.some((suggestion) => {
+    const suggestionUpdatedBy = suggestion.getUpdatedBy();
+    return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
+  });
 }
 
 /**
