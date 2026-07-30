@@ -362,7 +362,8 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-async function addPValues(experimentData) {
+/* c8 ignore stop */
+export async function addPValues(experimentData) {
   const rumData = {};
   for (const experiment of experimentData) {
     const id = `${experiment.id}#${experiment.url}`;
@@ -405,6 +406,7 @@ async function addPValues(experimentData) {
     }
   }
 }
+/* c8 ignore start */
 
 function getObjectByProperties(array, properties) {
   return array.find((e) => {
