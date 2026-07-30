@@ -1,3 +1,10 @@
+## [1.511.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.6...v1.511.7) (2026-07-30)
+
+
+### Bug Fixes
+
+* **experimentation-ess:** repair ess-all audit — persister, cheerio metadata, experiment upsert (SITES-47215) ([#2809](https://github.com/adobe/spacecat-audit-worker/issues/2809)) ([ba859e8](https://github.com/adobe/spacecat-audit-worker/commit/ba859e8f1ffe23818d13217953f00e73293f6a57)), closes [#2805](https://github.com/adobe/spacecat-audit-worker/issues/2805) [#2806](https://github.com/adobe/spacecat-audit-worker/issues/2806) [#2808](https://github.com/adobe/spacecat-audit-worker/issues/2808) [#1](https://github.com/adobe/spacecat-audit-worker/issues/1) [#2](https://github.com/adobe/spacecat-audit-worker/issues/2) [#3](https://github.com/adobe/spacecat-audit-worker/issues/3)
+
 ## [1.511.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.5...v1.511.6) (2026-07-30)
 
 
