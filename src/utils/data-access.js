@@ -570,6 +570,12 @@ export async function syncSuggestions({
     // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
     // Applies to NEW and deployed statuses alike. updatedBy may be a user email
     // — never log it (PII).
+    //
+    // Intentional asymmetry with the data.isEdited flag (LLMO-6537): the updatedBy
+    // signal HARD-SKIPS the whole update (no setData/setStatus), whereas isEdited
+    // falls through to mergeDataFunction, which SOFT-MERGES — it preserves the
+    // edited field(s) + original snapshot while letting non-edited metadata refresh.
+    // Both keep the customer's edit; isEdited deliberately allows the rest to update.
     if (isManuallyEditedSuggestion(existing)) {
       log.debug(`Skipping manually-edited suggestion ${existingKey}`);
       return;
@@ -737,10 +743,16 @@ export async function reconcileDisappearedSuggestions({
         return false;
       }
       const status = s?.getStatus?.();
+      const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
-        return true;
+        // Never auto-reconcile a customer-edited NEW suggestion to FIXED. updatedBy
+        // already hard-skips edited rows above, but it can be cleared by non-edit
+        // actions, so the durable isEdited flag protects the NEW case too. The
+        // OUTDATED+isEdited branch below is intentionally exempt (redirect-target
+        // attribution) (LLMO-6537).
+        return !isEdited;
       }
-      if (outdatedStatus && status === outdatedStatus && s?.getData?.()?.isEdited === true) {
+      if (outdatedStatus && status === outdatedStatus && isEdited) {
         return true;
       }
       return false;

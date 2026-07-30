@@ -3263,6 +3263,60 @@ describe('data-access', () => {
       expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
     });
 
+    it('should skip customer-edited NEW suggestions (data.isEdited) even when updatedBy was cleared', async () => {
+      // updatedBy is 'system' (cleared by a non-edit action), so only the durable
+      // data.isEdited flag protects it from being reconciled to FIXED (LLMO-6537).
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1', isEdited: true }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getUpdatedBy: sinon.stub().returns('system'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+    });
+
+    it('should still reconcile OUTDATED + isEdited suggestions (redirect-target attribution)', async () => {
+      // The OUTDATED+isEdited branch is intentionally exempt from the NEW-case guard.
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1', isEdited: true }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        getUpdatedBy: sinon.stub().returns('system'),
+        getType: sinon.stub().returns('TEST_TYPE'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: (s, opp) => ({
+          opportunityId: opp.getId(),
+          status: 'PUBLISHED',
+          suggestions: [s.getId()],
+        }),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+    });
+
     it('should skip suggestions not in NEW status', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),

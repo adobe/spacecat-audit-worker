@@ -244,8 +244,9 @@ export default async function handler(message, context) {
       // re-derive transformRules.value from the preserved improvedText so the render
       // payload stays consistent with the edit (LLMO-6537).
       if (existingData.isEdited) {
-        // Preserve existing mystiqueProcessingCompleted (via ...existingData) — this
-        // re-audit did no Mystique processing on the edited row, so do not bump it.
+        // This re-audit did no Mystique processing on the edited row, so keep the
+        // existing mystiqueProcessingCompleted — set it explicitly (not just via
+        // ...existingData) so a stray value on ...newData can't bump it.
         const merged = {
           ...existingData,
           ...newData,
@@ -253,6 +254,7 @@ export default async function handler(message, context) {
           originalImprovedText: existingData.originalImprovedText,
           suggestionStatus: 'completed',
           isEdited: true,
+          mystiqueProcessingCompleted: existingData.mystiqueProcessingCompleted,
         };
         delete merged.category;
         delete merged.seoImpact;
