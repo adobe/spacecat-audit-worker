@@ -86,7 +86,19 @@ function normalizePathname(pathname, {
  * Extracts and sanitizes a site-specific key from the base URL.
  */
 export function extractSiteKeyFromBaseURL(site) {
-  const { host, pathname } = new URL(site.getBaseURL());
+  let url;
+  try {
+    url = new URL(site.getBaseURL());
+  } catch (e) {
+    if (e instanceof TypeError) {
+      throw new Error('Invalid base URL');
+    }
+    throw e;
+  }
+  if (url.username || url.password) {
+    throw new Error('Invalid base URL: userinfo is not permitted');
+  }
+  const { host, pathname } = url;
   const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
   const normalizedHost = cleanHost.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
   const normalizedPath = normalizePathname(pathname, {
@@ -499,11 +511,44 @@ export async function shouldRecreateTable(
   }
 }
 
+// Columns present on the aggregated/raw CDN log tables that filters are allowed to
+// target. `key` comes straight from customer-controlled site config (cdnlogsFilter),
+// so it must never be interpolated into the query without being checked against this
+// allowlist (see VULN-37491 - SQL injection via cdnlogsFilter[].key).
+const ALLOWED_FILTER_KEYS = new Set([
+  'url',
+  'host',
+  'x_forwarded_host',
+  'user_agent',
+  'referer',
+  'cdn_provider',
+]);
+
+function escapeSqlLiteral(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function escapeRegexMetacharacters(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Base URL host/path are literal values interpolated into an Athena REGEXP_LIKE
+// pattern inside a single-quoted SQL literal. Neutralize both layers: regex
+// metacharacters (so the value matches literally and can't broaden the match via
+// alternation) and single quotes (so it can't break out of the string literal).
+// Order matters: regex-escape first, then SQL-escape the result (VULN-37491).
+export function escapeForAthenaRegexLiteral(value) {
+  return escapeSqlLiteral(escapeRegexMetacharacters(value));
+}
+
 export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
     const { host, pathname } = new URL(baseURL);
-    const rootHost = host.replace(/^www\./, '');
+    // host/pathname come from the customer-controlled base URL and are interpolated
+    // into the Athena regex string literal below. Escape single quotes so they cannot
+    // break out of the literal (VULN-37491, base_url vector).
+    const rootHost = escapeForAthenaRegexLiteral(host.replace(/^www\./, ''));
     const hostFilter = `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
     const normalizedPath = normalizePathname(pathname);
 
@@ -511,16 +556,22 @@ export function buildSiteFilters(filters, site) {
       return hostFilter;
     }
 
-    const escapedPath = normalizedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedPath = escapeForAthenaRegexLiteral(normalizedPath);
     return `(${hostFilter} AND REGEXP_LIKE(url, '(?i)^/?${escapedPath}(?:/|$)'))`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {
-    const regexPattern = value.join('|');
-    if (type === 'exclude') {
-      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    // Athena folds column identifiers to lowercase, so normalize before the
+    // allowlist check (e.g. a stored 'X_forwarded_host' is the same column).
+    const normalizedKey = String(key).toLowerCase();
+    if (!ALLOWED_FILTER_KEYS.has(normalizedKey)) {
+      throw new Error(`Invalid CDN log filter key: ${key}`);
     }
-    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    const regexPattern = value.map(escapeSqlLiteral).join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${normalizedKey}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${normalizedKey}, '(?i)(${regexPattern})')`;
   });
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];

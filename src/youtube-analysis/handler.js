@@ -21,7 +21,11 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveEnableBrandProfile,
   requestOffsiteScrape,
+  buildAnalysisScrapeStatusMessage,
+  formatDrsExtras,
+  scrapedThisCycle,
 } from '../utils/offsite-audit-utils.js';
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
@@ -84,8 +88,15 @@ async function fetchStoreData(siteId, context, site) {
 
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = OFFSITE_DOMAINS['youtube.com'];
-  const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
-  log.info(`${LOG_PREFIX} ${urls.length} YouTube URLs available in DRS`);
+  const { urls, counts } = await filterUrlsByDrsStatus(
+    rawUrls,
+    datasetIds,
+    siteId,
+    drsClient,
+    log,
+    LOG_PREFIX,
+  );
+  log.info(`${LOG_PREFIX} ${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`);
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
@@ -111,6 +122,7 @@ async function fetchStoreData(siteId, context, site) {
   return {
     urls,
     sentimentConfig: { topics, guidelines },
+    drsCounts: counts,
   };
 }
 
@@ -120,7 +132,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit from Slack)
+ *   (e.g. urlLimit, enableBrandProfile from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
@@ -133,6 +145,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
   log.info(`${LOG_PREFIX} Starting YouTube analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -152,23 +166,34 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${youtubeConfig.companyName}`);
+    // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
+    // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
+    // reads as a coherent sequence rather than a contradictory "no scrape needed".
+    const scrapedNow = scrapedThisCycle(auditContext);
     log.info(
-      `${LOG_PREFIX} DRS content available for ${storeData.urls.length} URL(s) `
-        + '— no scrape job needed, proceeding to Mystique',
+      scrapedNow
+        ? `${LOG_PREFIX} DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
+        : `${LOG_PREFIX} Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
     );
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     const { slackContext } = auditContext;
 
-    // Manual Slack-triggered runs get a notification explaining that no DRS scrape
-    // job was needed (content already available). No-ops on scheduled runs where
+    // Manual Slack-triggered runs get a notification describing the exact DRS state (fresh
+    // scrape this cycle vs. reused prior content). No-ops on scheduled runs where
     // slackContext is absent.
     await postMessageOptional(
       context,
       slackContext?.channelId,
-      `:mag: *youtube-analysis* for *${site.getBaseURL()}* — DRS content already available `
-        + `(${storeData.urls.length} URL(s)); no scrape job needed, sending to Mystique.`,
+      buildAnalysisScrapeStatusMessage({
+        analysisName: 'youtube-analysis',
+        baseUrl: site.getBaseURL(),
+        urlCount: storeData.urls.length,
+        urlLimit,
+        counts: storeData.drsCounts,
+        scrapedNow,
+      }),
       { threadTs: slackContext?.threadTs },
     );
 
@@ -176,7 +201,11 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...youtubeConfig, urlLimit },
+        config: {
+          ...youtubeConfig,
+          urlLimit,
+          ...(enableBrandProfile !== undefined && { enableBrandProfile }),
+        },
         storeData,
         ...(slackContext && { slackContext }),
         timings: { analysisStartedAt, ...(auditContext.timings || {}) },
@@ -213,7 +242,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping YouTube URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext);
+      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -221,15 +250,31 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
     }
 
     if (error instanceof DrsNoContentAvailableError) {
+      const { slackContext } = auditContext;
+      const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
+        // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
         log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        await postMessageOptional(
+          context,
+          channelId,
+          `:warning: *youtube-analysis* for *${site.getBaseURL()}* — DRS reported no scraped content after scraping; nothing to analyze.`,
+          { threadTs },
+        );
         return {
           auditResult: { success: false, error: error.message },
           fullAuditRef: url,
         };
       }
-      log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for youtube.com`);
-      await requestOffsiteScrape(context, siteId, 'youtube.com', auditContext.slackContext);
+      log.info(`${LOG_PREFIX} URLs stored but not scraped in DRS yet, requesting a scrape for youtube.com`);
+      await postMessageOptional(
+        context,
+        channelId,
+        `:mag: *youtube-analysis* for *${site.getBaseURL()}* — YouTube URLs are stored but not scraped in DRS yet${formatDrsExtras(error.counts)}; `
+          + 'starting a DRS scrape for youtube.com, will analyze automatically when it finishes.',
+        { threadTs },
+      );
+      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -300,6 +345,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
+        ...(config.enableBrandProfile !== undefined
+          && { enableBrandProfile: config.enableBrandProfile }),
         urls: enrichedUrls,
       },
     };

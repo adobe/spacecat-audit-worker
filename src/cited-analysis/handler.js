@@ -21,10 +21,14 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveEnableBrandProfile,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
   toApexHost,
+  buildAnalysisScrapeStatusMessage,
+  formatDrsExtras,
+  scrapedThisCycle,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
@@ -195,7 +199,7 @@ async function fetchStoreData(siteId, context, site) {
 
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
-  const urls = await filterUrlsByDrsStatus(
+  const { urls, counts } = await filterUrlsByDrsStatus(
     curatedUrls,
     datasetIds,
     siteId,
@@ -203,7 +207,7 @@ async function fetchStoreData(siteId, context, site) {
     log,
     LOG_PREFIX,
   );
-  log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
+  log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`);
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
@@ -226,6 +230,7 @@ async function fetchStoreData(siteId, context, site) {
   return {
     urls,
     sentimentConfig: { topics, guidelines },
+    drsCounts: counts,
   };
 }
 
@@ -235,7 +240,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit from Slack)
+ *   (e.g. urlLimit, enableBrandProfile from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
@@ -248,6 +253,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
   log.info(`${LOG_PREFIX} Starting Cited analysis audit for site: ${siteId}`);
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
 
   try {
     const citedConfig = getCitedConfig(site);
@@ -273,23 +280,34 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
+    // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
+    // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
+    // reads as a coherent sequence rather than a contradictory "no scrape needed".
+    const scrapedNow = scrapedThisCycle(auditContext);
     log.info(
-      `${LOG_PREFIX} DRS content available for ${storeData.urls.length} URL(s) `
-        + '— no scrape job needed, proceeding to Mystique',
+      scrapedNow
+        ? `${LOG_PREFIX} DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
+        : `${LOG_PREFIX} Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
     );
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     const { slackContext } = auditContext;
 
-    // Manual Slack-triggered runs get a notification explaining that no DRS scrape
-    // job was needed (content already available). No-ops on scheduled runs where
+    // Manual Slack-triggered runs get a notification describing the exact DRS state (fresh
+    // scrape this cycle vs. reused prior content). No-ops on scheduled runs where
     // slackContext is absent.
     await postMessageOptional(
       context,
       slackContext?.channelId,
-      `:mag: *cited-analysis* for *${site.getBaseURL()}* — DRS content already available `
-        + `(${storeData.urls.length} URL(s)); no scrape job needed, sending to Mystique.`,
+      buildAnalysisScrapeStatusMessage({
+        analysisName: 'cited-analysis',
+        baseUrl: site.getBaseURL(),
+        urlCount: storeData.urls.length,
+        urlLimit,
+        counts: storeData.drsCounts,
+        scrapedNow,
+      }),
       { threadTs: slackContext?.threadTs },
     );
 
@@ -297,7 +315,11 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...citedConfig, urlLimit },
+        config: {
+          ...citedConfig,
+          urlLimit,
+          ...(enableBrandProfile !== undefined && { enableBrandProfile }),
+        },
         storeData,
         ...(slackContext && { slackContext }),
         timings: { analysisStartedAt, ...(auditContext.timings || {}) },
@@ -334,7 +356,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping cited URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext);
+      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -342,15 +364,31 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     }
 
     if (error instanceof DrsNoContentAvailableError) {
+      const { slackContext } = auditContext;
+      const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
+        // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
         log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        await postMessageOptional(
+          context,
+          channelId,
+          `:warning: *cited-analysis* for *${site.getBaseURL()}* — DRS reported no scraped content after scraping; nothing to analyze.`,
+          { threadTs },
+        );
         return {
           auditResult: { success: false, error: error.message },
           fullAuditRef: url,
         };
       }
-      log.info(`${LOG_PREFIX} No DRS content yet, requesting a scrape for top-cited`);
-      await requestOffsiteScrape(context, siteId, 'top-cited', auditContext.slackContext);
+      log.info(`${LOG_PREFIX} URLs stored but not scraped in DRS yet, requesting a scrape for top-cited`);
+      await postMessageOptional(
+        context,
+        channelId,
+        `:mag: *cited-analysis* for *${site.getBaseURL()}* — cited URLs are stored but not scraped in DRS yet${formatDrsExtras(error.counts)}; `
+          + 'starting a DRS scrape for top-cited, will analyze automatically when it finishes.',
+        { threadTs },
+      );
+      await requestOffsiteScrape(context, siteId, 'top-cited', slackContext, enableBrandProfile);
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -437,6 +475,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
+        ...(config.enableBrandProfile !== undefined
+          && { enableBrandProfile: config.enableBrandProfile }),
         urls: enrichedUrls,
       },
     };

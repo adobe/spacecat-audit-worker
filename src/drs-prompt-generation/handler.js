@@ -11,6 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import writeDrsPromptsToLlmoConfig from './drs-config-writer.js';
 import { postMessageSafe } from '../utils/slack-utils.js';
 
@@ -155,6 +156,23 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
+  // Capture the config version that existed *before* this job's write (below), so
+  // llmo-customer-analysis can tell a genuine first-time onboarding from a repeat one.
+  // Must be read before processDrsResult writes a new version, and is only needed
+  // for source=onboarding since that's the only case that reaches the SQS send below.
+  let previousConfigVersion;
+  if (source === 'onboarding') {
+    try {
+      const { s3Client, env } = context;
+      const prevConfig = await llmoConfig.readConfig(siteId, s3Client, {
+        s3Bucket: env.S3_IMPORTER_BUCKET_NAME,
+      });
+      previousConfigVersion = prevConfig.exists ? prevConfig.version : undefined;
+    } catch (error) {
+      log.warn(`Failed to read existing LLMO config version for site ${siteId}: ${error.message}`);
+    }
+  }
+
   let configVersion;
   const shouldWriteLegacyConfig = source !== 'onboarding' || onboardingMode !== 'v2';
 
@@ -191,6 +209,7 @@ export default async function drsPromptGenerationHandler(message, context) {
       drsJobId,
       resultLocation,
       ...(configVersion && { configVersion }),
+      ...(previousConfigVersion && { previousConfigVersion }),
       ...(onboardingMode && { onboardingMode }),
       ...(auditContext.imsOrgId && { imsOrgId: auditContext.imsOrgId }),
     },

@@ -15,7 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel, Opportunity as OpportunityModel } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { collectCWVDataAndImportCode, syncOpportunityAndSuggestionsStep } from '../../src/cwv/handler.js';
@@ -106,12 +106,13 @@ describe('collectCWVDataAndImportCode Tests', () => {
       ),
     ).to.be.true;
 
-    // With new logic: top 15 pages by pageviews are always included
-    // rumData has 31 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
+    // Top pages by pageviews are always included, up to the tier's limit.
+    // No entitlement is mocked in this context, so getTopPagesCount falls back to the
+    // paid default (10). rumData has 31 entries, top 10 will be selected.
     const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
+    const expectedData = sortedData.slice(0, 10);
 
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
     expect(result.fullAuditRef).to.equal(auditUrl);
@@ -132,30 +133,100 @@ describe('collectCWVDataAndImportCode Tests', () => {
     );
 
     // With default threshold (1000 * 7 = 7000), 4 entries meet threshold
-    // But top 15 are always included, so result should have 15 entries
+    // But top 10 (paid default, no entitlement mocked) are always included
     const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
-    
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    const expectedData = sortedData.slice(0, 10);
+
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
-  it('includes pages beyond top 15 if they meet threshold', async () => {
+  describe('Step 1 blackboard bow-out (Spec 009-04)', () => {
+    let cwvOpportunity;
+    let newSuggestion;
+    let fixedSuggestion;
+
+    beforeEach(() => {
+      site.getDeliveryConfig.returns({ cwvEngine: 'blackboard' });
+      newSuggestion = { getStatus: () => SuggestionModel.STATUSES.NEW };
+      fixedSuggestion = { getStatus: () => SuggestionModel.STATUSES.FIXED };
+      cwvOpportunity = {
+        getType: () => Audit.AUDIT_TYPES.CWV,
+        getId: () => 'legacy-oppty-id',
+        setStatus: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([newSuggestion, fixedSuggestion]),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([cwvOpportunity]),
+      };
+      context.dataAccess.Suggestion = {
+        bulkUpdateStatus: sandbox.stub().resolves(),
+      };
+    });
+
+    it('skips RUM collection and returns an empty audit result + import trigger', async () => {
+      const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      // RUM/PSI collection is skipped for a blackboard-engine site.
+      expect(context.rumApiClient.query).to.not.have.been.called;
+      expect(result.auditResult).to.deep.equal({ cwv: [] });
+      expect(result.fullAuditRef).to.equal(auditUrl);
+      // Import hop is kept (payload contract requires a valid type).
+      expect(result.type).to.equal('code');
+    });
+
+    it('resolves the pre-existing legacy cwv opportunity and outdates only its live suggestions', async () => {
+      await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus)
+        .to.have.been.calledWith('site-id', OpportunityModel.STATUSES.NEW);
+      expect(cwvOpportunity.setStatus).to.have.been.calledOnceWith(OpportunityModel.STATUSES.RESOLVED);
+      expect(cwvOpportunity.save).to.have.been.calledOnce;
+      // Only the live (NEW) suggestion is outdated; the FIXED one is preserved as history.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus)
+        .to.have.been.calledOnceWith([newSuggestion], SuggestionModel.STATUSES.OUTDATED);
+    });
+
+    it('is a no-op resolve when there is no active legacy cwv opportunity', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(cwvOpportunity.setStatus).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+      // Still bows out (empty result, no RUM).
+      expect(context.rumApiClient.query).to.not.have.been.called;
+      expect(result.auditResult).to.deep.equal({ cwv: [] });
+    });
+
+    it('does not resolve when all suggestions are already terminal (FIXED/SKIPPED)', async () => {
+      cwvOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+      expect(cwvOpportunity.setStatus).to.have.been.calledOnceWith(OpportunityModel.STATUSES.RESOLVED);
+      // No live suggestions → bulkUpdateStatus not called.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+  });
+
+  it('includes pages beyond top 10 if they meet threshold', async () => {
     // With default threshold (1000 * 7 = 7000), check pages that meet threshold
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // At least top 15 should be included
-    expect(result.auditResult.cwv.length).to.be.at.least(15);
-    
+    // At least top 10 (paid default, no entitlement mocked) should be included
+    expect(result.auditResult.cwv.length).to.be.at.least(10);
+
     // Verify sorted by pageviews descending
     for (let i = 1; i < result.auditResult.cwv.length; i++) {
       expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
     }
-    
-    // Verify that pages beyond top 15 meet the threshold
-    if (result.auditResult.cwv.length > 15) {
-      for (let i = 15; i < result.auditResult.cwv.length; i++) {
+
+    // Verify that pages beyond top 10 meet the threshold
+    if (result.auditResult.cwv.length > 10) {
+      for (let i = 10; i < result.auditResult.cwv.length; i++) {
         expect(result.auditResult.cwv[i].pageviews).to.be.at.least(7000);
       }
     }
@@ -247,12 +318,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(thresholdPages[2].url).to.equal('https://example.com/threshold3');
   });
 
-  it('always includes homepage even if not in top 15 or meeting threshold', async () => {
-    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
+  it('always includes homepage even if not in top 10 or meeting threshold', async () => {
+    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 10)
     const homepageData = {
       type: 'url',
       url: baseURL,
-      pageviews: 50, // Very low pageviews (below threshold and below top 15)
+      pageviews: 50, // Very low pageviews (below threshold and below top 10)
       organic: 10,
       metrics: [
         {
@@ -276,9 +347,9 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // Should have top 15 + homepage (16 total)
-    expect(result.auditResult.cwv).to.have.lengthOf(16);
-    
+    // Should have top 10 (paid default, no entitlement mocked) + homepage (11 total)
+    expect(result.auditResult.cwv).to.have.lengthOf(11);
+
     // Verify homepage is included
     const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
     expect(homepageInResult).to.exist;
@@ -289,7 +360,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
     const groupedData = {
       type: 'group', // Not 'url' - should not match homepage logic
       // url field is absent for grouped entries (they have pattern instead)
-      pageviews: 50, // Low pageviews - not in top 15, below threshold
+      pageviews: 50, // Low pageviews - not in top 10, below threshold
       organic: 10,
       metrics: [
         {
@@ -312,8 +383,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
     context.rumApiClient.query.resolves(dataWithGrouped);
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
-    // Should only have top 15 (grouped entry excluded: type !== 'url')
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    // Should only have top 10 (paid default, no entitlement mocked); grouped entry excluded: type !== 'url'
+    expect(result.auditResult.cwv).to.have.lengthOf(10);
   });
 
   describe('CWV audit to oppty conversion', () => {
@@ -442,6 +513,41 @@ describe('collectCWVDataAndImportCode Tests', () => {
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', null));
     });
 
+    it('bows out (creates no opportunity/suggestion rows, sends no message) when deliveryConfig.cwvEngine === "blackboard" (Spec 009-04)', async () => {
+      site.getDeliveryConfig.returns({ cwvEngine: 'blackboard' });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      const result = await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // No opportunity is fetched or created for a Mystique-owned (blackboard) CWV site.
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      // No guidance:cwv auto-suggest message is sent.
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      // The PLG-alert suggestion count query is not reached either.
+      expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.not.have.been.called;
+
+      site.getDeliveryConfig.returns({});
+    });
+
+    it('does not bow out for a legacy site (cwvEngine absent / deliveryConfig null)', async () => {
+      site.getDeliveryConfig.returns(null);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Null deliveryConfig degrades to the legacy path unchanged: the opportunity is created.
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+
+      site.getDeliveryConfig.returns({});
+    });
+
     it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
@@ -534,7 +640,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+      // Two batched saveMany calls: syncSuggestions persists the changed suggestion, then
+      // processAutoSuggest persists the dispatch-fingerprint stamp on the NEW suggestion it
+      // re-dispatched to Mystique (both single batched upserts, not N+1).
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledTwice;
 
       // make sure that 1 new suggestion is created (/docs/ — the only new failing-metric page)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
@@ -664,8 +773,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // on each so the auto-suggest skip ("no failing CWV metrics") doesn't drop them.
       const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
-        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' },
-        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW', setData: sinon.stub() },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW', setData: sinon.stub() }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -793,7 +902,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
             ],
             metrics: failingMetrics,
           }),
-          getStatus: () => 'NEW'
+          getStatus: () => 'NEW',
+          setData: sinon.stub(),
         },
         {
           getId: () => 'sugg-2',
@@ -804,7 +914,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
             issues: [],
             metrics: failingMetrics,
           }),
-          getStatus: () => 'NEW'
+          getStatus: () => 'NEW',
+          setData: sinon.stub(),
         }
       ];
 

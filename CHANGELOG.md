@@ -1,3 +1,136 @@
+## [1.511.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.5...v1.511.6) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** bump @adobe/spacecat-shared-data-access to 4.15.3 ([#2831](https://github.com/adobe/spacecat-audit-worker/issues/2831)) ([2daa817](https://github.com/adobe/spacecat-audit-worker/commit/2daa817e36d66af73a265b7d7b8243b34fe492a2))
+
+## [1.511.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.4...v1.511.5) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** make referral self-referral filter NULL-safe ([#2830](https://github.com/adobe/spacecat-audit-worker/issues/2830)) ([7aebbb1](https://github.com/adobe/spacecat-audit-worker/commit/7aebbb1ba65fdacf79f0cb2f22a6ee9d7a2b8a5a))
+
+## [1.511.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.3...v1.511.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cwv:** suppress redundant guidance re-dispatch for unchanged failing metrics ([#2823](https://github.com/adobe/spacecat-audit-worker/issues/2823)) ([a7a6ba2](https://github.com/adobe/spacecat-audit-worker/commit/a7a6ba2dc8d81ec5f5f2fd15f011e23a4b94e163))
+
+## [1.511.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.2...v1.511.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* reject base URLs with userinfo when deriving CDN site key ([#2829](https://github.com/adobe/spacecat-audit-worker/issues/2829)) ([77762bb](https://github.com/adobe/spacecat-audit-worker/commit/77762bb665293d4d257cf3a93860623124afb02e))
+
+## [1.511.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.1...v1.511.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* escape base URL host and path in CDN log site filters ([#2828](https://github.com/adobe/spacecat-audit-worker/issues/2828)) ([7cf8e00](https://github.com/adobe/spacecat-audit-worker/commit/7cf8e0014944e5786b07f239c4bad674f6562872))
+
+## [1.511.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.0...v1.511.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* restrict CDN log filter keys to a column allowlist ([#2826](https://github.com/adobe/spacecat-audit-worker/issues/2826)) ([b088e2e](https://github.com/adobe/spacecat-audit-worker/commit/b088e2e8f510dae349dd744a9bce4ceb18d61d83))
+
+# [1.511.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.510.0...v1.511.0) (2026-07-29)
+
+
+### Features
+
+* **cwv:** bow out of legacy opportunity/suggestion sync when deliveryConfig.cwvEngine=blackboard ([#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825)) ([a50cbda](https://github.com/adobe/spacecat-audit-worker/commit/a50cbda10b60ddc21743ac51929d3e3c4ba2801e))
+
+# [1.510.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.509.0...v1.510.0) (2026-07-28)
+
+
+### Features
+
+* **offsite:** show capped URL count and LLM cost in analysis Slack messages ([#2824](https://github.com/adobe/spacecat-audit-worker/issues/2824)) ([c554342](https://github.com/adobe/spacecat-audit-worker/commit/c55434214003a772b99c3b4579e61c79d24626ca)), closes [#2822](https://github.com/adobe/spacecat-audit-worker/issues/2822)
+
+# [1.509.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.2...v1.509.0) (2026-07-28)
+
+
+### Features
+
+* **offsite:** log LLM cost at end of offsite audits ([#2822](https://github.com/adobe/spacecat-audit-worker/issues/2822)) ([4870809](https://github.com/adobe/spacecat-audit-worker/commit/48708091dc4efb7f58cdc1f75524a4688574663f))
+
+## [1.508.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.1...v1.508.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **prerender:** strip tracking query params from RCV dedup keys ([#2819](https://github.com/adobe/spacecat-audit-worker/issues/2819)) ([231496c](https://github.com/adobe/spacecat-audit-worker/commit/231496c11adaaefe5e24fbd5400a141314c4f4ff))
+
+## [1.508.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.508.0...v1.508.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **offsite:** describe each flow step accurately in Slack/logs ([#2813](https://github.com/adobe/spacecat-audit-worker/issues/2813)) ([4a9d807](https://github.com/adobe/spacecat-audit-worker/commit/4a9d807e5dd2f6583d178230e72456d8abb052ff))
+
+# [1.508.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.1...v1.508.0) (2026-07-28)
+
+
+### Features
+
+* **referral-traffic:** rule-gen sweeper audit for all referral sites (llmo-referral-category-rules) | LLMO-6257 ([#2821](https://github.com/adobe/spacecat-audit-worker/issues/2821)) ([5daf4d0](https://github.com/adobe/spacecat-audit-worker/commit/5daf4d034e56e5cf5d908f93840b12be84a57b69)), closes [adobe/spacecat-audit-worker#2817](https://github.com/adobe/spacecat-audit-worker/issues/2817)
+
+## [1.507.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.507.0...v1.507.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **cwv:** limit top-pages analyzed by ASO tier (10 paid / 3 PLG) ([#2815](https://github.com/adobe/spacecat-audit-worker/issues/2815)) ([193d416](https://github.com/adobe/spacecat-audit-worker/commit/193d416ee11bf443bb2465533f77dbb2b91df34f)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
+# [1.507.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.1...v1.507.0) (2026-07-27)
+
+
+### Features
+
+* **offsite:** trigger analysis audits on every run, tune DRS polling ([#2820](https://github.com/adobe/spacecat-audit-worker/issues/2820)) ([1e8d2f9](https://github.com/adobe/spacecat-audit-worker/commit/1e8d2f9758efa5a22c577f21a6ee26351373e177))
+
+## [1.506.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.506.0...v1.506.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **llmo:** populate previousConfigVersion in drs-prompt-generation handler ([#2818](https://github.com/adobe/spacecat-audit-worker/issues/2818)) ([495d22f](https://github.com/adobe/spacecat-audit-worker/commit/495d22fbd45014c6b13aa5acace4912e983f7f1e)), closes [#llmo-onboarding-automation](https://github.com/adobe/spacecat-audit-worker/issues/llmo-onboarding-automation)
+
+# [1.506.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.7...v1.506.0) (2026-07-27)
+
+
+### Features
+
+* add enableBrandProfile slackbot flag for cited audits (LLMO-5531) ([#2812](https://github.com/adobe/spacecat-audit-worker/issues/2812)) ([eed03c6](https://github.com/adobe/spacecat-audit-worker/commit/eed03c62012ed782e127b3866a38cd84e5bc99e3))
+
+## [1.505.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.6...v1.505.7) (2026-07-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2816](https://github.com/adobe/spacecat-audit-worker/issues/2816)) ([0e324a3](https://github.com/adobe/spacecat-audit-worker/commit/0e324a33adafb1e8456ca96133213c733cbb8fc3))
+
+## [1.505.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.5...v1.505.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* **form-a11y:** compute a real per-form selector instead of a generic 'form' ([#2814](https://github.com/adobe/spacecat-audit-worker/issues/2814)) ([47baeb9](https://github.com/adobe/spacecat-audit-worker/commit/47baeb9ba55ec882aa0bf279141224fc8cb42472))
+
+## [1.505.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.4...v1.505.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* **llmo-4010:** guard edge-deployed suggestions in summarization and … ([#2811](https://github.com/adobe/spacecat-audit-worker/issues/2811)) ([023f918](https://github.com/adobe/spacecat-audit-worker/commit/023f918f46b9ecbc241f292f9531fc8f241e5069)), closes [#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)
+
 ## [1.505.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.505.3...v1.505.4) (2026-07-24)
 
 

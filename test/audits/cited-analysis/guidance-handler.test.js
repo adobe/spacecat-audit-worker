@@ -153,6 +153,30 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed cited analysis/));
     });
 
+    it('logs the Mystique LLM cost when opportunity.llmUsage is present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: {
+              llmUsage: { totalLlmCalls: 10, totalTokens: 326070, totalCostUsd: 1.468751 },
+            },
+            suggestions: [
+              { id: 'sug_1', priority: 'HIGH', title: 'T', description: 'D' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] LLM usage for siteId: ${siteId}: 10 calls, 326070 tokens, est. cost $1.4688`,
+      );
+    });
+
     it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
       const opportunityData = {
         title: 'Cited URL Analysis',

@@ -1461,12 +1461,19 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
-      expect(callCtx).to.equal(context);
-      expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
-      expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
-      expect(callText).to.include('offsite-brand-presence');
+      // Two thread replies: the URL-Store step summary, then the DRS scraping-started message.
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const [storeCtx, storeChannelId, storeText, storeOptions] = mockPostMessageOptional
+        .firstCall.args;
+      expect(storeCtx).to.equal(context);
+      expect(storeChannelId).to.equal(SLACK_CHANNEL_ID);
+      expect(storeOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
+      expect(storeText).to.include('selected');
+      expect(storeText).to.include('to scrape this run');
+      expect(storeText).to.include(BASE_URL);
+
+      const callText = mockPostMessageOptional.secondCall.args[2];
+      expect(callText).to.include('DRS scraping started');
       expect(callText).to.include(BASE_URL);
       expect(callText).to.include('youtube.com');
       expect(callText).to.include('mock-job');
@@ -1478,8 +1485,8 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const callText = mockPostMessageOptional.secondCall.args[2];
       expect(callText).to.include('reddit.com');
       expect(callText).to.include('mock-job');
       expect(callText).to.not.include(':x:');
@@ -1494,10 +1501,10 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const callText = mockPostMessageOptional.secondCall.args[2];
       expect(callText).to.include(':x:');
-      expect(callText).to.include('Failed (1)');
+      expect(callText).to.include('Failed to submit (1)');
       expect(callText).to.include('400');
       expect(callText).to.include('youtube.com');
       expect(callText).to.include('mock-job');
@@ -1509,8 +1516,10 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
+      // Store summary posts first, then the skip notification.
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional
+        .secondCall.args;
       expect(callCtx).to.equal(context);
       expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
       expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
@@ -1525,8 +1534,8 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(mockPostMessageOptional).to.have.been.calledTwice;
+      const callText = mockPostMessageOptional.secondCall.args[2];
       expect(callText).to.match(/skipped/i);
       expect(callText).to.include('imsOrgId');
       expect(callText).to.include(BASE_URL);
@@ -1552,10 +1561,17 @@ describe('Offsite Brand Presence Handler', () => {
       expect(delaySeconds).to.equal(300);
     });
 
-    it('does not enqueue a poll message without a Slack thread context', async () => {
+    it('enqueues a poll message without a Slack thread, at the unattended interval', async () => {
+      // Unattended run still schedules the poll (no slackContext carried) at the 900s cadence.
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, msg, , delaySeconds] = context.sqs.sendMessage.firstCall.args;
+      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
+      expect(msg.auditContext).to.not.have.property('slackContext');
+      expect(delaySeconds).to.equal(900);
     });
 
     it('does not enqueue a poll message when all DRS jobs failed (no successful job_id)', async () => {
@@ -1577,6 +1593,29 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+    });
+
+    it('forwards enableBrandProfile to the poll message auditContext when set on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { enableBrandProfile: 'true' },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableBrandProfile).to.equal(true);
+    });
+
+    it('omits enableBrandProfile from the poll message auditContext when absent on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableBrandProfile).to.be.undefined;
     });
   });
 

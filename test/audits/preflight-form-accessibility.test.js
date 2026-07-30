@@ -1970,4 +1970,248 @@ describe('Preflight Form Accessibility Audit', () => {
       expect(pollCallCount).to.equal(2);
     });
   });
+
+  describe('multi-form pages (SITES-48703)', () => {
+    let context;
+    let auditContext;
+    let s3Client;
+    let sqs;
+    let log;
+
+    const TWO_FORM_HTML = `
+      <html><body>
+        <header id="main-header"><form class="cmp-search__form"><input type="text"/></form></header>
+        <div id="content"><form><input name="fullname"/><input name="email"/></form></div>
+      </body></html>
+    `;
+    const ONE_FORM_HTML = '<html><body><div id="content"><form><input name="email"/></form></div></body></html>';
+    const NO_FORM_HTML = '<html><body><p>No forms here</p></body></html>';
+
+    beforeEach(() => {
+      s3Client = { send: sinon.stub() };
+      sqs = { sendMessage: sinon.stub().resolves() };
+      log = {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      };
+
+      context = {
+        site: {
+          getId: () => 'site-123',
+          getBaseURL: () => 'https://example.com',
+          getDeliveryType: () => 'aem_cs',
+        },
+        job: {
+          getId: () => 'job-123',
+          getMetadata: () => ({ payload: { enableAuthentication: true } }),
+        },
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.test.com/mystique',
+        },
+        s3Client,
+        sqs,
+        log,
+      };
+
+      auditContext = {
+        previewUrls: ['https://example.com/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/page1', { audits: [{ name: 'form-accessibility', type: 'form-a11y', opportunities: [] }] }],
+        ]),
+        auditsResult: [{ pageUrl: 'https://example.com/page1', audits: [] }],
+        timeExecutionBreakdown: [],
+        checks: ['form-accessibility'],
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    function mockScrape(html) {
+      s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand' && command.input.Key.startsWith('scrapes/')) {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: { transformToString: () => Promise.resolve(JSON.stringify({ scrapeResult: { rawBody: html } })) },
+          });
+        }
+        return Promise.resolve({});
+      });
+    }
+
+    it('computes a distinct real selector per form on a multi-form page', async () => {
+      mockScrape(TWO_FORM_HTML);
+      const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.have.lengthOf(2);
+      expect(entries[0].form).to.equal('https://example.com/page1');
+      expect(entries[1].form).to.equal('https://example.com/page1');
+      expect(entries[0].formSource).to.not.equal('form');
+      expect(entries[1].formSource).to.not.equal('form');
+      expect(entries[0].formSource).to.not.equal(entries[1].formSource);
+      expect(entries[0].formSource).to.include('cmp-search__form');
+      expect(entries[1].formSource).to.include('#content');
+
+      const message = sqs.sendMessage.getCall(0).args[1];
+      expect(message.data.a11y).to.deep.equal(entries);
+    });
+
+    it('computes a real selector for a single-form page (not the generic fallback)', async () => {
+      mockScrape(ONE_FORM_HTML);
+      const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.have.lengthOf(1);
+      expect(entries[0]).to.deep.equal({
+        form: 'https://example.com/page1',
+        formSource: 'body > div#content > form',
+      });
+    });
+
+    it('sends nothing for a page with zero forms', async () => {
+      mockScrape(NO_FORM_HTML);
+      const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.have.lengthOf(0);
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        '[preflight-audit] site-123 No <form> elements found on https://example.com/page1, skipping',
+      );
+    });
+
+    it('falls back to the generic form selector for an unparseable URL', async () => {
+      auditContext.previewUrls = ['not a valid url'];
+      auditContext.audits = new Map([['not a valid url', { audits: [{ name: 'form-accessibility', type: 'form-a11y', opportunities: [] }] }]]);
+      const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.deep.equal([{ form: 'not a valid url', formSource: 'form' }]);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Could not build scrape key for not a valid url: .+, falling back to generic form selector/),
+      );
+    });
+
+    it('falls back to the generic form selector when the scrape is unavailable', async () => {
+      s3Client.send.resolves({});
+      const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.deep.equal([{ form: 'https://example.com/page1', formSource: 'form' }]);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/No scrape data found for https:\/\/example.com\/page1 at key: scrapes\/site-123\/page1\/scrape.json, falling back to generic form selector/),
+      );
+    });
+
+    it('falls back to the generic form selector when the scrape HTML fails to parse', async () => {
+      mockScrape(TWO_FORM_HTML);
+      const { detectFormAccessibility } = await esmock('../../src/preflight/form-accessibility.js', {
+        cheerio: {
+          load: sinon.stub().throws(new Error('parse boom')),
+        },
+      });
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.deep.equal([{ form: 'https://example.com/page1', formSource: 'form' }]);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to parse scrape for https:\/\/example.com\/page1: parse boom, falling back to generic form selector/),
+      );
+    });
+
+    it('falls back to the generic form selector when no usable selector can be generated for any form found', async () => {
+      mockScrape(TWO_FORM_HTML);
+      const { detectFormAccessibility } = await esmock('../../src/preflight/form-accessibility.js', {
+        '../../src/preflight/utils/dom-selector.js': {
+          getDomElementSelector: sinon.stub().returns(null),
+        },
+      });
+
+      const entries = await detectFormAccessibility(context, auditContext);
+
+      expect(entries).to.deep.equal([{ form: 'https://example.com/page1', formSource: 'form' }]);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Found 2 <form> element\(s\) on https:\/\/example.com\/page1 but could not generate selectors, falling back to generic form selector/),
+      );
+    });
+
+    it('merges opportunities from multiple forms on the same page instead of overwriting', async () => {
+      const { processFormAccessibilityOpportunities, generateFormAccessibilityFilename } = await import('../../src/preflight/form-accessibility.js');
+
+      const formEntries = [
+        { form: 'https://example.com/page1', formSource: 'header form.cmp-search__form' },
+        { form: 'https://example.com/page1', formSource: 'div#content form' },
+      ];
+      const key0 = `form-accessibility-preflight/site-123/${generateFormAccessibilityFilename(formEntries[0].form, formEntries[0].formSource)}`;
+      const key1 = `form-accessibility-preflight/site-123/${generateFormAccessibilityFilename(formEntries[1].form, formEntries[1].formSource)}`;
+      expect(key0).to.not.equal(key1);
+
+      s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand' && command.input.Key === key0) {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: () => Promise.resolve(JSON.stringify({
+                a11yIssues: [{ type: 'search-form-issue', severity: 'moderate' }],
+              })),
+            },
+          });
+        }
+        if (command.constructor.name === 'GetObjectCommand' && command.input.Key === key1) {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: () => Promise.resolve(JSON.stringify({
+                a11yIssues: [{ type: 'content-form-issue', severity: 'critical' }],
+              })),
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await processFormAccessibilityOpportunities(context, auditContext, formEntries);
+
+      const page1Audit = auditContext.audits.get('https://example.com/page1');
+      const formAccessibilityAudit = page1Audit.audits.find((a) => a.name === 'form-accessibility');
+
+      expect(formAccessibilityAudit.opportunities).to.have.lengthOf(2);
+      expect(formAccessibilityAudit.opportunities.map((o) => o.type)).to.have.members([
+        'search-form-issue',
+        'content-form-issue',
+      ]);
+    });
+  });
+
+  describe('generateFormAccessibilityFilename', () => {
+    it('matches generateAccessibilityFilename for the generic form fallback', async () => {
+      const { generateFormAccessibilityFilename } = await import('../../src/preflight/form-accessibility.js');
+      const { generateAccessibilityFilename } = await import('../../src/preflight/accessibility.js');
+
+      expect(generateFormAccessibilityFilename('https://example.com/page1', 'form'))
+        .to.equal(generateAccessibilityFilename('https://example.com/page1'));
+      expect(generateFormAccessibilityFilename('https://example.com/page1', undefined))
+        .to.equal(generateAccessibilityFilename('https://example.com/page1'));
+    });
+
+    it('appends a stable, distinct hash for a real selector', async () => {
+      const { generateFormAccessibilityFilename } = await import('../../src/preflight/form-accessibility.js');
+
+      const a = generateFormAccessibilityFilename('https://example.com/page1', 'div#content form');
+      const b = generateFormAccessibilityFilename('https://example.com/page1', 'header form.cmp-search__form');
+      const aAgain = generateFormAccessibilityFilename('https://example.com/page1', 'div#content form');
+
+      expect(a).to.not.equal(b);
+      expect(a).to.equal(aAgain);
+      expect(a).to.match(/^example_com_page1_[0-9a-f]{12}\.json$/);
+    });
+  });
 });

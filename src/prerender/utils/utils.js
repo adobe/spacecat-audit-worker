@@ -67,8 +67,84 @@ export function toPathname(url) {
 }
 
 /**
+ * Tracking/marketing query parameter patterns that should not cause two otherwise-identical
+ * URLs to be treated as distinct pages (e.g. in RCV suggestion/opportunity dedup keys).
+ * Mirrors TRACKING_PARAM_PATTERNS in tokowaka-worker's src/utils/request-utils.js so the audit
+ * and the edge worker agree on which query params are tracking-only noise.
+ */
+const TRACKING_PARAM_PATTERNS = [
+  // Google Ads
+  /^gad_source$/, // Google Ads click source identifier
+  /^gad_campaignid$/, // Google Ads campaign ID (auto-tagging)
+  /^gbraid$/, // Google Ads app-to-web attribution (iOS)
+  /^wbraid$/, // Google Ads web-to-app attribution (iOS)
+  /^gclid$/, // Google Ads click identifier
+  /^gclsrc$/, // Google Ads click source type (e.g. aw.ds for Search Ads 360)
+  /^dclid$/, // Google Display & Video 360 (DoubleClick) click identifier
+  /^srsltid$/, // Google Shopping / Merchant Center result identifier
+
+  // Google Analytics
+  /^_gl$/, // Google Analytics cross-domain linker parameter
+
+  // Microsoft Advertising (Bing Ads)
+  /^msclkid$/, // Microsoft Advertising click identifier
+
+  // Meta (Facebook / Instagram)
+  /^fbclid$/, // Meta (Facebook) click identifier
+
+  // Zanox / Awin (affiliate network)
+  /^zanpid$/, // Zanox/Awin affiliate partner click identifier
+
+  // Klaviyo (email marketing)
+  /^_kx$/, // Klaviyo email tracking identifier
+
+  // Mailchimp (email marketing)
+  /^mc_[a-z]+$/, // Mailchimp campaign tracking params (mc_cid, mc_eid, etc.)
+
+  // Bronto / Oracle (email marketing)
+  /^_bta_[a-z]+$/, // Bronto/Oracle email tracking params (_bta_tid, _bta_c, etc.)
+
+  // Cross-platform (Urchin / Google Analytics standard)
+  /^utm_[a-z]+$/, // UTM campaign tracking params (utm_source, utm_medium, utm_campaign, etc.)
+
+  // Cache busters (jQuery/AJAX timestamps)
+  /^_$/, // jQuery cache-buster param (e.g. ?_=1780463035675)
+
+  // Microsoft Bing session
+  /^msockid$/, // Bing/Copilot session identifier (companion to msclkid)
+
+  // Criteo (retargeting ads)
+  /^cto_pld$/, // Criteo click payload (read by Criteo OneTag client-side; doesn't affect HTML)
+];
+
+/**
+ * Removes tracking/marketing query parameters from a URL search string.
+ * Returns the search string untouched (including param order) when it contains no tracking
+ * params, so non-tracking dedup keys (e.g. CSV-provided `?filter=a` vs `?filter=b`) are
+ * never altered.
+ * @param {string} search - A URL search string, with or without the leading '?' ('' allowed).
+ * @returns {string} The cleaned search string (with leading '?' if any params remain), or ''.
+ */
+function stripTrackingParams(search) {
+  if (!search) {
+    return '';
+  }
+  const params = new URLSearchParams(search);
+  const trackingKeys = [...params.keys()]
+    .filter((key) => TRACKING_PARAM_PATTERNS.some((pattern) => pattern.test(key)));
+  if (trackingKeys.length === 0) {
+    return search;
+  }
+  trackingKeys.forEach((key) => params.delete(key));
+  const cleaned = params.toString();
+  return cleaned ? `?${cleaned}` : '';
+}
+
+/**
  * Normalizes a URL to its pathname + search string.
  * Trailing slashes on the pathname are removed (except for the root path).
+ * Tracking/marketing query parameters (see TRACKING_PARAM_PATTERNS) are stripped so that URLs
+ * differing only by tracking params resolve to the same identity/dedup key.
  * Falls back to the raw string when the URL is not parseable.
  * @param {string} url
  * @returns {string} pathname+search, or the original string on parse failure
@@ -77,7 +153,8 @@ export function normalizePathnameWithQuery(url) {
   try {
     const { pathname, search } = new URL(url);
     const normalized = (pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname).toLowerCase();
-    return search ? `${normalized}${search}` : normalized;
+    const cleanedSearch = stripTrackingParams(search);
+    return cleanedSearch ? `${normalized}${cleanedSearch}` : normalized;
   } catch {
     return url.toLowerCase();
   }
@@ -103,7 +180,9 @@ export function buildSuggestionKey(data) {
  * Merges multiple URL arrays, ensures uniqueness, and filters out non-HTML URLs.
  * By default, deduplicates by pathname only (handles www vs non-www differences).
  * When includeQueryParams is true, query parameters are included in the uniqueness
- * key so that URLs like /page?a=1 and /page?b=2 are treated as distinct.
+ * key so that URLs like /page?a=1 and /page?b=2 are treated as distinct — except for
+ * tracking/marketing params (see TRACKING_PARAM_PATTERNS), which are stripped from the key
+ * so URLs differing only by those (e.g. ?utm_source=a vs ?utm_source=b) still collapse.
  * @param {Array<string>} urlArrays - URL arrays to merge (spread or single array)
  * @param {Object} [options] - Options object (must be last argument)
  * @param {boolean} [options.includeQueryParams=false] - Include query params in dedup key
@@ -139,10 +218,11 @@ export function mergeAndGetUniqueHtmlUrls(...args) {
         dedupKey = dedupKey.replace(/\/+$/, ''); // Remove all trailing slashes
       }
 
-      // Include the raw query string in the dedup key when requested,
-      // so the user gets exactly what they passed in the CSV.
+      // Include the query string in the dedup key when requested, so the user gets exactly
+      // what they passed in the CSV. Tracking/marketing params are stripped first so that
+      // e.g. ?utm_source=a vs ?utm_source=b still collapse to the same page.
       if (includeQueryParams && urlObj.search) {
-        dedupKey += urlObj.search;
+        dedupKey += stripTrackingParams(urlObj.search);
       }
 
       // Only add URL if we haven't seen this key before
