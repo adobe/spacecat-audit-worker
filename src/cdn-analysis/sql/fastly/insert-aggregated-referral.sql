@@ -68,7 +68,8 @@ referrals_raw AS (
 
       -- case 3: IF cdn log contains external referrer (not one of first party hosts)
       OR (
-        request_referer IS NOT NULL AND try(url_extract_host(request_referer)) NOT IN (SELECT host FROM hosts)
+        -- NULL-safe: a NULL in the host set makes NOT IN drop ALL external referrals (SQL three-valued logic)
+        request_referer IS NOT NULL AND try(url_extract_host(request_referer)) NOT IN (SELECT host FROM hosts WHERE host IS NOT NULL AND host <> '')
       )
     )
 
