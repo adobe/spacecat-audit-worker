@@ -836,4 +836,33 @@ describe('summarization guidance handler', () => {
     expect(result.transformRules.selector).to.equal('h2');
   });
 
+  it('should bootstrap originalSummarizationText from summarizationText for pre-existing edited suggestions (LLMO-6537)', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
+      },
+    };
+    await handler(message, context);
+
+    const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+
+    const result = mergeDataFunction(
+      {
+        summarizationText: 'Customer edited summary',
+        isEdited: true,
+        // originalSummarizationText intentionally absent (pre-existing suggestion)
+      },
+      { summarizationText: 'Regenerated.' },
+    );
+
+    expect(result.isEdited).to.equal(true);
+    expect(result.summarizationText).to.equal('Customer edited summary');
+    expect(result.originalSummarizationText).to.equal('Customer edited summary');
+  });
+
 });
