@@ -154,14 +154,24 @@ async function handleAdobeFastly(
 
 async function handleBucketConfiguration(
   siteId,
-  pathId,
+  bucketName,
+  orgId,
+  region,
   cdnProvider,
   { dataAccess: { Site } },
 ) {
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  config.updateLlmoCdnBucketConfig(pathId ? { orgId: pathId, cdnProvider } : {});
+  const cdnBucketConfig = Object.fromEntries(
+    Object.entries({
+      bucketName,
+      orgId,
+      region,
+      cdnProvider,
+    }).filter(([, value]) => value),
+  );
+  config.updateLlmoCdnBucketConfig(cdnBucketConfig);
 
   site.setConfig(Config.toDynamoItem(config));
   await site.save();
@@ -202,7 +212,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
         before: previousConfig,
       });
     }
-    await handleBucketConfiguration(siteId, null, null, context);
+    await handleBucketConfiguration(siteId, null, null, null, null, context);
     cdnHandlers.forEach((h) => configuration.disableHandlerForSite(h, site));
     await configuration.save();
     if (!cdnProvider) {
@@ -226,7 +236,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   }
 
   if (pathId) {
-    await handleBucketConfiguration(siteId, pathId, cdnProvider, context);
+    await handleBucketConfiguration(siteId, null, pathId, null, cdnProvider, context);
   }
 
   log.info('CDN_CONFIG_CHANGED: CDN bucket configuration updated', {
@@ -237,8 +247,9 @@ export async function handleCdnBucketConfigChanges(context, data) {
     after: pathId ? { orgId: pathId, cdnProvider } : previousConfig,
   });
 
-  cdnHandlers.forEach((h) => configuration.enableHandlerForSite(h, site));
-  await configuration.save();
+  const latestConfiguration = await Configuration.findLatest();
+  cdnHandlers.forEach((h) => latestConfiguration.enableHandlerForSite(h, site));
+  await latestConfiguration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers
   if (
