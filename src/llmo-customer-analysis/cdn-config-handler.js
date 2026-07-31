@@ -154,23 +154,14 @@ async function handleAdobeFastly(
 
 async function handleBucketConfiguration(
   siteId,
-  bucketName,
   pathId,
-  region,
+  cdnProvider,
   { dataAccess: { Site } },
 ) {
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  if (!bucketName && !pathId && !region) {
-    config.updateLlmoCdnBucketConfig({});
-  } else {
-    config.updateLlmoCdnBucketConfig({
-      ...(bucketName && { bucketName }),
-      ...(pathId && { orgId: pathId }),
-      ...(region && { region }),
-    });
-  }
+  config.updateLlmoCdnBucketConfig(pathId ? { orgId: pathId, cdnProvider } : {});
 
   site.setConfig(Config.toDynamoItem(config));
   await site.save();
@@ -182,13 +173,8 @@ async function handleBucketConfiguration(
 export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
-  const {
-    cdnProvider,
-    allowedPaths,
-    bucketName,
-    region,
-  } = data;
-  const { dataAccess: { Configuration }, log } = context;
+  const { cdnProvider } = data;
+  const { dataAccess: { Configuration, Organization }, log } = context;
 
   if (!siteId) {
     throw new Error('Site ID is required for CDN configuration');
@@ -209,7 +195,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
       before: previousConfig,
     });
     // if no cdn provider is provided, remove the bucket configuration
-    await handleBucketConfiguration(siteId, null, null, null, context);
+    await handleBucketConfiguration(siteId, null, null, context);
     // disable CDN-derived audits when the CDN configuration is removed
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
@@ -221,30 +207,20 @@ export async function handleCdnBucketConfigChanges(context, data) {
 
   let pathId;
 
-  if (allowedPaths && allowedPaths.length > 0) {
-    const [firstPath] = allowedPaths;
-    [pathId] = firstPath.split('/');
-  }
-
   if (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY) {
     const service = await fetchCommerceFastlyService(site.getBaseURL(), context);
     if (service) {
       pathId = service.serviceName;
     }
-  }
-
-  if (cdnProvider.includes('ams')) {
-    if (cdnProvider === SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT) {
-      const imsOrgId = await getImsOrgId(site, context.dataAccess, log);
-      if (imsOrgId) {
-        pathId = imsOrgId.replace('@', ''); // Remove @ for filesystem-safe path
-      }
+  } else if (cdnProvider === SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT) {
+    const imsOrgId = await getImsOrgId(site, context.dataAccess, log);
+    if (imsOrgId) {
+      pathId = imsOrgId.replace('@', '');
     }
   }
 
-  // Set bucket configuration
-  if (bucketName || pathId || region) {
-    await handleBucketConfiguration(siteId, bucketName, pathId, region, context);
+  if (pathId) {
+    await handleBucketConfiguration(siteId, pathId, cdnProvider, context);
   }
 
   log.info('CDN_CONFIG_CHANGED: CDN bucket configuration updated', {
@@ -252,17 +228,16 @@ export async function handleCdnBucketConfigChanges(context, data) {
     baseURL,
     cdnProvider,
     before: previousConfig,
-    after: {
-      ...(bucketName && { bucketName }),
-      ...(pathId && { orgId: pathId }),
-      ...(region && { region }),
-    },
+    after: pathId ? { orgId: pathId, cdnProvider } : previousConfig,
   });
 
-  // enable CDN-derived audits once the site has a valid CDN configuration
   const configuration = await Configuration.findLatest();
-  configuration.enableHandlerForSite('cdn-logs-analysis', site);
-  configuration.enableHandlerForSite('cdn-logs-report', site);
+  const organization = await Organization.findById(site.getOrganizationId());
+  for (const handlerType of ['cdn-logs-analysis', 'cdn-logs-report']) {
+    if (!(organization && configuration.isHandlerDisabledForOrg(handlerType, organization))) {
+      configuration.enableHandlerForSite(handlerType, site);
+    }
+  }
   await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers
