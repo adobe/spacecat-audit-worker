@@ -254,9 +254,8 @@ export async function handleCdnBucketConfigChanges(context, data) {
     after: pathId ? { orgId: pathId, cdnProvider } : previousConfig,
   });
 
-  const latestConfiguration = await Configuration.findLatest();
-  cdnHandlers.forEach((h) => latestConfiguration.enableHandlerForSite(h, site));
-  await latestConfiguration.save();
+  cdnHandlers.forEach((h) => configuration.enableHandlerForSite(h, site));
+  await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers
   if (
