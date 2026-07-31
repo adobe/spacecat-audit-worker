@@ -15,6 +15,11 @@ export const TOP_AGENTIC_URLS_LIMIT = 2000;
 export const DAILY_BATCH_SIZE = 320;
 export const TOP_ORGANIC_URLS_LIMIT = 200;
 /**
+ * Once a domain accumulates this many non-OUTDATED suggestions on its PRERENDER opportunity,
+ * new URLs stop being submitted for scraping (LLMO-6533/LLMO-6638).
+ */
+export const MAX_ACTIVE_SUGGESTIONS = 4000;
+/**
  * URLs processed within this window are treated as recently scraped and skipped.
  */
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;

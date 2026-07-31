@@ -1010,6 +1010,136 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([]);
       });
 
+      describe('active suggestion cap (LLMO-6533/LLMO-6638)', () => {
+        it('skips submitting new URLs when non-outdated suggestion count has reached the limit', async function () {
+          this.timeout(5000);
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            },
+          });
+
+          const nonOutdatedSuggestions = Array.from({ length: 4000 }, () => ({
+            getStatus: () => 'NEW',
+          }));
+          const topPagesStub = sandbox.stub().resolves([
+            { getUrl: () => 'https://capped.example/page' },
+          ]);
+          const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() };
+          const context = {
+            site: {
+              getId: () => 'capped-site-id',
+              getBaseURL: () => 'https://capped.example',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
+              Opportunity: {
+                allBySiteIdAndStatus: sandbox.stub().resolves([
+                  {
+                    getType: () => 'prerender',
+                    getSuggestions: sandbox.stub().resolves(nonOutdatedSuggestions),
+                  },
+                ]),
+              },
+            },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log,
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+
+          expect(result.urls).to.deep.equal([]);
+          expect(result.auditContext).to.deep.include({ suggestionLimitReached: true });
+          expect(topPagesStub).to.not.have.been.called;
+          expect(log.info).to.have.been.calledWithMatch(/Active suggestion count \(4000\) has reached the limit of 4000/);
+        });
+
+        it('continues submitting URLs when suggestion count is below the limit, excluding OUTDATED', async function () {
+          this.timeout(5000);
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            },
+          });
+
+          // 3999 non-outdated + a large batch of OUTDATED ones that must be excluded from the
+          // count, so the total remains just under the cap despite having >4000 suggestions.
+          const suggestions = [
+            ...Array.from({ length: 3999 }, () => ({ getStatus: () => 'NEW' })),
+            ...Array.from({ length: 500 }, () => ({ getStatus: () => 'OUTDATED' })),
+          ];
+          const context = {
+            site: {
+              getId: () => 'under-cap-site-id',
+              getBaseURL: () => 'https://undercap.example',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://undercap.example/page' },
+                ]),
+              },
+              Opportunity: {
+                allBySiteIdAndStatus: sandbox.stub().resolves([
+                  {
+                    getType: () => 'prerender',
+                    getSuggestions: sandbox.stub().resolves(suggestions),
+                  },
+                ]),
+              },
+            },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+
+          expect(result.urls.map((u) => u.url)).to.include('https://undercap.example/page');
+          expect(result.auditContext?.suggestionLimitReached).to.be.undefined;
+        });
+
+        it('treats an opportunity without getSuggestions as having zero active suggestions', async function () {
+          this.timeout(5000);
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'no-getsuggestions-site-id',
+              getBaseURL: () => 'https://nogetsuggestions.example',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://nogetsuggestions.example/page' },
+                ]),
+              },
+              Opportunity: {
+                allBySiteIdAndStatus: sandbox.stub().resolves([
+                  { getType: () => 'prerender' },
+                ]),
+              },
+            },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+
+          expect(result.urls.map((u) => u.url)).to.include('https://nogetsuggestions.example/page');
+          expect(result.auditContext?.suggestionLimitReached).to.be.undefined;
+        });
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeRecentPage = (path) => ({

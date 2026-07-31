@@ -41,6 +41,7 @@ import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
   DOMAIN_WIDE_SUGGESTION_KEY,
+  MAX_ACTIVE_SUGGESTIONS,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
@@ -130,6 +131,17 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
+ * Finds the site's existing PRERENDER opportunity (NEW status), if one exists.
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID to look up the opportunity
+ * @returns {Promise<Object|null>}
+ */
+async function findPrerenderOpportunity(dataAccess, siteId) {
+  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+  return opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
+}
+
+/**
  * Diagnostic: detects and warns if any non-NEW suggestions have edgeDeployed set.
  * This should never happen — edgeDeployed is set when a URL is deployed at the CDN edge,
  * and the suggestion status should not be changed away from NEW after that point.
@@ -139,8 +151,7 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
  * @param {Object} log - Logger
  */
 async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) {
-  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
-  const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+  const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
   if (!opportunity) {
     return;
   }
@@ -151,6 +162,24 @@ async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) 
   if (count > 0) {
     log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${siteId}, nonNewEdgeDeployedCount=${count}`);
   }
+}
+
+/**
+ * Counts non-OUTDATED suggestions on the site's existing PRERENDER opportunity. Used to cap
+ * how many URLs a domain can have actively tracked (LLMO-6533/LLMO-6638): once a domain
+ * accumulates MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, new URLs stop being submitted
+ * for scraping until some are resolved (and outdated) or manually cleared.
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID to look up the opportunity
+ * @returns {Promise<number>}
+ */
+async function getActiveSuggestionCount(dataAccess, siteId) {
+  const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
+  if (!opportunity) {
+    return 0;
+  }
+  const suggestions = await opportunity.getSuggestions?.() ?? [];
+  return suggestions.filter((s) => s.getStatus() !== Suggestion.STATUSES.OUTDATED).length;
 }
 
 /**
@@ -537,6 +566,7 @@ export async function submitForScraping(context) {
     log,
     data,
     auditContext,
+    dataAccess,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -597,6 +627,21 @@ export async function submitForScraping(context) {
       maxScrapeAge: 0,
       options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
       auditContext: { domainBlocked: true },
+    };
+  }
+
+  // Domain-wide suggestion cap (LLMO-6533/LLMO-6638): once a domain has accumulated
+  // MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, stop submitting new URLs for scraping.
+  const activeSuggestionCount = await getActiveSuggestionCount(dataAccess, siteId);
+  if (activeSuggestionCount >= MAX_ACTIVE_SUGGESTIONS) {
+    log.info(`${LOG_PREFIX} Active suggestion count (${activeSuggestionCount}) has reached the limit of ${MAX_ACTIVE_SUGGESTIONS}, skipping new URL submission. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+    return {
+      urls: [],
+      siteId,
+      processingType: AUDIT_TYPE,
+      maxScrapeAge: 0,
+      options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+      auditContext: { ...auditContext, suggestionLimitReached: true },
     };
   }
 
