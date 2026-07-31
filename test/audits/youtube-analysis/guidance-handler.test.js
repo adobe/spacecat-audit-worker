@@ -597,8 +597,60 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(400);
+      // The outer catch folds the error into a structured guidance_complete failure line
+      // (errorName token, no util.inspect second arg).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing YouTube analysis/),
+        sinon.match(/Error processing YouTube analysis/)
+          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      const outerCatchCall = context.log.error.getCalls().find(
+        (c) => /event=guidance_complete/.test(String(c.args[0])),
+      );
+      expect(outerCatchCall.args).to.have.lengthOf(1);
+    });
+
+    it('logs a structured suggestion_sync failure and propagates when syncSuggestions throws', async () => {
+      mockSyncSuggestions.rejects(new Error('sync exploded'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      const response = await guidanceHandler.default(message, context);
+
+      expect(response.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+    });
+
+    it('logs a structured suggestion_sync success on the happy path', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/opportunityId=opportunity-123/)),
       );
     });
   });

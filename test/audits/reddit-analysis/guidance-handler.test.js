@@ -232,7 +232,9 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Reddit] No suggestions found in analysis');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=guidance_complete/)).and(sinon.match(/outcome=skip/)),
+      );
     });
 
     it('should return noContent when suggestions property is missing from analysis', async () => {
@@ -282,7 +284,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=guidance_complete/)),
+      );
     });
 
     it('should return notFound when site not found', async () => {
@@ -736,9 +740,68 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
+      // The outer catch folds the error into a structured guidance_complete failure line
+      // (errorName token, no util.inspect second arg).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Reddit analysis/),
-        sinon.match.any,
+        sinon.match(/Error processing Reddit analysis/)
+          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      const outerCatchCall = context.log.error.getCalls().find(
+        (c) => /event=guidance_complete/.test(String(c.args[0])),
+      );
+      expect(outerCatchCall.args).to.have.lengthOf(1);
+    });
+
+    it('logs a structured suggestion_sync failure and propagates when syncSuggestions throws', async () => {
+      syncSuggestionsStub.rejects(new Error('sync exploded'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+    });
+
+    it('logs a structured suggestion_sync success on the happy path', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/opportunityId=opp-123/)),
       );
     });
 
@@ -767,7 +830,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=guidance_complete/)),
+      );
     });
 
     it('should return notFound when audit not found', async () => {

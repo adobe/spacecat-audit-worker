@@ -25,9 +25,27 @@ import {
   resolveEvergreenOffsiteOpportunity,
   isSuppressedRun,
 } from '../common/offsite-refresh.js';
+import { createOffsiteLogger, AUDIT, PEER } from '../utils/offsite-logging.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
-const LOG_PREFIX = '[YouTube]';
+// Human prefix for the two shared, untouched utils that still log via a passed-in prefix
+// string (logOffsiteLlmUsage + applyScopeToOpportunity). All other logging in this file goes
+// through the bound offsite logger (createOffsiteLogger), which emits the same prefix.
+const HUMAN_PREFIX = `[offsite:${AUDIT.YOUTUBE}]`;
+
+/**
+ * Classifies a presigned-analysis-fetch failure for the `analysis_fetch` reason token:
+ * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
+ * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
+ *
+ * @param {Error} error
+ * @returns {'validation'|'fetch'}
+ */
+function classifyFetchFailure(error) {
+  return /presignedUrl|not JSON|too large|content-type/i.test(error.message)
+    ? 'validation'
+    : 'fetch';
+}
 
 /**
  * Handles Mystique response for YouTube analysis
@@ -43,10 +61,16 @@ export default async function handler(message, context) {
   // value would let a tampered message re-attribute the opportunity.
   const { siteId, auditId, data } = message;
 
-  log.info(`${LOG_PREFIX} Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId, auditId });
+
+  olog.start('guidance_receive', `Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+    peer: PEER.MYSTIQUE, direction: 'inbound',
+  });
 
   if (data?.error) {
-    log.error(`${LOG_PREFIX} Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`, {
+      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error',
+    });
     return noContent();
   }
 
@@ -57,10 +81,15 @@ export default async function handler(message, context) {
     try {
       analysisData = await fetchAnalysisFromPresignedUrl(presignedUrl, {
         log,
-        prefix: LOG_PREFIX,
+        prefix: HUMAN_PREFIX,
+      });
+      olog.success('analysis_fetch', 'Fetched analysis from presigned URL', {
+        peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      log.error(`${LOG_PREFIX} Error fetching from presigned URL: ${error.message}`);
+      olog.failure('analysis_fetch', `Error fetching from presigned URL: ${error.message}`, {
+        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), errorName: error.name,
+      });
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
   } else if (data?.analysis) {
@@ -68,20 +97,20 @@ export default async function handler(message, context) {
   }
 
   if (!analysisData) {
-    log.error('[YouTube] No analysis data provided in message');
+    olog.failure('guidance_complete', 'No analysis data provided in message', { reason: 'no_analysis_data' });
     return badRequest('Analysis data is required');
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[YouTube] Site not found for siteId: ${siteId}`);
+    olog.failure('guidance_complete', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
     return notFound('Site not found');
   }
 
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      log.error(`[YouTube] Audit not found for auditId: ${auditId}`);
+      olog.failure('guidance_complete', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -93,11 +122,13 @@ export default async function handler(message, context) {
     const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
-      log.info(`${LOG_PREFIX} No suggestions found in analysis`);
+      olog.skip('guidance_complete', 'No suggestions found in analysis', { reason: 'no_suggestions' });
       return noContent();
     }
 
-    log.info(`${LOG_PREFIX} Processing ${suggestions.length} suggestions for ${companyName}`);
+    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions for ${companyName}`, {
+      count: suggestions.length,
+    });
 
     // Use the handler-owned type; the payload may only confirm it.
     const auditType = AUDIT_TYPE;
@@ -105,7 +136,7 @@ export default async function handler(message, context) {
 
     // Validate before mutating the evergreen opportunity.
     if (!isValidOffsiteAnalysis(analysisData, auditType)) {
-      log.error(`${LOG_PREFIX} Malformed analysis payload for siteId: ${siteId}; skipping update`);
+      olog.failure('guidance_complete', `Malformed analysis payload for siteId: ${siteId}; skipping update`, { reason: 'malformed_payload' });
       return badRequest('Malformed analysis payload');
     }
 
@@ -132,8 +163,10 @@ export default async function handler(message, context) {
       },
     );
 
+    const ologOpp = olog.with({ opportunityId: opportunity.getId() });
+
     // Save the scoped opportunity before syncing its suggestions.
-    applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
+    applyScopeToOpportunity(opportunity, brandResult, log, HUMAN_PREFIX);
     opportunity.setStatus(incomingStatus);
     opportunity.setData({
       ...opportunity.getData(),
@@ -141,21 +174,33 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
 
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData: suggestions,
-      buildKey: (suggestion) => `youtube::${suggestion.id}`,
-      mapNewSuggestion: (suggestion) => ({
-        opportunityId: opportunity.getId(),
-        type: suggestion.type || 'CONTENT_UPDATE',
-        rank: suggestion.rank,
-        data: suggestion.data,
-      }),
-    });
+    try {
+      await syncSuggestions({
+        context,
+        opportunity,
+        newData: suggestions,
+        buildKey: (suggestion) => `youtube::${suggestion.id}`,
+        mapNewSuggestion: (suggestion) => ({
+          opportunityId: opportunity.getId(),
+          type: suggestion.type || 'CONTENT_UPDATE',
+          rank: suggestion.rank,
+          data: suggestion.data,
+        }),
+      });
+      ologOpp.success('suggestion_sync', `Synced ${suggestions.length} suggestions`, {
+        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
+      });
+    } catch (error) {
+      ologOpp.failure('suggestion_sync', `Failed to sync suggestions: ${error.message}`, {
+        peer: PEER.POSTGRES, direction: 'outbound', errorName: error.name,
+      });
+      throw error;
+    }
 
-    log.info(`${LOG_PREFIX} Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
-    logOffsiteLlmUsage(log, LOG_PREFIX, siteId, opportunityData.llmUsage);
+    ologOpp.success('guidance_complete', `Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`, {
+      count: suggestions.length,
+    });
+    logOffsiteLlmUsage(log, HUMAN_PREFIX, siteId, opportunityData.llmUsage);
 
     if (auditId) {
       const audit = await AuditModel.findById(auditId);
@@ -189,7 +234,7 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    log.error(`[YouTube] Error processing YouTube analysis: ${error.message}`, error);
+    olog.failure('guidance_complete', `Error processing YouTube analysis: ${error.message}`, { errorName: error.name });
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }
