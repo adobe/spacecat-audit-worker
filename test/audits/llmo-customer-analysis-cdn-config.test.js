@@ -313,7 +313,9 @@ describe('CDN Config Handler', () => {
 
       mockConfiguration = {
         enableHandlerForSite: sandbox.stub(),
+        disableHandlerForSite: sandbox.stub(),
         isHandlerEnabledForSite: sandbox.stub().returns(false),
+        isHandlerDisabledForOrg: sandbox.stub().returns(false),
         save: sandbox.stub().resolves(),
         getQueues: sandbox.stub().returns({
           audits: 'audit-queue-url',
@@ -349,7 +351,6 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith(
         'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
@@ -385,7 +386,7 @@ describe('CDN Config Handler', () => {
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org' });
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org', cdnProvider: 'commerce-fastly' });
     });
 
     it('should run Fastly analysis and reporting for commerce-fastly provider', async () => {
@@ -434,22 +435,35 @@ describe('CDN Config Handler', () => {
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.not.have.been.called;
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
     });
 
-    it('should handle bucket configuration when bucketName provided', async () => {
+    it('should ignore customer-supplied bucketName/allowedPaths/region for commerce-fastly', async () => {
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
         .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
-        .reply(200, { data: [] });
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
 
-      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
+      const data = {
+        bucketName: 'attacker-bucket',
+        allowedPaths: ['victim-org/raw/byocdn-fastly/'],
+        region: 'eu-west-1',
+        cdnProvider: 'commerce-fastly',
+      };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ bucketName: 'test-bucket' });
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledOnceWithExactly({ orgId: 'commerce-org', cdnProvider: 'commerce-fastly' });
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
-      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.calledWith('page-citability', mockSite);
       expect(context.log.info).to.have.been.calledWith(
         'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
         sinon.match({
@@ -457,54 +471,54 @@ describe('CDN Config Handler', () => {
           baseURL: 'https://example.com',
           cdnProvider: 'commerce-fastly',
           before: { bucketName: 'old-bucket', orgId: 'old-org' },
-          after: { bucketName: 'test-bucket' },
+          after: { orgId: 'commerce-org', cdnProvider: 'commerce-fastly' },
         }),
       );
     });
 
-    it('should handle bucket configuration when allowedPaths provided', async () => {
-      nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
-        .reply(200, { data: [] });
-
-      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'], cdnProvider: 'commerce-fastly' };
-
-      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
-
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'test-org' });
-      expect(mockSite.save).to.have.been.called;
-    });
-
-    it('should handle bucket configuration when both bucketName and allowedPaths provided', async () => {
-      nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
-        .reply(200, { data: [] });
-
-      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'], cdnProvider: 'commerce-fastly' };
-
-      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
-
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
-        bucketName: 'test-bucket',
-        orgId: 'test-org',
-      });
-      expect(mockSite.save).to.have.been.called;
-    });
-
-    it('should persist region in bucket configuration when provided', async () => {
-      nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
-        .reply(200, { data: [] });
-
-      const data = { bucketName: 'test-bucket', region: 'eu-west-1', cdnProvider: 'commerce-fastly' };
-
-      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
-
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
-        bucketName: 'test-bucket',
+    it('should not write bucket config for byocdn providers but still enable handlers', async () => {
+      const data = {
+        bucketName: 'attacker-bucket',
+        allowedPaths: ['victim-org/raw/byocdn-fastly/'],
         region: 'eu-west-1',
-      });
-      expect(mockSite.save).to.have.been.called;
+        cdnProvider: 'byocdn-fastly',
+      };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.not.have.been.called;
+      expect(mockSite.save).to.not.have.been.called;
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
+        sinon.match({
+          cdnProvider: 'byocdn-fastly',
+          after: { bucketName: 'old-bucket', orgId: 'old-org' },
+        }),
+      );
+    });
+
+    it('should disable handlers and return early when the org is disabled at org level', async () => {
+      const mockOrganization = { getId: sandbox.stub().returns('org-123') };
+      context.dataAccess.Organization.findById.resolves(mockOrganization);
+      mockConfiguration.isHandlerDisabledForOrg.returns(true);
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(mockConfiguration.isHandlerDisabledForOrg).to.have.been.calledWith('cdn-logs-analysis', mockOrganization);
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({});
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN_CONFIG_ORG_DISABLED: CDN handlers disabled for a disabled organization',
+        sinon.match({ siteId: 'site-123', cdnProvider: 'commerce-fastly' }),
+      );
+      expect(mockConfiguration.save).to.have.been.called;
     });
 
     it('should handle aem-cs-fastly provider', async () => {
@@ -672,8 +686,9 @@ describe('CDN Config Handler', () => {
         await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
         expect(context.dataAccess.Organization.findById).to.have.been.calledWith(mockSite.getOrganizationId());
-        expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ 
-          orgId: 'TestOrg123AdobeOrg' 
+        expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
+          orgId: 'TestOrg123AdobeOrg',
+          cdnProvider: 'ams-cloudfront',
         });
       });
     });
