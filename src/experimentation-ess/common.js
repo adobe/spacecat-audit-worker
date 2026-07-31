@@ -13,9 +13,8 @@
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { load as cheerioLoad } from 'cheerio';
+import { computeStatsig } from './statsig.js';
 
 const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
 
@@ -29,23 +28,27 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
 const EXCLUDE_UPDATE_PROPERTIES = ['split'];
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
-const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
 let log = console;
 
 /**
  * Retrieves the content of metadata tags.
  * @param {string} name The metadata name (or property)
- * @param {Document} doc Document object to query for metadata. Defaults to the window's document
+ * @param {import('cheerio').CheerioAPI} $ Cheerio instance for the loaded page (see cheerioLoad)
  * @returns {string} The metadata value(s)
  */
-function getMetadata(name, doc) {
+/* c8 ignore stop */
+export function getMetadata(name, $) {
   const attr = name && name.includes(':') ? 'property' : 'name';
-  const meta = [...doc.head.querySelectorAll(`meta[${attr}="${name}"]`)]
-    .map((m) => m.content)
+  // Pages are parsed with cheerio (cheerioLoad), not a DOM Document, so query via the
+  // cheerio API rather than doc.head.querySelectorAll (SITES-47215).
+  const meta = $(`head meta[${attr}="${name}"]`)
+    .map((_, el) => $(el).attr('content') ?? '')
+    .get()
     .join(', ');
   return meta || '';
 }
+/* c8 ignore start */
 
 function toClassName(name) {
   return typeof name === 'string'
@@ -359,56 +362,36 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-async function invokeLambdaFunction(payload) {
-  const lambdaClient = new LambdaClient({
-    region: 'us-east-1',
-    credentials: defaultProvider(),
-  });
-  const invokeParams = {
-    FunctionName: SPACECAT_STATISTICS_SERVICE_ARN,
-    InvocationType: 'RequestResponse',
-    Payload: JSON.stringify(payload),
-  };
-  const response = await lambdaClient.send(new InvokeCommand(invokeParams));
-  return JSON.parse(new TextDecoder().decode(response.Payload));
-}
-
-async function addPValues(experimentData) {
-  const lambdaPayload = {
-    type: 'statsig',
-    payload: {
-      rumData: {
-      },
-    },
-  };
+/* c8 ignore stop */
+export async function addPValues(experimentData) {
+  const rumData = {};
   for (const experiment of experimentData) {
     const id = `${experiment.id}#${experiment.url}`;
-    lambdaPayload.payload.rumData[id] = {};
+    rumData[id] = {};
     const metric = experiment.conversionEventName || 'click';
     for (const variant of experiment.variants) {
-      lambdaPayload.payload.rumData[id][variant.name] = {
+      rumData[id][variant.name] = {
         views: variant.samples || 0,
         metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples || 0,
       };
     }
   }
-  log.debug('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
-  let lambdaResult;
+  log.debug('Statsig input: ', JSON.stringify(rumData, null, 2));
+  let statsigResult;
   try {
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
-    log.debug('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
-    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
-    lambdaResult = lambdaResponseBody.result;
+    // computed in-process; previously a cross-account statistics-service Lambda (SITES-47215)
+    statsigResult = computeStatsig(rumData);
+    log.debug('Statsig result: ', JSON.stringify(statsigResult, null, 2));
   } catch (error) {
-    log.error('Error invoking lambda function: ', error);
+    log.error('Error calculating p-values: ', error);
   }
-  if (!lambdaResult) {
-    log.error('Error calculating p-values: No result from lambda function');
+  if (!statsigResult) {
+    log.error('Error calculating p-values: no statsig result');
     return;
   }
   for (const experiment of experimentData) {
     const id = `${experiment.id}#${experiment.url}`;
-    const stats = lambdaResult[id];
+    const stats = statsigResult[id];
     if (stats && !stats.error) {
       for (const variant of experiment.variants) {
         const variantStats = stats[variant.name];
@@ -423,6 +406,7 @@ async function addPValues(experimentData) {
     }
   }
 }
+/* c8 ignore start */
 
 function getObjectByProperties(array, properties) {
   return array.find((e) => {
@@ -665,6 +649,7 @@ export async function processAudit(auditURL, context, site, days) {
   return processExperimentRUMData(experimentData, context, days);
 }
 
+/* c8 ignore stop */
 export async function postProcessor(auditUrl, auditData, context) {
   const { dataAccess } = context;
   const { Experiment } = dataAccess;
@@ -723,11 +708,26 @@ export async function postProcessor(auditUrl, auditData, context) {
           }
         }
       }
+      // update the existing record in place instead of inserting a duplicate: under v3
+      // (Aurora/PostgREST) Experiment.create is a strict INSERT, so re-running the audit
+      // would violate the unique_site_exp (site_id, exp_id) constraint. v2 (DynamoDB)
+      // create was an upsert, which masked this (SITES-47215).
+      existingExperiment
+        .setName(experimentData.name)
+        .setUrl(experimentData.url)
+        .setStartDate(experimentData.startDate)
+        .setEndDate(experimentData.endDate)
+        .setStatus(experimentData.status)
+        .setType(experimentData.type)
+        .setVariants(experimentData.variants)
+        .setConversionEventName(experimentData.conversionEventName)
+        .setConversionEventValue(experimentData.conversionEventValue);
+      // eslint-disable-next-line no-await-in-loop
+      await existingExperiment.save();
+    } else {
+      // eslint-disable-next-line no-await-in-loop
+      await Experiment.create(experimentData);
     }
-    // eslint-disable-next-line no-await-in-loop
-    await Experiment.create(experimentData);
   }
   log.info(`Experiments data for site ${auditData.siteId} has been upserted`);
 }
-
-/* c8 ignore stop */
