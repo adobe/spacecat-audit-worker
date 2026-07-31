@@ -159,9 +159,12 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 }) {
   const { log } = context;
   const {
-    pageAuthToken, isInternal, selectors = [],
+    pageAuthToken, isInternal, occurrences = [],
   } = options;
   const linkType = isInternal ? 'internal' : 'external';
+  const elementTargets = toElementTargets(
+    occurrences.map((o) => ({ selector: o.selector, textContent: o.text })),
+  );
 
   // Only probe http/https URLs. Non-web schemes (mailto:, tel:, javascript:,
   // sms:, etc.) are not web links — fetch() cannot probe them and they should
@@ -228,7 +231,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
         urlTo: href,
         href: pageUrl,
         status: res.status,
-        ...toElementTargets(selectors),
+        ...elementTargets,
       };
     }
 
@@ -242,7 +245,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
         urlTo: href,
         href: pageUrl,
         status: 0,
-        ...toElementTargets(selectors),
+        ...elementTargets,
       };
     }
 
@@ -302,10 +305,25 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         const anchors = $('a[href]');
         const pageOrigin = new URL(pageUrl).origin;
+        // Map<url, Array<{selector, text}>>
         const internalLinks = new Map();
         const externalLinks = new Map();
 
         log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((i, a) => $(a).attr('href')).get());
+
+        const addOccurrence = (map, url, selector, text) => {
+          // Positive guard: a real a[href] element always yields a selector, so the falsy path is
+          // defensively unreachable.
+          if (selector) {
+            if (!map.has(url)) {
+              map.set(url, []);
+            }
+            const occurrences = map.get(url);
+            if (!occurrences.some((o) => o.selector === selector)) {
+              occurrences.push({ selector, text });
+            }
+          }
+        };
 
         anchors.each((i, a) => {
           const $a = $(a);
@@ -313,20 +331,11 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
             const href = $a.attr('href');
             const abs = new URL(href, pageUrl).toString();
             const selector = getDomElementSelector(a);
+            const text = $a.text().trim();
             if (new URL(abs).origin === pageOrigin) {
-              if (!internalLinks.has(abs)) {
-                internalLinks.set(abs, new Set());
-              }
-              if (selector) {
-                internalLinks.get(abs).add(selector);
-              }
+              addOccurrence(internalLinks, abs, selector, text);
             } else {
-              if (!externalLinks.has(abs)) {
-                externalLinks.set(abs, new Set());
-              }
-              if (selector) {
-                externalLinks.get(abs).add(selector);
-              }
+              addOccurrence(externalLinks, abs, selector, text);
             }
           } catch {
             // skip invalid hrefs
@@ -365,6 +374,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
               urlTo: abs,
               href: pageUrl,
               status: 404,
+              // No textContent here: the anchor was already rewritten server-side to an
+              // <img>, so there is no visible link text left to surface.
               ...toElementTargets([selector].filter(Boolean)),
             };
             if (parsed.origin === pageOrigin) {
@@ -380,13 +391,13 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // Check internal links
         const internalResults = await Promise.all(
           Array.from(internalLinks.entries()).map(
-            ([href, selectorSet]) => limit(() => checkLinkStatus(
+            ([href, occurrences]) => limit(() => checkLinkStatus(
               href,
               pageUrl,
               context,
               {
                 ...options,
-                selectors: [...selectorSet],
+                occurrences,
                 isInternal: true,
               },
             )),
@@ -396,13 +407,13 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // Check external links
         const externalResults = await Promise.all(
           Array.from(externalLinks.entries()).map(
-            ([href, selectorSet]) => limit(() => checkLinkStatus(
+            ([href, occurrences]) => limit(() => checkLinkStatus(
               href,
               pageUrl,
               context,
               {
                 ...options,
-                selectors: [...selectorSet],
+                occurrences,
                 isInternal: false,
               },
             )),

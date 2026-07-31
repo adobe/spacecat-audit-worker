@@ -56,22 +56,18 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
 
   // Use string comparison for check types to avoid dependency on HEADINGS_CHECKS constants
   switch (checkType) {
-    case 'heading-missing-h1': {
-      // Target the main content area where H1 should be added
-      const mainElement = $('body > main').get(0) || $('body').get(0);
-      const selector = getDomElementSelector(mainElement);
-      if (selector) {
-        selectors.push(selector);
-      }
+    case 'heading-missing-h1':
+      // No element to point at since H1 is absent. Attaching a fallback <main>/<body> selector
+      // would be misleading (it isn't the offending element), instead let the recommendation
+      // guide the author.
       break;
-    }
 
     case 'heading-multiple-h1': {
-      // Target all H1 elements
+      // Target all H1 elements, pairing each with its own text
       const h1Elements = $('h1').toArray();
       selectors = h1Elements
-        .map((h1) => getDomElementSelector(h1))
-        .filter(Boolean);
+        .map((h1) => ({ selector: getDomElementSelector(h1), textContent: $(h1).text().trim() }))
+        .filter((pair) => pair.selector);
       break;
     }
 

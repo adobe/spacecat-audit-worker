@@ -217,19 +217,29 @@ export function getDomElementSelector(element) {
  * Universal Editor: { elements: [{ selector: "[data-aue-resource=\"...\"]" }, ...] }
  * Standard CSS: { elements: [{ selector: "body > div.content > a[href=\"...\"]" }, ...] }
  *
- * @param {string|string[]} selectors
+ * Accepts either plain selector strings or `{ selector, textContent }` pairs
+ *
+ * @param {string|string[]|ElementPair|ElementPair[]} selectors - a selector, selector array,
+ *   `{selector, textContent}` pair, or array of pairs.
+ * `ElementPair = {selector: string, textContent?: string}`.
  * @param {number} [limit=Infinity]
- * @returns {{elements?: Array<{selector: string}>}}
+ * @returns {{elements?: Array<{selector: string, textContent?: string}>}}
  */
 export function toElementTargets(selectors, limit = Infinity) {
   if (!selectors) {
     return {};
   }
   const raw = Array.isArray(selectors) ? selectors : [selectors];
+  const normalized = raw
+    .map((item) => (typeof item === 'string' ? { selector: item } : item))
+    .filter((item) => item && item.selector);
+
+  const seenSelectors = new Set();
   const unique = [];
-  raw.forEach((selector) => {
-    if (selector && !unique.includes(selector)) {
-      unique.push(selector);
+  normalized.forEach((item) => {
+    if (!seenSelectors.has(item.selector)) {
+      seenSelectors.add(item.selector);
+      unique.push(item);
     }
   });
 
@@ -239,5 +249,9 @@ export function toElementTargets(selectors, limit = Infinity) {
     return {};
   }
 
-  return { elements: limited.map((selector) => ({ selector })) };
+  return {
+    elements: limited.map(({ selector, textContent }) => (
+      textContent ? { selector, textContent } : { selector }
+    )),
+  };
 }
