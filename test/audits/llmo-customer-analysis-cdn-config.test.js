@@ -313,6 +313,7 @@ describe('CDN Config Handler', () => {
 
       mockConfiguration = {
         enableHandlerForSite: sandbox.stub(),
+        disableHandlerForSite: sandbox.stub(),
         isHandlerEnabledForSite: sandbox.stub().returns(false),
         isHandlerDisabledForOrg: sandbox.stub().returns(false),
         save: sandbox.stub().resolves(),
@@ -350,7 +351,6 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith(
         'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
@@ -461,7 +461,6 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
-      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.calledWith('page-citability', mockSite);
       expect(context.log.info).to.have.been.calledWith(
         'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
         sinon.match({
@@ -497,17 +496,21 @@ describe('CDN Config Handler', () => {
       );
     });
 
-    it('should not enable handlers when the org is disabled at org level', async () => {
+    it('should disable handlers and return early when the org is disabled at org level', async () => {
       const mockOrganization = { getId: sandbox.stub().returns('org-123') };
       context.dataAccess.Organization.findById.resolves(mockOrganization);
       mockConfiguration.isHandlerDisabledForOrg.returns(true);
 
-      const data = { cdnProvider: 'byocdn-fastly' };
+      const data = { cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(mockConfiguration.isHandlerDisabledForOrg).to.have.been.calledWith('cdn-logs-analysis', mockOrganization);
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({});
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(mockConfiguration.save).to.have.been.called;
     });
 

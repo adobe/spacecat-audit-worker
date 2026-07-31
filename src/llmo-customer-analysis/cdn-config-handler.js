@@ -188,21 +188,27 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const baseURL = site.getBaseURL();
   const previousConfig = site.getConfig()?.getLlmoCdnBucketConfig() ?? {};
 
-  if (!cdnProvider) {
-    log.warn('CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting', {
-      siteId,
-      baseURL,
-      before: previousConfig,
-    });
-    // if no cdn provider is provided, remove the bucket configuration
+  const configuration = await Configuration.findLatest();
+  const organization = await Organization.findById(site.getOrganizationId());
+  const cdnHandlers = ['cdn-logs-analysis', 'cdn-logs-report'];
+  const orgDisabled = organization
+    && cdnHandlers.some((h) => configuration.isHandlerDisabledForOrg(h, organization));
+
+  if (!cdnProvider || orgDisabled) {
+    if (!cdnProvider) {
+      log.warn('CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting', {
+        siteId,
+        baseURL,
+        before: previousConfig,
+      });
+    }
     await handleBucketConfiguration(siteId, null, null, context);
-    // disable CDN-derived audits when the CDN configuration is removed
-    const configuration = await Configuration.findLatest();
-    configuration.disableHandlerForSite('cdn-logs-analysis', site);
-    configuration.disableHandlerForSite('cdn-logs-report', site);
-    configuration.disableHandlerForSite('page-citability', site);
+    cdnHandlers.forEach((h) => configuration.disableHandlerForSite(h, site));
     await configuration.save();
-    throw new Error('CDN provider is required for CDN configuration');
+    if (!cdnProvider) {
+      throw new Error('CDN provider is required for CDN configuration');
+    }
+    return;
   }
 
   let pathId;
@@ -231,13 +237,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
     after: pathId ? { orgId: pathId, cdnProvider } : previousConfig,
   });
 
-  const configuration = await Configuration.findLatest();
-  const organization = await Organization.findById(site.getOrganizationId());
-  for (const handlerType of ['cdn-logs-analysis', 'cdn-logs-report']) {
-    if (!(organization && configuration.isHandlerDisabledForOrg(handlerType, organization))) {
-      configuration.enableHandlerForSite(handlerType, site);
-    }
-  }
+  cdnHandlers.forEach((h) => configuration.enableHandlerForSite(h, site));
   await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers
