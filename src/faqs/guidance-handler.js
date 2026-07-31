@@ -354,7 +354,7 @@ async function addSuggestions(
           ...existingData,
           ...newData,
           item: existingData.item,
-          originalItem: existingData.originalItem,
+          originalItem: existingData.originalItem ?? existingData.item,
           isEdited: true,
         };
       }

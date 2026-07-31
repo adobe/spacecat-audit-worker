@@ -235,7 +235,8 @@ export async function processReadabilityOpportunities(context) {
             ...existingData,
             ...newData,
             improvedText: existingData.improvedText,
-            originalImprovedText: existingData.originalImprovedText,
+            originalImprovedText: existingData.originalImprovedText
+              ?? existingData.improvedText,
             isEdited: true,
           };
           // Re-derive transformRules.value from preserved improvedText so it stays

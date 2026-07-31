@@ -251,7 +251,8 @@ export default async function handler(message, context) {
           ...existingData,
           ...newData,
           improvedText: existingData.improvedText,
-          originalImprovedText: existingData.originalImprovedText,
+          originalImprovedText: existingData.originalImprovedText
+            ?? existingData.improvedText,
           suggestionStatus: 'completed',
           isEdited: true,
           mystiqueProcessingCompleted: existingData.mystiqueProcessingCompleted,

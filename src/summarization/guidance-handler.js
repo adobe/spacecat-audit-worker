@@ -73,7 +73,8 @@ async function addSuggestions(
           ...existingData,
           ...newData,
           summarizationText: existingData.summarizationText,
-          originalSummarizationText: existingData.originalSummarizationText,
+          originalSummarizationText: existingData.originalSummarizationText
+            ?? existingData.summarizationText,
           isEdited: true,
         };
       }
