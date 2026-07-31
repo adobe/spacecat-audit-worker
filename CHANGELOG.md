@@ -1,3 +1,10 @@
+## [1.511.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.7...v1.511.8) (2026-07-31)
+
+
+### Bug Fixes
+
+* **cdn-logs:** source cdn bucket config from provisioning-owned values ([#2834](https://github.com/adobe/spacecat-audit-worker/issues/2834)) ([d658d06](https://github.com/adobe/spacecat-audit-worker/commit/d658d0619d34e39dd3a049e4b86b4af945f0c9d0))
+
 ## [1.511.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.6...v1.511.7) (2026-07-30)
 
 
