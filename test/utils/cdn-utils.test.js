@@ -28,6 +28,7 @@ import {
   resolveConsolidatedBucketName,
   resolveSiteCdnRegion,
   getS3Config,
+  siteCatalogKey,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -409,15 +410,15 @@ describe('CDN Utils', () => {
       expect(config.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
       expect(config.siteName).to.equal('example');
       expect(config.siteKey).to.equal('example_com');
-      expect(config.databaseName).to.equal('cdn_logs_example_com');
-      expect(config.tableName).to.equal('aggregated_logs_example_com_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
+      expect(config.databaseName).to.equal('cdn_logs_site_123');
+      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
       expect(config.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated/site-123/');
       expect(config.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated-referral/site-123/');
       expect(config.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
 
-    it('includes subpaths in site-key derived names', () => {
+    it('keeps the base-URL path in siteKey but not in the catalog names', () => {
       const site = {
         getBaseURL: () => 'https://www.example.com/us',
         getId: () => 'site-123',
@@ -435,12 +436,12 @@ describe('CDN Utils', () => {
       const config = getS3Config(site, context);
 
       expect(config.siteKey).to.equal('example_com_us');
-      expect(config.databaseName).to.equal('cdn_logs_example_com_us');
-      expect(config.tableName).to.equal('aggregated_logs_example_com_us_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us_consolidated');
+      expect(config.databaseName).to.equal('cdn_logs_site_123');
+      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
     });
 
-    it('uses double underscores between nested path segments in derived names', () => {
+    it('encodes nested path segments only in siteKey, not the catalog names', () => {
       const site = {
         getBaseURL: () => 'https://www.example.com/us/en',
         getId: () => 'site-123',
@@ -458,9 +459,42 @@ describe('CDN Utils', () => {
       const config = getS3Config(site, context);
 
       expect(config.siteKey).to.equal('example_com_us__en');
-      expect(config.databaseName).to.equal('cdn_logs_example_com_us__en');
-      expect(config.tableName).to.equal('aggregated_logs_example_com_us__en_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us__en_consolidated');
+      expect(config.databaseName).to.equal('cdn_logs_site_123');
+      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
+    });
+
+    it('derives catalog names from the site id with dashes normalized to underscores', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com',
+        getId: () => 'e9aa847d-61df-46ac-b7fe-891a7cc26524',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.databaseName).to.equal('cdn_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
+      expect(config.tableName).to.equal('aggregated_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524_consolidated');
+    });
+  });
+
+  describe('siteCatalogKey', () => {
+    it('normalizes dashes in a UUID site id to underscores', () => {
+      expect(siteCatalogKey('e9aa847d-61df-46ac-b7fe-891a7cc26524'))
+        .to.equal('e9aa847d_61df_46ac_b7fe_891a7cc26524');
+    });
+
+    it('leaves a dashless id unchanged', () => {
+      expect(siteCatalogKey('site123')).to.equal('site123');
     });
   });
 

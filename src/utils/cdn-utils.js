@@ -407,6 +407,10 @@ export function resolveConsolidatedBucketName(context, region) {
   return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
 }
 
+export function siteCatalogKey(siteId) {
+  return String(siteId).replace(/-/g, '_');
+}
+
 export function getS3Config(site, context) {
   const region = resolveSiteCdnRegion(site, context);
   const siteKey = extractSiteKeyFromBaseURL(site);
@@ -414,9 +418,10 @@ export function getS3Config(site, context) {
   const siteName = siteKeyParts[0] === 'www' && siteKeyParts.length > 1 ? siteKeyParts[1] : siteKeyParts[0];
   const bucket = resolveConsolidatedBucketName(context, region);
   const siteId = site?.getId?.();
-  const databaseName = `cdn_logs_${siteKey}`;
-  const tableName = `aggregated_logs_${siteKey}_consolidated`;
-  const referralTableName = `aggregated_referral_logs_${siteKey}_consolidated`;
+  const catalogKey = siteCatalogKey(siteId);
+  const databaseName = `cdn_logs_${catalogKey}`;
+  const tableName = `aggregated_logs_${catalogKey}_consolidated`;
+  const referralTableName = `aggregated_referral_logs_${catalogKey}_consolidated`;
 
   return {
     bucket,

@@ -6019,10 +6019,10 @@ describe('Prerender Audit', () => {
 
     it('should compute siteName correctly when site key starts with www', async () => {
       const shared = await esmock('../../../src/prerender/utils/shared.js', {});
-      const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, {});
+      const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com', getId: () => 'site-adobe' }, {});
       expect(cfg.siteName).to.equal('adobe');
-      expect(cfg.databaseName).to.equal('cdn_logs_adobe_com');
-      expect(cfg.tableName).to.equal('aggregated_logs_adobe_com_consolidated');
+      expect(cfg.databaseName).to.equal('cdn_logs_site_adobe');
+      expect(cfg.tableName).to.equal('aggregated_logs_site_adobe_consolidated');
     });
   });
   describe('Edge Cases and Error Handling', () => {

@@ -26,7 +26,7 @@ use(chaiAsPromised);
 describe('CDN Logs Report Utils', () => {
   let sandbox;
   let mockContext;
-  const referralConfig = getConfigs('test-bucket', 'example_com', 'test-site-id')
+  const referralConfig = getConfigs('test-bucket', 'test-site-id')
     .find((c) => c.name === 'referral');
 
   beforeEach(() => {
@@ -57,6 +57,7 @@ describe('CDN Logs Report Utils', () => {
     it('generates correct S3 config from site', async () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'site-123',
         getConfig: () => createSiteConfig(),
       };
 
@@ -66,7 +67,7 @@ describe('CDN Logs Report Utils', () => {
       expect(config).to.have.property('siteKey', 'example_com');
       expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
       expect(config).to.have.property('region', 'us-east-1');
-      expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
+      expect(config).to.have.property('databaseName', 'cdn_logs_site_123');
     });
 
     it('extracts customer name from domain parts correctly', async () => {
