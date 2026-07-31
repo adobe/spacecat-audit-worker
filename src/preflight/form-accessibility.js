@@ -12,16 +12,22 @@
 
 import { createHash } from 'crypto';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { load as cheerioLoad } from 'cheerio';
 
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey, getObjectMetadataUsingPrefix } from '../utils/s3-utils.js';
 import { generateAccessibilityFilename } from './accessibility.js';
 import { getDomElementSelector } from './utils/dom-selector.js';
 
 export const PREFLIGHT_FORM_ACCESSIBILITY = 'form-accessibility';
+
+// Only accept a Mystique-written result file whose S3 LastModified is at least this old
+// relative to the run start, to avoid reading a stale leftover file from a previous run on the
+// same site+URL+selector (the result key is not run-scoped, and we no longer delete after read).
+// Set far larger than plausible audit-worker↔S3 clock skew and far smaller than a typical
+// inter-run gap; missing LastModified fails open (accept) so it can never introduce a new hang.
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
 
 /**
  * Generates a stable, unique filename for a single form's result file.
@@ -330,31 +336,13 @@ Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
 
     await saveIntermediateResults(context, auditsResult, 'form accessibility audit');
 
-    // Clean up individual form accessibility files after processing
-    try {
-      const filesToDelete = resolvedFormEntries.map(({ form: url, formSource }) => {
-        const filename = generateFormAccessibilityFilename(url, formSource);
-        return `form-accessibility-preflight/${siteId}/${filename}`;
-      });
-
-      log.info(`[preflight-audit] Cleaning up ${filesToDelete.length} individual form accessibility files`);
-
-      const deleteCommand = new DeleteObjectsCommand({
-        Bucket: bucketName,
-        Delete: {
-          Objects: filesToDelete.map((Key) => ({ Key })),
-          Quiet: true,
-        },
-      });
-
-      await s3Client.send(deleteCommand);
-      log.info(`[preflight-audit] ${siteId} Successfully cleaned up ${filesToDelete.length} form accessibility files`);
-    } catch (cleanupError) {
-      log.warn(`[preflight-audit] ${siteId} Failed to clean up form accessibility files: ${cleanupError.message}`);
-      // Don't fail the entire audit if cleanup fails
-    }
+    // NOTE: individual form-accessibility result files are intentionally NOT deleted here.
+    // identify and suggest run concurrently and share this (non-run-scoped) result key; deleting
+    // after read starved whichever step read second, hanging the UI (SITES-49003). Files are
+    // overwritten in place on the next run for the same key; the poll's freshness gate prevents
+    // reading a stale leftover. Bulk lifecycle cleanup of the prefix is an infra follow-up.
   } catch (error) {
-    log.error(`[preflight-audit] ${siteId} not able to delete prefight files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
+    log.error(`[preflight-audit] ${siteId} error processing preflight form accessibility files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
   }
 }
 
@@ -414,8 +402,11 @@ export default async function formAccessibility(context, auditContext) {
     try {
       log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
-      // Check if form accessibility data files exist in S3 using helper function
-      const objectKeys = await getObjectKeysUsingPrefix(
+      // Check if form accessibility data files exist in S3 using helper function.
+      // We fetch LastModified so we only accept files freshly written by THIS run — the result
+      // key is not run-scoped and we no longer delete after read, so a stale leftover file from
+      // a previous run on the same site+URL+selector could otherwise be picked up.
+      const objects = await getObjectMetadataUsingPrefix(
         s3Client,
         bucketName,
         `form-accessibility-preflight/${siteId}/`,
@@ -424,15 +415,21 @@ export default async function formAccessibility(context, auditContext) {
         '.json',
       );
 
+      // Freshness gate: only accept a file written at/after this run started (minus a skew
+      // tolerance). Missing LastModified fails open (accept) so it can never add a new hang.
+      const freshnessThreshold = scrapeStartTime - CLOCK_SKEW_TOLERANCE_MS;
+
       // Check if we have the expected accessibility files
-      const foundFiles = objectKeys.filter((key) => {
+      const foundFiles = objects.filter(({ Key, LastModified }) => {
         // Extract filename from the S3 key
-        const pathParts = key.split('/');
+        const pathParts = Key.split('/');
         const filename = pathParts[pathParts.length - 1];
 
-        // Check if this is one of our expected files
-        return expectedFiles.includes(filename);
-      });
+        // Check if this is one of our expected files AND it is fresh for this run
+        const isExpected = expectedFiles.includes(filename);
+        const isFresh = !LastModified || new Date(LastModified).getTime() >= freshnessThreshold;
+        return isExpected && isFresh;
+      }).map(({ Key }) => Key);
 
       if (foundFiles && foundFiles.length >= expectedFiles.length) {
         log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, form accessibility processing complete`);

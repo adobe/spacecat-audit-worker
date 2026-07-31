@@ -13,7 +13,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../src/utils/s3-utils.js';
+import { getObjectKeysUsingPrefix, getObjectMetadataUsingPrefix, getObjectFromKey } from '../../src/utils/s3-utils.js';
 
 use(chaiAsPromised);
 
@@ -103,6 +103,94 @@ describe('S3 Utility Functions', () => {
 
       try {
         await getObjectKeysUsingPrefix(s3ClientMock, bucketName, prefix, logMock2);
+        throw new Error('Expected an error but none was thrown.');
+      } catch (error) {
+        expect(error).to.be.an('error');
+        expect(error.message).to.equal('S3 error');
+      }
+    });
+  });
+
+  describe('getObjectMetadataUsingPrefix', () => {
+    it('should throw if params are missing', async () => {
+      try {
+        await getObjectMetadataUsingPrefix(null, null, null, logMock);
+        throw new Error('Expected an error but none was thrown.');
+      } catch (error) {
+        expect(error).to.be.an('error');
+        expect(error.message).to.equal('Invalid input parameters in getObjectMetadataUsingPrefix: ensure s3Client, bucketName, and prefix are provided.');
+      }
+    });
+
+    it('should return keys with LastModified, paginating, filtered by keyEndsWith', async () => {
+      const bucketName = 'test-bucket';
+      const prefix = 'form-accessibility-preflight/site-id/';
+      const d1 = new Date('2026-07-31T14:00:00.000Z');
+      const d2 = new Date('2026-07-31T14:01:00.000Z');
+      const d3 = new Date('2026-07-31T14:02:00.000Z');
+
+      const s3ClientStub = { send: sinon.stub() };
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: bucketName,
+          Prefix: prefix,
+          MaxKeys: 100,
+        })))
+        .resolves({
+          NextContinuationToken: 'token',
+          Contents: [
+            { Key: `${prefix}page1.json`, LastModified: d1 },
+            { Key: `${prefix}ignore.txt`, LastModified: d2 }, // filtered out by keyEndsWith
+          ],
+        });
+      s3ClientStub.send
+        .withArgs(sinon.match.instanceOf(ListObjectsV2Command).and(sinon.match.has('input', {
+          Bucket: bucketName,
+          Prefix: prefix,
+          MaxKeys: 100,
+          ContinuationToken: 'token',
+        })))
+        .resolves({
+          Contents: [
+            { Key: `${prefix}page2.json`, LastModified: d3 },
+          ],
+        });
+
+      const objects = await getObjectMetadataUsingPrefix(
+        s3ClientStub,
+        bucketName,
+        prefix,
+        logMock,
+        100,
+        '.json',
+      );
+      expect(objects).to.deep.equal([
+        { Key: `${prefix}page1.json`, LastModified: d1 },
+        { Key: `${prefix}page2.json`, LastModified: d3 },
+      ]);
+    });
+
+    it('should return an empty list when S3 returns no data', async () => {
+      const s3ClientMock = { send: async () => ({ Contents: [] }) };
+      const objects = await getObjectMetadataUsingPrefix(s3ClientMock, 'b', 'p', logMock);
+      expect(objects).to.deep.equal([]);
+    });
+
+    it('should log an error and rethrow when the S3 call fails', async () => {
+      const bucketName = 'test-bucket';
+      const prefix = 'test-prefix';
+      const s3ClientMock = {
+        send: async () => { throw new Error('S3 error'); },
+      };
+      const logMock2 = {
+        debug: () => {},
+        error: (msg, err) => {
+          expect(msg).to.equal(`Error while fetching S3 object metadata using bucket ${bucketName} and prefix ${prefix}`);
+          expect(err.message).to.equal('S3 error');
+        },
+      };
+      try {
+        await getObjectMetadataUsingPrefix(s3ClientMock, bucketName, prefix, logMock2);
         throw new Error('Expected an error but none was thrown.');
       } catch (error) {
         expect(error).to.be.an('error');
