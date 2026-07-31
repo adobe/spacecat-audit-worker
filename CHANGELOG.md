@@ -1,3 +1,10 @@
+## [1.511.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.8...v1.511.9) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** stop form-accessibility identify/suggest racing on the shared S3 result key (SITES-49003) ([#2839](https://github.com/adobe/spacecat-audit-worker/issues/2839)) ([173cb45](https://github.com/adobe/spacecat-audit-worker/commit/173cb45e55a8765ec8fd5d314f4a00411f235cd0)), closes [#2](https://github.com/adobe/spacecat-audit-worker/issues/2)
+
 ## [1.511.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.7...v1.511.8) (2026-07-31)
 
 
