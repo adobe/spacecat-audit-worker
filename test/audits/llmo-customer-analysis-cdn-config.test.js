@@ -435,6 +435,9 @@ describe('CDN Config Handler', () => {
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.not.have.been.called;
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
     });
 
     it('should ignore customer-supplied bucketName/allowedPaths/region for commerce-fastly', async () => {
@@ -511,6 +514,10 @@ describe('CDN Config Handler', () => {
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN_CONFIG_ORG_DISABLED: CDN handlers disabled for a disabled organization',
+        sinon.match({ siteId: 'site-123', cdnProvider: 'commerce-fastly' }),
+      );
       expect(mockConfiguration.save).to.have.been.called;
     });
 

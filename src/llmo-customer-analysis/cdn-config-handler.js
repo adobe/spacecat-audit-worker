@@ -211,6 +211,13 @@ export async function handleCdnBucketConfigChanges(context, data) {
         baseURL,
         before: previousConfig,
       });
+    } else {
+      log.info('CDN_CONFIG_ORG_DISABLED: CDN handlers disabled for a disabled organization', {
+        siteId,
+        baseURL,
+        cdnProvider,
+        before: previousConfig,
+      });
     }
     await handleBucketConfiguration(siteId, null, null, null, null, context);
     cdnHandlers.forEach((h) => configuration.disableHandlerForSite(h, site));
