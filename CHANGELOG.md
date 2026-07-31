@@ -1,3 +1,10 @@
+## [1.511.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.9...v1.511.10) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** scope form-accessibility opportunityId per step + gate stale result reads (SITES-49003) ([#2840](https://github.com/adobe/spacecat-audit-worker/issues/2840)) ([2f89c71](https://github.com/adobe/spacecat-audit-worker/commit/2f89c713b0762e70b40ccd09f005bf402c5186a3)), closes [#2](https://github.com/adobe/spacecat-audit-worker/issues/2)
+
 ## [1.511.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.8...v1.511.9) (2026-07-31)
 
 
