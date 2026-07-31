@@ -1,3 +1,10 @@
+## [1.511.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.10...v1.511.11) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** run form-accessibility in the identify step only (SITES-49003) ([#2841](https://github.com/adobe/spacecat-audit-worker/issues/2841)) ([4d05583](https://github.com/adobe/spacecat-audit-worker/commit/4d05583a6f0131cccfd0a1105c21cd180895153a))
+
 ## [1.511.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.9...v1.511.10) (2026-07-31)
 
 
