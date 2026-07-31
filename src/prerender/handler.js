@@ -12,22 +12,21 @@
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { detectBotBlocker, filterBySiteScope } from '@adobe/spacecat-shared-utils';
-import { subDays } from 'date-fns';
+import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl, getAgenticHitsMapFromAthena } from '../utils/agentic-urls.js';
+import { getAgenticHitsMapFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   buildSuggestionKey,
+  findPrerenderOpportunity,
   getS3Path,
   isDomainWideSuggestionData,
   isPathSuggestionData,
   isPaidLLMOCustomer,
-  mergeAndGetUniqueHtmlUrls,
   normalizePathnameWithQuery,
   readSiteStatusJson,
   toPathname,
@@ -37,28 +36,11 @@ import {
   markSuggestionsAsCoveredByPaths,
   mergePathSuggestionData,
 } from './path-suggestions/main.js';
-import {
-  CONTENT_GAIN_THRESHOLD,
-  DAILY_BATCH_SIZE,
-  DOMAIN_WIDE_SUGGESTION_KEY,
-  MAX_ACTIVE_SUGGESTIONS,
-  TOP_AGENTIC_URLS_LIMIT,
-  TOP_ORGANIC_URLS_LIMIT,
-  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
-} from './utils/constants.js';
+import { CONTENT_GAIN_THRESHOLD, DOMAIN_WIDE_SUGGESTION_KEY } from './utils/constants.js';
 import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
-
-function rebaseUrl(url, preferredBase, log) {
-  try {
-    const { pathname, search, hash } = new URL(url);
-    return new URL(pathname + search + hash, preferredBase).toString();
-  } catch (e) {
-    log?.warn?.(`rebaseUrl failed url=${url} base=${preferredBase}: ${e.message}`);
-    return url;
-  }
-}
+import { submitForScraping } from './submit-for-scraping.js';
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -77,8 +59,6 @@ const getDomainWideSuggestionUrl = (baseUrl) => {
   return `${baseUrl.replace(/\/$/, '')}/* (${label})`;
 };
 
-/** Skip re-scraping when status.json records a confirmed sticky block within this window. */
-const DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000;
 const STICKY_BOT_FORBIDDEN_RATIO = 0.5;
 
 /** CDN bot blockers (aligned with content-scraper detectBotProtection). */
@@ -92,22 +72,6 @@ function isKnownBotBlockerResult({ crawlable, confidence, type }) {
   return !crawlable
     && confidence >= 0.99
     && KNOWN_BOT_BLOCKER_TYPES.includes(type);
-}
-
-/**
- * @param {string} siteId
- * @param {Object} context
- * @returns {Promise<boolean>}
- */
-function isStickyBotBlocked(status) {
-  if (!status.scrapeForbidden || !status.scrapeForbiddenSince) {
-    return false;
-  }
-  const sinceMs = Date.parse(status.scrapeForbiddenSince);
-  if (Number.isNaN(sinceMs)) {
-    return false;
-  }
-  return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
 }
 
 /**
@@ -131,17 +95,6 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
- * Finds the site's existing PRERENDER opportunity (NEW status), if one exists.
- * @param {Object} dataAccess - Data access layer
- * @param {string} siteId - Site ID to look up the opportunity
- * @returns {Promise<Object|null>}
- */
-async function findPrerenderOpportunity(dataAccess, siteId) {
-  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
-  return opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
-}
-
-/**
  * Diagnostic: detects and warns if any non-NEW suggestions have edgeDeployed set.
  * This should never happen — edgeDeployed is set when a URL is deployed at the CDN edge,
  * and the suggestion status should not be changed away from NEW after that point.
@@ -162,24 +115,6 @@ async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) 
   if (count > 0) {
     log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${siteId}, nonNewEdgeDeployedCount=${count}`);
   }
-}
-
-/**
- * Counts non-OUTDATED suggestions on the site's existing PRERENDER opportunity. Used to cap
- * how many URLs a domain can have actively tracked (LLMO-6533/LLMO-6638): once a domain
- * accumulates MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, new URLs stop being submitted
- * for scraping until some are resolved (and outdated) or manually cleared.
- * @param {Object} dataAccess - Data access layer
- * @param {string} siteId - Site ID to look up the opportunity
- * @returns {Promise<number>}
- */
-async function getActiveSuggestionCount(dataAccess, siteId) {
-  const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
-  if (!opportunity) {
-    return 0;
-  }
-  const suggestions = await opportunity.getSuggestions?.() ?? [];
-  return suggestions.filter((s) => s.getStatus() !== Suggestion.STATUSES.OUTDATED).length;
 }
 
 /**
@@ -316,93 +251,6 @@ function findPreservableDomainWideSuggestion(existingSuggestions, log) {
   }
 
   return preservable || null;
-}
-
-async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT) {
-  const { dataAccess, log, site } = context;
-  let topPagesUrls = [];
-  try {
-    const { SiteTopPage } = dataAccess || {};
-    if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, limit);
-    }
-  } catch (error) {
-    log.warn(`${LOG_PREFIX} Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
-  }
-  return topPagesUrls;
-}
-
-async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  try {
-    return await getTopAgenticLiveUrlsFromAthena(site, context, limit);
-  } catch (e) {
-    context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
-    return [];
-  }
-}
-
-function normalizePathname(url) {
-  try {
-    const { pathname } = new URL(url);
-    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Returns pathnames from siteStatus pages processed within the configured recent window.
- * @param {Object} siteStatus - siteStatus object with a pages array
- * @returns {Set<string>}
- */
-function getRecentlyProcessedPathnames(siteStatus) {
-  const pages = Array.isArray(siteStatus?.pages) ? siteStatus.pages : [];
-  const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
-  const pathnames = new Set();
-  for (const p of pages) {
-    if (p.scrapedAt && new Date(p.scrapedAt) >= recentWindowStart && p.url) {
-      const pathname = normalizePathnameWithQuery(p.url);
-      if (pathname) {
-        pathnames.add(pathname);
-      }
-    }
-  }
-  return pathnames;
-}
-
-/**
- * Returns a Set of URL pathnames whose suggestions are already deployed at the CDN edge
- * (individual `edgeDeployed` timestamp) or covered by an active domain-wide deployment
- * (`coveredByDomainWide` pointing to a domain-wide suggestion that still has `edgeDeployed`).
- * These URLs gain nothing from re-scraping and are excluded from the daily batch.
- * @param {Object} context - Audit context with dataAccess and log
- * @param {string} siteId - Site identifier
- * @returns {Promise<Set<string>>}
- */
-function getEdgeDeployedPathnames(status) {
-  const pages = Array.isArray(status.pages) ? status.pages : [];
-  const pathnames = new Set();
-  for (const p of pages) {
-    if (p.isDeployedAtEdge && p.url) {
-      try {
-        const { pathname } = new URL(p.url);
-        pathnames.add(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
-      } catch { /* skip malformed URLs */ }
-    }
-  }
-  return pathnames;
-}
-
-/**
- * Returns true when the URL's pathname is NOT in the set of recently processed pathnames.
- * URLs that cannot be parsed are treated as not recent (included by default).
- * @param {string} url
- * @param {Set<string>} recentPathnames
- * @returns {boolean}
- */
-function isNotRecentUrl(url, recentPathnames) {
-  return !recentPathnames.has(normalizePathnameWithQuery(url));
 }
 
 /**
@@ -552,220 +400,6 @@ export async function importTopPages(context) {
         : {}),
       generatePrompts: generatePromptsFlag,
     },
-  };
-}
-
-/**
- * Step 2: Submit URLs for scraping OR skip if in ai-only mode
- * @param {Object} context - Audit context with site and dataAccess
- * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
- */
-export async function submitForScraping(context) {
-  const {
-    site,
-    log,
-    data,
-    auditContext,
-    dataAccess,
-  } = context;
-
-  // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
-  const mode = getModeFromData(data);
-  if (isAiOnlyMode(mode)) {
-    log.info(`${LOG_PREFIX} Detected ${mode} mode in step 2, skipping scraping (already handled in step 1)`);
-    return { status: 'skipped', mode };
-  }
-
-  const siteId = site.getId();
-  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
-  const preferredBase = getPreferredBaseUrl(site, context);
-  const siteBaseUrl = site.getBaseURL();
-
-  if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
-    const { urls: mergedCsvUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-      rebasedCsvUrls,
-      { includeQueryParams: true },
-    );
-    const explicitUrls = filterBySiteScope(mergedCsvUrls, siteBaseUrl);
-    const scopeFilteredCount = mergedCsvUrls.length - explicitUrls.length;
-
-    log.info(`
-    ${LOG_PREFIX} prerender_submit_scraping_metrics:
-    submittedUrls=${explicitUrls.length},
-    agenticUrls=0,
-    topPagesUrls=0,
-    includedURLs=0,
-    filteredOutUrls=${filteredCount},
-    scopeFilteredUrls=${scopeFilteredCount},
-    baseUrl=${site.getBaseURL()},
-    siteId=${siteId},
-    csvUrls=${auditContext.urls.length},`);
-
-    return {
-      urls: explicitUrls.map((url) => ({ url })),
-      siteId,
-      processingType: AUDIT_TYPE,
-      maxScrapeAge: 0,
-      options: {
-        pageLoadTimeout: 20000,
-        storagePrefix: AUDIT_TYPE,
-      },
-      auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
-    };
-  }
-
-  const siteStatus = await readSiteStatusJson(siteId, context);
-
-  // Sticky domain bot-block from status.json (Slack runs bypass so operators can force a re-scrape)
-  if (!isSlackTriggered && isStickyBotBlocked(siteStatus)) {
-    log.info(`${LOG_PREFIX} Sticky scrapeForbidden within ${DOMAIN_STICKY_BOT_SKIP_MS / 86400000}d window, skipping. baseUrl=${site.getBaseURL()}, siteId=${siteId}, blockedSince=${siteStatus.scrapeForbiddenSince}`);
-    return {
-      urls: [],
-      siteId,
-      processingType: AUDIT_TYPE,
-      maxScrapeAge: 0,
-      options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-      auditContext: { domainBlocked: true },
-    };
-  }
-
-  // Domain-wide suggestion cap (LLMO-6533/LLMO-6638): once a domain has accumulated
-  // MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, stop submitting new URLs for scraping.
-  const activeSuggestionCount = await getActiveSuggestionCount(dataAccess, siteId);
-  if (activeSuggestionCount >= MAX_ACTIVE_SUGGESTIONS) {
-    log.info(`${LOG_PREFIX} Active suggestion count (${activeSuggestionCount}) has reached the limit of ${MAX_ACTIVE_SUGGESTIONS}, skipping new URL submission. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-    return {
-      urls: [],
-      siteId,
-      processingType: AUDIT_TYPE,
-      maxScrapeAge: 0,
-      options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-      auditContext: { ...auditContext, suggestionLimitReached: true },
-    };
-  }
-
-  const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
-  const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
-    .map((url) => rebaseUrl(url, preferredBase, log));
-
-  let finalUrls;
-  let filteredCount;
-  let scopeFilteredCount = 0;
-  let agenticUrlsCount = 0;
-  let currentAgentic = 0;
-  let currentOrganic;
-  let currentIncludedUrls;
-  let isFirstRunOfCycle;
-  let agenticNewThisCycle = 0;
-  let edgeDeployedPathnames = new Set();
-
-  if (isSlackTriggered) {
-    // Dedup each source independently: organic uses pathname-only dedup (tracking params stay
-    // collapsed), included uses pathname+search so CSV query-param variants are preserved.
-    const {
-      urls: organicSlackDeduped, filteredCount: organicSlackFiltered,
-    } = mergeAndGetUniqueHtmlUrls(rebasedTopPagesUrls);
-    const {
-      urls: includedSlackDeduped,
-      filteredCount: includedSlackFiltered,
-    } = mergeAndGetUniqueHtmlUrls(rebasedIncludedURLs, { includeQueryParams: true });
-    const { urls: crossSlackDeduped } = mergeAndGetUniqueHtmlUrls(
-      [...organicSlackDeduped, ...includedSlackDeduped],
-      { includeQueryParams: true },
-    );
-    // Single site-scope filter on the merged candidate set (scoped here, not per-source).
-    finalUrls = filterBySiteScope(crossSlackDeduped, siteBaseUrl);
-    scopeFilteredCount = crossSlackDeduped.length - finalUrls.length;
-    filteredCount = organicSlackFiltered + includedSlackFiltered;
-    currentOrganic = organicSlackDeduped.length;
-    currentIncludedUrls = includedSlackDeduped.length;
-    isFirstRunOfCycle = true;
-  } else {
-    // getTopAgenticUrls internally handles errors and returns [] on failure
-    const agenticUrls = await getTopAgenticUrls(site, context);
-    agenticUrlsCount = agenticUrls.length;
-
-    // Daily batching: filter URLs recently processed within the rolling recent window
-    const recentPathnames = getRecentlyProcessedPathnames(siteStatus);
-    edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
-
-    const filteredOrganicUrls = rebasedTopPagesUrls
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
-    const filteredIncludedURLs = rebasedIncludedURLs
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
-    const filteredAgenticUrls = agenticUrls
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
-
-    const hasRecentOrganic = filteredOrganicUrls.length !== rebasedTopPagesUrls.length;
-    isFirstRunOfCycle = !hasRecentOrganic;
-    agenticNewThisCycle = filteredAgenticUrls.length;
-
-    // Dedup each source independently before merging: organic/agentic use pathname-only
-    // dedup (tracking params get collapsed), included uses pathname+search so CSV
-    // query-param variants (e.g. /page?filter=a vs /page?filter=b) are preserved.
-    const {
-      urls: organicDeduped, filteredCount: organicFiltered,
-    } = mergeAndGetUniqueHtmlUrls(filteredOrganicUrls);
-    const {
-      urls: includedDeduped, filteredCount: includedFiltered,
-    } = mergeAndGetUniqueHtmlUrls(filteredIncludedURLs, { includeQueryParams: true });
-    const {
-      urls: agenticDeduped, filteredCount: agenticFiltered,
-    } = mergeAndGetUniqueHtmlUrls(filteredAgenticUrls);
-    filteredCount = organicFiltered + includedFiltered + agenticFiltered;
-
-    const { urls: crossDeduped } = mergeAndGetUniqueHtmlUrls(
-      [...organicDeduped, ...includedDeduped, ...agenticDeduped],
-      { includeQueryParams: true },
-    );
-    // Single site-scope filter on the merged candidate set, applied before the daily-batch
-    // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
-    const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
-    scopeFilteredCount = crossDeduped.length - scopedUrls.length;
-    const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
-
-    const organicUrlSet = new Set(organicDeduped);
-    const includedUrlSet = new Set(includedDeduped);
-    currentOrganic = batchedUrls.filter((url) => organicUrlSet.has(url)).length;
-    currentIncludedUrls = batchedUrls.filter((url) => includedUrlSet.has(url)).length;
-    currentAgentic = batchedUrls.filter(
-      (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
-    ).length;
-
-    finalUrls = batchedUrls;
-  }
-
-  log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
-    submittedUrls=${finalUrls.length},
-    agenticUrls=${agenticUrlsCount},
-    topPagesUrls=${rebasedTopPagesUrls.length},
-    includedURLs=${rebasedIncludedURLs.length},
-    filteredOutUrls=${filteredCount},
-    scopeFilteredUrls=${scopeFilteredCount},
-    currentAgentic=${currentAgentic},
-    currentOrganic=${currentOrganic},
-    currentIncludedUrls=${currentIncludedUrls},
-    isFirstRunOfCycle=${isFirstRunOfCycle},
-    agenticNewThisCycle=${agenticNewThisCycle},
-    edgeDeployedUrls=${edgeDeployedPathnames.size},
-    baseUrl=${site.getBaseURL()},
-    siteId=${siteId}`);
-
-  return {
-    urls: finalUrls.map((url) => ({ url })),
-    siteId,
-    processingType: AUDIT_TYPE,
-    maxScrapeAge: 0,
-    options: {
-      pageLoadTimeout: 20000,
-      storagePrefix: AUDIT_TYPE,
-    },
-    auditContext: { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   };
 }
 

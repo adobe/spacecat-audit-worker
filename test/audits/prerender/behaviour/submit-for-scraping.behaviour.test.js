@@ -14,33 +14,36 @@
  * Behavioural contracts: submitForScraping (Step 2)
  *
  * submitForScraping decides which URLs get submitted to the scraper for a given
- * audit run. It has four early-exit gates, checked in this order — each one
+ * audit run. It has three early-exit gates, checked in this order — each one
  * returns immediately without falling through to URL candidate discovery:
  *
  *   1. AI-only mode (context.data.mode === 'ai-only')
  *        -> { status: 'skipped', mode }, no S3/DB access at all.
  *   2. Explicit CSV urls (auditContext.urls present and non-empty)
  *        -> dedups + scope-filters only that list. Bypasses every gate below
- *           (sticky bot block, suggestion cap) and never touches organic/
- *           included/agentic sources.
+ *           (sticky bot block) and never touches organic/included/agentic
+ *           sources or the suggestion cap.
  *   3. Sticky bot block (non-Slack runs only): status.json has scrapeForbidden
  *      with scrapeForbiddenSince inside a 3-day window
  *        -> { urls: [], auditContext: { domainBlocked: true } }.
  *        Slack-triggered runs bypass this so operators can force a re-scrape.
- *   4. Active suggestion cap (LLMO-6533/LLMO-6638): the site's PRERENDER
- *      opportunity already has >= MAX_ACTIVE_SUGGESTIONS non-OUTDATED
- *      suggestions
- *        -> { urls: [], auditContext: { suggestionLimitReached: true } }.
- *        Applies to both Slack- and non-Slack-triggered automatic runs (unlike
- *        the sticky bot block, there is no Slack bypass). OUTDATED suggestions
- *        never count toward the cap, and opportunities of a different type are
- *        ignored.
  *
  * When no gate trips, candidate URLs are assembled from organic (SEO top
  * pages), included (site config), and — non-Slack runs only — agentic (CDN
  * traffic) sources, then deduped and scope-filtered. Non-Slack runs are also
  * sliced to DAILY_BATCH_SIZE; Slack-triggered runs (without explicit urls)
  * submit the full merged set instead and skip agentic sourcing entirely.
+ *
+ * Active suggestion cap (LLMO-6533/LLMO-6638) — applied as a final filter,
+ * automatic runs only: once the site's PRERENDER opportunity has >=
+ * MAX_ACTIVE_SUGGESTIONS non-OUTDATED suggestions, any candidate URL that
+ * does NOT already match an active per-URL suggestion is dropped from the
+ * batch; URLs that already have an active suggestion keep being resubmitted
+ * so they can still be re-verified (and eventually go OUTDATED/FIXED, letting
+ * the count fall back below the cap on its own). CSV and Slack-triggered runs
+ * are explicit operator actions and are never subject to this filter. OUTDATED
+ * suggestions never count toward the cap, and opportunities of a different
+ * type are ignored.
  *
  * The return shape is always:
  *   { urls: [{ url }], siteId, processingType: 'prerender', maxScrapeAge: 0,
@@ -56,7 +59,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { submitForScraping } from '../../../../src/prerender/handler.js';
+import { submitForScraping } from '../../../../src/prerender/submit-for-scraping.js';
 import { MAX_ACTIVE_SUGGESTIONS, DAILY_BATCH_SIZE } from '../../../../src/prerender/utils/constants.js';
 import {
   buildContext,
@@ -73,7 +76,7 @@ use(sinonChai);
 
 /** Loads submitForScraping with Athena stubbed to return a fixed agentic URL list. */
 async function withAgenticUrls(agenticUrls = []) {
-  return esmock('../../../../src/prerender/handler.js', {
+  return esmock('../../../../src/prerender/submit-for-scraping.js', {
     '../../../../src/utils/agentic-urls.js': {
       getTopAgenticLiveUrlsFromAthena: async () => agenticUrls,
     },
@@ -81,8 +84,8 @@ async function withAgenticUrls(agenticUrls = []) {
 }
 
 /** Builds a lightweight suggestion stub — cheap enough to create thousands of. */
-function suggestionStub(status) {
-  return { getStatus: () => status };
+function suggestionStub(status, url) {
+  return { getStatus: () => status, getData: () => (url ? { url } : {}) };
 }
 
 describe('Prerender behaviour — submitForScraping', () => {
@@ -215,7 +218,7 @@ describe('Prerender behaviour — submitForScraping', () => {
       expect(result.auditContext?.domainBlocked).to.be.undefined;
     });
 
-    it('bypasses the active suggestion cap gate', async () => {
+    it('bypasses the active suggestion cap filter, even for a brand-new URL', async () => {
       const siteId = 'csv-bypass-cap';
       const opportunity = buildOpportunity(sandbox, {
         siteId,
@@ -227,13 +230,12 @@ describe('Prerender behaviour — submitForScraping', () => {
       const ctx = buildContext(sandbox, {
         site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        auditContext: { urls: ['https://example.com/page-1'] },
+        auditContext: { urls: ['https://example.com/brand-new-page'] },
       });
 
       const result = await submitForScraping(ctx);
 
-      expect(result.urls).to.deep.equal([{ url: 'https://example.com/page-1' }]);
-      expect(result.auditContext?.suggestionLimitReached).to.be.undefined;
+      expect(result.urls).to.deep.equal([{ url: 'https://example.com/brand-new-page' }]);
     });
   });
 
@@ -296,32 +298,33 @@ describe('Prerender behaviour — submitForScraping', () => {
     });
   });
 
-  describe('gate 4: active suggestion cap (LLMO-6533/LLMO-6638)', () => {
-    it('blocks new URL submission once non-OUTDATED suggestions reach the cap', async () => {
+  describe('active suggestion cap filter (LLMO-6533/LLMO-6638, automatic runs only)', () => {
+    it('drops a brand-new candidate URL once non-OUTDATED suggestions reach the cap, but lets an existing-suggestion URL through', async () => {
+      const mockHandler = await withAgenticUrls();
       const siteId = 'capped-site';
       const opportunity = buildOpportunity(sandbox, {
         siteId,
-        suggestions: Array.from(
-          { length: MAX_ACTIVE_SUGGESTIONS },
-          () => suggestionStub('NEW'),
-        ),
+        suggestions: [
+          suggestionStub('NEW', 'https://example.com/existing-page'),
+          ...Array.from({ length: MAX_ACTIVE_SUGGESTIONS - 1 }, () => suggestionStub('NEW')),
+        ],
       });
       const ctx = buildContext(sandbox, {
         site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
         dataAccess: buildDataAccess(sandbox, {
           opportunities: [opportunity],
-          topPages: ['https://example.com/should-not-be-submitted'],
+          topPages: ['https://example.com/existing-page', 'https://example.com/brand-new-page'],
         }),
       });
 
-      const result = await submitForScraping(ctx);
+      const result = await mockHandler.submitForScraping(ctx);
+      const urls = result.urls.map((u) => u.url);
 
-      expect(result.urls).to.deep.equal([]);
-      expect(result.auditContext).to.deep.include({ suggestionLimitReached: true });
-      expect(ctx.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+      expect(urls).to.include('https://example.com/existing-page');
+      expect(urls).to.not.include('https://example.com/brand-new-page');
     });
 
-    it('does not count OUTDATED suggestions toward the cap', async () => {
+    it('does not count OUTDATED suggestions toward the cap, so under-cap runs are not filtered', async () => {
       const mockHandler = await withAgenticUrls();
       const siteId = 'mixed-status-site';
       const opportunity = buildOpportunity(sandbox, {
@@ -345,10 +348,10 @@ describe('Prerender behaviour — submitForScraping', () => {
       const result = await mockHandler.submitForScraping(ctx);
 
       expect(result.urls.map((u) => u.url)).to.include('https://example.com/still-submitted');
-      expect(result.auditContext?.suggestionLimitReached).to.be.undefined;
     });
 
-    it('applies to Slack-triggered runs too — unlike the sticky bot block, there is no bypass', async () => {
+    it('does not apply to Slack-triggered runs — like CSV, they are an explicit operator action', async () => {
+      const mockHandler = await withAgenticUrls();
       const siteId = 'capped-slack-site';
       const opportunity = buildOpportunity(sandbox, {
         siteId,
@@ -359,17 +362,19 @@ describe('Prerender behaviour — submitForScraping', () => {
       });
       const ctx = buildContext(sandbox, {
         site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
+        dataAccess: buildDataAccess(sandbox, {
+          opportunities: [opportunity],
+          topPages: ['https://example.com/brand-new-page'],
+        }),
         auditContext: { slackContext: { channelId: 'C0123' } },
       });
 
-      const result = await submitForScraping(ctx);
+      const result = await mockHandler.submitForScraping(ctx);
 
-      expect(result.urls).to.deep.equal([]);
-      expect(result.auditContext).to.deep.include({ suggestionLimitReached: true });
+      expect(result.urls.map((u) => u.url)).to.include('https://example.com/brand-new-page');
     });
 
-    it('ignores opportunities of a different type when computing the count', async () => {
+    it('ignores opportunities of a different type when computing the cap', async () => {
       const mockHandler = await withAgenticUrls();
       const siteId = 'other-type-site';
       const otherOpportunity = buildOpportunity(sandbox, {
@@ -614,7 +619,7 @@ describe('Prerender behaviour — submitForScraping', () => {
 
   describe('agentic source resilience', () => {
     it('non-Slack: Athena failure for agentic URLs does not block organic/included submission', async () => {
-      const mockHandler = await esmock('../../../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../../src/prerender/submit-for-scraping.js', {
         '../../../../src/utils/agentic-urls.js': {
           getTopAgenticLiveUrlsFromAthena: async () => {
             throw new Error('athena down');
