@@ -183,7 +183,16 @@ export async function detectFormAccessibility(context, auditContext) {
         time: new Date().toISOString(),
         data: {
           url: previewUrls[0], // M expects url in the data object for forms opportunity
-          opportunityId: siteId,
+          // Scope the opportunity to THIS preflight step+run, not the site. Mystique keys
+          // its shared `opportunities/{opportunityId}/opportunity.json` on this value
+          // (read-modify-written during detection). The MFE submits the identify and
+          // suggest steps concurrently as two separate jobs; when both sent
+          // opportunityId=siteId they collided on that one file (last-writer-wins), and a
+          // detection task could stall past the ~600s poll — SITES-49003 (race #2). The
+          // per-step jobId is unique per run, so each step gets its own opportunity file.
+          // The S3 result key we poll is unaffected (it is keyed on siteId+URL+formSource,
+          // not opportunityId), so this needs no Mystique change.
+          opportunityId: jobId,
           a11y: urlsToDetect,
         },
         options: {
@@ -218,7 +227,12 @@ export async function detectFormAccessibility(context, auditContext) {
 /**
  * Step 2: Process detected form accessibility issues and create opportunities
  */
-export async function processFormAccessibilityOpportunities(context, auditContext, formEntries) {
+export async function processFormAccessibilityOpportunities(
+  context,
+  auditContext,
+  formEntries,
+  freshnessThreshold,
+) {
   const {
     site, job, log, env, s3Client,
   } = context;
@@ -251,6 +265,30 @@ export async function processFormAccessibilityOpportunities(context, auditContex
     || previewUrls.map((url) => ({ form: url, formSource: 'form' }));
 
   try {
+    // When invoked from the main runner we get the freshness threshold the poll used.
+    // Build the set of result files that are fresh for THIS run, so that after a poll
+    // timeout we never read a stale leftover from a previous run: we no longer delete
+    // result files, and the key is not run-scoped, so a same-key file from an earlier
+    // run on the same site+URL+selector can otherwise linger and be served as if fresh
+    // (SITES-49003). Missing LastModified fails open (accept), consistent with the poll.
+    let freshKeys = null;
+    if (freshnessThreshold != null) {
+      const objects = await getObjectMetadataUsingPrefix(
+        s3Client,
+        bucketName,
+        `form-accessibility-preflight/${siteId}/`,
+        log,
+        100,
+        '.json',
+      );
+      freshKeys = new Set(
+        objects
+          .filter(({ LastModified }) => !LastModified
+            || new Date(LastModified).getTime() >= freshnessThreshold)
+          .map(({ Key }) => Key),
+      );
+    }
+
     // Process each detected form's accessibility result file (a page can have
     // more than one entry when it has multiple forms)
     for (const { form: url, formSource } of resolvedFormEntries) {
@@ -261,9 +299,15 @@ export async function processFormAccessibilityOpportunities(context, auditContex
         const fileKey = `form-accessibility-preflight/${siteId}/${filename}`;
         log.info(`[preflight-audit] ${siteId}  Processing form accessibility file: ${fileKey}`);
 
-        // Get the accessibility result file from S3 using existing utility
-        // eslint-disable-next-line no-await-in-loop
-        const accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
+        // Only read a result file this run actually produced. On a poll timeout with no
+        // fresh file, skip rather than serve a previous run's stale result (SITES-49003).
+        let accessibilityData = null;
+        if (freshKeys && !freshKeys.has(fileKey)) {
+          log.warn(`[preflight-audit] ${siteId} Skipping stale/missing form accessibility file for ${url} at key: ${fileKey} (not written by this run)`);
+        } else {
+          // eslint-disable-next-line no-await-in-loop
+          accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
+        }
 
         if (!accessibilityData) {
           log.warn(`[preflight-audit] ${siteId} No form accessibility data found for ${url} at key: ${fileKey}`);
@@ -477,5 +521,10 @@ export default async function formAccessibility(context, auditContext) {
   log.info(`[preflight-audit] ${siteId} Polling completed, proceeding to process form accessibility data`);
 
   // Step 2: Process scraped data and create opportunities
-  await processFormAccessibilityOpportunities(context, auditContext, formEntries);
+  await processFormAccessibilityOpportunities(
+    context,
+    auditContext,
+    formEntries,
+    scrapeStartTime - CLOCK_SKEW_TOLERANCE_MS,
+  );
 }

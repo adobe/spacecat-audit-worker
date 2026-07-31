@@ -127,6 +127,11 @@ describe('Preflight Form Accessibility Audit', () => {
 
         expect(message.data.url).to.equal('https://example.com/page1');
 
+        // opportunityId must be the per-step jobId, NOT the siteId — otherwise the
+        // concurrent identify + suggest steps collide on the same shared Mystique
+        // opportunity.json and one stalls (SITES-49003 race #2).
+        expect(message.data.opportunityId).to.equal('job-123');
+
         expect(message.data.a11y).to.deep.equal([
           { form: 'https://example.com/page1', formSource: 'form' },
           { form: 'https://example.com/page2', formSource: 'form' },
@@ -584,6 +589,47 @@ describe('Preflight Form Accessibility Audit', () => {
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] site-123 No form accessibility data found for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json',
         );
+      });
+
+      it('skips a stale result file (freshness gate) instead of serving previous-run data (SITES-49003)', async () => {
+        const { processFormAccessibilityOpportunities } = await import('../../src/preflight/form-accessibility.js');
+
+        // A result file left on the shared key by an earlier run (we no longer delete),
+        // written before THIS run started. With a freshnessThreshold set, it must be
+        // rejected and never read — otherwise a poll timeout would serve stale results.
+        const runStartThreshold = Date.now();
+        const staleModified = new Date(runStartThreshold - 10 * 60 * 1000); // 10 min ago
+        let getObjectCalled = false;
+
+        s3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'ListObjectsV2Command') {
+            return Promise.resolve({
+              Contents: [
+                { Key: 'form-accessibility-preflight/site-123/example_com_page1.json', LastModified: staleModified },
+                { Key: 'form-accessibility-preflight/site-123/example_com_page2.json', LastModified: staleModified },
+              ],
+            });
+          }
+          if (command.constructor.name === 'GetObjectCommand') {
+            getObjectCalled = true;
+            return Promise.resolve({
+              Body: { transformToString: sinon.stub().resolves(JSON.stringify({ a11yIssues: [] })) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        await processFormAccessibilityOpportunities(context, auditContext, undefined, runStartThreshold);
+
+        expect(log.warn).to.have.been.calledWith(
+          '[preflight-audit] site-123 Skipping stale/missing form accessibility file for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json (not written by this run)',
+        );
+        // The stale file is never read, and no opportunities are produced from it.
+        expect(getObjectCalled).to.be.false;
+        const page1 = auditContext.audits
+          .get('https://example.com/page1').audits
+          .find((a) => a.name === 'form-accessibility');
+        expect(page1.opportunities).to.have.lengthOf(0);
       });
 
       it('should add timing information to execution breakdown', async () => {
@@ -1936,8 +1982,9 @@ describe('Preflight Form Accessibility Audit', () => {
       // Verify that polling continued and eventually succeeded
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
       expect(log.info).to.have.been.calledWith('[preflight-audit] site-123 Polling completed, proceeding to process form accessibility data');
-      // Verify that both polling attempts were made
-      expect(pollCallCount).to.equal(2);
+      // Two polling attempts (error then success) + one processor-side freshness re-check
+      // (getObjectMetadataUsingPrefix) before reading the result files — SITES-49003.
+      expect(pollCallCount).to.equal(3);
     });
 
     it('should handle foundFiles', async () => {
@@ -1983,8 +2030,9 @@ describe('Preflight Form Accessibility Audit', () => {
       // Verify that polling continued and eventually succeeded
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
       expect(log.info).to.have.been.calledWith('[preflight-audit] site-123 Polling completed, proceeding to process form accessibility data');
-      // Verify that both polling attempts were made
-      expect(pollCallCount).to.equal(2);
+      // Two polling attempts (empty then success) + one processor-side freshness re-check
+      // (getObjectMetadataUsingPrefix) before reading the result files — SITES-49003.
+      expect(pollCallCount).to.equal(3);
     });
   });
 
