@@ -479,6 +479,20 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(edited.transformRules.value).to.equal('Customer edited.');
       expect(edited.transformRules.op).to.equal('replace');
 
+      // isEdited without originalImprovedText → bootstrap from improvedText
+      const bootstrap = mergeDataFunction(
+        {
+          improvedText: 'Customer edited.',
+          isEdited: true,
+          rank: 5,
+          transformRules: { value: 'Old.', op: 'replace', selector: 'p' },
+        },
+        { improvedText: 'Regenerated.', rank: 30 },
+      );
+      expect(bootstrap.isEdited).to.equal(true);
+      expect(bootstrap.originalImprovedText).to.equal('Customer edited.');
+      expect(bootstrap.transformRules.value).to.equal('Customer edited.');
+
       // neither flag → normal merge
       const merged = mergeDataFunction(
         { improvedText: 'Old.' },
