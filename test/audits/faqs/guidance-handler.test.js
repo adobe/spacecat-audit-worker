@@ -1800,6 +1800,31 @@ describe('FAQs guidance handler', () => {
     expect(result.selector).to.equal('body');
   });
 
+  it('should bootstrap originalItem from item for pre-existing edited suggestions (LLMO-6537)', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const mergeDataFn = syncSuggestionsStub.getCall(0).args[0].mergeDataFunction;
+
+    const result = mergeDataFn(
+      {
+        item: { question: 'Edited Q?', answer: 'Edited A.' },
+        isEdited: true,
+        // originalItem intentionally absent (pre-existing suggestion)
+      },
+      { item: { question: 'Regenerated?', answer: 'Regenerated.' } },
+    );
+
+    expect(result.isEdited).to.equal(true);
+    expect(result.item.question).to.equal('Edited Q?');
+    expect(result.originalItem.question).to.equal('Edited Q?');
+  });
+
   describe('Related URLs week fallback (LLMO-5035)', () => {
     const HEADER_ROW_VALUES = [
       undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
