@@ -39,7 +39,7 @@ export default async function handler(message, context) {
     const wrappedGuidance = { recommendations: guidance };
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
-    await addSuggestions(opportunity, suggestions);
+    await addSuggestions(opportunity, suggestions, context);
     await opportunity.save();
     log.debug(`[Form Opportunity] [Site Id: ${siteId}] high-page-views-low-form-views guidance updated oppty: ${JSON.stringify(opportunity, null, 2)}`);
   }
