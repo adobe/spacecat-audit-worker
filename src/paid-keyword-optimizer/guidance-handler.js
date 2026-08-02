@@ -123,9 +123,19 @@ export default async function handler(message, context) {
   }
 
   // Create the opportunity (1 per URL)
-  const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
+  const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message, auditResult);
   const opportunity = await Opportunity.create(entity);
   paidLog.createdOpportunity(siteId, url, opportunity.getId());
+
+  log.info({
+    site_id: siteId,
+    url,
+    audit_id: auditId,
+    has_whats_likely_happening: entity.data.whatsLikelyHappening != null,
+    has_recommended_action: entity.data.recommendedAction != null,
+    has_landing_page_metrics: entity.data.landingPageMetrics != null,
+    recommended_action_clusters: entity.data.recommendedAction?.totalClusters ?? 0,
+  }, '[ad-intent-mismatch] opportunity field population');
 
   // Assign composite ranks to clusters
   const rankedClusters = assignClusterRanks(clusterResults);
