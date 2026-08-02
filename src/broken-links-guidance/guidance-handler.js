@@ -150,10 +150,24 @@ export default async function handler(message, context) {
       cleanedUrls,
       effectiveBaseURL,
     );
+
+    // Drop root-domain fallbacks (homepage with no meaningful path).
+    // When Mystique can't access site content it falls back to the base URL,
+    // which passes filterBrokenSuggestedUrls (it returns 200) but is always
+    // worse than the parent-path fallback that runs below.
+    const nonRootSuggestedUrls = filteredSuggestedUrls.filter((url) => {
+      try {
+        const { pathname } = new URL(url);
+        return pathname !== '/' && pathname !== '';
+      } catch {
+        return true;
+      }
+    });
+
     const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
       ? existingData.urlsSuggested.filter(Boolean)
       : [];
-    let nextSuggestedUrls = filteredSuggestedUrls;
+    let nextSuggestedUrls = nonRootSuggestedUrls;
     if (nextSuggestedUrls.length === 0) {
       if (existingSuggestedUrls.length > 0) {
         nextSuggestedUrls = existingSuggestedUrls;
@@ -164,6 +178,12 @@ export default async function handler(message, context) {
         if (parentFallback) {
           log.info(`[${opportunity.getType()}] Using parent path fallback: ${parentFallback} (broken: ${brokenUrl})`);
           nextSuggestedUrls = [parentFallback];
+        } else if (filteredSuggestedUrls.length > 0) {
+          // No valid parent path exists — restore Mystique's homepage suggestion since it
+          // may be intentional (e.g. the entire section was removed) and is better than
+          // hardcoding the base URL with no context from Mystique
+          log.info(`[${opportunity.getType()}] No parent path found, keeping Mystique's root-domain suggestion (broken: ${brokenUrl})`);
+          nextSuggestedUrls = filteredSuggestedUrls;
         } else {
           nextSuggestedUrls = [effectiveBaseURL];
         }
@@ -185,6 +205,14 @@ export default async function handler(message, context) {
       log.info('No suggested URLs provided by Mystique');
       aiRationale = existingSuggestedUrls.length > 0
         ? existingData.aiRationale || undefined : undefined;
+    } else if (
+      nonRootSuggestedUrls.length === 0
+      && filteredSuggestedUrls.length > 0
+      && !filteredSuggestedUrls.includes(nextSuggestedUrls[0])
+    ) {
+      // Mystique suggested only the homepage but we replaced it with a parent path:
+      // Mystique's rationale was written about the homepage, not the parent path, so drop it
+      aiRationale = undefined;
     }
 
     // Preserve factId from Mystique enrichment (autofix bridge)
