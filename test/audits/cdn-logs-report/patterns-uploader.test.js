@@ -593,6 +593,8 @@ describe('generateReferralCategoryRules', () => {
     const result = await generateReferralCategoryRules(options);
 
     expect(result).to.be.false;
+    // Rule-fetch error short-circuits before the corpus fetch too.
+    expect(mockFetchReferralTopUrls).to.not.have.been.called;
     expect(mockAnalyzeProducts).to.not.have.been.called;
     expect(mockReplaceRules).to.not.have.been.called;
     expect(options.context.log.info).to.have.been.calledWith(
@@ -610,6 +612,9 @@ describe('generateReferralCategoryRules', () => {
     const result = await generateReferralCategoryRules(options);
 
     expect(result).to.be.false;
+    // The existing-rules check runs BEFORE the corpus fetch, so a site that
+    // already has rules never pays the fetchReferralTopUrls partitioned scan.
+    expect(mockFetchReferralTopUrls).to.not.have.been.called;
     expect(mockAnalyzeProducts).to.not.have.been.called;
     // Rules already persisted — the whole-site replace RPC must NOT run again
     // (it would churn provenance + purge soft-deletes).
