@@ -17,11 +17,11 @@ export function getConfigs(bucket, siteId) {
     {
       name: 'agentic',
       aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
-      tableName: `aggregated_logs_${catalogKey}_consolidated`,
+      tableName: `aggregated_logs_${catalogKey}`,
     },
     {
       name: 'referral',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
-      tableName: `aggregated_referral_logs_${catalogKey}_consolidated`,
+      tableName: `aggregated_referral_logs_${catalogKey}`,
     }];
 }

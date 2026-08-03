@@ -47,12 +47,12 @@ describe('CDN Logs Report Handler', function test() {
   const agenticConfig = {
     name: 'agentic',
     aggregatedLocation: 's3://bucket/aggregated/test-site/agentic/',
-    tableName: 'aggregated_logs_example_com_consolidated',
+    tableName: 'aggregated_logs_example_com',
   };
   const referralConfig = {
     name: 'referral',
     aggregatedLocation: 's3://bucket/aggregated/test-site/referral/',
-    tableName: 'aggregated_referral_logs_example_com_consolidated',
+    tableName: 'aggregated_referral_logs_example_com',
   };
 
   const runAudit = (auditContext = {}) => handler.runner('https://example.com', context, site, auditContext);

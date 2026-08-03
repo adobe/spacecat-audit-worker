@@ -411,8 +411,8 @@ describe('CDN Utils', () => {
       expect(config.siteName).to.equal('example');
       expect(config.siteKey).to.equal('example_com');
       expect(config.databaseName).to.equal('cdn_logs_site_123');
-      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
+      expect(config.tableName).to.equal('aggregated_logs_site_123');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123');
       expect(config.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated/site-123/');
       expect(config.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated-referral/site-123/');
       expect(config.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
@@ -437,8 +437,8 @@ describe('CDN Utils', () => {
 
       expect(config.siteKey).to.equal('example_com_us');
       expect(config.databaseName).to.equal('cdn_logs_site_123');
-      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
+      expect(config.tableName).to.equal('aggregated_logs_site_123');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123');
     });
 
     it('encodes nested path segments only in siteKey, not the catalog names', () => {
@@ -460,8 +460,8 @@ describe('CDN Utils', () => {
 
       expect(config.siteKey).to.equal('example_com_us__en');
       expect(config.databaseName).to.equal('cdn_logs_site_123');
-      expect(config.tableName).to.equal('aggregated_logs_site_123_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123_consolidated');
+      expect(config.tableName).to.equal('aggregated_logs_site_123');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_site_123');
     });
 
     it('derives catalog names from the site id with dashes normalized to underscores', () => {
@@ -482,8 +482,8 @@ describe('CDN Utils', () => {
       const config = getS3Config(site, context);
 
       expect(config.databaseName).to.equal('cdn_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
-      expect(config.tableName).to.equal('aggregated_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524_consolidated');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524_consolidated');
+      expect(config.tableName).to.equal('aggregated_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
     });
   });
 

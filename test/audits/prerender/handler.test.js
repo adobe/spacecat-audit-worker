@@ -6023,7 +6023,7 @@ describe('Prerender Audit', () => {
       const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com', getId: () => 'site-adobe' }, {});
       expect(cfg.siteName).to.equal('adobe');
       expect(cfg.databaseName).to.equal('cdn_logs_site_adobe');
-      expect(cfg.tableName).to.equal('aggregated_logs_site_adobe_consolidated');
+      expect(cfg.tableName).to.equal('aggregated_logs_site_adobe');
     });
   });
   describe('Edge Cases and Error Handling', () => {

@@ -569,8 +569,8 @@ describe('LLM Error Pages Utils', () => {
       expect(result.siteKey).to.equal('example_com');
       expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_test_site_id');
-      expect(result.tableName).to.equal('aggregated_logs_test_site_id_consolidated');
-      expect(result.referralTableName).to.equal('aggregated_referral_logs_test_site_id_consolidated');
+      expect(result.tableName).to.equal('aggregated_logs_test_site_id');
+      expect(result.referralTableName).to.equal('aggregated_referral_logs_test_site_id');
     });
 
     it('should use site region when configured', () => {
