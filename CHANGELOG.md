@@ -1,3 +1,10 @@
+# [1.513.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.512.0...v1.513.0) (2026-08-03)
+
+
+### Features
+
+* **autofix:** honor isEdited for summarization, readability & FAQs (LLMO-6537) ([#2833](https://github.com/adobe/spacecat-audit-worker/issues/2833)) ([6de8b3e](https://github.com/adobe/spacecat-audit-worker/commit/6de8b3e34628869789006aa4a30e9edac31c24af)), closes [#2803](https://github.com/adobe/spacecat-audit-worker/issues/2803)
+
 # [1.512.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.13...v1.512.0) (2026-08-03)
 
 
