@@ -7,6 +7,31 @@
 
 ---
 
+> ### Update 2026-08-03 — a simpler path now exists (see §5, Option 0)
+>
+> This plan (2026-07-17) assumed **no Semrush citation-data surface existed** yet — hence
+> Options 1 & 2 both *build* one (a new SR AI Visibility endpoint, or a direct v4-raw
+> Element client). That premise is now **outdated.**
+>
+> A **Semrush-backed Serenity URL-Inspector data surface is live** (feature flag
+> `url-inspector-sr` = Green/Done, elmo [PR #2349](https://github.com/adobe/project-elmo-ui/pull/2349)).
+> It already exposes exactly what off-site needs, per brand + platform + date range:
+>
+> - `GET .../serenity/brand-presence/url-inspector/cited-domains` — one row per cited
+>   hostname (citations / URLs / prompts counts).
+> - `GET .../serenity/brand-presence/url-inspector/domain-urls?hostname=…` — the per-URL
+>   drilldown within a hostname, with citation counts.
+>
+> Consumed today in `project-elmo-ui` via `src/api/serenityApi.ts` +
+> `src/hooks/url-inspector-sr/`. See the wiki
+> [Project Serenity: LLMO × Semrush API for Brand Presence Data](https://wiki.corp.adobe.com/spaces/AEMSites/pages/3928196548).
+>
+> **Recommended approach is now "Option 0": reuse these live endpoints** rather than build
+> a new one. Options 1 & 2 below are retained as historical alternatives. Tracked under
+> epic [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488).
+
+---
+
 ## 1. Goal
 
 Today the `offsite-brand-presence` audit selects the cited URLs it feeds to DRS
@@ -117,7 +142,43 @@ drives the choice between Option 1 and Option 2 below.
 
 ## 5. Implementation options — easiest → hardest
 
-### Option 1 — HTTP via SR AI Visibility (snapshot). **Easiest. Recommended default.**
+### Option 0 — Reuse the live Serenity URL-Inspector data surface. **RECOMMENDED — supersedes Options 1 & 2.**
+
+The Semrush cited-URL data is **already exposed and consumed by the UI** (see the
+2026-08-03 update banner). Off-site should consume the same two endpoints instead of
+building a new backend surface:
+
+- `cited-domains` → cited hostnames + citation/URL/prompt counts (dominant content type).
+- `domain-urls?hostname=…` → the per-URL list within a hostname, with citation counts.
+
+**Flow (mirrors today's selection, feeds the existing DRS path unchanged):**
+
+1. Call `cited-domains` (scoped by brand + `platform` + `startDate`/`endDate`) to get the
+   cited hostnames and their rollups.
+2. Call `domain-urls?hostname=youtube.com` and `hostname=reddit.com`, plus the top
+   third-party hostnames (exclude owned + `wikipedia.org`), collecting enough rows to fill
+   70 per bucket (`DRS_URLS_LIMIT`).
+3. Build `allUrls: Map<url, { count, domain }>` with `count = citations`, shaped **exactly**
+   like today's `extractUrlsAndTopics` output, then run the existing
+   `classifyAndNormalize` → `selectTopUrls` → DRS path unchanged.
+
+**Why this supersedes 1 & 2:**
+
+- **vs Option 1** — no new `spacecat-api-service` endpoint to build; the surface exists and
+  is production-validated by the `url-inspector-sr` dashboard.
+- **vs Option 2** — no direct v4-raw Semrush client, no API-key/workspace/element-id secret
+  management in the worker; the endpoints already take a `startDate`/`endDate` range
+  (weekly window), so the rolling-window concern that motivated Option 2 is addressed.
+
+**Open items** (carried into the child tickets under LLMO-6488): where the surface is served
+(LLMO gateway — **not** spacecat-api-service's serenity controller, which is prompts/markets
+only) and the server-to-server auth for calling it from the audit-worker; region + platform
+param mapping; per-URL prompt attribution (`url-prompts`) and topic/category enrichment; and
+shadow-run parity before cutover.
+
+---
+
+### Option 1 — HTTP via SR AI Visibility (snapshot). **Superseded by Option 0** (kept for history).
 
 Reuse the Semrush integration already wired into `spacecat-api-service` (gRPC
 transport, auth, normalization). The audit-worker calls a new HTTP endpoint.
@@ -222,7 +283,7 @@ The worker has **no** SR/Semrush client today (confirmed) — add a thin HTTP cl
 
 ---
 
-### Option 2 — v4-raw Element API (weekly range). **Hardest. Needed for 100% behavioral replacement.**
+### Option 2 — v4-raw Element API (weekly range). **Superseded by Option 0** (kept for history; was "needed for 100% behavioral replacement" when no proxied range surface existed).
 
 Use Semrush's Element-level API directly — the same data the URL Inspector UI shows,
 and the **only** path that supports a true weekly rolling window
@@ -297,39 +358,46 @@ Returned per-URL fields (`domain-urls`): `urlId`, `url`, `contentType`,
 
 ## 6. Recommendation & difficulty ladder
 
-| | Option 1 — HTTP / SR snapshot | Option 2 — Element API / weekly |
-|---|---|---|
-| Difficulty | **Low** | **High** |
-| Reuses existing Semrush transport/auth | Yes | No |
-| Time window | Monthly/daily snapshot | True weekly range (matches today) |
-| Behavioral parity with today | Approximate (snapshot) | 100% (rolling window) |
-| New secrets/config | Minimal | Semrush key + workspace/element ids + region→project map |
-| Retrieval hops | 1 endpoint | 2 (domains → urls) for top-cited |
+| | **Option 0 — live Serenity URL-Inspector** | Option 1 — HTTP / SR snapshot | Option 2 — Element API / weekly |
+|---|---|---|---|
+| Difficulty | **Lowest** | Low | High |
+| New backend endpoint to build | **None (already live)** | New SR AI Visibility endpoint | Direct v4-raw client |
+| Time window | Range (`startDate`/`endDate`) | Monthly/daily snapshot | True weekly range |
+| Behavioral parity with today | Range-based (matches today) | Approximate (snapshot) | 100% (rolling window) |
+| New secrets/config | Server-to-server auth to the surface | Minimal | Semrush key + workspace/element ids + region→project map |
+| Retrieval hops | 2 (domains → urls) for top-cited | 1 endpoint | 2 (domains → urls) for top-cited |
 
-- **Start with Option 1 (union / Option B category).** Simplest, reuses everything,
-  ships behind a flag; accept snapshot semantics.
-- **Escalate to Option 2 only if** weekly freshness / exact rolling-window parity is
-  required.
-- Both feed the **same** `classifyAndNormalize` → `selectTopUrls` → DRS path; the
-  only difference is the loader module and the time-window semantics.
+- **Use Option 0.** The cited-URL data surface already exists, is production-validated by
+  the `url-inspector-sr` dashboard, and takes a date range — so it needs no new backend
+  endpoint (Option 1) and no direct Semrush client with secret management (Option 2).
+- Options 1 & 2 are retained only as historical alternatives; revisit them only if Option 0's
+  surface turns out to be unavailable server-to-server or missing a required field.
+- All three feed the **same** `classifyAndNormalize` → `selectTopUrls` → DRS path; the only
+  difference is the loader module and the retrieval transport.
 
 ---
 
-## 7. Rollout
+## 7. Rollout (Option 0)
 
-1. Land backend endpoint (Option 1) + tests.
-2. Land worker loader + flag (`useSemrushSource`, per-site/env).
+1. Confirm the `serenity/brand-presence/url-inspector/{cited-domains,domain-urls}` surface
+   is reachable server-to-server from the audit-worker (auth) — LLMO-6707 / loader ticket.
+2. Land worker loader + flag (`useSemrushSource`, per-site/env) — LLMO-6709.
 3. **Shadow-run**: compute Semrush top-70 (youtube/reddit/cited) and diff against the
-   current SharePoint-selected set for a known site; confirm parity with the URL
-   Inspector view already validated.
-4. Cut over per site; retire the SharePoint read once parity holds.
+   current PostgREST/SharePoint-selected set for a known site; confirm parity with the URL
+   Inspector view already validated — LLMO-6711.
+4. Cut over per site; retire the SharePoint/PostgREST off-site read once parity holds.
 
 ---
 
 ## 8. Open decisions
 
-- [ ] Category: **Option B (union)** [recommended] vs Option A (`MENTIONS_TARGET`).
-- [ ] Window: **monthly snapshot (Option 1)** [recommended] vs weekly range (Option 2).
-- [ ] Topic enrichment on the Semrush path: drop vs backfill.
-- [ ] Union mechanics: two-call merge vs `UNSPECIFIED` minus owned (confirm gRPC).
-- [ ] Option 2 only: exact `CBF_*` column for third-party hostname scoping.
+- [ ] **Approach: Option 0 (reuse live Serenity URL-Inspector)** [recommended] vs the
+      historical Options 1 / 2.
+- [ ] Where the surface is served + server-to-server auth from the audit-worker.
+- [ ] Region + platform param mapping (`ACCEPTED_REGIONS` ↔ region, `platform=search-gpt`).
+- [ ] Per-URL prompt attribution: backfill via `url-prompts` vs invert vs drop.
+- [ ] Topic/category enrichment on the Semrush path: drop vs backfill.
+
+> Tracked under epic [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488): LLMO-6707
+> (this doc update), LLMO-6709 (loader), LLMO-6710 (region/platform mapping), LLMO-6712
+> (prompt attribution), LLMO-6708 (topic enrichment), LLMO-6711 (parity + cutover).
