@@ -420,7 +420,7 @@ export function getS3Config(site, context) {
   const siteKeyParts = siteKey.split(/[._]/);
   const siteName = siteKeyParts[0] === 'www' && siteKeyParts.length > 1 ? siteKeyParts[1] : siteKeyParts[0];
   const bucket = resolveConsolidatedBucketName(context, region);
-  const siteId = site?.getId?.();
+  const siteId = site.getId();
   const catalogKey = siteCatalogKey(siteId);
   const databaseName = `cdn_logs_${catalogKey}`;
   const tableName = `aggregated_logs_${catalogKey}`;

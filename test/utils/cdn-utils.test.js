@@ -467,7 +467,7 @@ describe('CDN Utils', () => {
     it('derives catalog names from the site id with dashes normalized to underscores', () => {
       const site = {
         getBaseURL: () => 'https://www.example.com',
-        getId: () => 'e9aa847d-61df-46ac-b7fe-891a7cc26524',
+        getId: () => '11111111-2222-3333-4444-555555555555',
         getConfig: () => ({
           getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
         }),
@@ -481,16 +481,16 @@ describe('CDN Utils', () => {
 
       const config = getS3Config(site, context);
 
-      expect(config.databaseName).to.equal('cdn_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
-      expect(config.tableName).to.equal('aggregated_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
-      expect(config.referralTableName).to.equal('aggregated_referral_logs_e9aa847d_61df_46ac_b7fe_891a7cc26524');
+      expect(config.databaseName).to.equal('cdn_logs_11111111_2222_3333_4444_555555555555');
+      expect(config.tableName).to.equal('aggregated_logs_11111111_2222_3333_4444_555555555555');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_11111111_2222_3333_4444_555555555555');
     });
   });
 
   describe('siteCatalogKey', () => {
     it('normalizes dashes in a UUID site id to underscores', () => {
-      expect(siteCatalogKey('e9aa847d-61df-46ac-b7fe-891a7cc26524'))
-        .to.equal('e9aa847d_61df_46ac_b7fe_891a7cc26524');
+      expect(siteCatalogKey('11111111-2222-3333-4444-555555555555'))
+        .to.equal('11111111_2222_3333_4444_555555555555');
     });
 
     it('leaves a dashless id unchanged', () => {
