@@ -23,6 +23,7 @@ import {
   isExcludedCitedHost,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
+  resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
   DRS_URLS_LIMIT,
@@ -778,6 +779,9 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  * @param {boolean} [enableBrandProfile] - Forwarded so the analysis audits triggered once DRS
  *   scraping completes (see drs-status-handler.js) still resolve the flag originally
  *   requested on Slack, instead of losing it across the scrape round-trip.
+ * @param {number} [urlLimit] - Forwarded so the analysis audits triggered once DRS scraping
+ *   completes (see drs-status-handler.js) still resolve the urlLimit originally requested
+ *   on Slack, instead of losing it across the scrape round-trip.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -788,6 +792,7 @@ async function scheduleDrsStatusPoll(
   threadTs,
   drsStartedAt,
   enableBrandProfile,
+  urlLimit,
 ) {
   const { sqs, dataAccess, log } = context;
 
@@ -813,6 +818,7 @@ async function scheduleDrsStatusPoll(
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
       drsStartedAt,
       ...(enableBrandProfile != null && { enableBrandProfile }),
+      ...(urlLimit != null && { urlLimit }),
     },
   }, null, pollIntervalSeconds);
 
@@ -847,6 +853,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
   // scraping completes, so a Slack-requested flag survives the scrape round-trip.
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
+  const urlLimit = resolveForwardedUrlLimit(auditContext, log, LOG_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -963,6 +970,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         threadTs,
         drsStartedAt,
         enableBrandProfile,
+        urlLimit,
       );
     } catch (err) {
       log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);

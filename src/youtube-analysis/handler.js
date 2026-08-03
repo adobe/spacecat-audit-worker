@@ -21,6 +21,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
   requestOffsiteScrape,
   buildAnalysisScrapeStatusMessage,
@@ -147,6 +148,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
+  const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, LOG_PREFIX);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -242,7 +244,14 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping YouTube URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'youtube.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -274,7 +283,14 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'starting a DRS scrape for youtube.com, will analyze automatically when it finishes.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'youtube.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
