@@ -1,3 +1,31 @@
+## [1.511.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.11...v1.511.12) (2026-08-01)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2842](https://github.com/adobe/spacecat-audit-worker/issues/2842)) ([789e6a0](https://github.com/adobe/spacecat-audit-worker/commit/789e6a030e231cc13c62a2f02712ce50614efcc3))
+
+## [1.511.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.10...v1.511.11) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** run form-accessibility in the identify step only (SITES-49003) ([#2841](https://github.com/adobe/spacecat-audit-worker/issues/2841)) ([4d05583](https://github.com/adobe/spacecat-audit-worker/commit/4d05583a6f0131cccfd0a1105c21cd180895153a))
+
+## [1.511.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.9...v1.511.10) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** scope form-accessibility opportunityId per step + gate stale result reads (SITES-49003) ([#2840](https://github.com/adobe/spacecat-audit-worker/issues/2840)) ([2f89c71](https://github.com/adobe/spacecat-audit-worker/commit/2f89c713b0762e70b40ccd09f005bf402c5186a3)), closes [#2](https://github.com/adobe/spacecat-audit-worker/issues/2)
+
+## [1.511.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.8...v1.511.9) (2026-07-31)
+
+
+### Bug Fixes
+
+* **preflight:** stop form-accessibility identify/suggest racing on the shared S3 result key (SITES-49003) ([#2839](https://github.com/adobe/spacecat-audit-worker/issues/2839)) ([173cb45](https://github.com/adobe/spacecat-audit-worker/commit/173cb45e55a8765ec8fd5d314f4a00411f235cd0)), closes [#2](https://github.com/adobe/spacecat-audit-worker/issues/2)
+
 ## [1.511.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.7...v1.511.8) (2026-07-31)
 
 

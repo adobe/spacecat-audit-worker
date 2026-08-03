@@ -192,6 +192,20 @@ export const preflightAudit = async (context) => {
       }),
     )).filter(Boolean);
 
+    // form-accessibility is a Mystique round-trip that produces IDENTICAL output in both the
+    // identify and suggest steps (suggest adds GenVar suggestions only to other checks — never
+    // to form-a11y). The MFE submits both steps concurrently, so running it in both launches two
+    // concurrent Mystique detect crews that deadlock (both assemble issues, neither finalizes),
+    // hanging the UI's form-accessibility card to the ~600s timeout (SITES-49003). Run it in the
+    // identify step only: the MFE renders the form-a11y card purely from the identify result
+    // (a11yDetail reads the opportunity, no suggest-side slot), so nothing is lost. Excluding it
+    // here also drops it from the advertised `checks` metadata, so the MFE does not wait for a
+    // form-a11y result in the suggest step. (A suggest-only run — not the normal MFE flow — will
+    // therefore not produce form-a11y; identify covers it in every real preflight run.)
+    if (step === PREFLIGHT_STEP_SUGGEST) {
+      enabledChecks = enabledChecks.filter((audit) => audit !== AUDIT_FORM_ACCESSIBILITY);
+    }
+
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
