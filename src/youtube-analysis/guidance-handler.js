@@ -25,7 +25,9 @@ import {
   resolveEvergreenOffsiteOpportunity,
   isSuppressedRun,
 } from '../common/offsite-refresh.js';
-import { createOffsiteLogger, AUDIT, PEER } from '../utils/offsite-logging.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
@@ -68,8 +70,8 @@ export default async function handler(message, context) {
   });
 
   if (data?.error) {
-    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`, {
-      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error',
+    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     return noContent();
   }
@@ -87,8 +89,8 @@ export default async function handler(message, context) {
         peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      olog.failure('analysis_fetch', `Error fetching from presigned URL: ${error.message}`, {
-        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), errorName: error.name,
+      olog.failure('analysis_fetch', 'Error fetching from presigned URL', {
+        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
@@ -191,8 +193,8 @@ export default async function handler(message, context) {
         peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
       });
     } catch (error) {
-      ologOpp.failure('suggestion_sync', `Failed to sync suggestions: ${error.message}`, {
-        peer: PEER.POSTGRES, direction: 'outbound', errorName: error.name,
+      ologOpp.failure('suggestion_sync', 'Failed to sync suggestions', {
+        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
       });
       throw error;
     }
@@ -234,7 +236,9 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    olog.failure('guidance_complete', `Error processing YouTube analysis: ${error.message}`, { errorName: error.name });
+    // Intentional drill-down: a failure already logged by an inner event (e.g. suggestion_sync)
+    // will also surface here as guidance_complete outcome=failure — the terminal, per-run marker.
+    olog.failure('guidance_complete', 'Error processing YouTube analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

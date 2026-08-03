@@ -20,7 +20,7 @@ import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../offsite-brand-presence/constants.js';
-import { PEER } from './offsite-logging.js';
+import { PEER, errorField } from './offsite-logging.js';
 
 export const MYSTIQUE_URLS_LIMIT = 50;
 
@@ -471,8 +471,8 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
         { peer: PEER.DRS, direction: 'outbound', datasetId },
       );
     } catch (error) {
-      olog?.warn('drs_availability', `DRS lookup failed for datasetId=${datasetId}: ${error.message}, skipping`, {
-        peer: PEER.DRS, direction: 'outbound', datasetId, errorName: error.name,
+      olog?.warn('drs_availability', `DRS lookup failed for datasetId=${datasetId}, skipping`, {
+        peer: PEER.DRS, direction: 'outbound', datasetId, ...errorField(error),
       });
     }
   }
@@ -522,13 +522,13 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
     olog?.warn(
       'url_limit_resolve',
       `Invalid urlLimit in auditContext (${JSON.stringify(raw)}), using default ${MYSTIQUE_URLS_LIMIT}`,
-      { reason: 'invalid' },
+      { reason: 'invalid', urlLimit: MYSTIQUE_URLS_LIMIT },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
     olog?.debug('url_limit_resolve', `urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`, {
-      requested: n, cap: MYSTIQUE_URLS_LIMIT,
+      requested: n, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT,
     });
     return MYSTIQUE_URLS_LIMIT;
   }
@@ -616,8 +616,8 @@ export async function requestOffsiteScrape(
       peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope,
     });
   } catch (error) {
-    olog?.warn('scrape_request', `Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`, {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, errorName: error.name,
+    olog?.warn('scrape_request', `Failed to request DRS scrape for '${domainScope}' (site ${siteId})`, {
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...errorField(error),
     });
   }
 }

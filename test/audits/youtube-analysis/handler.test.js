@@ -775,7 +775,9 @@ describe('YouTube Analysis Handler', function () {
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message: SQS Error'));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)

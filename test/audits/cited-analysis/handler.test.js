@@ -1142,7 +1142,9 @@ describe('Cited Analysis Handler', function () {
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message: SQS Error'));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     it('should post a Slack failure message when SQS send fails and slackContext is present', async () => {

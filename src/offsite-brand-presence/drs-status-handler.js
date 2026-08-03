@@ -15,7 +15,7 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_TERMINAL_STATUSES,
@@ -75,8 +75,8 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
-    olog.warn('cooldown_check', `Failed to check recent ${auditType} audit for site ${siteId}: ${err.message}`, {
-      peer: PEER.SPACECAT, direction: 'inbound', auditType, errorName: err.name,
+    olog.warn('cooldown_check', `Failed to check recent ${auditType} audit for site ${siteId}`, {
+      peer: PEER.SPACECAT, direction: 'inbound', auditType, ...errorField(err),
     });
     return false;
   }
@@ -247,8 +247,8 @@ async function triggerAnalysisAudits(
       });
       handled.push(type);
     } catch (err) {
-      olog.warn('analysis_dispatch', `Failed to trigger ${type} analysis audit for site ${siteId}: ${err.message}`, {
-        peer: PEER.SQS, direction: 'outbound', auditType: type, errorName: err.name,
+      olog.warn('analysis_dispatch', `Failed to trigger ${type} analysis audit for site ${siteId}`, {
+        peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
       });
     }
   }
@@ -339,8 +339,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
-      olog.warn('drs_poll', `getJob failed for ${job.jobId}: ${err.message}`, {
-        peer: PEER.DRS, jobId: job.jobId, errorName: err.name,
+      olog.warn('drs_poll', `getJob failed for ${job.jobId}`, {
+        peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
       });
       return { ...job, status: undefined, error: undefined };
     }
@@ -373,8 +373,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableBrandProfile,
     );
   } catch (err) {
-    olog.warn('analysis_dispatch', `Failed to trigger analysis audits for ${baseURL}: ${err.message}`, {
-      peer: PEER.SQS, direction: 'outbound', errorName: err.name,
+    olog.warn('analysis_dispatch', `Failed to trigger analysis audits for ${baseURL}`, {
+      peer: PEER.SQS, direction: 'outbound', ...errorField(err),
     });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
@@ -403,8 +403,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     try {
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
-      olog.failure('drs_poll_reschedule', `Failed to re-enqueue DRS status poll for ${baseURL}: ${err.message}`, {
-        peer: PEER.SQS, direction: 'outbound', errorName: err.name,
+      olog.failure('drs_poll_reschedule', `Failed to re-enqueue DRS status poll for ${baseURL}`, {
+        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
       });
       throw err;
     }

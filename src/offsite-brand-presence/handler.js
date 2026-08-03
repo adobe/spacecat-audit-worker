@@ -25,7 +25,7 @@ import {
   resolveEnableBrandProfile,
 } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_URLS_LIMIT,
@@ -195,7 +195,7 @@ function classifyAndNormalize(rawUrl, siteHostname, brandTokens, olog) {
   // analysis measures earned, non-branded, non-social citations only.
   const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
   if (exclusionReason) {
-    olog.debug('url_extract', `Excluding ${rawUrl}`, { reason: exclusionReason });
+    olog.debug('url_extract', 'Excluding URL', { url: rawUrl, reason: exclusionReason });
     return null;
   }
 
@@ -347,7 +347,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
     existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
   } catch (error) {
-    olog.failure('url_store_write', `Failed to check existing URLs: ${error.message}`, { peer: PEER.URL_STORE, direction: 'outbound', errorName: error.name });
+    olog.failure('url_store_write', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
     return {};
   }
 
@@ -367,7 +367,9 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
         });
         return entry.url;
       } catch (createError) {
-        olog.warn('url_store_write', `Failed to add URL to store: ${entry.url} - ${createError.message}`, { peer: PEER.URL_STORE, direction: 'outbound', errorName: createError.name });
+        olog.warn('url_store_write', 'Failed to add URL to store', {
+          peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, ...errorField(createError),
+        });
         return null;
       }
     }),
@@ -469,7 +471,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
         });
         return 'created';
       } catch (error) {
-        olog.warn('guideline_store_write', `Failed to save topic ${name}: ${error.message}`, { peer: PEER.SPACECAT, direction: 'outbound', errorName: error.name });
+        olog.warn('guideline_store_write', `Failed to save topic ${name}`, { peer: PEER.SPACECAT, direction: 'outbound', ...errorField(error) });
         return 'error';
       }
     }),
@@ -522,15 +524,15 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       // eslint-disable-next-line no-await-in-loop
       const result = await submitFn(params);
       olog.success('drs_submit', `DRS job created for ${jobDataset} (${Date.now() - start}ms)`, {
-        peer: PEER.DRS, direction: 'outbound', jobDataset, jobId: result?.job_id,
+        peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id,
       });
       return {
         domain, datasetId, status: 'success', response: result,
       };
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
-        olog.warn('drs_submit', `DRS job for ${jobDataset} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms: ${err.message}`, {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, errorName: err.name,
+        olog.warn('drs_submit', `DRS job for ${jobDataset} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms`, {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, ...errorField(err),
         });
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => {
@@ -538,8 +540,8 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
         });
       } else {
         const label = attempt === 0 ? '' : ' after retry';
-        olog.failure('drs_submit', `DRS job failed for ${jobDataset}${label}: ${err.message}`, {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', errorName: err.name,
+        olog.failure('drs_submit', `DRS job failed for ${jobDataset}${label}`, {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', ...errorField(err),
         });
         return {
           domain, datasetId, status: 'error', error: err.message,
@@ -598,8 +600,8 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.warn('drs_submit', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+    olog.failure('drs_submit', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -996,8 +998,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableBrandProfile,
       );
     } catch (err) {
-      olog.failure('drs_poll_schedule', `Failed to schedule DRS status poll: ${err.message}`, {
-        peer: PEER.SQS, direction: 'outbound', errorName: err.name,
+      olog.failure('drs_poll_schedule', 'Failed to schedule DRS status poll', {
+        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
       });
     }
   }

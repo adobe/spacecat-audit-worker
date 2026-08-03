@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -21,6 +21,8 @@ import {
   appendFields,
   createOffsiteLogger,
   withAuditPersistLog,
+  sanitizeForLog,
+  errorField,
 } from '../../src/utils/offsite-logging.js';
 
 use(sinonChai);
@@ -93,6 +95,57 @@ describe('offsite-logging helper', () => {
       expect(appendFields('m', {})).to.equal('m');
       expect(appendFields('m')).to.equal('m');
       expect(appendFields('m', { a: null })).to.equal('m');
+    });
+  });
+
+  describe('sanitizeForLog', () => {
+    it('replaces control characters (newline, carriage return, tab) with spaces', () => {
+      expect(sanitizeForLog('a\nb\rc\td')).to.equal('a b c d');
+    });
+
+    it('leaves ordinary text untouched', () => {
+      expect(sanitizeForLog('http://example.com/path?x=1')).to.equal('http://example.com/path?x=1');
+    });
+
+    it('coerces non-strings and tolerates null/undefined', () => {
+      expect(sanitizeForLog(42)).to.equal('42');
+      expect(sanitizeForLog(null)).to.equal('');
+      expect(sanitizeForLog(undefined)).to.equal('');
+    });
+  });
+
+  describe('log-injection hardening', () => {
+    // A crafted value must never be able to forge a second `key=value` token or split the line.
+    it('quotes a field value that tries to forge a token, keeping it a single value', () => {
+      expect(appendFields('m', { url: 'x" outcome=success' }))
+        .to.equal("m url=\"x' outcome=success\"");
+    });
+
+    it('neutralizes an embedded newline in a field value (no line split)', () => {
+      const out = appendFields('m', { note: 'a\noutcome=success' });
+      expect(out).to.equal('m note="a outcome=success"');
+      expect(out).to.not.include('\n');
+    });
+
+    it('neutralizes an embedded newline in the message itself', () => {
+      const out = appendFields('line1\nline2 outcome=success', { a: 1 });
+      expect(out).to.equal('line1 line2 outcome=success a=1');
+      expect(out).to.not.include('\n');
+    });
+
+    it('quotes values containing multiple = characters', () => {
+      expect(appendFields('m', { q: 'a=b=c' })).to.equal('m q="a=b=c"');
+    });
+  });
+
+  describe('errorField', () => {
+    it('extracts name and message from an Error', () => {
+      expect(errorField(new TypeError('boom'))).to.deep.equal({ errorName: 'TypeError', errorMessage: 'boom' });
+    });
+
+    it('returns an empty object for a missing error', () => {
+      expect(errorField(undefined)).to.deep.equal({});
+      expect(errorField(null)).to.deep.equal({});
     });
   });
 
@@ -170,6 +223,16 @@ describe('offsite-logging helper', () => {
       const call = log.error.getCall(0);
       expect(call.args).to.have.lengthOf(1);
       expect(call.args[0]).to.be.a('string');
+    });
+
+    it('failure passes a raw Error through as a second arg for stack capture when given', () => {
+      const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId: 's1' });
+      const err = new Error('boom');
+      olog.failure('guidance_complete', 'unexpected', { reason: 'unknown' }, err);
+      const call = log.error.getCall(0);
+      expect(call.args).to.have.lengthOf(2);
+      expect(call.args[0]).to.be.a('string').and.to.include('event=guidance_complete outcome=failure');
+      expect(call.args[1]).to.equal(err);
     });
   });
 

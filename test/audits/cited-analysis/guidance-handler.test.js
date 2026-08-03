@@ -353,8 +353,10 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(204);
+      // The upstream error text is routed to the quoted mystiqueError field, not the message.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Mystique returned an error.*400 Bad Request/)
+        sinon.match(/Mystique returned an error/)
+          .and(sinon.match(/mystiqueError="HTTP error.*400 Bad Request"/))
           .and(sinon.match(/event=guidance_receive/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=mystique/)),
@@ -877,7 +879,8 @@ describe('Cited Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       // The outer catch folds the error into a structured guidance_complete failure line
-      // (errorName token, no util.inspect second arg).
+      // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
+      // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Error processing cited analysis/)
           .and(sinon.match(/event=guidance_complete/))
@@ -887,7 +890,8 @@ describe('Cited Analysis Guidance Handler', () => {
       const outerCatchCall = context.log.error.getCalls().find(
         (c) => /event=guidance_complete/.test(String(c.args[0])),
       );
-      expect(outerCatchCall.args).to.have.lengthOf(1);
+      expect(outerCatchCall.args).to.have.lengthOf(2);
+      expect(outerCatchCall.args[1]).to.be.an('error');
     });
 
     it('logs a structured suggestion_sync failure and propagates when syncSuggestions throws', async () => {

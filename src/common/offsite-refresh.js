@@ -13,7 +13,9 @@
 import { Opportunity as Oppty, Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
-import { createOffsiteLogger, AUDIT, PEER } from '../utils/offsite-logging.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
 // This module is shared by all three offsite guidance handlers, so it does not know the audit
 // slug at module scope. Derive it from the audit type passed by the caller so the emitted lines
@@ -132,11 +134,11 @@ export async function persistOffsiteOpportunity(
   } catch (error) {
     // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
     // structured, THEN rethrow unchanged so the caller's error handling is preserved.
-    olog.failure('opportunity_persist', `Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}: ${error.message}`, {
+    olog.failure('opportunity_persist', `Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}`, {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       reason: 'db_write',
-      errorName: error.name,
+      ...errorField(error),
     });
     throw error;
   }
@@ -164,8 +166,8 @@ export async function resolveEvergreenOffsiteOpportunity({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    olog.failure('opportunity_resolve', `Failed to fetch opportunities for siteId ${siteId}: ${e.message}`, {
-      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', errorName: e.name,
+    olog.failure('opportunity_resolve', `Failed to fetch opportunities for siteId ${siteId}`, {
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
     });
     throw e;
   }

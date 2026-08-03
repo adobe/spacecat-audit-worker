@@ -68,6 +68,17 @@ silent-event gaps.
 - **Also thread a cross-service correlation id (`runId`).** Deferred: valuable
   but separable; this change is naming + gap-fill only.
 
+## Conventions
+
+- **`skip` vs `warn` for benign conditions.** Use `.skip()` (info, `outcome=skip`) for an expected,
+  no-op skip (e.g. "no jobs to poll", "URL store empty — scheduling a scrape"). Use `.warn()` only
+  when the skip reflects a misconfiguration or an unexpected-but-tolerated condition (e.g. missing
+  `imsOrgId`). This keeps an `outcome=skip` Splunk query at a single level.
+- **Errors go through `errorField(err)`**, never interpolated into the free-text message, so the
+  message stays injection-safe and `errorName`/`errorMessage` are queryable fields. The unclassified
+  catch-all `guidance_complete` failure additionally passes the raw Error to `failure(...)` for stack
+  capture in CloudWatch.
+
 ## Consequences
 
 - Splunk can `stats by audit, event, outcome, peer`, alert on

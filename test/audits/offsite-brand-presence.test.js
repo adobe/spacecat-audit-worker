@@ -1298,11 +1298,12 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Now emitted as a structured skip (warn level) rather than a bare error line.
-      expect(log.warn).to.have.been.calledWith(
+      // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
+      // level (outcome=failure) rather than a warn/skip — see Fix C.
+      expect(log.error).to.have.been.calledWith(
         sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
           .and(sinon.match(/event=drs_submit/))
-          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=not_configured/)),
       );
     });

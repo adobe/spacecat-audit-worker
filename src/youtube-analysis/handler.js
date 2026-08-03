@@ -33,7 +33,7 @@ import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
@@ -244,8 +244,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // YouTube URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        olog.failure('url_store_read', `URL store still empty after scrape: ${error.message}`, {
-          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape',
+        olog.failure('url_store_read', 'URL store still empty after scrape', {
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -283,8 +283,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('drs_availability', `No DRS content available after scraping: ${error.message}`, {
-          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape',
+        olog.failure('drs_availability', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -314,7 +314,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_start', `Audit failed: ${error.message}`, { errorName: error.name });
+    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -395,8 +395,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('mystique_dispatch', `Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`, {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', errorName: brandError.name,
+      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
@@ -418,8 +418,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     );
     return auditData;
   } catch (error) {
-    olog.failure('mystique_dispatch', `Failed to send Mystique message: ${error.message}`, {
-      peer: PEER.MYSTIQUE, direction: 'outbound', errorName: error.name,
+    olog.failure('mystique_dispatch', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
     });
     throw error;
   }
