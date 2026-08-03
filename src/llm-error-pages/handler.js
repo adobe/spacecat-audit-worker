@@ -388,17 +388,6 @@ export async function runAuditAndSendToMystique(context) {
   log.info(`[LLM-ERROR-PAGES] Starting audit for ${url}`);
 
   try {
-    const configuration = await context.dataAccess.Configuration.findLatest();
-    if (!configuration?.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
-      log.info(`[LLM-ERROR-PAGES] Skipping ${url}; cdn-logs-analysis disabled for site ${site.getId()}`);
-      return {
-        type: 'audit-result',
-        siteId: site.getId(),
-        auditResult: [],
-        fullAuditRef: url,
-      };
-    }
-
     const awsRuntime = getCdnAwsRuntime(site, context);
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
 
