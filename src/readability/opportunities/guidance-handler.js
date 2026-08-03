@@ -238,6 +238,31 @@ export default async function handler(message, context) {
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
+      // Do not overwrite a customer-edited improvement, and never re-exclude it.
+      // isEdited is set only by the UI edit-save action (never inferred from
+      // updatedBy). Preserve the edited text + write-once original snapshot and
+      // re-derive transformRules.value from the preserved improvedText so the render
+      // payload stays consistent with the edit (LLMO-6537).
+      if (existingData.isEdited) {
+        // This re-audit did no Mystique processing on the edited row, so keep the
+        // existing mystiqueProcessingCompleted — set it explicitly (not just via
+        // ...existingData) so a stray value on ...newData can't bump it.
+        const merged = {
+          ...existingData,
+          ...newData,
+          improvedText: existingData.improvedText,
+          originalImprovedText: existingData.originalImprovedText
+            ?? existingData.improvedText,
+          suggestionStatus: 'completed',
+          isEdited: true,
+          mystiqueProcessingCompleted: existingData.mystiqueProcessingCompleted,
+        };
+        delete merged.category;
+        delete merged.seoImpact;
+        delete merged.shouldExclude;
+        delete merged.exclusionReason;
+        return enrichSuggestionDataForAutoOptimize(merged);
+      }
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,
@@ -271,6 +296,11 @@ export default async function handler(message, context) {
       // the edge CDN, or mid-IVE geo-experiment — keep the deployed state (LLMO-4010, LLMO-6168)
       const existingData = existing.getData?.() || {};
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
+        return null;
+      }
+      // Never re-status a customer-edited suggestion (e.g. flip it to SKIPPED when the
+      // new audit marks it shouldExclude) — the edit takes precedence (LLMO-6537).
+      if (existingData.isEdited) {
         return null;
       }
       return newDataItem.shouldExclude

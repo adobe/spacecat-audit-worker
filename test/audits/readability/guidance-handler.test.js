@@ -1001,6 +1001,62 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(result.improvedText).to.equal('Deployed text.');
       expect(result.shouldExclude).to.be.undefined;
     });
+
+    it('should preserve a customer-edited improvement and original snapshot when isEdited is set', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Customer edited text.',
+        originalImprovedText: 'System improved text.',
+        isEdited: true,
+        transformRules: { op: 'replace', value: 'Customer edited text.', selector: '#content p:nth-child(1)' },
+      };
+      const newData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Newer improved text.',
+      };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.isEdited).to.equal(true);
+      expect(result.improvedText).to.equal('Customer edited text.');
+      expect(result.originalImprovedText).to.equal('System improved text.');
+      // transformRules.value is re-derived from the preserved improvedText
+      expect(result.transformRules.value).to.equal('Customer edited text.');
+    });
+
+    it('should not re-exclude a customer-edited suggestion even when newData has shouldExclude', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+
+      const existingData = {
+        pageUrl: 'https://example.com/page1',
+        selector: '#content p:nth-child(1)',
+        improvedText: 'Customer edited text.',
+        isEdited: true,
+      };
+      const newData = { shouldExclude: true, exclusionReason: 'citation_block' };
+
+      const result = mergeDataFunction(existingData, newData);
+
+      expect(result.isEdited).to.equal(true);
+      expect(result.improvedText).to.equal('Customer edited text.');
+      expect(result.shouldExclude).to.be.undefined;
+    });
   });
 
   describe('mergeStatusFunction', () => {
@@ -1093,6 +1149,26 @@ describe('Readability Opportunities Guidance Handler', () => {
       const mockExisting = {
         getStatus: () => 'NEW',
         getData: () => ({ edgeOptimizeStatus: 'in_progress' }),
+      };
+      const mergeCtx = { log: logStub, site: {} };
+
+      const result = mergeStatusFunction(mockExisting, { ...newData[0], shouldExclude: true }, mergeCtx);
+
+      expect(result).to.equal(null);
+      expect(defaultMergeStatusStub).to.not.have.been.called;
+    });
+
+    it('should keep status (return null) for a customer-edited suggestion even when excluded', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = {
+        getStatus: () => 'NEW',
+        getData: () => ({ isEdited: true }),
       };
       const mergeCtx = { log: logStub, site: {} };
 
