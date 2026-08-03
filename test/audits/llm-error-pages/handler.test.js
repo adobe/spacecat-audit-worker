@@ -89,6 +89,11 @@ describe('LLM Error Pages Handler', function () {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
+        },
       },
     };
 
@@ -366,6 +371,21 @@ describe('LLM Error Pages Handler', function () {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/\[LLM-ERROR-PAGES\] Sent.*consolidated 404 URLs to Mystique/),
       );
+    });
+
+    it('skips the query and returns an empty result when cdn-logs-analysis is disabled', async () => {
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.type).to.equal('audit-result');
+      expect(result.siteId).to.equal('site-id-123');
+      expect(result.auditResult).to.deep.equal([]);
+      expect(result.fullAuditRef).to.equal('https://example.com');
+      expect(mockAthenaClient.query).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('logs a sample of malformed URLs filtered upstream in processErrorPagesResults', async () => {
@@ -1118,6 +1138,11 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
+        },
       },
     };
 
@@ -1183,6 +1208,11 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       dataAccess: {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
         },
       },
     };
@@ -1296,6 +1326,11 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       audit: { getId: () => 'audit-123' },
       dataAccess: {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
+        },
       },
     };
 
@@ -1378,6 +1413,11 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       audit: { getId: () => 'audit-123' },
       dataAccess: {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
+        },
       },
     };
 
@@ -1724,6 +1764,11 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
     dataAccess: {
       SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      Configuration: {
+        findLatest: sandbox.stub().resolves({
+          isHandlerEnabledForSite: sandbox.stub().returns(true),
+        }),
+      },
       Opportunity: {
         allBySiteIdAndStatus: sandbox.stub().resolves(overrides.existingOpportunities || []),
       },
@@ -2285,6 +2330,11 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
       dataAccess: {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: sandbox.stub().returns(true),
+          }),
+        },
         Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
         Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
       },
