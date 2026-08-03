@@ -496,6 +496,12 @@ describe('CDN Utils', () => {
     it('leaves a dashless id unchanged', () => {
       expect(siteCatalogKey('site123')).to.equal('site123');
     });
+
+    it('throws when the site id is missing', () => {
+      expect(() => siteCatalogKey(undefined)).to.throw('siteCatalogKey requires a siteId');
+      expect(() => siteCatalogKey(null)).to.throw('siteCatalogKey requires a siteId');
+      expect(() => siteCatalogKey('')).to.throw('siteCatalogKey requires a siteId');
+    });
   });
 
   describe('shouldRecreateTable', () => {

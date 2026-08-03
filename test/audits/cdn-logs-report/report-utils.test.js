@@ -73,6 +73,7 @@ describe('CDN Logs Report Utils', () => {
     it('extracts customer name from domain parts correctly', async () => {
       const mockSite = {
         getBaseURL: () => 'https://sub.example.com',
+        getId: () => 'site-123',
         getConfig: () => createSiteConfig(),
       };
 
@@ -85,6 +86,7 @@ describe('CDN Logs Report Utils', () => {
     it('getAthenaTempLocation method works correctly', async () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'site-123',
         getConfig: () => createSiteConfig(),
       };
 
@@ -97,6 +99,7 @@ describe('CDN Logs Report Utils', () => {
     it('uses site cdn config region when provided', async () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'site-123',
         getConfig: () => createSiteConfig({
           getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket', region: 'eu-west-1' }),
         }),

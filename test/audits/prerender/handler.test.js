@@ -5918,6 +5918,7 @@ describe('Prerender Audit', () => {
 
       const site = {
         getBaseURL: () => 'https://acme.com',
+        getId: () => 'site-acme',
         getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
       };
       const ctx = { log: { info: () => {} } };
@@ -6008,7 +6009,7 @@ describe('Prerender Audit', () => {
           extractSiteKeyFromBaseURL: () => 'adobe_com',
         },
       });
-      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
+      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com', getId: () => 'site-adobe' }, { });
       expect(cfg).to.be.an('object');
       expect(cfg).to.have.property('databaseName');
       expect(cfg).to.have.property('tableName');

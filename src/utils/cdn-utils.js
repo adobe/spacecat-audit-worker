@@ -408,6 +408,9 @@ export function resolveConsolidatedBucketName(context, region) {
 }
 
 export function siteCatalogKey(siteId) {
+  if (!siteId) {
+    throw new Error('siteCatalogKey requires a siteId');
+  }
   return String(siteId).replace(/-/g, '_');
 }
 
@@ -432,8 +435,8 @@ export function getS3Config(site, context) {
     databaseName,
     tableName,
     referralTableName,
-    aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
-    aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
+    aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
+    aggregatedReferralLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
