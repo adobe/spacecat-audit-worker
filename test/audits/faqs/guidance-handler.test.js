@@ -1800,6 +1800,53 @@ describe('FAQs guidance handler', () => {
     expect(result.selector).to.equal('body');
   });
 
+  it('should treat an edited FAQ as a separate row from the regenerated prompt-bank question (key-drift regression, LLMO-6537)', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    const { buildKey, mergeDataFunction } = syncArgs;
+
+    // Customer edited the question from "How to use Photoshop?" to "Best way to learn Photoshop?"
+    const editedSuggestion = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      item: { question: 'Best way to learn Photoshop?', answer: 'Customer edited answer.' },
+      originalItem: { question: 'How to use Photoshop?', answer: 'System answer.' },
+      isEdited: true,
+    };
+
+    // Re-audit regenerates the original prompt-bank question
+    const regeneratedSuggestion = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      item: { question: 'How to use Photoshop?', answer: 'Fresh system answer.' },
+    };
+
+    // buildKey embeds the question, so the edited and regenerated suggestions produce
+    // different keys — they coexist as separate rows rather than overwriting each other.
+    const editedKey = buildKey(editedSuggestion);
+    const regeneratedKey = buildKey(regeneratedSuggestion);
+    expect(editedKey).to.not.equal(regeneratedKey);
+
+    // When syncSuggestions encounters the edited row (matched by its drifted key),
+    // mergeDataFunction preserves the customer content.
+    const mergedEdited = mergeDataFunction(editedSuggestion, regeneratedSuggestion);
+    expect(mergedEdited.isEdited).to.equal(true);
+    expect(mergedEdited.item.question).to.equal('Best way to learn Photoshop?');
+    expect(mergedEdited.originalItem.question).to.equal('How to use Photoshop?');
+
+    // The regenerated suggestion (no isEdited) merges normally.
+    const mergedRegenerated = mergeDataFunction(regeneratedSuggestion, regeneratedSuggestion);
+    expect(mergedRegenerated.isEdited).to.be.undefined;
+    expect(mergedRegenerated.item.question).to.equal('How to use Photoshop?');
+  });
+
   it('should bootstrap originalItem from item for pre-existing edited suggestions (LLMO-6537)', async () => {
     const message = {
       auditId: 'audit-123',
