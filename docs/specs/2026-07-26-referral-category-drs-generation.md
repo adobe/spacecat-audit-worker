@@ -110,7 +110,7 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 **7.1 — Where the decoupled rule-gen runs**
 - Options: (A) a scheduled "sweeper" job that walks every site with referral traffic; (B) rule-gen as its own audit type; (C) bolt rule-gen onto each source's existing job.
 - **Chosen: A — scheduled sweeper.** A timer job walks every referral site and ensures each has a rulebook (create-if-missing).
-- Why: covers every referral site uniformly, including DRS-only, and keeps rule-gen in one JS place. Option C breaks for DRS-only sites — DRS is Python in a separate account and cannot call the JS rule-gen.
+- Why: covers every referral site uniformly, including DRS-only, and keeps rule-gen in one JS place. Option C breaks for DRS-only sites — DRS is Python in a separate account and cannot call the JS rule-gen. (Option A sidesteps that constraint because the sweeper runs *in* the audit-worker in JS and works off `rpc_referral_traffic_top_urls`, independent of which source produced the traffic — so a DRS-only site's rules still get built by JS.)
 
 **7.2 — Sweep cadence**
 - Options: (A) once per site; (B) weekly; (C) daily.
@@ -125,14 +125,15 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 **7.4 — Canonicalization parity + where the fixtures live**
 - Options (source of truth): (A) the JS `canonicalizeUrlPath` is the reference and Python mirrors it; (B) a language-neutral spec both follow.
 - Options (fixtures location): (A) the same case-list committed in both repos; (B) one shared file both pull from.
-- **Chosen: JS is the reference (A); an identical case-list committed in both repos (A), kept in sync (a CI check can flag drift).**
-- Why: JS shipped first (Phase 1), so it is the natural source of truth; a duplicated case-list is the simplest way to guarantee byte-for-byte parity.
+- **Chosen: JS is the reference (A); an identical case-list committed in both repos (A).** Sync is **verified during the DRS classify PR review** — the reviewer diffs the two case-lists as an explicit checklist item — rather than relying on an as-yet-unbuilt cross-repo check. A mechanical guard (audit-worker CI fetches the DRS fixture file and fails if the two hashes differ) is a possible follow-up, but is not required for the first cut and no one owns it yet.
+- Why: JS shipped first (Phase 1), so it is the natural source of truth; a duplicated case-list is the simplest way to guarantee byte-for-byte parity, and naming a concrete review-time owner keeps the sync honest without a speculative CI mechanism.
 
 **7.5 — Rules endpoint (shape + auth)**
 - Options (shape): (A) build a new dedicated rules endpoint; (B) **reuse the existing** `GET /sites/:siteId/agentic-categories`.
 - Options (auth): (A) reuse the access path DRS already uses; (B) a new auth mechanism.
 - **Chosen: B (reuse endpoint) + A (reuse auth).** The existing `GET /sites/:siteId/agentic-categories` already returns each active rule as `{ name, regex, sortOrder }` (verified against `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`, so **no new endpoint is needed**. Remaining: provision DRS with `site:read` (auth/provisioning, not endpoint code).
 - Why: the endpoint already exists and returns exactly what DRS needs; building a new one would duplicate it.
+- **Size bound:** the endpoint is unpaginated, and rule-gen is LLM-driven, so a rulebook could in principle grow large. Rather than bolt pagination onto a reused endpoint, the DRS consumer caps the rules it ingests (`MAX_CATEGORY_RULES = 200`, truncating with a warning) before attaching them to the referral-traffic event — this keeps the event under the Step Functions / Lambda 256KB transport limit and is well above any realistic per-site category count. If rulebooks ever legitimately exceed that, pagination on the endpoint becomes the follow-up.
 
 **7.6 — Ownership**
 - Options: (A) split — Omair owns the JS pieces, the DRS team owns the Python classify; (B) a single owner for everything.
@@ -145,8 +146,8 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 
 ## 8. Success criteria
 
-- Category coverage goes from **0% → >0%** for DRS-only sites (verified the same way as the 2026-07-26 prod scan: sample DRS-only sites via the api `filter-dimensions` endpoint, bucketed by `availableSources`).
-- cdn-only sites likewise go from **0% → >0%**.
+- Category coverage goes from **0% → >0%** for DRS-only sites (verified the same way as the 2026-07-26 prod scan: sample DRS-only sites via the api `filter-dimensions` endpoint, bucketed by `availableSources`). ">0%" is the floor — the meaningful bar is that **≥ ~50% of a sampled set of DRS-only sites show at least one category within a week of the sweep running** (a week covers the weekly sweep cadence from §7.2). A site legitimately shows no category only when none of its URLs match any generated rule.
+- cdn-only sites likewise clear the same bar (0% → the ~50%-of-sampled target).
 - **Parity fixtures pass in CI**: the JS and Python classifiers produce identical canonicalization + classification for the shared case set.
 
 ## 9. Test plan
