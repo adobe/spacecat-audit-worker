@@ -10,9 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
-import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
+
+// This module is shared by all three offsite guidance handlers, so it does not know the audit
+// slug at module scope. Derive it from the audit type passed by the caller so the emitted lines
+// carry the correct `audit=` token.
+const AUDIT_SLUG_BY_TYPE = {
+  [Audit.AUDIT_TYPES.CITED_ANALYSIS]: AUDIT.CITED,
+  [Audit.AUDIT_TYPES.REDDIT_ANALYSIS]: AUDIT.REDDIT,
+  [Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS]: AUDIT.YOUTUBE,
+};
 
 /**
  * Validates the payload shape and rejects a declared opportunity type that differs from
@@ -73,6 +85,9 @@ export async function persistOffsiteOpportunity(
   const mappedOpportunity = createOpportunityData(options);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
+  const olog = createOffsiteLogger(log, {
+    audit: AUDIT_SLUG_BY_TYPE[auditType], siteId: auditData.siteId, auditId: auditData.id,
+  });
 
   const hasGoogleConnection = await checkGoogleConnection(auditUrl, context);
   if (!hasGoogleConnection && mappedOpportunity.data?.dataSources) {
@@ -82,7 +97,7 @@ export async function persistOffsiteOpportunity(
 
   try {
     if (evergreenOpportunity === null) {
-      return await Opportunity.create({
+      const created = await Opportunity.create({
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: mappedOpportunity.runbook,
@@ -95,6 +110,13 @@ export async function persistOffsiteOpportunity(
         data: mappedOpportunity.data,
         ...(mappedOpportunity.status ? { status: mappedOpportunity.status } : {}),
       });
+      olog.success('opportunity_persist', `Created ${auditType} opportunity`, {
+        peer: PEER.POSTGRES,
+        direction: 'outbound',
+        opportunityId: created.getId(),
+        status: mappedOpportunity.status,
+      });
+      return created;
     }
 
     evergreenOpportunity.setAuditId(auditData.id);
@@ -102,9 +124,22 @@ export async function persistOffsiteOpportunity(
     evergreenOpportunity.setUpdatedBy('system');
     await evergreenOpportunity.save();
 
+    olog.success('opportunity_persist', `Refreshed evergreen ${auditType} opportunity`, {
+      peer: PEER.POSTGRES,
+      direction: 'outbound',
+      opportunityId: evergreenOpportunity.getId(),
+      status: mappedOpportunity.status,
+    });
     return evergreenOpportunity;
   } catch (error) {
-    log.error(`[OffsiteRefresh] Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}: ${error.message}`);
+    // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
+    // structured, THEN rethrow unchanged so the caller's error handling is preserved.
+    olog.failure('opportunity_persist', `Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}`, {
+      peer: PEER.POSTGRES,
+      direction: 'outbound',
+      reason: 'db_write',
+      ...errorField(error),
+    });
     throw error;
   }
 }
@@ -126,11 +161,14 @@ export async function resolveEvergreenOffsiteOpportunity({
   dataAccess, siteId, auditType, log,
 }) {
   const { Opportunity } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType], siteId });
   let opportunities;
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    log.error(`[OffsiteRefresh] Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    olog.failure('opportunity_resolve', `Failed to fetch opportunities for siteId ${siteId}`, {
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
+    });
     throw e;
   }
 
@@ -147,7 +185,9 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  log.info(`[OffsiteRefresh] Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`);
+  olog.success('opportunity_retire', `Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`, {
+    peer: PEER.POSTGRES, direction: 'outbound', retired: duplicates.length, kept: evergreenOpportunity.getId(),
+  });
 
   duplicates.forEach((duplicate) => {
     duplicate.setStatus(Oppty.STATUSES.IGNORED);

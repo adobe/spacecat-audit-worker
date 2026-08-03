@@ -25,6 +25,9 @@ import {
   resolveEnableBrandProfile,
 } from '../utils/offsite-audit-utils.js';
 import {
+  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+} from '../utils/offsite-logging.js';
+import {
   DRS_URLS_LIMIT,
   RETRIABLE_STATUSES,
   RETRY_DELAY_MS,
@@ -98,7 +101,10 @@ function resolveRedditCommentsParams(messageData) {
   return params;
 }
 
-const LOG_PREFIX = '[OffsiteBrandPresence]';
+// Human prefix kept for the one offsite-audit-utils helper that logs via a passed-in
+// prefix string (resolveEnableBrandProfile). All logging in this file goes through the
+// bound offsite logger below (`createOffsiteLogger`), which emits the same prefix.
+const HUMAN_PREFIX = `[offsite:${AUDIT.BRAND_PRESENCE}]`;
 
 // The top-cited bucket key (mirrors addUrlsToUrlStore) — also a valid granular scope.
 const TOP_CITED_BUCKET = 'top-cited';
@@ -163,10 +169,10 @@ function normalizeUrl(parsed, domain) {
  *   matching this hostname or any subdomain of it are excluded
  * @param {Set<string>} [brandTokens] - brand tokens (see `computeBrandTokens`); URLs whose
  *   host is a non-earned/social domain or contains a brand token are excluded
- * @param {object} log - logger; debug-logs the matched domain/token for each excluded URL
+ * @param {object} olog - offsite logger; debug-logs the matched domain/token for each excluded URL
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname, brandTokens, log) {
+function classifyAndNormalize(rawUrl, siteHostname, brandTokens, olog) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -189,7 +195,7 @@ function classifyAndNormalize(rawUrl, siteHostname, brandTokens, log) {
   // analysis measures earned, non-branded, non-social citations only.
   const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
   if (exclusionReason) {
-    log.debug(`${LOG_PREFIX} Excluding ${rawUrl} (${exclusionReason})`);
+    olog.debug('url_extract', 'Excluding URL', { url: rawUrl, reason: exclusionReason });
     return null;
   }
 
@@ -256,11 +262,11 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
- * @param {object} log - Logger instance
+ * @param {object} olog - Offsite logger instance
  * @param {string} [siteHostname] - Client site hostname to exclude
  * @param {Set<string>} [brandTokens] - brand tokens used to exclude non-earned/branded hosts
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandTokens) {
+function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brandTokens) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -282,7 +288,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandT
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens, log);
+      const result = classifyAndNormalize(trimmed, siteHostname, brandTokens, olog);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -302,7 +308,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandT
       /* c8 ignore stop */
     }
   }
-  log.info(`${LOG_PREFIX} Found ${allUrls.size} unique source URLs`);
+  olog.debug('url_extract', `Found ${allUrls.size} unique source URLs`, { count: allUrls.size });
 }
 
 /**
@@ -319,6 +325,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname, brandT
  */
 async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log) {
   const { AuditUrl } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const entries = [];
   for (const [domain, config] of Object.entries(OFFSITE_DOMAINS)) {
@@ -326,13 +333,13 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     for (const url of urls) {
       entries.push({ url, audits: [config.auditType] });
     }
-    log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`);
+    olog.debug('url_store_write', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
   }
   for (const url of topCited) {
     entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
-  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
-  log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
+  olog.debug('url_store_write', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
+  olog.start('url_store_write', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
 
   let existingUrlSet;
   try {
@@ -340,7 +347,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
     existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to check existing URLs: ${error.message}`);
+    olog.failure('url_store_write', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
     return {};
   }
 
@@ -360,7 +367,9 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
         });
         return entry.url;
       } catch (createError) {
-        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${createError.message}`);
+        olog.warn('url_store_write', 'Failed to add URL to store', {
+          peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, ...errorField(createError),
+        });
         return null;
       }
     }),
@@ -371,7 +380,9 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   const createdCount = storedUrls.size - existingCount;
   const failCount = entries.length - storedUrls.size;
 
-  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`);
+  olog.success('url_store_write', `URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`, {
+    peer: PEER.URL_STORE, direction: 'outbound', created: createdCount, existing: existingCount, failed: failCount,
+  });
 
   const storedByDomain = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
@@ -423,10 +434,11 @@ async function fetchExistingTopicsByName(siteId, SentimentTopic) {
 // eslint-disable-next-line no-unused-vars
 async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log) {
   const { SentimentTopic } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const existingByName = await fetchExistingTopicsByName(siteId, SentimentTopic);
 
   const entries = [...topicMap.entries()];
-  log.info(`${LOG_PREFIX} Persisting ${entries.length} topics to guideline store (${existingByName.size} existing)`);
+  olog.start('guideline_store_write', `Persisting ${entries.length} topics to guideline store (${existingByName.size} existing)`, { peer: PEER.SPACECAT, direction: 'outbound', total: entries.length });
 
   const results = await Promise.all(
     entries.map(async ([name, topicData]) => {
@@ -459,7 +471,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
         });
         return 'created';
       } catch (error) {
-        log.warn(`${LOG_PREFIX} Failed to save topic ${name}: ${error.message}`);
+        olog.warn('guideline_store_write', `Failed to save topic ${name}`, { peer: PEER.SPACECAT, direction: 'outbound', ...errorField(error) });
         return 'error';
       }
     }),
@@ -469,7 +481,9 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
   const updated = results.filter((r) => r === 'updated').length;
   const failed = results.filter((r) => r === 'error').length;
 
-  log.info(`${LOG_PREFIX} Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`);
+  olog.success('guideline_store_write', `Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`, {
+    peer: PEER.SPACECAT, direction: 'outbound', created, updated, failed,
+  });
 }
 /* c8 ignore stop */
 
@@ -499,29 +513,36 @@ function isRetriable(err) {
  *
  * @param {{ domain: string, datasetId: string, params: object }} job
  * @param {Function} submitFn - Async function that submits the job
- * @param {object} log - Logger
+ * @param {object} olog - Offsite logger
  * @returns {Promise<object>} Job result with status
  */
-async function submitWithRetry({ domain, datasetId, params }, submitFn, log) {
+async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
+  const jobDataset = `${domain}/${datasetId}`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const start = Date.now();
       // eslint-disable-next-line no-await-in-loop
       const result = await submitFn(params);
-      log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result?.job_id} (${Date.now() - start}ms)`);
+      olog.success('drs_submit', `DRS job created for ${jobDataset} (${Date.now() - start}ms)`, {
+        peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id,
+      });
       return {
         domain, datasetId, status: 'success', response: result,
       };
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
-        log.warn(`${LOG_PREFIX} DRS job for ${domain}/${datasetId} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms: ${err.message}`);
+        olog.warn('drs_submit', `DRS job for ${jobDataset} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms`, {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, ...errorField(err),
+        });
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => {
           setTimeout(resolve, RETRY_DELAY_MS);
         });
       } else {
         const label = attempt === 0 ? '' : ' after retry';
-        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}${label}: ${err.message}`);
+        olog.failure('drs_submit', `DRS job failed for ${jobDataset}${label}`, {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', ...errorField(err),
+        });
         return {
           domain, datasetId, status: 'error', error: err.message,
         };
@@ -575,10 +596,13 @@ async function triggerDrsScraping(
   redditCommentsParams = {},
 ) {
   const { log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
+    olog.failure('drs_submit', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+    });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
 
@@ -587,7 +611,9 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    log.warn(`${LOG_PREFIX} Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`);
+    olog.warn('drs_submit', `Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`, {
+      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org',
+    });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
       results: [],
@@ -626,12 +652,12 @@ async function triggerDrsScraping(
   }
 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`);
+  olog.start('drs_submit', `Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`, { peer: PEER.DRS, direction: 'outbound', jobs: jobs.length });
 
   const results = [];
   for (const job of jobs) {
     // eslint-disable-next-line no-await-in-loop
-    results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), log));
+    results.push(await submitWithRetry(job, (p) => drsClient.submitScrapeJob(p), olog));
   }
   return { skipped: null, results };
 }
@@ -790,12 +816,16 @@ async function scheduleDrsStatusPoll(
   enableBrandProfile,
 ) {
   const { sqs, dataAccess, log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const jobs = drsResults
     .filter((r) => r.status === 'success' && r.response?.job_id)
     .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
 
   if (jobs.length === 0) {
+    olog.skip('drs_poll_schedule', `No successfully submitted DRS jobs for ${baseURL}, not scheduling status poll`, {
+      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs',
+    });
     return;
   }
 
@@ -816,7 +846,9 @@ async function scheduleDrsStatusPoll(
     },
   }, null, pollIntervalSeconds);
 
-  log.info(`${LOG_PREFIX} Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs, every ${pollIntervalSeconds}s)`);
+  olog.success('drs_poll_schedule', `Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs, every ${pollIntervalSeconds}s)`, {
+    peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds,
+  });
 }
 
 /**
@@ -846,15 +878,16 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
   // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
   // scraping completes, so a Slack-requested flag survives the scrape round-trip.
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    log.error(`${LOG_PREFIX} Unknown domainScope '${domainScope}', aborting run`);
+    olog.failure('audit_start', `Unknown domainScope '${domainScope}', aborting run`, { reason: 'unknown_scope', domainScope });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -868,13 +901,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
+  olog.start('audit_start', `Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
 
   let siteHostname;
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   } catch {
-    log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+    olog.warn('audit_start', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url' });
   }
 
   // Brand tokens drop social/search domains and brand-owned lookalikes
@@ -889,10 +922,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const allUrls = new Map();
   if (brandPresenceData) {
     const topicMap = new Map();
-    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, olog, siteHostname, brandTokens);
   }
 
-  log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
+  olog.success('url_extract', `Total unique source URLs found: ${allUrls.size}`, { count: allUrls.size });
 
   // Compute per-domain counts for audit result
   const urlCounts = {};
@@ -906,7 +939,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   if (allUrls.size === 0) {
-    log.info(`${LOG_PREFIX} No offsite URLs found, audit complete`);
+    olog.success('audit_complete', 'No offsite URLs found, audit complete', { reason: 'no_urls' });
     await postMessageOptional(
       context,
       channelId,
@@ -929,7 +962,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   if (domainScope) {
     ({ topByDomain, topCited } = scopeBucketsToDomain(topByDomain, topCited, domainScope));
-    log.info(`${LOG_PREFIX} Scoped run to '${domainScope}'`);
+    olog.debug('url_extract', `Scoped run to '${domainScope}'`, { domainScope });
   }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
@@ -965,7 +998,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableBrandProfile,
       );
     } catch (err) {
-      log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
+      olog.failure('drs_poll_schedule', 'Failed to schedule DRS status poll', {
+        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+      });
     }
   }
 
@@ -974,7 +1009,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   //   await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
   // }
 
-  log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);
+  olog.success('audit_complete', `Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`, {
+    urls: allUrls.size, drsJobs: drsResults.length,
+  });
 
   return {
     auditResult: {
@@ -990,4 +1027,5 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(offsiteBrandPresenceRunner)
+  .withPostProcessors([withAuditPersistLog(AUDIT.BRAND_PRESENCE)])
   .build();

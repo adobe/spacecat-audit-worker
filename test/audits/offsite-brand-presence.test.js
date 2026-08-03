@@ -27,7 +27,9 @@ const DEFAULT_WEEK = 7;
 const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
 
-describe('Offsite Brand Presence Handler', () => {
+describe('Offsite Brand Presence Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let mockLoadBrandPresenceData;
   let mockGetPreviousWeeks;
@@ -1296,8 +1298,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
+      // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
+      // level (outcome=failure) rather than a warn/skip — see Fix C.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
+          .and(sinon.match(/event=drs_submit/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=not_configured/)),
       );
     });
 
@@ -1582,6 +1589,12 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      // P1-4: the previously-silent empty-jobs early return now logs a structured skip.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=drs_poll_schedule/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/reason=no_jobs/)),
+      );
     });
 
     it('does not fail the run when scheduling the poll throws', async () => {
@@ -1592,7 +1605,12 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+      // P1-4: the schedule-poll failure is now loud (error level, structured).
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to schedule DRS status poll/)
+          .and(sinon.match(/event=drs_poll_schedule/))
+          .and(sinon.match(/outcome=failure/)),
+      );
     });
 
     it('forwards enableBrandProfile to the poll message auditContext when set on Slack', async () => {

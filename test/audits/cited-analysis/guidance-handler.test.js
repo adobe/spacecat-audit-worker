@@ -150,7 +150,11 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.calledBefore(syncSuggestionsStub);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed cited analysis/));
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Successfully processed cited analysis/)
+          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/outcome=success/)),
+      );
     });
 
     it('logs the Mystique LLM cost when opportunity.llmUsage is present', async () => {
@@ -173,7 +177,7 @@ describe('Cited Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        `[Cited] LLM usage for siteId: ${siteId}: 10 calls, 326070 tokens, est. cost $1.4688`,
+        `[offsite:cited] LLM usage for siteId: ${siteId}: 10 calls, 326070 tokens, est. cost $1.4688`,
       );
     });
 
@@ -313,7 +317,9 @@ describe('Cited Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Cited] No suggestions found in analysis');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=guidance_complete/)).and(sinon.match(/outcome=skip/)),
+      );
     });
 
     it('should return noContent when suggestions property is missing from analysis', async () => {
@@ -347,8 +353,13 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(204);
+      // The upstream error text is routed to the quoted mystiqueError field, not the message.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Mystique returned an error.*400 Bad Request/),
+        sinon.match(/Mystique returned an error/)
+          .and(sinon.match(/mystiqueError="HTTP error.*400 Bad Request"/))
+          .and(sinon.match(/event=guidance_receive/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=mystique/)),
       );
       expect(convertToOpportunityStub).to.not.have.been.called;
     });
@@ -363,7 +374,9 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Cited] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=guidance_complete/)),
+      );
     });
 
     it('should return notFound when site not found', async () => {
@@ -426,6 +439,10 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(result.status).to.equal(200);
       expect(fetchAnalysisStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json', sinon.match.object);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+      // P4-4: successful S3 fetch is now logged (peer=s3, inbound).
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=analysis_fetch/).and(sinon.match(/outcome=success/)).and(sinon.match(/peer=s3/)),
+      );
 
       const propsArg = convertToOpportunityStub.firstCall.args[5];
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
@@ -466,7 +483,12 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/hostname is not an allowlisted/));
+      // An SSRF/URL-shape rejection is classified reason=validation.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/hostname is not an allowlisted/)
+          .and(sinon.match(/event=analysis_fetch/))
+          .and(sinon.match(/reason=validation/)),
+      );
     });
 
     it('should return badRequest when presigned URL fetch throws error', async () => {
@@ -484,7 +506,12 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching from presigned URL/));
+      // A transport error is classified reason=fetch.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Error fetching from presigned URL/)
+          .and(sinon.match(/event=analysis_fetch/))
+          .and(sinon.match(/reason=fetch/)),
+      );
     });
   });
 
@@ -851,9 +878,75 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
+      // The outer catch folds the error into a structured guidance_complete failure line
+      // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
+      // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing cited analysis/),
-        sinon.match.any,
+        sinon.match(/Error processing cited analysis/)
+          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      const outerCatchCall = context.log.error.getCalls().find(
+        (c) => /event=guidance_complete/.test(String(c.args[0])),
+      );
+      expect(outerCatchCall.args).to.have.lengthOf(2);
+      expect(outerCatchCall.args[1]).to.be.an('error');
+    });
+
+    it('logs a structured suggestion_sync failure and propagates when syncSuggestions throws', async () => {
+      syncSuggestionsStub.rejects(new Error('sync exploded'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      // Behavior is unchanged: the outer catch still acks with badRequest.
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      // ...and the outer catch converts it into a terminal guidance_complete failure.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Error processing cited analysis/).and(sinon.match(/event=guidance_complete/)),
+      );
+    });
+
+    it('logs a structured suggestion_sync success on the happy path', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/opportunityId=opp-123/)),
       );
     });
 
@@ -903,7 +996,9 @@ describe('Cited Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Cited] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=guidance_complete/)),
+      );
     });
 
     it('should return notFound when audit not found', async () => {
@@ -972,7 +1067,9 @@ describe('Cited Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received cited analysis guidance for siteId/),
+        sinon.match(/Received cited analysis guidance for siteId/)
+          .and(sinon.match(/event=guidance_receive/))
+          .and(sinon.match(/outcome=start/)),
       );
     });
 

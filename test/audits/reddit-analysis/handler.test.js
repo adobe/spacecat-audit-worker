@@ -214,7 +214,9 @@ describe('Reddit Analysis Handler', function () {
     it('should have post processors configured', () => {
       expect(redditAnalysisHandler.default).to.have.property('postProcessors');
       expect(redditAnalysisHandler.default.postProcessors).to.be.an('array');
-      expect(redditAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
+      expect(redditAnalysisHandler.default.postProcessors).to.have.lengthOf(2);
+      // second post-processor logs the (otherwise silent) audit persist
+      expect(redditAnalysisHandler.default.postProcessors[1].name).to.equal('logAuditPersisted');
     });
   });
 
@@ -251,7 +253,9 @@ describe('Reddit Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(3);
-      expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"messageData":{"urlLimit":"3"}}');
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match('auditContext: {"messageData":{"urlLimit":"3"}}'),
+      );
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
@@ -269,7 +273,7 @@ describe('Reddit Analysis Handler', function () {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.debug).to.have.been.calledWith(
-        `[Reddit] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
+        sinon.match(`Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`),
       );
     });
 
@@ -383,7 +387,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith('[Reddit] Brand-presence topics payload: []');
+      expect(context.log.debug).to.have.been.calledWith(sinon.match('Brand-presence topics payload: []'));
     });
 
     it('should proceed without guidelines when guidelinesStore returns empty', async () => {
@@ -410,7 +414,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWith('[Reddit] Retrieved 0 guidelines');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Retrieved 0 guidelines'));
     });
 
     it('should filter URLs by DRS availability before returning store data', async () => {
@@ -432,7 +436,6 @@ describe('Reddit Analysis Handler', function () {
         siteId,
         mockDrsClient,
         sinon.match.object,
-        '[Reddit]',
       );
     });
 
@@ -466,7 +469,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Config: companyName=https://bmw.com, website=https://bmw.com',
+        sinon.match('Config: companyName=https://bmw.com, website=https://bmw.com'),
       );
       expect(result.auditResult.success).to.be.true;
     });
@@ -478,7 +481,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Config: companyName=https://test-company.com, website=https://test-company.com',
+        sinon.match('Config: companyName=https://test-company.com, website=https://test-company.com'),
       );
       expect(result.auditResult.success).to.be.true;
     });
@@ -596,10 +599,10 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
-        `[Reddit] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Queued Reddit analysis request to Mystique for Example Corp with 2 URLs',
+        sinon.match('Queued Reddit analysis request to Mystique for Example Corp with 2 URLs'),
       );
     });
 
@@ -643,11 +646,11 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('[Reddit] urlLimit=1 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1 (URLs sent to Mystique)'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
       expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Queued Reddit analysis request to Mystique for Test with 1 URLs',
+        sinon.match('Queued Reddit analysis request to Mystique for Test with 1 URLs'),
       );
     });
 
@@ -674,7 +677,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Reddit] Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
+        sinon.match(`Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`),
       );
     });
 
@@ -698,11 +701,11 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('[Reddit] urlLimit=4 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=4 (URLs sent to Mystique)'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(4);
       expect(context.log.info).to.have.been.calledWith(
-        '[Reddit] Queued Reddit analysis request to Mystique for Test with 4 URLs',
+        sinon.match('Queued Reddit analysis request to Mystique for Test with 4 URLs'),
       );
     });
 
@@ -729,7 +732,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[Reddit] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
     });
 
@@ -747,7 +750,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('[Reddit] Audit failed, skipping Mystique message');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -766,7 +769,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Reddit] SQS or Mystique queue not configured, skipping message');
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -804,7 +807,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Reddit] Site not found, skipping Mystique message');
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -821,7 +824,9 @@ describe('Reddit Analysis Handler', function () {
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Reddit] Failed to send Mystique message: SQS Error');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)
@@ -860,8 +865,9 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage.scopeType).to.equal('brand');
       expect(sentMessage.brandId).to.equal('brand-3');
       expect(sentMessage.siteId).to.equal(siteId);
+      // brandId is now a structured field on the mystique_dispatch success line.
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-3/).and(sinon.match((v) => !/siteId=/.test(v))),
+        sinon.match(/event=mystique_dispatch/).and(sinon.match(/brandId=brand-3/)),
       );
     });
 

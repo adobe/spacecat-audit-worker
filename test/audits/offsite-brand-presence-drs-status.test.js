@@ -19,7 +19,9 @@ import { AUDIT_TRIGGER_COOLDOWN_MS } from '../../src/offsite-brand-presence/cons
 
 use(sinonChai);
 
-describe('offsite-brand-presence DRS status handler', () => {
+describe('offsite-brand-presence DRS status handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let handler;
   let mockGetJob;
@@ -175,6 +177,35 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(delaySeconds).to.equal(300);
   });
 
+  it('re-throws and logs a structured failure when re-enqueueing the poll fails (P1-5)', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+    // Fail only the poll re-enqueue send; the reddit analysis dispatch still succeeds.
+    context.sqs.sendMessage.callsFake((queueUrl, msg) => {
+      if (msg.type === 'offsite-brand-presence-drs-status') {
+        return Promise.reject(new Error('SQS reschedule down'));
+      }
+      return Promise.resolve();
+    });
+
+    let thrown;
+    try {
+      await handler.default(buildMessage(), context);
+    } catch (err) {
+      thrown = err;
+    }
+
+    // Re-thrown so SQS redelivers and the poll is retried (behavior preserved).
+    expect(thrown).to.be.an('error');
+    expect(thrown.message).to.equal('SQS reschedule down');
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Failed to re-enqueue DRS status poll/)
+        .and(sinon.match(/event=drs_poll_reschedule/))
+        .and(sinon.match(/outcome=failure/)),
+    );
+  });
+
   it('caps the re-enqueue delay at the seconds remaining until the deadline', async () => {
     mockGetJob.resolves({ status: 'RUNNING' });
 
@@ -201,6 +232,14 @@ describe('offsite-brand-presence DRS status handler', () => {
     // Not all jobs terminal → header says "status update", not "complete".
     expect(text).to.include('status update');
     expect(text).to.not.include('jobs *complete*');
+    // P1-6: the youtube bucket (still running at the deadline) is dropped with a
+    // structured, alertable failure instead of only appearing in the Slack prose.
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/event=drs_poll/)
+        .and(sinon.match(/outcome=failure/))
+        .and(sinon.match(/reason=budget_exceeded/))
+        .and(sinon.match(/auditType=youtube-analysis/)),
+    );
   });
 
   it('treats a getJob error as non-terminal and keeps polling', async () => {
@@ -374,6 +413,17 @@ describe('offsite-brand-presence DRS status handler', () => {
       await handler.default(buildMessage(), context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      // P1-6: both buckets failed their scrape (all terminal, no success) → dropped with
+      // reason=scrape_failed rather than budget_exceeded.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/event=drs_poll/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=scrape_failed/))
+          .and(sinon.match(/auditType=reddit-analysis/)),
+      );
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/reason=scrape_failed/).and(sinon.match(/auditType=youtube-analysis/)),
+      );
     });
 
     it('skips domains that do not map to an analysis audit', async () => {

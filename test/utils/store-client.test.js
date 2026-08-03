@@ -285,6 +285,13 @@ describe('StoreClient', () => {
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith('dynamo exploded');
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
+      // P2-3: a genuine read error is logged as a distinct, alertable url_store_read failure
+      // before it is re-thrown (rather than surfacing only as the generic "Audit failed").
+      expect(mockLog.error).to.have.been.calledWith(
+        sinon.match(/event=url_store_read/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/dynamo exploded/)),
+      );
     });
 
     it('should throw StoreEmptyError when no URLs returned', async () => {

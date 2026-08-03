@@ -14,6 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
 import {
   isValidOffsiteAnalysis,
   resolveEvergreenOffsiteOpportunity,
@@ -129,7 +130,12 @@ describe('offsite-refresh', () => {
         dataAccess, siteId: 'site-1', auditType: 'cited-analysis', log,
       })).to.be.rejectedWith('DB down');
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/DB down/));
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DB down/)
+          .and(sinon.match(/event=opportunity_resolve/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/audit=cited/)),
+      );
     });
 
     it('returns the single matching opportunity without touching it', async () => {
@@ -199,6 +205,13 @@ describe('offsite-refresh', () => {
       expect(oldest.setStatus).to.have.been.calledWith('IGNORED');
       expect(middle.setStatus).to.have.been.calledWith('IGNORED');
       expect(newest.setStatus).to.not.have.been.called;
+      // P4-7: retirement is now a structured opportunity_retire line.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=opportunity_retire/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/retired=2/))
+          .and(sinon.match(/kept=newest/)),
+      );
       // A single bulk write, never a per-item save() (repo's no-N+1 rule). Order follows
       // the descending-by-updatedAt sort used to pick the evergreen one (middle, then oldest).
       expect(saveManyStub).to.have.been.calledOnce;
@@ -246,6 +259,102 @@ describe('offsite-refresh', () => {
 
     it('returns false for any other status', () => {
       expect(isSuppressedRun('RESOLVED')).to.be.false;
+    });
+  });
+
+  // P4-2 / P4-3: the persist write paths must emit structured opportunity_persist lines
+  // (silent success/failure was the "sharpest edge"). checkGoogleConnection is mocked so the
+  // real network/DB call is bypassed.
+  describe('persistOffsiteOpportunity logging', () => {
+    let persistOffsiteOpportunity;
+
+    beforeEach(async () => {
+      ({ persistOffsiteOpportunity } = await esmock('../../src/common/offsite-refresh.js', {
+        '../../src/common/opportunity-utils.js': {
+          checkGoogleConnection: sandbox.stub().resolves(true),
+        },
+      }));
+    });
+
+    it('P4-2: logs opportunity_persist success on the create path with the correct audit slug', async () => {
+      const created = { getId: () => 'new-opp-id' };
+      const context = {
+        dataAccess: { Opportunity: { create: sandbox.stub().resolves(created) } },
+        log,
+      };
+
+      await persistOffsiteOpportunity(
+        'https://example.com',
+        { siteId: 'site-1', id: 'audit-1' },
+        context,
+        () => ({ data: {}, status: 'IGNORED' }),
+        'reddit-analysis',
+        { existingOpportunity: null },
+      );
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=opportunity_persist/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/audit=reddit/))
+          .and(sinon.match(/opportunityId=new-opp-id/))
+          .and(sinon.match(/status=IGNORED/)),
+      );
+    });
+
+    it('P4-2: logs opportunity_persist success on the evergreen refresh path', async () => {
+      const evergreen = {
+        getType: () => 'cited-analysis',
+        getData: () => ({}),
+        getId: () => 'evergreen-1',
+        setAuditId: sandbox.stub(),
+        setData: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      const context = {
+        dataAccess: { Opportunity: {} },
+        log,
+      };
+
+      await persistOffsiteOpportunity(
+        'https://example.com',
+        { siteId: 'site-1', id: 'audit-1' },
+        context,
+        () => ({ data: {} }),
+        'cited-analysis',
+        { existingOpportunity: evergreen },
+      );
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=opportunity_persist/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/opportunityId=evergreen-1/)),
+      );
+    });
+
+    it('P4-3: logs a loud, structured opportunity_persist failure then rethrows unchanged', async () => {
+      const context = {
+        dataAccess: { Opportunity: { create: sandbox.stub().rejects(new Error('db exploded')) } },
+        log,
+      };
+
+      await expect(persistOffsiteOpportunity(
+        'https://example.com',
+        { siteId: 'site-1', id: 'audit-1' },
+        context,
+        () => ({ data: {}, status: 'NEW' }),
+        'youtube-analysis',
+        { existingOpportunity: null },
+      )).to.be.rejectedWith('db exploded');
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/event=opportunity_persist/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=db_write/))
+          .and(sinon.match(/errorName=Error/))
+          .and(sinon.match(/audit=youtube/)),
+      );
     });
   });
 });
