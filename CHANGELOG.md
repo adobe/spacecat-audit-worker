@@ -1,3 +1,10 @@
+# [1.512.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.13...v1.512.0) (2026-08-03)
+
+
+### Features
+
+* add support for forwarding urlLimit from offsite-brand-presence to individual cited analysis audits (LLMO-6723) ([#2845](https://github.com/adobe/spacecat-audit-worker/issues/2845)) ([0579992](https://github.com/adobe/spacecat-audit-worker/commit/05799929c8152dd0dd041006979b2206ef9312ee))
+
 ## [1.511.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.12...v1.511.13) (2026-08-03)
 
 
