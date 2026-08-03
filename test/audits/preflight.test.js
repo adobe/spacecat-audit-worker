@@ -814,6 +814,52 @@ describe('Preflight Audit', () => {
       sandbox.restore();
     });
 
+    describe('form-accessibility step gating (SITES-49003)', () => {
+      const captureEnabledChecks = () => {
+        const captured = [];
+        context.dataAccess.AsyncJob.findById = sinon.stub().resolves({
+          getId: () => 'job-123',
+          getMetadata: () => ({ payload: {} }),
+          setResult: sinon.stub(),
+          setStatus: sinon.stub(),
+          setResultType: sinon.stub(),
+          setMetadata: sinon.stub().callsFake((m) => {
+            if (Array.isArray(m?.payload?.checks)) captured.push(m.payload.checks);
+          }),
+          setEndedAt: sinon.stub(),
+          setError: sinon.stub(),
+          save: sinon.stub().resolves(),
+        });
+        return captured;
+      };
+
+      it('advertises form-accessibility in the identify step', async () => {
+        configuration.isHandlerEnabledForSite.returns(true);
+        const captured = captureEnabledChecks();
+        job.getMetadata = () => ({
+          payload: { step: PREFLIGHT_STEP_IDENTIFY, urls: ['https://main--example--page.aem.page/page1'] },
+        });
+
+        await preflightAuditFunction(context);
+
+        expect(captured[0]).to.include('form-accessibility');
+      });
+
+      it('drops form-accessibility from the suggest step so it is not run concurrently with identify', async () => {
+        configuration.isHandlerEnabledForSite.returns(true);
+        const captured = captureEnabledChecks();
+        job.getMetadata = () => ({
+          payload: { step: PREFLIGHT_STEP_SUGGEST, urls: ['https://main--example--page.aem.page/page1'] },
+        });
+
+        await preflightAuditFunction(context);
+
+        expect(captured[0]).to.not.include('form-accessibility');
+        // sanity: other checks are still advertised in suggest
+        expect(captured[0]).to.include('metatags');
+      });
+    });
+
     it('completes successfully on the happy path for the suggest step', async () => {
       context.promiseToken = 'mock-promise-token';
       const head = '<head><a href="https://example.com/header-url"/></head>';
