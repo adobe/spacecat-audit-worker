@@ -595,7 +595,9 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
 
     pageResults.forEach((result) => {
       allReadabilityIssues.push(...result.issues);
-      (result.scrapedUrls || []).forEach((u) => scrapedUrls.add(u));
+      // Every per-page branch returns a scrapedUrls array (possibly empty), so no
+      // nullish guard is needed here.
+      result.scrapedUrls.forEach((u) => scrapedUrls.add(u));
       if (result.processed) {
         urlsProcessed += 1;
       }
