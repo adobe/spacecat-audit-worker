@@ -706,6 +706,10 @@ describe('Readability Opportunities Handler Tests', () => {
         success: true,
         message: 'Found 1 readability issues',
         readabilityIssues: mockReadabilityIssues,
+        scrapedUrls: [
+          'https://example.com/page1',
+          'https://example.com/page2',
+        ],
         urlsProcessed: 2,
       });
 
@@ -725,6 +729,55 @@ describe('Readability Opportunities Handler Tests', () => {
       // suggestion data carries url (mirrors pageUrl) so the scrapedUrlsSet check
       // in handleOutdatedSuggestions (which reads data.url) actually matches
       expect(syncCallArgs.newData[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should include redirect-resolved finalUrls in scrapedUrlsSet so a suggestion whose data.url is the finalUrl still ages out (LLMO-6761)', async () => {
+      // page1 was requested at /page1 but the scraper resolved it to /page1-final
+      // (redirect). The resulting suggestion's data.url is the finalUrl. The
+      // scrapedUrlsSet must contain BOTH forms, otherwise a genuinely-fixed page
+      // keyed on the finalUrl would never become OUTDATED-eligible.
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+      mockContext.scrapeResultPaths = scrapeResultPaths;
+
+      const mockReadabilityIssues = [
+        {
+          pageUrl: 'https://example.com/page1-final',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Complex epistemological ramifications necessitate comprehensive analysis.',
+          fleschReadingEase: 15.5,
+          traffic: 1000,
+          rank: 26,
+        },
+      ];
+
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 1 readability issues',
+        readabilityIssues: mockReadabilityIssues,
+        // analysis surfaces both the requested URL and the resolved finalUrl
+        scrapedUrls: [
+          'https://example.com/page1',
+          'https://example.com/page1-final',
+        ],
+        urlsProcessed: 1,
+      });
+
+      const mockOpportunity = { getId: sandbox.stub().returns('opp-id') };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      await processReadabilityOpportunities(mockContext);
+
+      const syncCallArgs = syncSuggestionsStub.getCall(0).args[0];
+      // data.url is the finalUrl (mirrors pageUrl) ...
+      expect(syncCallArgs.newData[0].url).to.equal('https://example.com/page1-final');
+      // ... and the set contains it, so handleOutdatedSuggestions' data.url check matches
+      expect(syncCallArgs.scrapedUrlsSet.has('https://example.com/page1-final')).to.equal(true);
+      expect(syncCallArgs.scrapedUrlsSet.has('https://example.com/page1')).to.equal(true);
     });
   });
 });

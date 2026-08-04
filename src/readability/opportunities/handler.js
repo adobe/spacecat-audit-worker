@@ -175,7 +175,9 @@ export async function processReadabilityOpportunities(context) {
       };
     }
 
-    const { readabilityIssues: allIssues, urlsProcessed } = readabilityAnalysisResult;
+    const {
+      readabilityIssues: allIssues, urlsProcessed, scrapedUrls = [],
+    } = readabilityAnalysisResult;
 
     // Filter out issues without a selector — they cannot be uniquely identified
     const readabilityIssues = allIssues.filter((issue) => Boolean(issue.selector));
@@ -217,10 +219,14 @@ export async function processReadabilityOpportunities(context) {
 
     // Readability only audits a top-N-by-traffic sample of pages each run (not the
     // whole site), and that sample shifts over time. Scope OUTDATED eligibility to
-    // pages actually scraped THIS run (scrapeResultPaths is the full scrape input,
-    // flagged or clean) so a page merely falling out of this cycle's sample doesn't
-    // get its suggestion wrongly cleared as "issue disappeared" (LLMO-6537).
-    const scrapedUrlsSet = new Set(scrapeResultPaths.keys());
+    // pages actually scraped THIS run so a page merely falling out of this cycle's
+    // sample doesn't get its suggestion wrongly cleared as "issue disappeared"
+    // (LLMO-6537). Include both the requested scrape URLs (scrapeResultPaths keys —
+    // keeps pages that failed to read protected) and the resolved finalUrls the
+    // analysis recorded, because a suggestion's data.url is `finalUrl || url`; on a
+    // redirect the two diverge and a request-URL-only set would never age out a
+    // genuinely-fixed page (LLMO-6761).
+    const scrapedUrlsSet = new Set([...scrapeResultPaths.keys(), ...scrapedUrls]);
 
     await syncSuggestions({
       opportunity,
