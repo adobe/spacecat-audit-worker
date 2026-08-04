@@ -682,5 +682,49 @@ describe('Readability Opportunities Handler Tests', () => {
         mockContext.log,
       );
     });
+
+    it('should scope syncSuggestions scrapedUrlsSet to pages scraped this run (LLMO-6537)', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+        ['https://example.com/page2', 'scraped/page2.json'],
+      ]);
+      mockContext.scrapeResultPaths = scrapeResultPaths;
+
+      const mockReadabilityIssues = [
+        {
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Complex epistemological ramifications necessitate comprehensive analysis.',
+          fleschReadingEase: 15.5,
+          traffic: 1000,
+          rank: 26,
+        },
+      ];
+
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 1 readability issues',
+        readabilityIssues: mockReadabilityIssues,
+        urlsProcessed: 2,
+      });
+
+      const mockOpportunity = { getId: sandbox.stub().returns('opp-id') };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      await processReadabilityOpportunities(mockContext);
+
+      const syncCallArgs = syncSuggestionsStub.getCall(0).args[0];
+      expect(syncCallArgs.scrapedUrlsSet).to.be.instanceOf(Set);
+      expect(Array.from(syncCallArgs.scrapedUrlsSet)).to.have.members([
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+      // suggestion data carries url (mirrors pageUrl) so the scrapedUrlsSet check
+      // in handleOutdatedSuggestions (which reads data.url) actually matches
+      expect(syncCallArgs.newData[0].url).to.equal('https://example.com/page1');
+    });
   });
 });

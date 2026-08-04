@@ -203,6 +203,9 @@ export async function processReadabilityOpportunities(context) {
 
       return {
         ...data,
+        // url mirrors pageUrl so handleOutdatedSuggestions' scrapedUrlsSet check
+        // (which reads data.url) can scope OUTDATED eligibility below.
+        url: issue.pageUrl,
         scrapedAt: new Date(issue.scrapedAt).toISOString(),
         id: `readability-${siteId}-${index}`,
         textPreview: textContent?.substring(0, 500),
@@ -212,11 +215,19 @@ export async function processReadabilityOpportunities(context) {
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
     const buildKey = (data) => `${data.pageUrl}-${data.selector}`;
 
+    // Readability only audits a top-N-by-traffic sample of pages each run (not the
+    // whole site), and that sample shifts over time. Scope OUTDATED eligibility to
+    // pages actually scraped THIS run (scrapeResultPaths is the full scrape input,
+    // flagged or clean) so a page merely falling out of this cycle's sample doesn't
+    // get its suggestion wrongly cleared as "issue disappeared" (LLMO-6537).
+    const scrapedUrlsSet = new Set(scrapeResultPaths.keys());
+
     await syncSuggestions({
       opportunity,
       newData: suggestionsData,
       context,
       buildKey,
+      scrapedUrlsSet,
       mapNewSuggestion: (data) => ({
         opportunityId: opportunity.getId(),
         type: SuggestionModel.TYPES.CONTENT_UPDATE,
