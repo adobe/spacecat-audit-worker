@@ -1,3 +1,10 @@
+# [1.514.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.513.0...v1.514.0) (2026-08-04)
+
+
+### Features
+
+* **preflight:** surface offending-element text/link across audits ([#2838](https://github.com/adobe/spacecat-audit-worker/issues/2838)) ([2277be1](https://github.com/adobe/spacecat-audit-worker/commit/2277be1313398a01b9405efe5c9e97dac772b5f2))
+
 # [1.513.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.512.0...v1.513.0) (2026-08-03)
 
 
