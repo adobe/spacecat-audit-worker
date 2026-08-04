@@ -213,7 +213,7 @@ describe('CDN Analysis Handler', () => {
     it('successfully processes CDN analysis with valid configuration', async function () {
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
-      expect(result.auditResult.database).to.equal('cdn_logs_example_com');
+      expect(result.auditResult.database).to.equal('cdn_logs_test_site_id');
       expect(result.auditResult.providers).to.be.an('array');
 
       const deleteWasCalled = context.s3Client.send.getCalls()

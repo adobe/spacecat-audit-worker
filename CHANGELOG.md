@@ -1,3 +1,25 @@
+# [1.513.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.512.0...v1.513.0) (2026-08-03)
+
+
+### Features
+
+* **autofix:** honor isEdited for summarization, readability & FAQs (LLMO-6537) ([#2833](https://github.com/adobe/spacecat-audit-worker/issues/2833)) ([6de8b3e](https://github.com/adobe/spacecat-audit-worker/commit/6de8b3e34628869789006aa4a30e9edac31c24af)), closes [#2803](https://github.com/adobe/spacecat-audit-worker/issues/2803)
+
+# [1.512.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.13...v1.512.0) (2026-08-03)
+
+
+### Features
+
+* add support for forwarding urlLimit from offsite-brand-presence to individual cited analysis audits (LLMO-6723) ([#2845](https://github.com/adobe/spacecat-audit-worker/issues/2845)) ([0579992](https://github.com/adobe/spacecat-audit-worker/commit/05799929c8152dd0dd041006979b2206ef9312ee))
+
+## [1.511.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.12...v1.511.13) (2026-08-03)
+
+
+### Bug Fixes
+
+* **cdn-logs:** use site id for CDN logs Glue database and table names ([#2843](https://github.com/adobe/spacecat-audit-worker/issues/2843)) ([f80b793](https://github.com/adobe/spacecat-audit-worker/commit/f80b7936fb9ff3cd1e3b1794269f5773b41177d3))
+* **llm-error-pages:** skip query when cdn-logs-analysis is disabled ([#2844](https://github.com/adobe/spacecat-audit-worker/issues/2844)) ([30bbda5](https://github.com/adobe/spacecat-audit-worker/commit/30bbda5ab464f1544a4e79ec5a0933e2446869c0))
+
 ## [1.511.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.511.11...v1.511.12) (2026-08-01)
 
 

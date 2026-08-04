@@ -561,6 +561,27 @@ export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
 }
 
 /**
+ * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when
+ * `urlLimit` is absent instead of defaulting to `MYSTIQUE_URLS_LIMIT`. Used by
+ * offsite-brand-presence to forward an explicitly-requested urlLimit through the DRS
+ * scrape round-trip (poll → analysis audit) without forcing the default onto every run
+ * that didn't ask for one — mirrors the tri-state {@link resolveEnableBrandProfile}.
+ *
+ * @param {object} [auditContext]
+ * @param {number|string} [auditContext.messageData.urlLimit]
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {number|undefined}
+ */
+export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
+  const raw = auditContext?.messageData?.urlLimit;
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  return resolveMystiqueUrlLimit(auditContext, log, logPrefix);
+}
+
+/**
  * Enqueues a domain-scoped offsite-brand-presence run so a single analysis audit can
  * obtain its own DRS-scraped content when none is available yet. The scoped run
  * collects + scrapes only `domainScope`, then (after DRS completes) re-triggers the
@@ -573,6 +594,8 @@ export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
  * @param {boolean} [enableBrandProfile] - Forwarded so the re-triggered analysis audit (once
  *   this scoped offsite-brand-presence run completes DRS scraping) still resolves the flag
  *   originally requested on Slack, instead of losing it across the scrape round-trip.
+ * @param {number} [urlLimit] - Forwarded so the re-triggered analysis audit still resolves the
+ *   urlLimit originally requested on Slack, instead of losing it across the scrape round-trip.
  *
  * Best-effort: a transient Configuration/SQS failure is logged and swallowed rather than
  * thrown, so the analysis audit degrades to its pending_scrape result instead of failing
@@ -584,6 +607,7 @@ export async function requestOffsiteScrape(
   domainScope,
   slackContext,
   enableBrandProfile,
+  urlLimit,
 ) {
   const { sqs, dataAccess, log } = context;
   try {
@@ -593,7 +617,11 @@ export async function requestOffsiteScrape(
       siteId,
       auditContext: {
         ...(slackContext && { slackContext }),
-        messageData: { domainScope, ...(enableBrandProfile != null && { enableBrandProfile }) },
+        messageData: {
+          domainScope,
+          ...(enableBrandProfile != null && { enableBrandProfile }),
+          ...(urlLimit != null && { urlLimit }),
+        },
       },
     });
     log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);

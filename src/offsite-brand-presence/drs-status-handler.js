@@ -143,6 +143,9 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  * @param {boolean} [enableBrandProfile] - Forwarded from the originating Slack request (see
  *   offsite-brand-presence/handler.js) so it reaches the Mystique message the re-triggered
  *   analysis audit ultimately sends, instead of being lost across the scrape round-trip.
+ * @param {number} [urlLimit] - Forwarded from the originating Slack request (see
+ *   offsite-brand-presence/handler.js) so the re-triggered analysis audit resolves the same
+ *   urlLimit, instead of losing it across the scrape round-trip.
  * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
 async function triggerAnalysisAudits(
@@ -152,6 +155,7 @@ async function triggerAnalysisAudits(
   context,
   drsStartedAt,
   enableBrandProfile,
+  urlLimit,
 ) {
   const { sqs, dataAccess, log } = context;
 
@@ -174,6 +178,10 @@ async function triggerAnalysisAudits(
         // eslint-disable-next-line no-continue
         continue;
       }
+      const messageData = {
+        ...(enableBrandProfile != null && { enableBrandProfile }),
+        ...(urlLimit != null && { urlLimit }),
+      };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(queueUrl, {
         type,
@@ -185,7 +193,7 @@ async function triggerAnalysisAudits(
           slackContext,
           drsScrapeRequested: true,
           ...(Number.isFinite(drsStartedAt) && { timings: { drsStartedAt, drsCompletedAt } }),
-          ...(enableBrandProfile != null && { messageData: { enableBrandProfile } }),
+          ...(Object.keys(messageData).length > 0 && { messageData }),
         },
       });
       log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
@@ -247,7 +255,8 @@ function buildSummary(baseURL, statuses, drsStartedAt, triggeredAuditTypes = [])
  * triggered at most once across the poll lifecycle.
  *
  * @param {object} message - SQS message with auditContext { baseURL, slackContext?,
- *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes?, enableBrandProfile? }
+ *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes?, enableBrandProfile?,
+ *   urlLimit? }
  * @param {object} context - Universal context (log, sqs, dataAccess, env)
  * @returns {Promise<Response>}
  */
@@ -257,7 +266,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { siteId, auditContext = {} } = message;
   const {
     baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [], drsStartedAt,
-    enableBrandProfile,
+    enableBrandProfile, urlLimit,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
 
@@ -302,6 +311,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       context,
       drsStartedAt,
       enableBrandProfile,
+      urlLimit,
     );
   } catch (err) {
     log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);

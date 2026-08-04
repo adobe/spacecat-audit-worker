@@ -19,6 +19,7 @@ import {
   NON_EARNED_EXCLUDED_DOMAINS,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveForwardedUrlLimit,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
   requestOffsiteScrape,
@@ -469,6 +470,29 @@ describe('offsite-audit-utils', () => {
     });
   });
 
+  describe('resolveForwardedUrlLimit', () => {
+    it('returns undefined when urlLimit is absent, so the default is not forced onto every run', () => {
+      expect(resolveForwardedUrlLimit({})).to.be.undefined;
+      expect(resolveForwardedUrlLimit(undefined)).to.be.undefined;
+      expect(resolveForwardedUrlLimit(null)).to.be.undefined;
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: '' } })).to.be.undefined;
+    });
+
+    it('resolves and caps an explicit urlLimit, like resolveMystiqueUrlLimit', () => {
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: 5 } })).to.equal(5);
+      expect(resolveForwardedUrlLimit(
+        { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
+      )).to.equal(MYSTIQUE_URLS_LIMIT);
+    });
+
+    it('falls back to the default and warns when an explicit urlLimit is invalid', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]'))
+        .to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(log.warn).to.have.been.calledOnce;
+    });
+  });
+
   describe('resolveEnableBrandProfile', () => {
     it('returns undefined when auditContext or messageData is absent, so the flag is omitted', () => {
       expect(resolveEnableBrandProfile({})).to.be.undefined;
@@ -555,6 +579,24 @@ describe('offsite-audit-utils', () => {
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
+    });
+
+    it('forwards urlLimit in messageData alongside enableBrandProfile', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, 20);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({
+        domainScope: 'reddit.com',
+        enableBrandProfile: true,
+        urlLimit: 20,
+      });
+    });
+
+    it('forwards urlLimit without enableBrandProfile when only urlLimit is given', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, undefined, 15);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', urlLimit: 15 });
     });
 
     it('swallows and logs a warning when the send fails', async () => {

@@ -9,16 +9,19 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-export function getConfigs(bucket, siteKey, siteId) {
+import { siteCatalogKey } from '../../utils/cdn-utils.js';
+
+export function getConfigs(bucket, siteId) {
+  const catalogKey = siteCatalogKey(siteId);
   return [
     {
       name: 'agentic',
       aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
-      tableName: `aggregated_logs_${siteKey}_consolidated`,
+      tableName: `aggregated_logs_${catalogKey}`,
     },
     {
       name: 'referral',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
-      tableName: `aggregated_referral_logs_${siteKey}_consolidated`,
+      tableName: `aggregated_referral_logs_${catalogKey}`,
     }];
 }

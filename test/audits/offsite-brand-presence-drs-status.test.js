@@ -336,6 +336,33 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableBrandProfile: false });
     });
 
+    it('forwards urlLimit as messageData on every triggered analysis audit when set', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ urlLimit: 20 }), context);
+
+      const calls = context.sqs.sendMessage.getCalls();
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      const youtube = calls.find((c) => c.args[1].type === 'youtube-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ urlLimit: 20 });
+      expect(youtube.args[1].auditContext.messageData).to.deep.equal({ urlLimit: 20 });
+    });
+
+    it('forwards both enableBrandProfile and urlLimit together as messageData', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableBrandProfile: true, urlLimit: 20 }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({
+        enableBrandProfile: true,
+        urlLimit: 20,
+      });
+    });
+
     it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
       mockGetJob.withArgs('job-c').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-w').resolves({ status: 'COMPLETED' });

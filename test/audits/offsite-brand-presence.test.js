@@ -1617,6 +1617,29 @@ describe('Offsite Brand Presence Handler', () => {
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.enableBrandProfile).to.be.undefined;
     });
+
+    it('forwards urlLimit to the poll message auditContext when set on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { urlLimit: '20' },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.urlLimit).to.equal(20);
+    });
+
+    it('omits urlLimit from the poll message auditContext when absent on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.urlLimit).to.be.undefined;
+    });
   });
 
   describe('Domain-scoped runs (granular single-audit triggers)', () => {
