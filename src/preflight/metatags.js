@@ -23,7 +23,7 @@ export const PREFLIGHT_METATAGS = 'metatags';
  * Extract selectors for metatag elements from the scraped HTML
  * @param {string} rawBody - The HTML content (must be truthy - caller should validate)
  * @param {string} tagName - The tag name (title, description, h1)
- * @returns {string|string[]|null} Selector(s) for the tag
+ * @returns {string|Array<{selector: string, textContent: string}>|null} Selector(s) for the tag
  */
 function generateSelectorsForTag(rawBody, tagName) {
   const $ = cheerioLoad(rawBody);
@@ -42,8 +42,8 @@ function generateSelectorsForTag(rawBody, tagName) {
   if (tagName === 'h1') {
     const h1Elements = $('h1').toArray();
     return h1Elements
-      .map((h1) => getDomElementSelector(h1))
-      .filter(Boolean);
+      .map((h1) => ({ selector: getDomElementSelector(h1), textContent: $(h1).text().trim() }))
+      .filter((pair) => pair.selector);
   }
   /* c8 ignore next 2 - unreachable: only title/description/h1 tag names from metatags audit */
   return null;

@@ -297,6 +297,7 @@ export const preflightAudit = async (context) => {
               issue: 'Body content length is below 100 characters',
               seoImpact: 'Moderate',
               seoRecommendation: 'Add more meaningful content to the page',
+              textContent,
               ...toElementTargets(getDomElementSelector($('body').get(0))),
             });
           }
@@ -323,21 +324,20 @@ export const preflightAudit = async (context) => {
               return false;
             }),
           );
-          const loremSelectors = loremElements.map(
-            (el) => getDomElementSelector(el),
-          ).filter(Boolean);
-          const fallbackSelector = loremSelectors.length === 0
-            ? getDomElementSelector($('body').get(0))
-            : null;
+          // Pair each element with its own text so multiple matches don't all show the first
+          // element's text once the MFE expands them into separate instances.
+          const loremPairs = loremElements
+            .map((el) => ({
+              selector: getDomElementSelector(el),
+              textContent: $(el).text().trim(),
+            }))
+            .filter((pair) => pair.selector);
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
-            ...toElementTargets(
-              loremSelectors.length > 0 ? loremSelectors : fallbackSelector,
-              10,
-            ),
+            ...toElementTargets(loremPairs),
           });
         }
 
@@ -346,11 +346,14 @@ export const preflightAudit = async (context) => {
           if (headingCount !== 1) {
             const h1Elements = $('h1').toArray();
 
-            const h1Selectors = h1Elements
-              .map((el) => getDomElementSelector(el))
-              .filter(Boolean);
-            const fallbackElement = $('body > main').get(0) || $('body').get(0);
-            const fallbackSelector = getDomElementSelector(fallbackElement);
+            // Pair each H1 with its own text. When there are zero H1s, there is no
+            // offending element to point at, so no element is attached.
+            const h1Pairs = h1Elements
+              .map((el) => ({
+                selector: getDomElementSelector(el),
+                textContent: $(el).text().trim(),
+              }))
+              .filter((pair) => pair.selector);
 
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
@@ -361,9 +364,7 @@ export const preflightAudit = async (context) => {
               seoImpact: 'High',
               seoRecommendation:
                 'Use exactly one H1 tag per page for better SEO structure',
-              ...toElementTargets(
-                headingCount > 0 ? h1Selectors : fallbackSelector,
-              ),
+              ...toElementTargets(h1Pairs),
             });
           }
         }

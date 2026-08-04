@@ -101,7 +101,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://main--example--page.aem.page/broken',
           href: 'https://main--example--page.aem.page/page1',
           status: 404,
-          elements: [{ selector: 'body > a' }],
+          elements: [{ selector: 'body > a', textContent: 'broken' }],
         },
       ]);
     });
@@ -189,7 +189,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://main--example--page.aem.page/head-fails-get-404',
           href: 'https://main--example--page.aem.page/page1',
           status: 404,
-          elements: [{ selector: 'body > a' }],
+          elements: [{ selector: 'body > a', textContent: 'link' }],
         },
       ]);
       expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
@@ -351,7 +351,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://external-site.com/broken',
           href: 'https://main--example--page.aem.page/page1',
           status: 404,
-          elements: [{ selector: 'body > a' }],
+          elements: [{ selector: 'body > a', textContent: 'external broken' }],
         },
       ]);
     });
@@ -442,7 +442,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://external-site.com/head-fails-get-404',
           href: 'https://main--example--page.aem.page/page1',
           status: 404,
-          elements: [{ selector: 'body > a' }],
+          elements: [{ selector: 'body > a', textContent: 'external link' }],
         },
       ]);
       expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
@@ -472,7 +472,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://main--example--page.aem.page/internal-broken',
           href: 'https://main--example--page.aem.page/page1',
           status: 404,
-          elements: [{ selector: 'body > a:nth-of-type(1)' }],
+          elements: [{ selector: 'body > a:nth-of-type(1)', textContent: 'internal' }],
         },
       ]);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
@@ -480,7 +480,7 @@ describe('Preflight Audit', () => {
           urlTo: 'https://external-site.com/external-broken',
           href: 'https://main--example--page.aem.page/page1',
           status: 500,
-          elements: [{ selector: 'body > a:nth-of-type(2)' }],
+          elements: [{ selector: 'body > a:nth-of-type(2)', textContent: 'external' }],
         },
       ]);
     });
@@ -1272,7 +1272,7 @@ describe('Preflight Audit', () => {
     it('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
       const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
-      const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
+      const body = `<body><div>${'a'.repeat(10)}lorem ipsum</div><a href="broken"></a><a href="http://test.com"></a></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
       // Mock the broken internal link to return 404 (HEAD + GET-confirm).

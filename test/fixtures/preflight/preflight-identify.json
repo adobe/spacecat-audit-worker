@@ -12,6 +12,7 @@
             "issue": "Body content length is below 100 characters",
             "seoImpact": "Moderate",
             "seoRecommendation": "Add more meaningful content to the page",
+            "textContent": "aaaaaaaaaalorem ipsum",
             "elements": [
               {
                 "selector": "body"
@@ -31,7 +32,8 @@
             "seoRecommendation": "Replace placeholder text with meaningful content",
             "elements": [
               {
-                "selector": "body"
+                "selector": "body > div",
+                "textContent": "aaaaaaaaaalorem ipsum"
               }
             ]
           }
@@ -45,12 +47,7 @@
             "check": "missing-h1",
             "issue": "No H1 tag found on the page",
             "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
-            "elements": [
-              {
-                "selector": "body"
-              }
-            ]
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
           }
         ]
       },

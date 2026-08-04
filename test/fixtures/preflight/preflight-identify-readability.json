@@ -21,12 +21,7 @@
             "check": "missing-h1",
             "issue": "No H1 tag found on the page",
             "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
-            "elements": [
-              {
-                "selector": "body"
-              }
-            ]
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
           }
         ]
       },

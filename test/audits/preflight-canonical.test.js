@@ -141,6 +141,30 @@ describe('Preflight Canonical Audit', () => {
       expect(checks).to.include('canonical-tag-multiple');
     });
 
+    it('surfaces every canonical tag selector for canonical-tag-multiple, not just the first', async () => {
+      // Protects: the whole point of this check is "there is more than one" — surfacing only
+      // one tag's selector would hide the rest from the author (SITES-48646 follow-up).
+      const ctx = buildContext();
+      const rawBody = `<html><head>
+        <link rel="canonical" href="${PAGE_URL}">
+        <link rel="canonical" href="${PAGE_URL}/duplicate">
+      </head><body></body></html>`;
+      const auditCtx = buildAuditContext([buildScrapedObject(
+        { exists: true, count: 2, href: PAGE_URL, inHead: true },
+        rawBody,
+      )]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const { opportunities } = getCanonicalAudit(auditCtx.auditsResult);
+      const multipleTagsOpp = opportunities.find((o) => o.check === 'canonical-tag-multiple');
+      expect(multipleTagsOpp.elements).to.have.lengthOf(2);
+      expect(multipleTagsOpp.elements.map((e) => e.selector)).to.deep.equal([
+        'head > link:nth-of-type(1)',
+        'head > link:nth-of-type(2)',
+      ]);
+    });
+
     it('reports canonical-tag-empty when href is blank whitespace', async () => {
       const ctx = buildContext();
       const auditCtx = buildAuditContext([buildScrapedObject({
@@ -324,8 +348,10 @@ describe('Preflight Canonical Audit', () => {
       await canonicalHandler(ctx, auditCtx);
 
       const [opp] = getCanonicalAudit(auditCtx.auditsResult).opportunities;
-      expect(opp).to.have.all.keys('check', 'issue', 'seoImpact', 'seoRecommendation');
+      expect(opp).to.have.all.keys('check', 'issue', 'seoImpact', 'seoRecommendation', 'suggestion');
       expect(opp.seoImpact).to.equal('Moderate');
+      // A missing canonical tag's fix is unambiguous: point it at the page's own URL.
+      expect(opp.suggestion).to.equal(PAGE_URL);
     });
   });
 
