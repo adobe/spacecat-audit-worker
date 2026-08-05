@@ -877,6 +877,9 @@ describe('Hreflang Audit', () => {
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
       };
 
       const fullMockContext = {
@@ -939,6 +942,9 @@ describe('Hreflang Audit', () => {
         getStatus: sinon.stub().returns('NEW'),
         setData: sinon.stub(),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),
@@ -1010,6 +1016,9 @@ describe('Hreflang Audit', () => {
         getType: () => 'hreflang',
         getSuggestions: sinon.stub().resolves([]),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
         save: sinon.stub().resolves(),
         addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
       };

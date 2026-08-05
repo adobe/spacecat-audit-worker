@@ -3288,6 +3288,9 @@ describe('Headings Audit', () => {
                   ]
                 }),
                 setAuditId: sinon.stub(),
+                // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+                setScopeType: sinon.stub(),
+                setScopeId: sinon.stub(),
                 setData: sinon.stub(),
                 setUpdatedBy: sinon.stub(),
                 save: sinon.stub().resolves(),

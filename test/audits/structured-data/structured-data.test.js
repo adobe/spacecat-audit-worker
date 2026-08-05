@@ -336,6 +336,9 @@ describe('Structured Data Audit', () => {
         auditId: 'audit-id-12345',
         updatedBy: 'system',
         setAuditId: () => {},
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: () => {},
+        setScopeId: () => {},
         getSuggestions: () => [],
         getType: () => 'structured-data',
         getData: () => ({ dataSources: ['SEO', 'Site'] }),

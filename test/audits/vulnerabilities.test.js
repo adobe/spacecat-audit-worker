@@ -608,6 +608,9 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         getData: () => ({}),
         setData: sandbox.stub(),
         setAuditId: sandbox.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
         getSuggestions: sandbox.stub().resolves(existingSuggestions),

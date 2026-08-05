@@ -37,6 +37,9 @@ describe('Missing Alt Text Guidance Handler', () => {
     mockOpportunity = {
       getId: () => 'opportunity-id',
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setData: sandbox.stub(),
       getData: sandbox.stub().returns({}),
       save: sandbox.stub(),
@@ -853,6 +856,9 @@ describe('Missing Alt Text Guidance Handler - PLG alert behavior', () => {
     mockOpportunity = {
       getId: () => 'opportunity-id',
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setData: sandbox.stub(),
       getData: sandbox.stub().returns({}),
       save: sandbox.stub(),
