@@ -78,6 +78,17 @@ describe('runGscSearchAnalytics', () => {
     expect(threw).to.equal(true);
   });
 
+  it('re-raises an error that has no message (falsy message path)', async () => {
+    sinon.stub(GoogleClient, 'createFrom').rejects(new Error());
+    let threw = false;
+    try {
+      await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    } catch {
+      threw = true;
+    }
+    expect(threw).to.equal(true);
+  });
+
   it('records a per-group failure without wiping other groups', async () => {
     const google = { getOrganicSearchData: sinon.stub().rejects(new Error('GSC 500')) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);

@@ -30,8 +30,12 @@ describe('match', () => {
     const map = indexRows([
       { keys: ['https://krisshop.com/products/x'], clicks: 5, impressions: 50, ctr: 0.1, position: 4 },
       { keys: [], clicks: 1, impressions: 1 }, // missing key -> tolerated
+      { keys: ['https://krisshop.com/z'] }, // no metric fields -> default to 0
     ]);
     expect(lookup(map, 'https://krisshop.com/products/x/')).to.include({ clicks: 5 });
+    expect(lookup(map, 'https://krisshop.com/z')).to.deep.equal({
+      clicks: 0, impressions: 0, ctr: 0, position: 0,
+    });
     expect(lookup(map, 'https://krisshop.com/missing')).to.equal(null);
   });
 });
