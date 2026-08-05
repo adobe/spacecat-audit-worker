@@ -266,6 +266,58 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
+
+    it('a Slack-requested enableSemrush:true override invokes the Semrush loader even when the env var is off', async () => {
+      // flag unset in env
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('a Slack-requested enableSemrush:false override skips the Semrush loader even when the env var is on', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: false } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+    });
+
+    it('an invalid enableSemrush override is ignored and the env var value applies, with a warning logged', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: 'maybe' } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch(/Invalid enableSemrush/);
+    });
   });
 
   describe('URL Extraction', () => {

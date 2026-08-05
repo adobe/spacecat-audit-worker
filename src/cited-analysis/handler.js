@@ -23,6 +23,7 @@ import {
   resolveMystiqueUrlLimit,
   resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
@@ -241,7 +242,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit, enableBrandProfile from Slack)
+ *   (e.g. urlLimit, enableBrandProfile, enableSemrush from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
@@ -257,6 +258,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, LOG_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, log, LOG_PREFIX);
 
   try {
     const citedConfig = getCitedConfig(site);
@@ -365,6 +367,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         slackContext,
         enableBrandProfile,
         forwardedUrlLimit,
+        enableSemrush,
       );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
@@ -404,6 +407,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         slackContext,
         enableBrandProfile,
         forwardedUrlLimit,
+        enableSemrush,
       );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },

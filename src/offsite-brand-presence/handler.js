@@ -24,6 +24,7 @@ import {
   isExcludedCitedHost,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
@@ -855,6 +856,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // scraping completes, so a Slack-requested flag survives the scrape round-trip.
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
   const urlLimit = resolveForwardedUrlLimit(auditContext, log, LOG_PREFIX);
+  const enableSemrushOverride = resolveEnableSemrush(auditContext, log, LOG_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -892,7 +894,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   const allUrls = new Map();
   let usedSemrush = false;
-  if (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true') {
+  const semrushEnabled = enableSemrushOverride
+    ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
+  if (semrushEnabled) {
     // Semrush-first: the loader returns the same allUrls shape, with
     // count = exact citations. Everything downstream (selectTopUrls -> DRS)
     // is unchanged. If Semrush yields no usable URLs (auth failure, no brand,

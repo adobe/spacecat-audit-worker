@@ -561,6 +561,43 @@ export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
 }
 
 /**
+ * Optional `enableSemrush` flag from `auditContext.messageData.enableSemrush`, same
+ * Slack-originated mechanism as {@link resolveEnableBrandProfile}. Lets a Slack-triggered
+ * run override the global `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` env var for that single
+ * run — e.g. to test the Semrush URL-Inspector source ahead of a fleet-wide env var flip, or
+ * to force the legacy source for one run while the env var is on.
+ *
+ * Tri-state by design: an explicit `true`/`false` overrides the env var for this run only,
+ * while `undefined` (absent, empty, or invalid input) means the env var's value applies
+ * unchanged. Slack delivers keyword values as strings, so only the strings 'true'/'false' or
+ * real booleans are accepted as explicit values; anything else resolves to `undefined`.
+ *
+ * @param {object} [auditContext]
+ * @param {boolean|string} [auditContext.messageData.enableSemrush]
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {boolean|undefined}
+ */
+export function resolveEnableSemrush(auditContext, log, logPrefix) {
+  const prefix = logPrefix ?? '';
+  const ctx = auditContext ?? {};
+  const raw = ctx.messageData?.enableSemrush;
+  if (raw === true || raw === 'true') {
+    return true;
+  }
+  if (raw === false || raw === 'false') {
+    return false;
+  }
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  log?.warn(
+    `${prefix} Invalid enableSemrush in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
+  );
+  return undefined;
+}
+
+/**
  * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when
  * `urlLimit` is absent instead of defaulting to `MYSTIQUE_URLS_LIMIT`. Used by
  * offsite-brand-presence to forward an explicitly-requested urlLimit through the DRS
@@ -596,6 +633,9 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  *   originally requested on Slack, instead of losing it across the scrape round-trip.
  * @param {number} [urlLimit] - Forwarded so the re-triggered analysis audit still resolves the
  *   urlLimit originally requested on Slack, instead of losing it across the scrape round-trip.
+ * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
+ *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
+ *   the analysis audit that triggered it, instead of falling back to the plain env var.
  *
  * Best-effort: a transient Configuration/SQS failure is logged and swallowed rather than
  * thrown, so the analysis audit degrades to its pending_scrape result instead of failing
@@ -608,6 +648,7 @@ export async function requestOffsiteScrape(
   slackContext,
   enableBrandProfile,
   urlLimit,
+  enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
   try {
@@ -621,6 +662,7 @@ export async function requestOffsiteScrape(
           domainScope,
           ...(enableBrandProfile != null && { enableBrandProfile }),
           ...(urlLimit != null && { urlLimit }),
+          ...(enableSemrush != null && { enableSemrush }),
         },
       },
     });

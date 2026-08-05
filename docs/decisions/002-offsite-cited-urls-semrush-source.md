@@ -41,6 +41,13 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 5. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
    (matching the legacy `handler.js` classify) so non-thread Reddit and lookalike
    YouTube hosts are dropped identically.
+6. **Per-run override via Slack custom arg.** `enableSemrush` (`auditContext.messageData.enableSemrush`,
+   resolved by `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
+   `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
+   `true` forces the Semrush attempt on for that run, `false` forces legacy even when the
+   env var is on. This is the same tri-state mechanism as the existing `enableBrandProfile`
+   override. It is a **per-run** override only (one Slack invocation), not the persistent
+   **per-site** cutover tracked under LLMO-6711.
 
 ## Consequences
 
@@ -51,6 +58,8 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
   loader logs a truncation warning on a full page so an unsorted/capped response is
   visible rather than silently dropping high-citation URLs.
 - The flag is **environment-global** (not per-site); per-site cutover is LLMO-6711.
+  A per-run Slack override (`enableSemrush`, see Decision 6) exists for ad-hoc testing
+  of one run, but does not persist across runs or substitute for the per-site cutover.
 
 ## Known gaps / non-goals (tracked)
 

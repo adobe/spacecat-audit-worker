@@ -77,6 +77,12 @@ flag stays off until verified.
    it **falls back** to the legacy `loadBrandPresenceData` (PostgREST → SharePoint) +
    `extractUrlsAndTopics`, so a Semrush problem can never silently zero out offsite. Flag off =
    legacy only. `selectTopUrls` onward is unchanged in every case.
+   A Slack-triggered `offsite-brand-presence`/`cited-analysis`/`youtube-analysis`/`reddit-analysis`
+   run can override this env var for that single run via the `enableSemrush` custom arg
+   (`auditContext.messageData.enableSemrush`, resolved by `resolveEnableSemrush` — same
+   tri-state mechanism as `enableBrandProfile`); `cited-analysis`/`youtube-analysis`/
+   `reddit-analysis` forward it through `requestOffsiteScrape` so the override survives when
+   they trigger a scoped `offsite-brand-presence` re-scrape. See ADR-002 decision 6.
 
 ### 3.4 Platform aggregation
 
@@ -95,6 +101,7 @@ citations per URL, mirroring the legacy multi-engine mix. `OFFSITE_SEMRUSH_PLATF
 | `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` | (off) | `"true"` switches source to Semrush |
 | `SPACECAT_API_URI` | `https://spacecat.experiencecloud.live/api/v1` | api-service base |
 | `OFFSITE_SEMRUSH_PLATFORMS` | full provider set (`SEMRUSH_PLATFORM_BY_PROVIDER`) | override: engines to query + sum |
+| `enableSemrush` (Slack custom arg, not an env var) | (unset — env var applies) | per-run override of `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` |
 
 ## 4. Alternatives considered
 
