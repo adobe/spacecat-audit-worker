@@ -77,7 +77,7 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
       if (h1Element) {
         const selector = getDomElementSelector(h1Element);
         if (selector) {
-          selectors.push(selector);
+          selectors.push({ selector, textContent: $(h1Element).text().trim() });
         }
       }
       break;
@@ -117,7 +117,7 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
         if (element) {
           const selector = getDomElementSelector(element);
           if (selector) {
-            selectors.push(selector);
+            selectors.push({ selector, textContent: $(element).text().trim() });
           }
         }
       }
@@ -280,17 +280,14 @@ export default async function headings(context, auditContext) {
             opportunity.suggestion = check.suggestion;
           }
 
-          // Generate selectors from the scraped HTML
+          // Generate selectors from the scraped HTML. The offending heading's text is
+          // paired into each element's `textContent` by getElementsFromCheck, so there
+          // is no separate top-level `content` field — element text has a single home.
           if (scrapeJsonObject) {
             const elementData = getElementsFromCheck(scrapeJsonObject, check, log);
             if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
-          }
-
-          const headingContent = check.transformRules?.currValue?.trim();
-          if (headingContent) {
-            opportunity.content = headingContent;
           }
 
           audit.opportunities.push(opportunity);

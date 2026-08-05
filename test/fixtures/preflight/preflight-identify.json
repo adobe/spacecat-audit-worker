@@ -12,10 +12,10 @@
             "issue": "Body content length is below 100 characters",
             "seoImpact": "Moderate",
             "seoRecommendation": "Add more meaningful content to the page",
-            "textContent": "aaaaaaaaaalorem ipsum",
             "elements": [
               {
-                "selector": "body"
+                "selector": "body",
+                "textContent": "aaaaaaaaaalorem ipsum"
               }
             ]
           }

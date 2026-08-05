@@ -234,8 +234,7 @@ export default async function links(context, auditContext) {
           issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
           seoRecommendation: 'Update all links to use HTTPS protocol',
-          ...(text ? { textContent: text } : {}),
-          ...toElementTargets(selector),
+          ...toElementTargets({ selector, textContent: text }),
         };
       }
       return null;
