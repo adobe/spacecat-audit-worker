@@ -207,7 +207,7 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Semrush source (OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED)', () => {
-    it('uses the Semrush loader instead of loadBrandPresenceData when the flag is on', async () => {
+    it('uses the Semrush loader and skips the legacy source when it yields URLs', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
         ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
@@ -223,16 +223,30 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
-    it('returns an empty result when the Semrush loader yields null', async () => {
+    it('falls back to the legacy PostgREST/SharePoint source when Semrush yields null', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(null);
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
-      expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
-      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(log.warn).to.have.been.called;
+    });
+
+    it('falls back to the legacy source when Semrush yields an empty map', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map());
+      stubBrandPresenceData(['https://www.reddit.com/r/test/comments/1/thread']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
   });
 

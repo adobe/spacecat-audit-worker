@@ -12,7 +12,7 @@
 
 The `offsite-brand-presence` audit selects the cited URLs it feeds to DRS (YouTube, Reddit,
 and top third-party "cited" sources) from **internal Brand-Presence execution data** —
-PostgREST for brandalf-enabled orgs, with an S3 / SharePoint Excel fallback
+PostgREST for brandalf-enabled orgs, with a SharePoint Excel fallback
 (`loadBrandPresenceData`). We want those same URLs — ranked by citation volume — sourced from
 the **Semrush URL-Inspector API** instead, without changing anything downstream of URL
 selection.
@@ -36,7 +36,7 @@ selection.
 
 ### 3.1 Endpoint (spacecat-api-service wrapper)
 
-`GET {SPACECAT_API_URI}/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/domain-urls?hostname={host}&startDate=&endDate=&pageSize=1000`
+`GET {SPACECAT_API_URI}/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/domain-urls?hostname={host}&startDate=&endDate=&pageSize=100`
 
 Served by the api-service **Elements proxy** (`src/controllers/elements.js` →
 `listDomainUrls`, Semrush element `STATS_PER_URL`). Response: `{ urls: [{ url, citations,
@@ -63,8 +63,11 @@ flag stays off until verified.
    - **enforce `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`** (parity with `handler.js:199-204`) so
      non-thread Reddit URLs and lookalike YouTube hosts are dropped, matching the legacy path;
    - `count = row.citations` (exact); sum across platforms for the same URL.
-3. Handler branch (`OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true'`) uses this map; else the
-   legacy `loadBrandPresenceData` + `extractUrlsAndTopics`. `selectTopUrls` onward is unchanged.
+3. Handler branch: when `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true'` it tries Semrush
+   **first**; if the loader yields no usable URLs (auth failure, no brand, outage, empty result)
+   it **falls back** to the legacy `loadBrandPresenceData` (PostgREST → SharePoint) +
+   `extractUrlsAndTopics`, so a Semrush problem can never silently zero out offsite. Flag off =
+   legacy only. `selectTopUrls` onward is unchanged in every case.
 
 ### 3.4 Platform aggregation
 
@@ -101,5 +104,7 @@ added.
 - Flag off ⇒ byte-for-byte today's behavior (no regression).
 - Flag on ⇒ YouTube/Reddit cited URLs come from Semrush with exact citation counts; strict
   format filtering matches the legacy path.
+- Flag on + Semrush unavailable ⇒ automatic fallback to the legacy PostgREST → SharePoint
+  source (no offsite gap).
 - Shadow-run (LLMO-6711) shows acceptable top-70 overlap per surface vs the legacy source.
 - 100% test coverage on the new module; full suite green.

@@ -891,19 +891,29 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
 
   const allUrls = new Map();
+  let usedSemrush = false;
   if (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true') {
-    // Semrush source: the loader returns the same allUrls shape, with
+    // Semrush-first: the loader returns the same allUrls shape, with
     // count = exact citations. Everything downstream (selectTopUrls -> DRS)
-    // is unchanged. Flag off = today's SharePoint/PostgREST path.
+    // is unchanged. If Semrush yields no usable URLs (auth failure, no brand,
+    // outage, empty result) we fall back to the legacy PostgREST/SharePoint
+    // source below so a Semrush problem can never silently zero out offsite.
     const semrushUrls = await loadCitedUrlsFromSemrush({
       site, previousWeeks, context, siteHostname,
     });
-    if (semrushUrls) {
+    if (semrushUrls && semrushUrls.size > 0) {
       for (const [url, info] of semrushUrls) {
         allUrls.set(url, info);
       }
+      usedSemrush = true;
+    } else {
+      log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`);
     }
-  } else {
+  }
+
+  // Legacy source: runs when the flag is off, OR when Semrush was tried but
+  // produced nothing (fallback). Flag off = today's behavior, unchanged.
+  if (!usedSemrush) {
     const brandPresenceData = await loadBrandPresenceData({
       siteId, site, previousWeeks, context,
     });

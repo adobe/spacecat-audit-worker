@@ -33,11 +33,11 @@ const LOG_PREFIX = '[offsite-brand-presence][semrush]';
 export const SPACECAT_API_DEFAULT_BASE_URL = 'https://spacecat.experiencecloud.live/api/v1';
 
 /**
- * Page size accepted by the url-inspector endpoints. The proxy paginates
- * client-side, so a single large page avoids a fetch loop for the bounded
- * youtube/reddit sets.
+ * Page size requested from the url-inspector endpoints. 100 comfortably covers
+ * the per-surface top-70 (`DRS_URLS_LIMIT`) that `selectTopUrls` keeps, in a
+ * single page (the proxy paginates client-side).
  */
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 100;
 
 /**
  * Resolves which AI-engine platform values to query.
