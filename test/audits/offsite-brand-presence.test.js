@@ -207,7 +207,18 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Semrush source (OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED)', () => {
-    it('uses the Semrush loader and skips the legacy source when it yields URLs', async () => {
+    it('does not invoke the Semrush loader when the flag is off (regression)', async () => {
+      // flag unset in env
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+    });
+
+    it('uses the Semrush loader (with the expected args) and skips the legacy source when it yields URLs', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
         ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
@@ -220,6 +231,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      // Assert the integration seam wires the right args through (site + the
+      // www-stripped siteHostname that owned-URL filtering depends on).
+      const args = mockLoadCitedUrlsFromSemrush.firstCall.args[0];
+      expect(args.site).to.equal(site);
+      expect(args.siteHostname).to.equal('example.com');
+      expect(args.context).to.equal(context);
+      expect(args.previousWeeks).to.be.an('array');
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 

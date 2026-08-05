@@ -4,7 +4,7 @@
 **Author:** Andrei Paraschiv
 **Date:** 2026-08-05
 **Epic:** [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488) · **Story:** [LLMO-6709](https://jira.corp.adobe.com/browse/LLMO-6709)
-**Related:** migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847
+**Related:** ADR `docs/decisions/002-offsite-cited-urls-semrush-source.md` · migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847
 
 ---
 
@@ -26,9 +26,13 @@ selection.
   citations) and the DRS scrape / poll / analysis path are **unchanged**.
 - Behavioral parity with the legacy path for the URL set it produces.
 
-**Non-goals**
+**Non-goals (known gaps, tracked)**
 - The generic "cited" (top third-party) bucket — needs a `cited-domains` discovery hop;
   tracked as a follow-up under LLMO-6709. This spec covers **YouTube + Reddit** only.
+- **Region scoping.** The legacy path spans `ACCEPTED_REGIONS` (six markets) while this loader
+  sends **no region param**. If the endpoint defaults to a single region, non-US orgs will
+  diverge from legacy. Deferred to LLMO-6710 (region + platform mapping) — must be closed
+  before non-US parity is claimed.
 - Changing ranking, bucketing, DRS, or the analysis audits.
 - Per-URL prompt attribution (LLMO-6712) and topic/category enrichment (LLMO-6708).
 
@@ -41,7 +45,12 @@ selection.
 Served by the api-service **Elements proxy** (`src/controllers/elements.js` →
 `listDomainUrls`, Semrush element `STATS_PER_URL`). Response: `{ urls: [{ url, citations,
 promptsCited, categories, regions, contentType, urlId }] }`. `llmo.experiencecloud.live/api/v1`
-is an edge alias for the same service.
+is an edge alias for the same service. Path segments (`spaceCatId`, `brandId`) are URL-encoded.
+
+`pageSize=100` covers the per-surface top-70 in one page. A server-side citations-descending
+sort is **assumed but not confirmed**; the loader logs a truncation warning on a full page so a
+capped/unsorted response is visible rather than silently dropping high-citation URLs. Each
+request carries a 10s timeout; requests run concurrently.
 
 ### 3.2 Auth
 
@@ -71,8 +80,12 @@ flag stays off until verified.
 
 ### 3.4 Platform aggregation
 
-`platform` is omitted by default so the proxy aggregates across engines; the surface is
-multi-engine (`search-gpt` and `google-ai-mode` both return data). `OFFSITE_SEMRUSH_PLATFORMS`
+Omitting `platform` does **not** aggregate across engines on `domain-urls`/`cited-domains` —
+the proxy resolves an absent value to a single default engine. So the loader queries an
+**explicit engine list** — the full offsite provider set mapped to serenity models via
+`SEMRUSH_PLATFORM_BY_PROVIDER` (offsite `constants.js`): `google-ai-mode`, `search-gpt`,
+`microsoft-copilot`, `gemini-2.5-flash`, `google-ai-overview`, `perplexity` — and **sums**
+citations per URL, mirroring the legacy multi-engine mix. `OFFSITE_SEMRUSH_PLATFORMS`
 (comma-separated) queries each engine and **sums citations per URL**. (LLMO-6710.)
 
 ### 3.5 Config
@@ -81,7 +94,7 @@ multi-engine (`search-gpt` and `google-ai-mode` both return data). `OFFSITE_SEMR
 |---|---|---|
 | `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` | (off) | `"true"` switches source to Semrush |
 | `SPACECAT_API_URI` | `https://spacecat.experiencecloud.live/api/v1` | api-service base |
-| `OFFSITE_SEMRUSH_PLATFORMS` | (omit) | engines to query + sum |
+| `OFFSITE_SEMRUSH_PLATFORMS` | full provider set (`SEMRUSH_PLATFORM_BY_PROVIDER`) | override: engines to query + sum |
 
 ## 4. Alternatives considered
 
