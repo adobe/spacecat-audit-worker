@@ -214,8 +214,20 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult).to.not.have.property('fallbackReason');
       expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+    });
+
+    it('treats a non-"true" flag value as off (strict === true)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'TRUE';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
     });
 
     it('uses the Semrush loader (with the expected args) and skips the legacy source when it yields URLs', async () => {
@@ -228,6 +240,8 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult).to.not.have.property('fallbackReason');
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
@@ -237,7 +251,10 @@ describe('Offsite Brand Presence Handler', () => {
       expect(args.site).to.equal(site);
       expect(args.siteHostname).to.equal('example.com');
       expect(args.context).to.equal(context);
-      expect(args.previousWeeks).to.be.an('array');
+      expect(args.previousWeeks).to.deep.equal([
+        { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
+        { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
+      ]);
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
@@ -249,6 +266,8 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('semrush-no-usable-urls');
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
@@ -317,6 +336,19 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
       expect(log.warn).to.have.been.calledWithMatch(/Invalid enableSemrush/);
+    });
+
+    it('surfaces dataSource + fallbackReason even when the legacy fallback also yields nothing', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null);
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('semrush-no-usable-urls');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
     });
   });
 

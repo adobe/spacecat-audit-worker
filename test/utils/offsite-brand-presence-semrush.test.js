@@ -23,15 +23,17 @@ const BRAND_ID = 'cb84e91a-f7e9-488b-8220-e0d031941cd7';
 const PREVIOUS_WEEKS = [{ week: 29, year: 2026 }, { week: 28, year: 2026 }];
 
 const YT_URL = 'https://www.youtube.com/watch?v=abc';
+const YT_NORM = 'https://youtu.be/abc';
 const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
 
-const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
-
-// Default engines queried when OFFSITE_SEMRUSH_PLATFORMS is unset — the full
-// offsite provider set mapped to serenity models (SEMRUSH_PLATFORM_BY_PROVIDER).
+// Full provider engine set (SEMRUSH_PLATFORM_BY_PROVIDER values), the default.
 const DEFAULT_PLATFORMS = [
   'google-ai-mode', 'search-gpt', 'microsoft-copilot', 'gemini-2.5-flash', 'google-ai-overview', 'perplexity',
 ];
+
+const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
+const ONE_ENGINE = { OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' };
+const TWO_ENGINES = { OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt, google-ai-mode' };
 
 describe('offsite-brand-presence-semrush', function () {
   this.timeout(10000);
@@ -45,8 +47,9 @@ describe('offsite-brand-presence-semrush', function () {
   let mod;
 
   const site = { getOrganizationId: () => ORG_ID };
-
   const makeContext = (env = {}, extra = {}) => ({ log, env, ...extra });
+  const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
+  const erroredWith = (re) => log.error.getCalls().some((c) => re.test(c.args[0]));
 
   async function loadModule() {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
@@ -56,13 +59,16 @@ describe('offsite-brand-presence-semrush', function () {
     });
   }
 
-  // Returns rows keyed by hostname; platform can vary the payload.
   function stubByHostname(fn) {
     fetchStub.callsFake(async (url) => {
       const params = new URL(url).searchParams;
       return fn(params.get('hostname'), params.get('platform'));
     });
   }
+
+  const run = (env = {}, extra = {}) => mod.loadCitedUrlsFromSemrush({
+    site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(env, extra),
+  });
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -88,178 +94,206 @@ describe('offsite-brand-presence-semrush', function () {
       ? okJson({ urls: [{ url: YT_URL, citations: platform === 'google-ai-mode' ? 5 : 10 }] })
       : okJson({ urls: [{ url: RD_URL, citations: platform === 'google-ai-mode' ? 4 : 7 }] })));
 
-    const allUrls = await mod.loadCitedUrlsFromSemrush({
-      site,
-      previousWeeks: PREVIOUS_WEEKS,
-      context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt, google-ai-mode' }),
-    });
+    const allUrls = await run(TWO_ENGINES);
 
-    // 2 hostnames x 2 engines
-    expect(fetchStub.callCount).to.equal(4);
-    expect(allUrls.get('https://youtu.be/abc')).to.deep.equal({ count: 15, domain: 'youtube.com' }); // 10 + 5
+    expect(fetchStub.callCount).to.equal(4); // 2 hosts x 2 engines
+    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 15, domain: 'youtube.com' }); // 10 + 5
     expect(allUrls.get(RD_URL)).to.deep.equal({ count: 11, domain: 'reddit.com' }); // 7 + 4
   });
 
   it('defaults to the full provider engine set (one request per engine per hostname)', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
-
+    await run();
     expect(mod.getSemrushPlatforms(undefined)).to.have.lengthOf(6);
-    expect(fetchStub.callCount).to.equal(12); // 2 hostnames x 6 engines
+    expect(fetchStub.callCount).to.equal(12); // 2 hosts x 6 engines
   });
 
-  it('sends Authorization + timeout, no platform-less request, and no x-promise-token by default', async () => {
+  it('sends Authorization+Accept+timeout, no Content-Type, no x-promise-token by default', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
+    await run();
 
     const [url, opts] = fetchStub.firstCall.args;
     expect(url).to.contain(`${mod.SPACECAT_API_DEFAULT_BASE_URL}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
     expect(new URL(url).searchParams.get('platform')).to.be.oneOf(DEFAULT_PLATFORMS);
     expect(opts.headers.Authorization).to.equal('Bearer tok');
-    expect(opts.timeout).to.be.a('number');
+    expect(opts.headers.Accept).to.equal('application/json');
+    expect(opts.headers).to.not.have.property('Content-Type');
     expect(opts.headers).to.not.have.property('x-promise-token');
+    expect(opts.timeout).to.equal(10000);
+  });
+
+  it('normalizes a lowercase token_type to Bearer', async () => {
+    getServiceAccessTokenV3.resolves({ token_type: 'bearer', access_token: 'tok' });
+    fetchStub.resolves(okJson({ urls: [] }));
+    await run();
+    expect(fetchStub.firstCall.args[1].headers.Authorization).to.equal('Bearer tok');
   });
 
   it('forwards x-promise-token when present on the context', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({}, { promiseToken: 'ptok' }),
-    });
-
+    await run({}, { promiseToken: 'ptok' });
     expect(fetchStub.firstCall.args[1].headers['x-promise-token']).to.equal('ptok');
   });
 
   it('honours the SPACECAT_API_URI override', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site,
-      previousWeeks: PREVIOUS_WEEKS,
-      context: makeContext({ SPACECAT_API_URI: 'https://stage.example/api' }),
-    });
-
+    await run({ SPACECAT_API_URI: 'https://stage.example/api' });
     expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/v2/orgs/');
   });
 
-  it('honours OFFSITE_SEMRUSH_PLATFORMS override (fewer engines)', async () => {
+  it('honours an OFFSITE_SEMRUSH_PLATFORMS override', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site,
-      previousWeeks: PREVIOUS_WEEKS,
-      context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-    });
-
-    // 2 hostnames x 1 engine
-    expect(fetchStub.callCount).to.equal(2);
+    await run(ONE_ENGINE);
+    expect(fetchStub.callCount).to.equal(2); // 2 hosts x 1 engine
     fetchStub.getCalls().forEach((c) => {
       expect(new URL(c.args[0]).searchParams.get('platform')).to.equal('search-gpt');
     });
   });
 
-  it('drops URLs failing the strict youtube/reddit formats (parity with the legacy path)', async () => {
+  // --- filtering / scope ----------------------------------------------------
+
+  it('drops URLs failing the strict youtube/reddit formats', async () => {
     stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({
-        urls: [
-          { url: YT_URL, citations: 10 },
-          { url: 'https://music.youtube.com/watch?v=zzz', citations: 99 }, // lookalike host -> dropped
-        ],
-      })
-      : okJson({
-        urls: [
-          { url: RD_URL, citations: 7 },
-          { url: 'https://www.reddit.com/settings', citations: 99 }, // non-thread -> dropped
-        ],
-      })));
+      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { url: 'https://music.youtube.com/watch?v=z', citations: 99 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 7 }, { url: 'https://www.reddit.com/settings', citations: 99 }] })));
 
-    const allUrls = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-    });
-
-    expect([...allUrls.keys()].sort()).to.deep.equal(['https://youtu.be/abc', RD_URL].sort());
+    const allUrls = await run(ONE_ENGINE);
+    expect([...allUrls.keys()].sort()).to.deep.equal([YT_NORM, RD_URL].sort());
   });
 
-  it('filters owned URLs, rows without a url, and defaults missing citations to 0', async () => {
+  it('drops off-host (domain: null) rows so nothing leaks into top-cited', async () => {
     stubByHostname((hostname) => (hostname === 'youtube.com'
-      // first row: missing citations -> 0; second row: no url -> skipped
-      ? okJson({ urls: [{ url: YT_URL }, { citations: 3 }] })
-      : okJson({ urls: [{ url: 'https://www.lovesac.com/owned', citations: 99 }] }))); // owned -> dropped
+      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { url: 'https://example.org/page', citations: 99 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
 
-    const allUrls = await mod.loadCitedUrlsFromSemrush({
-      site,
-      previousWeeks: PREVIOUS_WEEKS,
-      context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-      siteHostname: 'lovesac.com',
-    });
-
-    expect(allUrls.get('https://youtu.be/abc')).to.deep.equal({ count: 0, domain: 'youtube.com' });
-    expect(allUrls.size).to.equal(1);
+    const allUrls = await run(ONE_ENGINE);
+    expect([...allUrls.keys()]).to.not.include('https://example.org/page');
+    expect(allUrls.has(YT_NORM)).to.equal(true);
   });
 
-  it('treats a non-array urls body as empty', async () => {
-    fetchStub.resolves(okJson({ notUrls: true }));
+  it('filters owned URLs (siteHostname) and rows without a url', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { citations: 3 }] }) // 2nd: no url
+      : okJson({ urls: [{ url: 'https://www.lovesac.com/owned', citations: 99 }] }))); // owned
+
     const allUrls = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(ONE_ENGINE), siteHostname: 'lovesac.com',
     });
+    expect([...allUrls.keys()]).to.deep.equal([YT_NORM]);
+  });
+
+  // --- citation clamping ----------------------------------------------------
+
+  it('drops a URL whose citations are negative (clamped to 0 -> dropped)', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: -5 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
+    const allUrls = await run(ONE_ENGINE);
+    expect(allUrls.has(YT_NORM)).to.equal(false);
+    expect(allUrls.get(RD_URL).count).to.equal(7);
+  });
+
+  it('drops a URL whose citations are non-numeric or missing (0 -> dropped)', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: 'abc' }] }) // NaN -> 0
+      : okJson({ urls: [{ url: RD_URL }] }))); // missing -> 0
+    const allUrls = await run(ONE_ENGINE);
     expect(allUrls.size).to.equal(0);
   });
 
-  it('warns when a full page is returned (possible truncation)', async () => {
-    const rows = Array.from({ length: 100 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
-    fetchStub.resolves(okJson({ urls: rows }));
-
-    await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-    });
-
-    expect(log.warn.getCalls().some((c) => /full page/.test(c.args[0]))).to.equal(true);
+  it('keeps a URL when one engine reports 0 but another reports a positive count', async () => {
+    stubByHostname((hostname, platform) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: platform === 'google-ai-mode' ? 5 : 0 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
+    const allUrls = await run(TWO_ENGINES);
+    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 5, domain: 'youtube.com' });
   });
 
-  // --- ANY request failure => null (full legacy fallback) -------------------
+  it('sums duplicate URLs within a single page', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: 3 }, { url: YT_URL, citations: 4 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
+    const allUrls = await run(ONE_ENGINE);
+    expect(allUrls.get(YT_NORM).count).to.equal(7);
+  });
 
-  it('returns null when a single request rejects (partial result never masquerades as success)', async () => {
+  // --- body / truncation ----------------------------------------------------
+
+  it('treats a non-array urls body as empty (no fallback)', async () => {
+    fetchStub.resolves(okJson({ notUrls: true }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('warns and hard-caps at PAGE_SIZE when a full page is returned', async () => {
+    const rows = Array.from({ length: 101 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: rows })
+      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
+    const allUrls = await run(ONE_ENGINE);
+    expect(warnedWith(/full page/)).to.equal(true);
+    expect([...allUrls.keys()].filter((k) => k.startsWith('https://youtu.be/')).length).to.equal(100);
+  });
+
+  it('does not warn on a 99-row page (truncation off-by-one)', async () => {
+    const rows = Array.from({ length: 99 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: rows })
+      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
+    await run(ONE_ENGINE);
+    expect(warnedWith(/full page/)).to.equal(false);
+  });
+
+  // --- surface-level fallback (returns null) --------------------------------
+
+  it('falls back (null) when a whole hostname has no successful response — reject', async () => {
     stubByHostname((hostname) => {
       if (hostname === 'reddit.com') {
         return Promise.reject(new Error('network down'));
       }
       return okJson({ urls: [{ url: YT_URL, citations: 10 }] });
     });
-
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-    });
-
+    const result = await run(ONE_ENGINE);
     expect(result).to.equal(null);
-    expect(log.warn.getCalls().some((c) => /using legacy fallback/.test(c.args[0]))).to.equal(true);
+    expect(warnedWith(/No successful Semrush response for reddit\.com/)).to.equal(true);
   });
 
-  it('returns null when any request is non-2xx', async () => {
+  it('falls back (null) on a non-2xx surface', async () => {
     stubByHostname((hostname) => (hostname === 'reddit.com'
       ? { ok: false, status: 500 }
       : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
-    });
-    expect(result).to.equal(null);
+    expect(await run(ONE_ENGINE)).to.equal(null);
   });
 
-  it('returns null when any response body fails to parse', async () => {
+  it('logs a distinct rejection and falls back on a 401/403 surface', async () => {
+    stubByHostname((hostname) => (hostname === 'reddit.com'
+      ? { ok: false, status: 401 }
+      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
+    const result = await run(ONE_ENGINE);
+    expect(result).to.equal(null);
+    expect(erroredWith(/Service token rejected/)).to.equal(true);
+  });
+
+  it('falls back (null) when a surface body fails to parse', async () => {
     stubByHostname((hostname) => (hostname === 'reddit.com'
       ? { ok: true, status: 200, json: async () => { throw new Error('bad json'); } }
       : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
+    expect(await run(ONE_ENGINE)).to.equal(null);
+  });
 
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' }),
+  it('tolerates a single failed engine when the surface still has a successful response', async () => {
+    stubByHostname((hostname, platform) => {
+      if (hostname === 'youtube.com' && platform === 'search-gpt') {
+        return Promise.reject(new Error('flaky engine'));
+      }
+      return hostname === 'youtube.com'
+        ? okJson({ urls: [{ url: YT_URL, citations: 5 }] })
+        : okJson({ urls: [{ url: RD_URL, citations: 7 }] });
     });
-    expect(result).to.equal(null);
+    const allUrls = await run(TWO_ENGINES);
+    expect(allUrls).to.not.equal(null);
+    expect(allUrls.get(YT_NORM).count).to.equal(5);
+    expect(allUrls.get(RD_URL).count).to.equal(14); // reddit ok on both engines
   });
 
   // --- precondition guards (return null) -----------------------------------
@@ -276,20 +310,14 @@ describe('offsite-brand-presence-semrush', function () {
 
   it('returns null and logs info when the brand is confirmed absent (resolved=true)', async () => {
     resolveBrandResultForSite.resolves({ brand: null, resolved: true });
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
-    expect(result).to.equal(null);
+    expect(await run()).to.equal(null);
     expect(log.info).to.have.been.called;
   });
 
-  it('returns null and logs a transient warning when brand resolution failed (resolved=false)', async () => {
+  it('returns null and warns when brand resolution failed (resolved=false)', async () => {
     resolveBrandResultForSite.resolves({ brand: null, resolved: false });
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
-    expect(result).to.equal(null);
-    expect(log.warn.getCalls().some((c) => /transient/.test(c.args[0]))).to.equal(true);
+    expect(await run()).to.equal(null);
+    expect(warnedWith(/transient/)).to.equal(true);
   });
 
   it('returns null when no date window can be derived', async () => {
@@ -301,11 +329,14 @@ describe('offsite-brand-presence-semrush', function () {
 
   it('returns null when the IMS service token cannot be minted', async () => {
     getServiceAccessTokenV3.rejects(new Error('ims down'));
-    const result = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
-    expect(result).to.equal(null);
+    expect(await run()).to.equal(null);
     expect(log.error).to.have.been.called;
+  });
+
+  it('returns null when the IMS token response has no access_token', async () => {
+    getServiceAccessTokenV3.resolves({ token_type: 'Bearer' });
+    expect(await run()).to.equal(null);
+    expect(erroredWith(/access_token/)).to.equal(true);
   });
 
   // --- pure helpers ---------------------------------------------------------
@@ -315,6 +346,8 @@ describe('offsite-brand-presence-semrush', function () {
       expect(mod.getSemrushPlatforms(undefined)).to.deep.equal(DEFAULT_PLATFORMS);
       expect(mod.getSemrushPlatforms({})).to.deep.equal(DEFAULT_PLATFORMS);
       expect(mod.getSemrushPlatforms({ OFFSITE_SEMRUSH_PLATFORMS: '   ' })).to.deep.equal(DEFAULT_PLATFORMS);
+      // separators-only must NOT disable all requests
+      expect(mod.getSemrushPlatforms({ OFFSITE_SEMRUSH_PLATFORMS: ' , , ' })).to.deep.equal(DEFAULT_PLATFORMS);
     });
 
     it('parses a comma-separated override, trimming and dropping empties', () => {

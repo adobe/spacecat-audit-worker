@@ -894,6 +894,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   const allUrls = new Map();
   let usedSemrush = false;
+  // Recorded on auditResult.dataSource so shadow-run parity (LLMO-6711) can join
+  // on which source served each run instead of grepping a log string.
+  let fallbackReason;
+  // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
   const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
   if (semrushEnabled) {
@@ -911,9 +915,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       }
       usedSemrush = true;
     } else {
+      fallbackReason = 'semrush-no-usable-urls';
       log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`);
     }
   }
+  const dataSource = usedSemrush ? 'semrush' : 'legacy';
 
   // Legacy source: runs when the flag is off, OR when Semrush was tried but
   // produced nothing (fallback). Flag off = today's behavior, unchanged.
@@ -953,6 +959,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         success: true,
         urlCounts,
         weeks: previousWeeks,
+        dataSource,
+        ...(fallbackReason ? { fallbackReason } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -1018,6 +1026,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       urlCounts,
       drsJobs: drsResults,
       weeks: previousWeeks,
+      dataSource,
+      ...(fallbackReason ? { fallbackReason } : {}),
     },
     fullAuditRef: finalUrl,
   };

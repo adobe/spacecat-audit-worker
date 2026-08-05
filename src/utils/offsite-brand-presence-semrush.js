@@ -37,8 +37,8 @@ export const SPACECAT_API_DEFAULT_BASE_URL = 'https://spacecat.experiencecloud.l
  * Rows requested per url-inspector page — covers the per-surface top-70
  * (`DRS_URLS_LIMIT`) in a single page. NOTE: a server-side citations-descending
  * sort is *assumed but not confirmed* for `domain-urls`; `fetchRows` logs a
- * truncation warning when a full page comes back so a capped/unsorted response
- * is visible in logs rather than silently dropping high-citation URLs.
+ * truncation warning when a full page comes back and hard-caps the array at
+ * `PAGE_SIZE` as defence against a malfunctioning upstream.
  */
 const PAGE_SIZE = 100;
 
@@ -46,6 +46,8 @@ const PAGE_SIZE = 100;
  * Per-request timeout. A hung upstream must never stall the audit, or the whole
  * Semrush attempt (and therefore the legacy fallback in the handler) would never
  * resolve and the Lambda would run to its own timeout — worse than legacy-only.
+ * (Unit tests stub the fetch; actual abort behaviour is a shadow-run integration
+ * concern, not covered here.)
  */
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -64,7 +66,8 @@ export const DEFAULT_SEMRUSH_PLATFORMS = Object.freeze(
 
 /**
  * Resolves which engine platform values to query. `OFFSITE_SEMRUSH_PLATFORMS`
- * (comma-separated) overrides the default list.
+ * (comma-separated) overrides the default list; a blank / separators-only value
+ * falls back to the default rather than disabling all requests.
  *
  * @param {object} env - Lambda env.
  * @returns {string[]} platform values (always at least one).
@@ -72,27 +75,36 @@ export const DEFAULT_SEMRUSH_PLATFORMS = Object.freeze(
 export function getSemrushPlatforms(env) {
   const raw = env?.OFFSITE_SEMRUSH_PLATFORMS;
   if (typeof raw === 'string' && raw.trim()) {
-    return raw.split(',').map((p) => p.trim()).filter(Boolean);
+    const parsed = raw.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parsed.length > 0) {
+      return parsed;
+    }
   }
   return [...DEFAULT_SEMRUSH_PLATFORMS];
 }
 
 /**
- * Mints an IMS service access token as an Authorization header value.
+ * Mints an IMS service access token as an Authorization header value. The scheme
+ * is normalised to `Bearer` (the token endpoint may return `token_type: "bearer"`
+ * lowercase, which a strict `startsWith('Bearer ')` parser upstream would reject).
  *
  * @param {object} context - Lambda context (env + log).
  * @returns {Promise<string>} e.g. "Bearer eyJ...".
+ * @throws {Error} when the token response has no access_token.
  */
 async function getAuthorizationHeader(context) {
   const imsClient = ImsClient.createFrom(context);
   const token = await imsClient.getServiceAccessTokenV3();
-  return `${token.token_type} ${token.access_token}`;
+  if (!token?.access_token) {
+    throw new Error('IMS service token response missing access_token');
+  }
+  return `Bearer ${token.access_token}`;
 }
 
 /**
  * Builds a url-inspector `domain-urls` request URL. Path segments are
- * URL-encoded (matching `brand-resolver.js`), and `platform` is included only
- * when provided.
+ * URL-encoded (matching `brand-resolver.js`); `platform` is included only when
+ * provided.
  *
  * @returns {string}
  */
@@ -116,9 +128,8 @@ export function buildDomainUrlsUrl({
  * Fetches one (hostname, platform) page.
  *
  * @returns {Promise<{ hostname: string, rows: object[], ok: boolean }>} `ok` is
- *   false on network error / timeout / non-2xx / unparseable body. The caller
- *   treats ANY failed request as reason to discard the whole Semrush attempt and
- *   fall back to legacy, so a partial result can never masquerade as success.
+ *   false on network error / timeout / non-2xx / unparseable body. The array is
+ *   hard-capped at `PAGE_SIZE`.
  */
 async function fetchRows({ hostname, url }, headers, log) {
   let response;
@@ -130,7 +141,13 @@ async function fetchRows({ hostname, url }, headers, log) {
   }
 
   if (!response.ok) {
-    log.error(`${LOG_PREFIX} ${hostname} returned HTTP ${response.status}`);
+    if (response.status === 401 || response.status === 403) {
+      // Distinct branch so a rejected service token is visible instead of being
+      // masked as "Semrush returned nothing" (LLMO-6709 verification).
+      log.error(`${LOG_PREFIX} Service token rejected for ${hostname} (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`);
+    } else {
+      log.error(`${LOG_PREFIX} ${hostname} returned HTTP ${response.status}`);
+    }
     return { hostname, rows: [], ok: false };
   }
 
@@ -142,11 +159,11 @@ async function fetchRows({ hostname, url }, headers, log) {
     return { hostname, rows: [], ok: false };
   }
 
-  const rows = Array.isArray(body?.urls) ? body.urls : [];
-  if (rows.length >= PAGE_SIZE) {
-    log.warn(`${LOG_PREFIX} ${hostname} returned a full page (${rows.length} >= ${PAGE_SIZE}); response may be truncated — top URLs by citations could be missing`);
+  const raw = Array.isArray(body?.urls) ? body.urls : [];
+  if (raw.length >= PAGE_SIZE) {
+    log.warn(`${LOG_PREFIX} ${hostname} returned a full page (${raw.length} >= ${PAGE_SIZE}); response may be truncated — top URLs by citations could be missing`);
   }
-  return { hostname, rows, ok: true };
+  return { hostname, rows: raw.slice(0, PAGE_SIZE), ok: true };
 }
 
 /**
@@ -155,12 +172,13 @@ async function fetchRows({ hostname, url }, headers, log) {
  * `allUrls: Map<url, { count, domain }>` shape the existing `selectTopUrls` -> DRS
  * pipeline consumes. `count` = exact citation volume (summed across engines).
  *
- * Returns `null` whenever a usable result cannot be produced — no org/brand,
- * transient brand-resolution failure, no date window, auth failure, or ANY
- * upstream request failure — so the handler falls back to the legacy source
- * rather than shipping a partial result.
+ * Returns `null` (so the handler falls back to the legacy source) when a usable
+ * result cannot be produced: no org/brand, transient brand-resolution failure,
+ * no date window, auth failure, or when a whole surface (hostname) produced zero
+ * successful responses. A single failed engine is tolerated as a partial count.
  *
- * Scope: youtube.com + reddit.com. Region scoping and the generic cited bucket
+ * Scope: youtube.com + reddit.com only — off-host rows are dropped so nothing
+ * leaks into the top-cited bucket. Region scoping and the generic cited bucket
  * are follow-ups (LLMO-6709 / LLMO-6710).
  *
  * @param {object} params
@@ -211,7 +229,9 @@ export async function loadCitedUrlsFromSemrush({
 
   const headers = {
     Authorization: authorization,
-    'Content-Type': 'application/json',
+    // GET has no body — advertise the desired representation with Accept rather
+    // than Content-Type (some proxies buffer/reject a Content-Type on a bodyless GET).
+    Accept: 'application/json',
     // The api-service Elements proxy authenticates IMS callers directly and
     // forwards this Bearer to Semrush (resolveElementsImsToken fallback), so a
     // promise token is not required for a service caller. Forward one only if
@@ -232,25 +252,47 @@ export async function loadCitedUrlsFromSemrush({
     }
   }
 
-  // Concurrent (each with its own timeout). ANY failure -> null, so the handler
-  // falls back to the FULL legacy source instead of shipping a partial Semrush
-  // result (e.g. youtube-only when the reddit request failed).
   const results = await Promise.all(requests.map((r) => fetchRows(r, headers, log)));
-  if (results.some((r) => !r.ok)) {
-    log.warn(`${LOG_PREFIX} One or more Semrush requests failed; using legacy fallback`);
-    return null;
+
+  // Group by surface (hostname). Fall back to legacy only when a whole surface
+  // produced ZERO successful responses (that surface would be dropped) — a single
+  // failed engine is a partial count, not a dropped surface, and is tolerated.
+  const byHost = new Map();
+  for (const hostname of Object.keys(OFFSITE_DOMAINS)) {
+    byHost.set(hostname, { anyOk: false, rows: [] });
+  }
+  for (const result of results) {
+    const entry = byHost.get(result.hostname);
+    if (result.ok) {
+      entry.anyOk = true;
+      entry.rows.push(...result.rows);
+    }
+  }
+  for (const [hostname, entry] of byHost) {
+    if (!entry.anyOk) {
+      log.warn(`${LOG_PREFIX} No successful Semrush response for ${hostname}; using legacy fallback`);
+      return null;
+    }
   }
 
   const allUrls = new Map();
-  for (const { rows } of results) {
-    for (const row of rows) {
+  for (const [, entry] of byHost) {
+    for (const row of entry.rows) {
       const classified = row?.url ? classifyAndNormalize(row.url, siteHostname) : null;
       if (!classified) {
         // eslint-disable-next-line no-continue
         continue;
       }
-      // Parity with the legacy handler path (handler.js:199-204): drop URLs that
-      // fail the strict offsite formats (non-thread Reddit, lookalike YouTube host).
+      // Enforce the youtube/reddit-only scope on the OUTPUT. A `domain: null`
+      // (off-host) row would otherwise pass both regex guards below and reach
+      // selectTopUrls' top-cited bucket -> live TOP_CITED scrape, bypassing the
+      // legacy isExcludedCitedHost / brand-token filtering this PR scopes out.
+      if (classified.domain !== 'youtube.com' && classified.domain !== 'reddit.com') {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // Strict-format parity with the legacy handler path (non-thread Reddit,
+      // lookalike YouTube host).
       if (classified.domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(row.url)) {
         // eslint-disable-next-line no-continue
         continue;
@@ -259,14 +301,23 @@ export async function loadCitedUrlsFromSemrush({
         // eslint-disable-next-line no-continue
         continue;
       }
-      const citations = Number(row.citations) || 0;
+      // Clamp: a negative value would subtract when summed and corrupt the
+      // citations-descending ranking; NaN / non-numeric -> 0.
+      const citations = Math.max(0, Number(row.citations) || 0);
       const existing = allUrls.get(classified.url);
       if (existing) {
-        // Same URL under another engine — sum so ranking reflects total volume.
         existing.count += citations;
       } else {
         allUrls.set(classified.url, { count: citations, domain: classified.domain });
       }
+    }
+  }
+
+  // Drop URLs whose total citation volume is <= 0 (malformed / all-zero rows): a
+  // zero-citation URL is not a real cited source and must not be scraped.
+  for (const [url, info] of allUrls) {
+    if (info.count <= 0) {
+      allUrls.delete(url);
     }
   }
 
