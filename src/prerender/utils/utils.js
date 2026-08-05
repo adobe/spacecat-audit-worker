@@ -15,7 +15,7 @@
  */
 
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { Audit, Entitlement, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { DOMAIN_WIDE_SUGGESTION_KEY } from './constants.js';
 
@@ -445,33 +445,4 @@ export async function fetchLatestScrapeJobId(siteId, context) {
 export async function findPrerenderOpportunity(dataAccess, siteId) {
   const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
   return opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
-}
-
-/**
- * Computes the site's active (non-OUTDATED) suggestion stats on its PRERENDER opportunity.
- * Used to cap how many URLs a domain can have actively tracked (LLMO-6533/LLMO-6638):
- * once a domain accumulates MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, submitForScraping
- * stops adding brand-new URLs to the scrape batch — but URLs that already have an active
- * per-URL suggestion (identified via existingUrls) keep being re-verified so the count can
- * naturally shrink as pages get fixed.
- * @param {Object} dataAccess - Data access layer
- * @param {string} siteId - Site ID to look up the opportunity
- * @returns {Promise<{count: number, existingUrls: Set<string>}>}
- */
-export async function getActiveSuggestionStats(dataAccess, siteId) {
-  const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
-  if (!opportunity) {
-    return { count: 0, existingUrls: new Set() };
-  }
-  const suggestions = await opportunity.getSuggestions?.() ?? [];
-  const active = suggestions.filter((s) => s.getStatus() !== Suggestion.STATUSES.OUTDATED);
-  const isIndividualUrlSuggestion = (data) => data?.url
-    && !isDomainWideSuggestionData(data) && !isPathSuggestionData(data);
-  const existingUrls = new Set(
-    active
-      .map((s) => s.getData())
-      .filter(isIndividualUrlSuggestion)
-      .map((data) => normalizePathnameWithQuery(data.url)),
-  );
-  return { count: active.length, existingUrls };
 }

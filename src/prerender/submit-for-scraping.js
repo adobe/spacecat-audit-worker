@@ -15,14 +15,12 @@ import { filterBySiteScope } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
 import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import {
-  getActiveSuggestionStats,
   mergeAndGetUniqueHtmlUrls,
   normalizePathnameWithQuery,
   readSiteStatusJson,
 } from './utils/utils.js';
 import {
   DAILY_BATCH_SIZE,
-  MAX_ACTIVE_SUGGESTIONS,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
@@ -231,8 +229,7 @@ function buildStickyBotBlockResult(context, {
 /**
  * Slack-triggered candidate assembly: merges organic + included sources only (no agentic,
  * no daily-batch slicing, no recent/edge-deployed filtering) so operators always get the
- * full current set when forcing a run. Not subject to the suggestion cap (see
- * applySuggestionCapFilter) — Slack runs are an explicit operator action, same as CSV.
+ * full current set when forcing a run.
  * @param {{rebasedTopPagesUrls: string[], rebasedIncludedURLs: string[], siteBaseUrl: string}} args
  * @returns {{finalUrls: string[], metrics: Object}}
  */
@@ -273,7 +270,7 @@ function buildSlackTriggeredCandidates({
 /**
  * Automatic (non-Slack) daily-batch candidate assembly: merges organic + included + agentic
  * sources, filters out URLs recently processed or already deployed at the edge, then slices
- * to DAILY_BATCH_SIZE. Subject to the suggestion cap (see applySuggestionCapFilter).
+ * to DAILY_BATCH_SIZE.
  * @param {Object} context - Audit context (uses site, and is forwarded to getTopAgenticUrls)
  * @param {{siteStatus: Object, rebasedTopPagesUrls: string[], rebasedIncludedURLs: string[],
  *   siteBaseUrl: string}} args
@@ -344,41 +341,18 @@ async function buildAutomaticBatchCandidates(context, {
 }
 
 /**
- * Domain-wide suggestion cap (LLMO-6533/LLMO-6638), applied only to the automatic daily
- * batch — CSV and Slack-triggered runs are explicit operator actions and are never capped.
- *
- * Once a domain has accumulated MAX_ACTIVE_SUGGESTIONS non-outdated suggestions, brand-new
- * URLs are dropped from the batch, but URLs that already have an active per-URL suggestion
- * keep being re-submitted so they can still be re-verified (and eventually go OUTDATED/FIXED,
- * letting the count fall back below the cap on its own).
- * @param {Object} context - Audit context (uses dataAccess, log)
- * @param {{siteBaseUrl: string, siteId: string, urls: string[]}} args
- * @returns {Promise<string[]>} The (possibly trimmed) URL list
- */
-async function applySuggestionCapFilter(context, { siteBaseUrl, siteId, urls }) {
-  const { dataAccess, log } = context;
-  const { count, existingUrls } = await getActiveSuggestionStats(dataAccess, siteId);
-  if (count < MAX_ACTIVE_SUGGESTIONS) {
-    return urls;
-  }
-
-  const cappedUrls = urls.filter((url) => existingUrls.has(normalizePathnameWithQuery(url)));
-  const droppedCount = urls.length - cappedUrls.length;
-  if (droppedCount > 0) {
-    log.info(`${LOG_PREFIX} Active suggestion count (${count}) has reached the limit of ${MAX_ACTIVE_SUGGESTIONS}: dropped ${droppedCount} new URL(s), letting ${cappedUrls.length} existing-suggestion URL(s) through. baseUrl=${siteBaseUrl}, siteId=${siteId}`);
-  }
-  return cappedUrls;
-}
-
-/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  *
  * Checked in order, each an early exit: (1) AI-only mode, (2) explicit CSV/Slack-command
  * URL list, (3) sticky bot block. If neither applies, candidate URLs are assembled from
  * organic/included/agentic sources — Slack-triggered runs via buildSlackTriggeredCandidates,
- * automatic runs via buildAutomaticBatchCandidates. Only the automatic path is then subject
- * to the domain-wide suggestion cap (applySuggestionCapFilter); CSV and Slack runs are
- * explicit operator actions and are never capped.
+ * automatic runs via buildAutomaticBatchCandidates.
+ *
+ * Note: the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) is NOT enforced here.
+ * New URLs are always submitted for scraping; capping happens downstream in Step 3
+ * (processContentAndGenerateOpportunities), which evicts the least-recently-scraped
+ * suggestions once the cap is exceeded, so the freshest incoming traffic always displaces
+ * stale entries rather than being blocked from entering at all.
  *
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -443,12 +417,8 @@ export async function submitForScraping(context) {
     baseUrl=${siteBaseUrl},
     siteId=${siteId}`);
 
-  const cappedUrls = isSlackTriggered
-    ? finalUrls
-    : await applySuggestionCapFilter(context, { siteBaseUrl, siteId, urls: finalUrls });
-
   return buildScrapeStepResult(
-    cappedUrls.map((url) => ({ url })),
+    finalUrls.map((url) => ({ url })),
     siteId,
     { ...auditContext, generatePrompts: !!auditContext?.generatePrompts },
   );

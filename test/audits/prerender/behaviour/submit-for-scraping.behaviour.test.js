@@ -34,16 +34,12 @@
  * sliced to DAILY_BATCH_SIZE; Slack-triggered runs (without explicit urls)
  * submit the full merged set instead and skip agentic sourcing entirely.
  *
- * Active suggestion cap (LLMO-6533/LLMO-6638) — applied as a final filter,
- * automatic runs only: once the site's PRERENDER opportunity has >=
- * MAX_ACTIVE_SUGGESTIONS non-OUTDATED suggestions, any candidate URL that
- * does NOT already match an active per-URL suggestion is dropped from the
- * batch; URLs that already have an active suggestion keep being resubmitted
- * so they can still be re-verified (and eventually go OUTDATED/FIXED, letting
- * the count fall back below the cap on its own). CSV and Slack-triggered runs
- * are explicit operator actions and are never subject to this filter. OUTDATED
- * suggestions never count toward the cap, and opportunities of a different
- * type are ignored.
+ * Note: submitForScraping does NOT enforce the active-suggestion cap
+ * (LLMO-6533/LLMO-6638) — new URLs always flow through here. The cap is
+ * enforced downstream in Step 3 (handler.js's evictOldestSuggestionsOverCap),
+ * which evicts the least-recently-scraped suggestions once the site's
+ * PRERENDER opportunity exceeds MAX_ACTIVE_SUGGESTIONS, so the freshest
+ * incoming traffic displaces stale entries instead of being blocked here.
  *
  * The return shape is always:
  *   { urls: [{ url }], siteId, processingType: 'prerender', maxScrapeAge: 0,
@@ -52,6 +48,7 @@
  * Not covered here (see their own behaviour files instead):
  *   - Site-scope filtering across every URL source -> site-scope-protection.behaviour.test.js
  *   - AI-only mode step 1/3 semantics -> ai-only-mode.test.js
+ *   - Active-suggestion cap eviction -> handler.test.js
  */
 
 /* eslint-env mocha */
@@ -60,12 +57,11 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { submitForScraping } from '../../../../src/prerender/submit-for-scraping.js';
-import { MAX_ACTIVE_SUGGESTIONS, DAILY_BATCH_SIZE } from '../../../../src/prerender/utils/constants.js';
+import { DAILY_BATCH_SIZE } from '../../../../src/prerender/utils/constants.js';
 import {
   buildContext,
   buildSite,
   buildDataAccess,
-  buildOpportunity,
   buildS3Client,
   buildStatus,
   statusKey,
@@ -81,11 +77,6 @@ async function withAgenticUrls(agenticUrls = []) {
       getTopAgenticLiveUrlsFromAthena: async () => agenticUrls,
     },
   });
-}
-
-/** Builds a lightweight suggestion stub — cheap enough to create thousands of. */
-function suggestionStub(status, url) {
-  return { getStatus: () => status, getData: () => (url ? { url } : {}) };
 }
 
 describe('Prerender behaviour — submitForScraping', () => {
@@ -218,25 +209,6 @@ describe('Prerender behaviour — submitForScraping', () => {
       expect(result.auditContext?.domainBlocked).to.be.undefined;
     });
 
-    it('bypasses the active suggestion cap filter, even for a brand-new URL', async () => {
-      const siteId = 'csv-bypass-cap';
-      const opportunity = buildOpportunity(sandbox, {
-        siteId,
-        suggestions: Array.from(
-          { length: MAX_ACTIVE_SUGGESTIONS },
-          () => suggestionStub('NEW'),
-        ),
-      });
-      const ctx = buildContext(sandbox, {
-        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        auditContext: { urls: ['https://example.com/brand-new-page'] },
-      });
-
-      const result = await submitForScraping(ctx);
-
-      expect(result.urls).to.deep.equal([{ url: 'https://example.com/brand-new-page' }]);
-    });
   });
 
   describe('gate 3: sticky bot block', () => {
@@ -295,107 +267,6 @@ describe('Prerender behaviour — submitForScraping', () => {
       const result = await mockHandler.submitForScraping(ctx);
 
       expect(result.auditContext?.domainBlocked).to.be.undefined;
-    });
-  });
-
-  describe('active suggestion cap filter (LLMO-6533/LLMO-6638, automatic runs only)', () => {
-    it('drops a brand-new candidate URL once non-OUTDATED suggestions reach the cap, but lets an existing-suggestion URL through', async () => {
-      const mockHandler = await withAgenticUrls();
-      const siteId = 'capped-site';
-      const opportunity = buildOpportunity(sandbox, {
-        siteId,
-        suggestions: [
-          suggestionStub('NEW', 'https://example.com/existing-page'),
-          ...Array.from({ length: MAX_ACTIVE_SUGGESTIONS - 1 }, () => suggestionStub('NEW')),
-        ],
-      });
-      const ctx = buildContext(sandbox, {
-        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, {
-          opportunities: [opportunity],
-          topPages: ['https://example.com/existing-page', 'https://example.com/brand-new-page'],
-        }),
-      });
-
-      const result = await mockHandler.submitForScraping(ctx);
-      const urls = result.urls.map((u) => u.url);
-
-      expect(urls).to.include('https://example.com/existing-page');
-      expect(urls).to.not.include('https://example.com/brand-new-page');
-    });
-
-    it('does not count OUTDATED suggestions toward the cap, so under-cap runs are not filtered', async () => {
-      const mockHandler = await withAgenticUrls();
-      const siteId = 'mixed-status-site';
-      const opportunity = buildOpportunity(sandbox, {
-        siteId,
-        suggestions: [
-          ...Array.from(
-            { length: MAX_ACTIVE_SUGGESTIONS - 1 },
-            () => suggestionStub('NEW'),
-          ),
-          ...Array.from({ length: 500 }, () => suggestionStub('OUTDATED')),
-        ],
-      });
-      const ctx = buildContext(sandbox, {
-        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, {
-          opportunities: [opportunity],
-          topPages: ['https://example.com/still-submitted'],
-        }),
-      });
-
-      const result = await mockHandler.submitForScraping(ctx);
-
-      expect(result.urls.map((u) => u.url)).to.include('https://example.com/still-submitted');
-    });
-
-    it('does not apply to Slack-triggered runs — like CSV, they are an explicit operator action', async () => {
-      const mockHandler = await withAgenticUrls();
-      const siteId = 'capped-slack-site';
-      const opportunity = buildOpportunity(sandbox, {
-        siteId,
-        suggestions: Array.from(
-          { length: MAX_ACTIVE_SUGGESTIONS },
-          () => suggestionStub('NEW'),
-        ),
-      });
-      const ctx = buildContext(sandbox, {
-        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, {
-          opportunities: [opportunity],
-          topPages: ['https://example.com/brand-new-page'],
-        }),
-        auditContext: { slackContext: { channelId: 'C0123' } },
-      });
-
-      const result = await mockHandler.submitForScraping(ctx);
-
-      expect(result.urls.map((u) => u.url)).to.include('https://example.com/brand-new-page');
-    });
-
-    it('ignores opportunities of a different type when computing the cap', async () => {
-      const mockHandler = await withAgenticUrls();
-      const siteId = 'other-type-site';
-      const otherOpportunity = buildOpportunity(sandbox, {
-        siteId,
-        type: 'broken-backlinks',
-        suggestions: Array.from(
-          { length: MAX_ACTIVE_SUGGESTIONS },
-          () => suggestionStub('NEW'),
-        ),
-      });
-      const ctx = buildContext(sandbox, {
-        site: buildSite({ id: siteId, baseUrl: 'https://example.com' }),
-        dataAccess: buildDataAccess(sandbox, {
-          opportunities: [otherOpportunity],
-          topPages: ['https://example.com/page-1'],
-        }),
-      });
-
-      const result = await mockHandler.submitForScraping(ctx);
-
-      expect(result.urls.map((u) => u.url)).to.include('https://example.com/page-1');
     });
   });
 

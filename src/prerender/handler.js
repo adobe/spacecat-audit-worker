@@ -36,7 +36,11 @@ import {
   markSuggestionsAsCoveredByPaths,
   mergePathSuggestionData,
 } from './path-suggestions/main.js';
-import { CONTENT_GAIN_THRESHOLD, DOMAIN_WIDE_SUGGESTION_KEY } from './utils/constants.js';
+import {
+  CONTENT_GAIN_THRESHOLD,
+  DOMAIN_WIDE_SUGGESTION_KEY,
+  MAX_ACTIVE_SUGGESTIONS,
+} from './utils/constants.js';
 import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
@@ -225,6 +229,74 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeP
     deployedAtEdgePathnames,
     domainWideSuggestion.getId(),
   );
+}
+
+/**
+ * Determines whether a suggestion counts toward the active-suggestion cap and is eligible
+ * for eviction (LLMO-6533/LLMO-6638): an individual per-URL suggestion (not domain-wide or
+ * path-type) that is not already OUTDATED or FIXED, not deployed at the edge, and not
+ * covered by an active domain-wide deployment. Those states are either already resolved,
+ * off the Current tab, or otherwise protected — excluded from both the count and eviction.
+ * @param {Object} suggestion - Suggestion entity
+ * @returns {boolean}
+ */
+function isCapEligibleSuggestion(suggestion) {
+  const data = suggestion.getData();
+  return !!data?.url
+    && !isDomainWideSuggestionData(data)
+    && !isPathSuggestionData(data)
+    && suggestion.getStatus() !== Suggestion.STATUSES.OUTDATED
+    && suggestion.getStatus() !== Suggestion.STATUSES.FIXED
+    && !data.edgeDeployed
+    && !data.coveredByDomainWide;
+}
+
+/**
+ * Enforces the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) by evicting the
+ * least-recently-scraped suggestions once the count exceeds MAX_ACTIVE_SUGGESTIONS.
+ *
+ * Recency comes from status.json's per-URL scrapedAt (the mergedPages returned by
+ * uploadStatusSummaryToS3), which is stamped on every run regardless of whether that URL's
+ * analysis output changed. A URL that keeps showing up in agentic/organic/included traffic
+ * naturally stays "fresh" and is never evicted; only URLs that stop appearing in the daily
+ * batch age out — so the active set is always the most recently-scraped
+ * MAX_ACTIVE_SUGGESTIONS URLs, a rolling window driven by the live input source.
+ *
+ * @param {Object|null} opportunity - The opportunity object (no-op if null)
+ * @param {Object} context - Audit context with dataAccess and log
+ * @param {Array<{url: string, scrapedAt: string}>} mergedPages - status.json pages array
+ * @returns {Promise<void>}
+ */
+async function evictOldestSuggestionsOverCap(opportunity, context, mergedPages) {
+  const { log, site, dataAccess } = context;
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
+    return;
+  }
+
+  const scrapedAtByUrl = new Map(
+    mergedPages
+      .filter((p) => p.url && p.scrapedAt)
+      .map((p) => [normalizePathnameWithQuery(p.url), p.scrapedAt]),
+  );
+
+  const suggestions = await opportunity.getSuggestions();
+  const eligible = suggestions.filter(isCapEligibleSuggestion);
+
+  const overflow = eligible.length - MAX_ACTIVE_SUGGESTIONS;
+  if (overflow <= 0) {
+    return;
+  }
+
+  // Missing scrapedAt (shouldn't normally happen, since status.json pages only grow) sorts
+  // first via '' — treated as the oldest, so it's evicted before any dated entry.
+  const getScrapedAt = (s) => scrapedAtByUrl.get(normalizePathnameWithQuery(s.getData().url)) ?? '';
+  const toEvict = [...eligible]
+    .sort((a, b) => getScrapedAt(a).localeCompare(getScrapedAt(b)))
+    .slice(0, overflow);
+
+  await dataAccess.Suggestion.bulkUpdateStatus(toEvict, Suggestion.STATUSES.OUTDATED);
+
+  log.info(`${LOG_PREFIX} Active suggestion cap exceeded (${eligible.length}/${MAX_ACTIVE_SUGGESTIONS}): evicted ${toEvict.length} least-recently-scraped suggestion(s). baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
 }
 
 /**
@@ -833,7 +905,9 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
- * @returns {Promise<void>}
+ * @returns {Promise<Array<{url: string, scrapedAt: string}>>} The merged pages array written
+ *   to status.json (empty array on early-return or failure), reused by
+ *   evictOldestSuggestionsOverCap so it doesn't need a redundant S3 read.
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   const {
@@ -850,7 +924,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   try {
     if (!auditResult) {
       log.warn(`${LOG_PREFIX} Missing auditResult, skipping status summary upload`);
-      return;
+      return [];
     }
 
     const scrapedAt = auditedAt || new Date().toISOString();
@@ -942,9 +1016,12 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const { pages: _, ...logSummary } = statusSummary;
     const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
     log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
+
+    return mergedPages;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
+    return [];
   }
 }
 
@@ -1272,7 +1349,12 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     // Upload status summary to S3 (post-processing)
-    await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+    const mergedPages = await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+
+    // Enforce the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) by evicting the
+    // least-recently-scraped suggestions, using the freshly-written status.json scrapedAt
+    // timestamps as the recency signal.
+    await evictOldestSuggestionsOverCap(opportunityWithSuggestions, context, mergedPages);
 
     return {
       status: 'complete',

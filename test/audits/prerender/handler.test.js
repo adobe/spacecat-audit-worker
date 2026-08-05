@@ -7782,6 +7782,233 @@ describe('Prerender Audit', () => {
     });
   });
 
+  describe('evictOldestSuggestionsOverCap (LLMO-6533/LLMO-6638)', () => {
+    // HTML pair that produces contentGainRatio > CONTENT_GAIN_THRESHOLD (1.1) so prerender is
+    // detected for the one URL scraped this run — needed to reach the opportunity-processing
+    // branch, which runs eviction at the end of processContentAndGenerateOpportunities.
+    const serverHtml = '<html><body><p>Short</p></body></html>';
+    const clientHtml = '<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>';
+
+    /** Builds a minimal suggestion stub for eviction tests. */
+    const capSuggestion = (url, extraData = {}, status = 'NEW') => ({
+      getStatus: () => status,
+      getData: () => ({ url, ...extraData }),
+    });
+
+    const buildContext = (sandbox, {
+      statusPages = [],
+      suggestions = [],
+      bulkUpdateStatus = sandbox.stub().resolves(),
+    } = {}) => ({
+      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+      audit: { getId: () => 'audit-1' },
+      log: {
+        info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+      },
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      auditContext: {},
+      scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/p1']]),
+      dataAccess: {
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+        Suggestion: { bulkUpdateStatus },
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake((command) => {
+          if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
+          const key = command.input?.Key || '';
+          if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(serverHtml) } });
+          if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(clientHtml) } });
+          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({})) } });
+          if (key.endsWith('status.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages: statusPages })) } });
+          return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+        }),
+      },
+    });
+
+    const buildMockHandler = (sandbox, opportunitySuggestions) => {
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sandbox.stub().resolves(opportunitySuggestions),
+      };
+      return esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': { convertToOpportunity: sandbox.stub().resolves(mockOpportunity) },
+        '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
+        },
+        '../../../src/prerender/utils/constants.js': {
+          CONTENT_GAIN_THRESHOLD: 1.1,
+          DOMAIN_WIDE_SUGGESTION_KEY: 'domain-wide-aggregate|prerender',
+          MAX_ACTIVE_SUGGESTIONS: 2,
+        },
+      });
+    };
+
+    let sandbox;
+    beforeEach(() => { sandbox = sinon.createSandbox(); });
+    afterEach(() => { sandbox.restore(); });
+
+    it('evicts the least-recently-scraped eligible suggestion when over the cap', async () => {
+      const suggestions = [
+        capSuggestion('https://example.com/url-a'),
+        capSuggestion('https://example.com/url-b'),
+        capSuggestion('https://example.com/page1'),
+      ];
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/url-b', scrapedAt: '2023-06-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      const [evicted, status] = bulkUpdateStatus.firstCall.args;
+      expect(status).to.equal('OUTDATED');
+      expect(evicted).to.have.length(1);
+      expect(evicted[0].getData().url).to.equal('https://example.com/url-a');
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Active suggestion cap exceeded \(3\/2\): evicted 1 least-recently-scraped suggestion/));
+    });
+
+    it('treats a suggestion whose URL has no status.json entry as the oldest, evicting it first', async () => {
+      const suggestions = [
+        capSuggestion('https://example.com/url-a'),
+        capSuggestion('https://example.com/url-no-status'),
+        capSuggestion('https://example.com/page1'),
+      ];
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      const [evicted] = bulkUpdateStatus.firstCall.args;
+      expect(evicted[0].getData().url).to.equal('https://example.com/url-no-status');
+    });
+
+    it('does not evict anything when the eligible count is at or below the cap', async () => {
+      const suggestions = [
+        capSuggestion('https://example.com/url-a'),
+        capSuggestion('https://example.com/page1'),
+      ];
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [{ url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' }],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('excludes FIXED, edgeDeployed, coveredByDomainWide, domain-wide, and path-type suggestions from the count and from eviction', async () => {
+      // Only one eligible (NEW, plain per-URL) suggestion plus page1 (also NEW) — cap is 2, so
+      // with only 2 eligible suggestions there is no overflow. The five non-eligible entries
+      // below (each individually the "oldest" by status.json scrapedAt) must never be evicted
+      // or even considered, proving they're excluded from the count.
+      const suggestions = [
+        capSuggestion('https://example.com/url-a'),
+        capSuggestion('https://example.com/page1'),
+        capSuggestion('https://example.com/fixed', {}, 'FIXED'),
+        capSuggestion('https://example.com/edge-deployed', { edgeDeployed: 1234567890 }),
+        capSuggestion('https://example.com/covered', { coveredByDomainWide: 'dw-1' }),
+        capSuggestion('https://example.com/* (All Domain URLs)', { isDomainWide: true }),
+        capSuggestion('https://example.com/products/*', { allowedRegexPatterns: ['/products/*'] }),
+      ];
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/fixed', scrapedAt: '2010-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/edge-deployed', scrapedAt: '2010-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/covered', scrapedAt: '2010-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('excludes a protected suggestion from being picked for eviction even when it is chronologically oldest', async () => {
+      // 3 eligible suggestions (url-a, url-b, page1) exceed the cap of 2 by 1, so the single
+      // oldest ELIGIBLE one (url-b) must be evicted — even though fixed-oldest has an older
+      // scrapedAt than all of them, it's FIXED and must never be picked.
+      const suggestions = [
+        capSuggestion('https://example.com/url-a'),
+        capSuggestion('https://example.com/url-b'),
+        capSuggestion('https://example.com/page1'),
+        capSuggestion('https://example.com/fixed-oldest', {}, 'FIXED'),
+      ];
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          { url: 'https://example.com/url-a', scrapedAt: '2023-06-01T00:00:00.000Z' },
+          { url: 'https://example.com/url-b', scrapedAt: '2022-01-01T00:00:00.000Z' },
+          // Older than both, but FIXED — must never be selected for eviction.
+          { url: 'https://example.com/fixed-oldest', scrapedAt: '2000-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      const [evicted] = bulkUpdateStatus.firstCall.args;
+      expect(evicted).to.have.length(1);
+      expect(evicted[0].getData().url).to.equal('https://example.com/url-b');
+    });
+
+    it('does not call bulkUpdateStatus or throw when no opportunity is found', async () => {
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
+        },
+        '../../../src/prerender/utils/constants.js': {
+          CONTENT_GAIN_THRESHOLD: 1.1,
+          DOMAIN_WIDE_SUGGESTION_KEY: 'domain-wide-aggregate|prerender',
+          MAX_ACTIVE_SUGGESTIONS: 2,
+        },
+      });
+      const context = buildContext(sandbox, { bulkUpdateStatus });
+      // No prerender opportunity/candidates this run and no scrapeForbidden — the "No
+      // Opportunity Found" branch runs with existingOpportunity undefined, so
+      // opportunityWithSuggestions stays null all the way to eviction.
+      context.s3Client.send = sandbox.stub().callsFake((command) => {
+        if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
+        return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+      });
+      context.scrapeResultPaths = new Map();
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+  });
+
   describe('domain-wide suggestion preservation', () => {
     let sandbox;
 
