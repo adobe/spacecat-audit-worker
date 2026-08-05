@@ -14,7 +14,11 @@ import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { resolveBrandForSite } from './brand-resolver.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
-import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
+import {
+  OFFSITE_DOMAINS,
+  YOUTUBE_URL_REGEX,
+  REDDIT_URL_REGEX,
+} from '../offsite-brand-presence/constants.js';
 
 const LOG_PREFIX = '[offsite-brand-presence][semrush]';
 
@@ -130,6 +134,20 @@ async function collectRequest({
   for (const row of rows) {
     const classified = row?.url ? classifyAndNormalize(row.url, siteHostname) : null;
     if (!classified) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    // Parity with the legacy handler path (handler.js:199-204): drop URLs that
+    // fail the strict offsite formats so the Semrush path never feeds DRS a
+    // non-thread Reddit URL (e.g. /settings, subreddit landing) or a
+    // lookalike YouTube host (e.g. music.youtube.com) that the legacy path
+    // filters. (isExcludedCitedHost / brand-token filtering only affects the
+    // top-cited bucket, which this loader does not fetch yet — LLMO-6709.)
+    if (classified.domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(row.url)) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    if (classified.domain === 'reddit.com' && !REDDIT_URL_REGEX.test(row.url)) {
       // eslint-disable-next-line no-continue
       continue;
     }

@@ -168,6 +168,34 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.size).to.equal(1);
   });
 
+  it('drops URLs failing the strict youtube/reddit formats (parity with the legacy path)', async () => {
+    fetchStub.callsFake(async (url) => {
+      const hostname = new URL(url).searchParams.get('hostname');
+      if (hostname === 'youtube.com') {
+        return okJson({
+          urls: [
+            { url: YT_URL, citations: 10 }, // valid watch URL -> kept
+            { url: 'https://music.youtube.com/watch?v=zzz', citations: 99 }, // lookalike host -> dropped
+          ],
+        });
+      }
+      return okJson({
+        urls: [
+          { url: RD_URL, citations: 7 }, // valid /r/.../comments/ thread -> kept
+          { url: 'https://www.reddit.com/settings', citations: 99 }, // non-thread -> dropped
+        ],
+      });
+    });
+
+    const allUrls = await mod.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
+    });
+
+    expect([...allUrls.keys()].sort()).to.deep.equal(['https://youtu.be/abc', RD_URL].sort());
+    expect(allUrls.has('https://music.youtube.com/watch?v=zzz')).to.equal(false);
+    expect(allUrls.has('https://www.reddit.com/settings')).to.equal(false);
+  });
+
   it('treats a non-array urls body as empty', async () => {
     fetchStub.resolves(okJson({ notUrls: true }));
     const allUrls = await mod.loadCitedUrlsFromSemrush({
