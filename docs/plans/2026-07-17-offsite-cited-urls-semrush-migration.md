@@ -162,19 +162,32 @@ building a new backend surface:
    like today's `extractUrlsAndTopics` output, then run the existing
    `classifyAndNormalize` → `selectTopUrls` → DRS path unchanged.
 
+**Where it's served + auth (confirmed 2026-08-05):** these are **spacecat-api-service**
+endpoints — the *Elements proxy*, `src/controllers/elements.js` (`listCitedDomains`,
+`listDomainUrls`, `listUrlPrompts`), routed at
+`/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/*` (latest
+`main`, 37 serenity routes). `llmo.experiencecloud.live/api/v1` is an edge alias in front of
+api-service; the worker calls the same host it already targets via `SPACECAT_API_URI`. The
+proxy's `resolveElementsImsToken` / `requireImsBearer` authenticates an IMS caller and
+forwards the `Authorization: Bearer` to Semrush, so the worker uses a **service IMS token**
+and **no `x-promise-token` is required** (that header is only for non-IMS browser callers).
+
 **Why this supersedes 1 & 2:**
 
-- **vs Option 1** — no new `spacecat-api-service` endpoint to build; the surface exists and
-  is production-validated by the `url-inspector-sr` dashboard.
+- **vs Option 1** — no new `spacecat-api-service` endpoint to build; the Elements proxy
+  already serves this and is production-validated by the `url-inspector-sr` dashboard.
 - **vs Option 2** — no direct v4-raw Semrush client, no API-key/workspace/element-id secret
   management in the worker; the endpoints already take a `startDate`/`endDate` range
   (weekly window), so the rolling-window concern that motivated Option 2 is addressed.
 
-**Open items** (carried into the child tickets under LLMO-6488): where the surface is served
-(LLMO gateway — **not** spacecat-api-service's serenity controller, which is prompts/markets
-only) and the server-to-server auth for calling it from the audit-worker; region + platform
-param mapping; per-URL prompt attribution (`url-prompts`) and topic/category enrichment; and
-shadow-run parity before cutover.
+**Open items** (carried into the child tickets under LLMO-6488): confirm the worker's
+**service IMS token** is authorized upstream by Semrush (the only residual auth item — no
+server-to-server build needed); region + platform param mapping (surface is **multi-engine** —
+`search-gpt` and `google-ai-mode` both return data; omit `platform` to aggregate, or list
+engines to sum); per-URL prompt attribution (`url-prompts`, blocked while `urlId` returns
+empty) and topic/category enrichment (`categories` empty today); and shadow-run parity before
+cutover. Loader landed in
+[spacecat-audit-worker#2847](https://github.com/adobe/spacecat-audit-worker/pull/2847).
 
 ---
 
@@ -379,8 +392,11 @@ Returned per-URL fields (`domain-urls`): `urlId`, `url`, `contentType`,
 
 ## 7. Rollout (Option 0)
 
-1. Confirm the `serenity/brand-presence/url-inspector/{cited-domains,domain-urls}` surface
-   is reachable server-to-server from the audit-worker (auth) — LLMO-6707 / loader ticket.
+1. Confirm the worker's **service IMS token** is accepted by Semrush. api-service's Elements
+   wrapper (`requireImsBearer`) forwards the `Authorization: Bearer` **unchanged** to Semrush
+   (`docs/elements/semrush-elements-api-reference.md` §Authentication — "the user's own IMS
+   token is the auth mechanism"), so a service/technical token only works if Semrush authorizes
+   it. This is the one real open auth risk — LLMO-6709.
 2. Land worker loader + flag (`useSemrushSource`, per-site/env) — LLMO-6709.
 3. **Shadow-run**: compute Semrush top-70 (youtube/reddit/cited) and diff against the
    current PostgREST/SharePoint-selected set for a known site; confirm parity with the URL
@@ -393,8 +409,12 @@ Returned per-URL fields (`domain-urls`): `urlId`, `url`, `contentType`,
 
 - [ ] **Approach: Option 0 (reuse live Serenity URL-Inspector)** [recommended] vs the
       historical Options 1 / 2.
-- [ ] Where the surface is served + server-to-server auth from the audit-worker.
-- [ ] Region + platform param mapping (`ACCEPTED_REGIONS` ↔ region, `platform=search-gpt`).
+- [x] Where the surface is served: **spacecat-api-service** Elements wrapper (`elements.js`),
+      base `SPACECAT_API_URI`. Auth = the caller's IMS `Authorization: Bearer` forwarded
+      **unchanged** to Semrush (no S2S credential). **Open:** does Semrush accept the worker's
+      *service* IMS token (the wrapper is designed around a real user's token)?
+- [ ] Region + platform param mapping (`ACCEPTED_REGIONS` ↔ region). Surface is multi-engine
+      (`search-gpt` + `google-ai-mode` confirmed); omit `platform` to aggregate.
 - [ ] Per-URL prompt attribution: backfill via `url-prompts` vs invert vs drop.
 - [ ] Topic/category enrichment on the Semrush path: drop vs backfill.
 
