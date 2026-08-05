@@ -17,6 +17,7 @@ import DrsClient, {
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
+import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   computeBrandTokens,
@@ -889,14 +890,27 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
   const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
 
-  const brandPresenceData = await loadBrandPresenceData({
-    siteId, site, previousWeeks, context,
-  });
-
   const allUrls = new Map();
-  if (brandPresenceData) {
-    const topicMap = new Map();
-    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
+  if (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true') {
+    // Semrush source: the loader returns the same allUrls shape, with
+    // count = exact citations. Everything downstream (selectTopUrls -> DRS)
+    // is unchanged. Flag off = today's SharePoint/PostgREST path.
+    const semrushUrls = await loadCitedUrlsFromSemrush({
+      site, previousWeeks, context, siteHostname,
+    });
+    if (semrushUrls) {
+      for (const [url, info] of semrushUrls) {
+        allUrls.set(url, info);
+      }
+    }
+  } else {
+    const brandPresenceData = await loadBrandPresenceData({
+      siteId, site, previousWeeks, context,
+    });
+    if (brandPresenceData) {
+      const topicMap = new Map();
+      extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname, brandTokens);
+    }
   }
 
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);

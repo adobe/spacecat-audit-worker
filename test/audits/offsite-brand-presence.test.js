@@ -30,6 +30,7 @@ const DEFAULT_YEAR = 2026;
 describe('Offsite Brand Presence Handler', () => {
   let sandbox;
   let mockLoadBrandPresenceData;
+  let mockLoadCitedUrlsFromSemrush;
   let mockGetPreviousWeeks;
   let mockSubmitScrapeJob;
   let mockDrsIsConfigured;
@@ -52,6 +53,7 @@ describe('Offsite Brand Presence Handler', () => {
     sandbox = sinon.createSandbox();
 
     mockLoadBrandPresenceData = sandbox.stub();
+    mockLoadCitedUrlsFromSemrush = sandbox.stub().resolves(null);
     mockGetPreviousWeeks = sandbox.stub().returns([
       { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
       { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
@@ -64,6 +66,9 @@ describe('Offsite Brand Presence Handler', () => {
       '../../src/utils/offsite-brand-presence-enrichment.js': {
         getPreviousWeeks: mockGetPreviousWeeks,
         loadBrandPresenceData: mockLoadBrandPresenceData,
+      },
+      '../../src/utils/offsite-brand-presence-semrush.js': {
+        loadCitedUrlsFromSemrush: mockLoadCitedUrlsFromSemrush,
       },
       '@adobe/spacecat-shared-drs-client': {
         default: {
@@ -198,6 +203,36 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
+    });
+  });
+
+  describe('Semrush source (OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED)', () => {
+    it('uses the Semrush loader instead of loadBrandPresenceData when the flag is on', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+        ['https://www.reddit.com/r/test/comments/1/p', { count: 3, domain: 'reddit.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('returns an empty result when the Semrush loader yields null', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
   });
 
