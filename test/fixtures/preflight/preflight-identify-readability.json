@@ -88,7 +88,8 @@
             "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.",
             "elements": [
               {
-                "selector": "body > p"
+                "selector": "body > p",
+                "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination."
               }
             ]
           }

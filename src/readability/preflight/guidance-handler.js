@@ -12,6 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { AsyncJob } from '@adobe/spacecat-shared-data-access';
+import { toElementTargets } from '../../preflight/utils/dom-selector.js';
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -215,7 +216,11 @@ export default async function handler(message, context) {
                           .replace(/\n/g, ' '),
                         seoImpact: 'Moderate',
                         fleschReadingEase: suggestion.originalFleschScore || 0,
+                        // Top-level textContent is the internal AI-matching key; the passage is
+                        // also surfaced in elements[].textContent for the uniform contract. No
+                        // selector here — the suggest step reconstructs from AI output with no DOM.
                         textContent: suggestion.originalText,
+                        ...toElementTargets({ textContent: suggestion.originalText }),
                         seoRecommendation: 'Improve readability by using shorter sentences, '
                           + 'simpler words, and clearer structure',
                       };

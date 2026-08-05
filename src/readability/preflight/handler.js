@@ -256,8 +256,11 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            textContent: text, // Store normalized text for AI processing
-            ...toElementTargets(selector),
+            // Top-level textContent is retained as the internal key that matches AI
+            // suggestions back to opportunities in the suggest step; the same passage is
+            // also surfaced in elements[].textContent for the uniform response contract.
+            textContent: text,
+            ...toElementTargets({ selector, textContent: text }),
           });
         }
       } catch (error) {
