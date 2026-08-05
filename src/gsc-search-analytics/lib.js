@@ -39,7 +39,13 @@ function baseFix(f, status, extra) {
 
 function envelope(fields, finalUrl) {
   return {
-    auditResult: { schemaVersion: SCHEMA_VERSION, ...fields },
+    auditResult: {
+      schemaVersion: SCHEMA_VERSION,
+      // Self-describing guard for anyone reading the raw row via PostgREST: these are
+      // raw recorded figures, NOT a causal or attributed claim about the fix.
+      interpretation: 'raw before/after GSC figures per fixed URL; not a causal or attributed measurement',
+      ...fields,
+    },
     fullAuditRef: finalUrl,
   };
 }

@@ -50,6 +50,7 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult, fullAuditRef } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(fullAuditRef).to.equal(finalUrl);
     expect(auditResult).to.include({ schemaVersion: 1, connected: true, status: 'ok' });
+    expect(auditResult.interpretation).to.match(/not a causal or attributed/);
     expect(auditResult.fixCount).to.equal(1);
     expect(auditResult.measuredCount).to.equal(1);
     const fix = auditResult.fixes[0];
