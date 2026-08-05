@@ -11,6 +11,7 @@
  */
 /* eslint-env mocha */
 import { expect } from 'chai';
+import { readFileSync } from 'fs';
 import {
   classifyUrlPath, buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath,
   isCatastrophicQuantifier,
@@ -189,6 +190,28 @@ describe('referral URL classification', () => {
       ]);
       const [, row] = csv.split('\r\n');
       expect(row).to.equal('example.com,"/a,b","has ""quote""",');
+    });
+  });
+
+  describe('classifier parity (shared JS/Python fixture)', () => {
+    // This fixture is mirrored verbatim in llmo-data-retrieval-service
+    // (tests/common/utils/fixtures/referral_category_parity_cases.json); given the
+    // same rulebook + url_path, the JS and Python classifiers must return the same
+    // category. Rules arrive pre-sorted by sortOrder (the fetch layer sorts).
+    const parityCases = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../fixtures/llmo-referral-traffic-daily/referral_category_parity_cases.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ).cases;
+
+    parityCases.forEach((parityCase) => {
+      it(`matches the shared contract: ${parityCase.name}`, () => {
+        expect(classifyUrlPath(parityCase.rules, parityCase.urlPath)).to.equal(parityCase.expected);
+      });
     });
   });
 });

@@ -1,0 +1,12 @@
+{
+  "_comment": "Shared JS/Python classifier parity fixture (LLMO-6257). The same rulebook + url_path MUST yield the same category in the audit-worker JS classifyUrlPath and the DRS Python classify_url_path. This file is mirrored verbatim in llmo-data-retrieval-service (tests/common/utils/fixtures/) so both engines assert the identical contract. Rules use the agentic-categories DTO shape {name, regex, sortOrder} and arrive pre-sorted by sortOrder (the fetch layer sorts; the JS classifier does not); expected is the category name or null for no-match.",
+  "cases": [
+    {"name": "simple match", "rules": [{"name": "Blog", "regex": "^/blog", "sortOrder": 10}], "urlPath": "/blog/post-1", "expected": "Blog"},
+    {"name": "no match returns null", "rules": [{"name": "Blog", "regex": "^/blog", "sortOrder": 10}], "urlPath": "/about", "expected": null},
+    {"name": "first matching rule wins (rules arrive pre-sorted by sortOrder)", "rules": [{"name": "Blog", "regex": "^/blog", "sortOrder": 10}, {"name": "Broad", "regex": "^/", "sortOrder": 100}], "urlPath": "/blog/x", "expected": "Blog"},
+    {"name": "case-insensitive without inline flag", "rules": [{"name": "Blog", "regex": "^/BLOG", "sortOrder": 10}], "urlPath": "/blog/x", "expected": "Blog"},
+    {"name": "redundant inline (?i) still matches", "rules": [{"name": "Blog", "regex": "(?i)^/BLOG", "sortOrder": 10}], "urlPath": "/blog/x", "expected": "Blog"},
+    {"name": "query string retained (verbatim producer-native key)", "rules": [{"name": "Search", "regex": "^/search", "sortOrder": 10}], "urlPath": "/search/results?q=agentic", "expected": "Search"},
+    {"name": "ReDoS-shaped rule is skipped, no match", "rules": [{"name": "Redos", "regex": "(a+)+$", "sortOrder": 10}], "urlPath": "/aaaa", "expected": null}
+  ]
+}

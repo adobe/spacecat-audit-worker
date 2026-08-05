@@ -20,7 +20,7 @@ Result: DRS-only sites are stuck showing "All Categories." A prod scan on 2026-0
 
 - DRS-only sites (GA4/AA/CJA) get referral categories, matching the optel/cdn experience.
 - cdn-only sites — broken in prod today (0% categories) — also start getting categories.
-- The JS classifier (optel/cdn) and the Python classifier (DRS) stay in **parity**: identical `url_path` canonicalization and classification output.
+- The JS classifier (optel/cdn) and the Python classifier (DRS) stay in **classification parity**: given the same rulebook and `url_path`, both return the same category. `url_path` keys are **producer-native** — optel/cdn share the JS `canonicalizeUrlPath` form; DRS (ga4/aa/cja) emits its stored `url_path` verbatim, because its read-join is per-source and it classifies the exact path it wrote (see §3, §7.4).
 - No new load or risk on the reused downstream path (projector → data-service → api → UI).
 
 ## 3. Plan (technical design)
@@ -37,7 +37,7 @@ Today `generateReferralCategoryRules` only runs when the optel handler runs. Cha
 **Fix B — DRS classifies its own URLs write-time, in Python.**
 DRS runs in a separate AWS account and **cannot reach the data-service PostgREST** to read the rules directly. It *can*, however, reach the **api-service** (it already calls it), so:
 - **Reuse the existing api-service endpoint** `GET /sites/:siteId/agentic-categories`, which already returns a site's active category rules as `{ name, regex, sortOrder, ... }` (verified in `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`. DRS already calls the api-service, so it just calls this — **no new endpoint needed.** The only remaining piece is **authorizing DRS** to call it (provision `site:read` / the S2S capability), an auth/provisioning task rather than endpoint code.
-- In DRS (Python), after it imports GA4/AA/CJA traffic, it fetches the rules via that endpoint, classifies each URL (mirroring the JS `classify.js` logic, including the same `url_path` canonicalization), writes the same category CSV, and drops it into the existing pipeline.
+- In DRS (Python), after it imports GA4/AA/CJA traffic, it fetches the rules via that endpoint, classifies each URL (mirroring the JS `classify.js` **matching semantics** — always case-insensitive, `sortOrder` precedence, ReDoS-shape rejection — against the `url_path` it stored **verbatim**, not the JS canonical form), writes the same category CSV, and drops it into the existing pipeline.
 
 **Reuse (no new work):** the projector (already accepts `referral_url_classifications`), the data-service (the import RPC + tables), the api read RPCs, and the UI are all unchanged — they already handle this data for optel/cdn.
 
@@ -85,7 +85,7 @@ The DRS→projector hand-off uses the **same transport as optel/cdn**: the produ
 
 1. DRS imports GA4 referral traffic for a site (as it does today).
 2. DRS calls the api-service **rules endpoint** → gets the site's category rulebook. *(rulebook exists because Fix A now generates rules for this site.)*
-3. DRS **classifies** each GA4 URL against the rulebook (Python, same canonicalization as JS) → produces `host, url_path, category_name` rows.
+3. DRS **classifies** each GA4 URL against the rulebook (Python, same matching semantics as JS, against the `url_path` DRS stored verbatim) → produces `host, url_path, category_name` rows.
 4. DRS writes a **category CSV** and hands it to the **projector** (same as optel/cdn do).
 5. Projector → **data-service** `wrpc_import_referral_url_classifications` writes it to `referral_url_classifications`.
 6. The **api-service** read RPCs surface the category; the **UI** shows it. Done.
@@ -122,25 +122,26 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 - **Chosen: A + C.** Only invoke the LLM for sites with no rules (one-time per site), and cap how many sites a single sweep processes.
 - Why: makes the expensive LLM step one-time per site and prevents a single sweep from hammering the LLM.
 
-**7.4 — Canonicalization parity + where the fixtures live**
-- Options (source of truth): (A) the JS `canonicalizeUrlPath` is the reference and Python mirrors it; (B) a language-neutral spec both follow.
+**7.4 — url_path key form, classification parity + where the fixtures live**
+- Context: this reconciles the parity language with §3 — DRS classifies against the `url_path` it stored, so its read-join lines up by construction and it does not use the JS canonical form.
+- Options (DRS key form): (A) DRS canonicalizes **both** its traffic and classification `url_path` to the JS `canonicalizeUrlPath` form (byte-for-byte); (B) DRS uses **producer-native / verbatim** keys.
 - Options (fixtures location): (A) the same case-list committed in both repos; (B) one shared file both pull from.
-- **Chosen: JS is the reference (A); an identical case-list committed in both repos (A).** Sync is **verified during the DRS classify PR review** — the reviewer diffs the two case-lists as an explicit checklist item — rather than relying on an as-yet-unbuilt cross-repo check. A mechanical guard (audit-worker CI fetches the DRS fixture file and fails if the two hashes differ) is a possible follow-up, but is not required for the first cut and no one owns it yet.
-- Why: JS shipped first (Phase 1), so it is the natural source of truth; a duplicated case-list is the simplest way to guarantee byte-for-byte parity, and naming a concrete review-time owner keeps the sync honest without a speculative CI mechanism.
+- **Chosen: producer-native keys for DRS (B); an identical classification case-list committed in both repos (A).** The referral read-RPC joins **per-source** on `(site_id, url_path)`, and each producer emits a classification for every `url_path` it wrote to its own traffic table, so the join lines up within a producer with no cross-language canonicalization. optel/cdn still share the JS `canonicalizeUrlPath` form (they share traffic-table rows); DRS does not need it. What must match across engines is the **classification result**, so the shared fixture is `(rulebook, url_path) → expected category` and the two classifiers are aligned on matching semantics (both always case-insensitive, `sortOrder` precedence, ReDoS-shape rejection). Sync is **verified during PR review** — the reviewer diffs the two case-lists — with a hash-check follow-up possible later.
+- Why: Option A would mean maintaining a byte-identical `canonicalizeUrlPath` in two languages **and** migrating DRS's existing traffic `url_path` form (a backfill) — high, permanent fragility to buy cross-source *path* unification the per-source read join never uses. Producer-native keys make the feature work today with far less surface; if a future consumer ever needs cross-source path unification, canonicalizing DRS on both sides becomes the follow-up.
 
 **7.5 — Rules endpoint (shape + auth)**
 - Options (shape): (A) build a new dedicated rules endpoint; (B) **reuse the existing** `GET /sites/:siteId/agentic-categories`.
 - Options (auth): (A) reuse the access path DRS already uses; (B) a new auth mechanism.
 - **Chosen: B (reuse endpoint) + A (reuse auth).** The existing `GET /sites/:siteId/agentic-categories` already returns each active rule as `{ name, regex, sortOrder }` (verified against `agentic-rules-factory.js` + `AgenticRuleDto`) and is gated by `site:read`, so **no new endpoint is needed**. Remaining: provision DRS with `site:read` (auth/provisioning, not endpoint code).
 - Why: the endpoint already exists and returns exactly what DRS needs; building a new one would duplicate it.
-- **Size bound:** the endpoint is unpaginated, and rule-gen is LLM-driven, so a rulebook could in principle grow large. Rather than bolt pagination onto a reused endpoint, the DRS consumer caps the rules it ingests (`MAX_CATEGORY_RULES = 200`, truncating with a warning) before attaching them to the referral-traffic event — this keeps the event under the Step Functions / Lambda 256KB transport limit and is well above any realistic per-site category count. If rulebooks ever legitimately exceed that, pagination on the endpoint becomes the follow-up.
+- **Size bound:** the endpoint is unpaginated, and rule-gen is LLM-driven, so a rulebook could in principle grow large. Rather than bolt pagination onto a reused endpoint, the DRS consumer **projects each rule to just `{name, regex, sortOrder}`** (dropping the DTO's `sampleUrls` et al.) and caps the ingested rules by **both** count (`MAX_CATEGORY_RULES = 200`) **and serialized bytes** before attaching them to the referral-traffic event — keeping it under the Step Functions / Lambda 256KB transport limit regardless of how large individual rule DTOs are. If rulebooks ever legitimately exceed that, pagination on the endpoint becomes the follow-up.
 
 **7.6 — Ownership**
 - Options: (A) split — Omair owns the JS pieces, the DRS team owns the Python classify; (B) a single owner for everything.
 - **Chosen: A — Omair owns the JS pieces (the rule-gen sweeper + confirming/provisioning DRS's auth on the existing rules endpoint); the DRS team owns the Python classify.** (Subject to confirmation.)
 - Why: keeps the JS work where the code and familiarity are, and Python-in-DRS with its owners.
 
-**How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via the existing api-service endpoint and classifies in Python against the JS-defined canonical form. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
+**How the choices fit together:** a weekly JS sweeper builds each site's rulebook once (cheap, capped); DRS pulls that rulebook via the existing api-service endpoint and classifies in Python against the `url_path` it stored (producer-native), matching the JS **classification** semantics. Every referral source — optel, cdn, or DRS-only — gets categories the same way.
 
 **Known limitation (accepted for now):** rules are generated once and do **not** auto-refresh. If a site later adds many new URL types, its rulebook can go stale until a forced regeneration. Rule refresh/evolution is deferred to a later phase.
 
@@ -148,11 +149,11 @@ Each decision lists the options weighed, the chosen one, and the reasoning. Thes
 
 - Category coverage goes from **0% → >0%** for DRS-only sites (verified the same way as the 2026-07-26 prod scan: sample DRS-only sites via the api `filter-dimensions` endpoint, bucketed by `availableSources`). ">0%" is the floor — the meaningful bar is that **≥ ~50% of a sampled set of DRS-only sites show at least one category within a week of the sweep running** (a week covers the weekly sweep cadence from §7.2). A site legitimately shows no category only when none of its URLs match any generated rule.
 - cdn-only sites likewise clear the same bar (0% → the ~50%-of-sampled target).
-- **Parity fixtures pass in CI**: the JS and Python classifiers produce identical canonicalization + classification for the shared case set.
+- **Parity fixtures pass in CI**: given the same rulebook and `url_path`, the JS and Python classifiers return the **same category** for every case in the shared set.
 
 ## 9. Test plan
 
-- **Parity fixtures**: a shared list of `input url → expected canonical url_path` (and `url → expected category`) cases, run against **both** the JS and Python classifiers, proving identical output.
+- **Parity fixtures**: a shared `(rulebook, url_path) → expected category` case list (`referral_category_parity_cases.json`), committed in both repos and run against **both** the JS and Python classifiers, proving identical classification. (`url_path` canonicalization is producer-native and out of scope for the fixture — see §7.4.)
 - **Fix A**: unit test that rule generation now fires for a site with only cdn/DRS referral traffic (no optel).
 - **DRS classify**: unit tests on the Python classifier (match / no-match / bad-rule handling), mirroring the existing `classify.test.js` cases.
 - **End-to-end in a lower env**: pick a DRS-only site, run the flow, confirm categories appear via the api (`filter-dimensions`) — the same check we did in prod for optel/cdn.
