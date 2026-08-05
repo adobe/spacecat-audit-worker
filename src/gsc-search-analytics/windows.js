@@ -21,13 +21,19 @@ const addDays = (d, n) => new Date(d.getTime() + n * 86400000);
 const toUtc = (s) => new Date(`${s}T00:00:00Z`);
 
 /**
- * True when the string parses to a valid calendar date (YYYY-MM-DD).
+ * True when the value is a strict YYYY-MM-DD string denoting a real calendar day.
+ * Rejects non-strings and values that JS Date silently rolls over (e.g. 2026-02-30
+ * → Mar 2), which would otherwise anchor the windows to the wrong date.
  *
  * @param {*} fixDate - candidate date value.
  * @returns {boolean}
  */
 export function isValidFixDate(fixDate) {
-  return !Number.isNaN(toUtc(fixDate).getTime());
+  if (typeof fixDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fixDate)) {
+    return false;
+  }
+  const d = toUtc(fixDate);
+  return !Number.isNaN(d.getTime()) && iso(d) === fixDate;
 }
 
 /**

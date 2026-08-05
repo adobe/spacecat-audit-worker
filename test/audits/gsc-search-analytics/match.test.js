@@ -22,6 +22,14 @@ describe('match', () => {
     expect(normalizeUrl('https://krisshop.com/')).to.equal('https://krisshop.com/');
   });
 
+  it('drops the fragment', () => {
+    expect(normalizeUrl('https://krisshop.com/x#section')).to.equal('https://krisshop.com/x');
+  });
+
+  it('preserves the query string (canonical URLs may be query-distinct)', () => {
+    expect(normalizeUrl('https://krisshop.com/x?id=7')).to.equal('https://krisshop.com/x?id=7');
+  });
+
   it('returns the input unchanged when it is not a valid URL', () => {
     expect(normalizeUrl('not a url')).to.equal('not a url');
   });

@@ -27,10 +27,12 @@ function baseFix(f, status, extra) {
     fixType: f.fixType,
     fixDate: f.fixDate,
     status,
+    windows: null,
     before: null,
     after: null,
     delta: null,
     found: { before: false, after: false },
+    dataQuality: null,
     ...extra,
   };
 }
@@ -128,10 +130,12 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
         const a = lookup(afterMap, f.url);
         const found = { before: !!b, after: !!a };
         let status;
-        if (!found.before || !found.after) {
-          status = 'not_found';
-        } else if (!completeness.afterComplete || !completeness.beforeComplete) {
+        // Completeness is checked FIRST: a not-yet-elapsed after-window legitimately
+        // returns no rows, which must read as 'incomplete', not 'not_found'.
+        if (!completeness.afterComplete || !completeness.beforeComplete) {
           status = 'incomplete';
+        } else if (!found.before || !found.after) {
+          status = 'not_found';
         } else {
           status = 'measured';
         }

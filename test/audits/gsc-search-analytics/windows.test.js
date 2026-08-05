@@ -37,6 +37,12 @@ describe('isValidFixDate', () => {
   it('rejects undefined', () => {
     expect(isValidFixDate(undefined)).to.equal(false);
   });
+  it('rejects a rolled-over impossible date (2026-02-30)', () => {
+    expect(isValidFixDate('2026-02-30')).to.equal(false);
+  });
+  it('rejects an out-of-range month/day (2026-13-45)', () => {
+    expect(isValidFixDate('2026-13-45')).to.equal(false);
+  });
 });
 
 describe('assessCompleteness', () => {

@@ -14,6 +14,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { runGscSearchAnalytics } from '../../../src/gsc-search-analytics/lib.js';
+import { computeWindows } from '../../../src/gsc-search-analytics/windows.js';
 
 const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().split('T')[0];
 const rowFor = (url) => ({
@@ -24,6 +25,14 @@ const rowFor = (url) => ({
   },
 });
 const emptyRows = () => ({ data: { rows: [] } });
+const fullPage = () => ({
+  data: {
+    rows: Array.from({ length: 1000 }, (_, i) => ({
+      keys: [`https://krisshop.com/other${i}`], clicks: 1, impressions: 10, ctr: 0.1, position: 5,
+    })),
+  },
+});
+const afterStartMs = (fixDate) => new Date(`${computeWindows(fixDate).after.start}T00:00:00Z`).getTime();
 
 describe('runGscSearchAnalytics', () => {
   const finalUrl = 'https://krisshop.com';
@@ -65,8 +74,10 @@ describe('runGscSearchAnalytics', () => {
     expect(auditResult.measuredCount).to.equal(0);
   });
 
-  it('marks incomplete when the after window has not fully elapsed', async () => {
-    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
+  it('marks incomplete (not not_found) when the after window has not elapsed, even with no rows', async () => {
+    // Precedence check: a not-yet-elapsed window legitimately returns no rows; it must
+    // read as 'incomplete', never 'not_found'.
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
     const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: iso(-5) }]; // fixed 5 days ago
 
@@ -124,16 +135,48 @@ describe('runGscSearchAnalytics', () => {
     expect(google.getOrganicSearchData.callCount).to.equal(0);
   });
 
-  it('records a per-group failure without wiping other groups', async () => {
-    const google = { getOrganicSearchData: sinon.stub().rejects(new Error('GSC 500')) };
+  it('isolates a per-group failure: the failing date fails, other dates still measure', async () => {
+    const okUrl = 'https://krisshop.com/ok';
+    const failDateAfterMs = afterStartMs('2026-04-01');
+    const failBeforeMs = new Date(`${computeWindows('2026-04-01').before.start}T00:00:00Z`).getTime();
+    const google = {
+      getOrganicSearchData: sinon.stub().callsFake((start) => {
+        const t = start.getTime();
+        if (t === failDateAfterMs || t === failBeforeMs) {
+          return Promise.reject(new Error('GSC 500'));
+        }
+        return Promise.resolve(rowFor(okUrl));
+      }),
+    };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [
+      { url: okUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+      { url: 'https://krisshop.com/fail', fixType: 'meta-tags', fixDate: '2026-04-01' },
+    ];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.connected).to.equal(true);
+    expect(auditResult.measuredCount).to.equal(1);
+    const okFix = auditResult.fixes.find((f) => f.url === okUrl);
+    const failFix = auditResult.fixes.find((f) => f.url === 'https://krisshop.com/fail');
+    expect(okFix.status).to.equal('measured');
+    expect(failFix.status).to.equal('failed');
+    expect(failFix.error).to.equal('GSC 500');
+    expect(failFix.found).to.deep.equal({ before: false, after: false });
+  });
+
+  it('flags truncation and reads not_found when the URL is past the page cap', async () => {
+    const targetAfterMs = afterStartMs('2026-03-01');
+    const google = {
+      getOrganicSearchData: sinon.stub().callsFake((start) => (
+        start.getTime() === targetAfterMs ? Promise.resolve(fullPage()) : Promise.resolve(emptyRows())
+      )),
+    };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
     const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
-    expect(auditResult.connected).to.equal(true);
     const fix = auditResult.fixes[0];
-    expect(fix.status).to.equal('failed');
-    expect(fix.error).to.equal('GSC 500');
-    expect(fix.found).to.deep.equal({ before: false, after: false });
+    expect(fix.dataQuality.truncated).to.equal(true);
+    expect(fix.status).to.equal('not_found');
   });
 
   it('records not_connected (and does not throw) when createFrom fails', async () => {
