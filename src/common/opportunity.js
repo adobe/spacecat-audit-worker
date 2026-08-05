@@ -66,6 +66,15 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
 
   try {
     if (!opportunity) {
+      // SITES-49175 — stamp scopeType='site' + scopeId=siteId on every
+      // new site-scoped opportunity. Historically these fields were
+      // left NULL, which diverged from the V2 Mystique projector shape
+      // (`scopeType='site', scopeId=<siteId>`) and let Postgres unique-
+      // index NULL semantics permit two active rows for the same
+      // (siteId, type). Making the scope explicit unblocks the partial
+      // unique index on the data-service side. Requires the SITE entry
+      // in Oppty.SCOPE_TYPES (spacecat-shared-data-access 4.17+ once
+      // https://github.com/adobe/spacecat-shared/pull/1866 releases).
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,
@@ -77,6 +86,8 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         guidance: opportunityInstance.guidance,
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
+        scopeType: Oppty.SCOPE_TYPES.SITE,
+        scopeId: auditData.siteId,
       };
       opportunity = await Opportunity.create(opportunityData);
       return opportunity;
