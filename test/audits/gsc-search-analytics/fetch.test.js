@@ -14,38 +14,44 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { fetchWindow } from '../../../src/gsc-search-analytics/fetch.js';
 
+const fullPage = () => ({
+  data: {
+    rows: Array.from({ length: 1000 }, (_, i) => ({
+      keys: [`https://s/p${i}`], clicks: 1, impressions: 10, ctr: 0.1, position: 5,
+    })),
+  },
+});
+
 describe('fetchWindow', () => {
-  it('aggregates paginated page rows', async () => {
+  const start = new Date('2026-03-02T00:00:00Z');
+  const end = new Date('2026-05-24T00:00:00Z');
+
+  it('aggregates paginated page rows and reports not truncated', async () => {
     const google = { getOrganicSearchData: sinon.stub() };
-    google.getOrganicSearchData.onCall(0).resolves({
-      data: {
-        rows: Array.from({ length: 1000 }, (_, i) => ({
-          keys: [`https://s/p${i}`], clicks: 1, impressions: 10, ctr: 0.1, position: 5,
-        })),
-      },
-    });
+    google.getOrganicSearchData.onCall(0).resolves(fullPage());
     google.getOrganicSearchData.onCall(1).resolves({
       data: { rows: [{ keys: ['https://s/last'], clicks: 2, impressions: 20, ctr: 0.1, position: 4 }] },
     });
 
-    const rows = await fetchWindow(
-      google,
-      new Date('2026-03-02T00:00:00Z'),
-      new Date('2026-05-24T00:00:00Z'),
-    );
-
+    const { rows, truncated } = await fetchWindow(google, start, end);
     expect(rows).to.have.length(1001);
+    expect(truncated).to.equal(false);
     expect(google.getOrganicSearchData.callCount).to.equal(2);
   });
 
   it('stops on an empty/short page and tolerates a missing rows field', async () => {
     const google = { getOrganicSearchData: sinon.stub().resolves({ data: {} }) };
-    const rows = await fetchWindow(
-      google,
-      new Date('2026-03-02T00:00:00Z'),
-      new Date('2026-05-24T00:00:00Z'),
-    );
+    const { rows, truncated } = await fetchWindow(google, start, end);
     expect(rows).to.have.length(0);
+    expect(truncated).to.equal(false);
     expect(google.getOrganicSearchData.callCount).to.equal(1);
+  });
+
+  it('reports truncated when the page cap is hit with full pages throughout', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(fullPage()) };
+    const { rows, truncated } = await fetchWindow(google, start, end);
+    expect(truncated).to.equal(true);
+    expect(rows).to.have.length(50000);
+    expect(google.getOrganicSearchData.callCount).to.equal(50);
   });
 });

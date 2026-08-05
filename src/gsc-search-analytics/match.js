@@ -38,11 +38,13 @@ export function normalizeUrl(u) {
 export function indexRows(rows) {
   const map = new Map();
   for (const r of rows) {
+    // Use ?? (not ||) so a legitimate zero is preserved and only absent metrics
+    // default. Real GSC rows always populate all four fields.
     map.set(normalizeUrl(r.keys?.[0] ?? ''), {
-      clicks: r.clicks || 0,
-      impressions: r.impressions || 0,
-      ctr: r.ctr || 0,
-      position: r.position || 0,
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: r.ctr ?? 0,
+      position: r.position ?? 0,
     });
   }
   return map;

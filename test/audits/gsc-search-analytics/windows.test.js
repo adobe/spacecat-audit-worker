@@ -11,7 +11,7 @@
  */
 
 import { expect } from 'chai';
-import { computeWindows } from '../../../src/gsc-search-analytics/windows.js';
+import { computeWindows, assessCompleteness, isValidFixDate } from '../../../src/gsc-search-analytics/windows.js';
 
 describe('computeWindows', () => {
   it('returns 84-day before/after windows around the fix date', () => {
@@ -24,5 +24,38 @@ describe('computeWindows', () => {
 
   it('throws on an invalid date', () => {
     expect(() => computeWindows('not-a-date')).to.throw('Invalid fix date');
+  });
+});
+
+describe('isValidFixDate', () => {
+  it('accepts a valid ISO date', () => {
+    expect(isValidFixDate('2026-03-01')).to.equal(true);
+  });
+  it('rejects a malformed date', () => {
+    expect(isValidFixDate('not-a-date')).to.equal(false);
+  });
+  it('rejects undefined', () => {
+    expect(isValidFixDate(undefined)).to.equal(false);
+  });
+});
+
+describe('assessCompleteness', () => {
+  const now = new Date('2026-08-05T00:00:00Z');
+
+  it('marks a long-past window fully complete', () => {
+    const windows = computeWindows('2026-03-01'); // after.end 2026-05-24, well past lag
+    expect(assessCompleteness(windows, now)).to.deep.equal({ beforeComplete: true, afterComplete: true });
+  });
+
+  it('marks the after window incomplete when it has not fully elapsed', () => {
+    const windows = { before: { start: '2026-05-01', end: '2026-07-25' }, after: { start: '2026-07-27', end: '2026-10-18' } };
+    const c = assessCompleteness(windows, now);
+    expect(c.afterComplete).to.equal(false);
+  });
+
+  it('marks the before window incomplete when it predates retention', () => {
+    const windows = { before: { start: '2023-01-01', end: '2023-03-25' }, after: { start: '2023-03-27', end: '2023-06-18' } };
+    const c = assessCompleteness(windows, now);
+    expect(c.beforeComplete).to.equal(false);
   });
 });

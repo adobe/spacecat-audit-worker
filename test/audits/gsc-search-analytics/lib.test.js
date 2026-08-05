@@ -15,99 +15,156 @@ import sinon from 'sinon';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { runGscSearchAnalytics } from '../../../src/gsc-search-analytics/lib.js';
 
+const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().split('T')[0];
+const rowFor = (url) => ({
+  data: {
+    rows: [{
+      keys: [url], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
+    }],
+  },
+});
+const emptyRows = () => ({ data: { rows: [] } });
+
 describe('runGscSearchAnalytics', () => {
   const finalUrl = 'https://krisshop.com';
   const site = { getBaseURL: () => finalUrl };
-  const context = { log: { info() {}, error() {} } };
-  const fixedUrls = [
-    { url: 'https://krisshop.com/products/x', fixType: 'meta-tags', fixDate: '2026-03-01' },
-  ];
+  const context = { log: { info() {}, warn() {}, error() {} } };
+  const url = 'https://krisshop.com/products/x';
 
   afterEach(() => sinon.restore());
 
-  it('returns a per-url before/after result when GSC is connected', async () => {
-    const google = {
-      getOrganicSearchData: sinon.stub().resolves({
-        data: {
-          rows: [{
-            keys: ['https://krisshop.com/products/x'], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
-          }],
-        },
-      }),
-    };
+  it('measures a URL when both windows are present and fully elapsed', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
 
     const { auditResult, fullAuditRef } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(fullAuditRef).to.equal(finalUrl);
-    expect(auditResult.connected).to.equal(true);
+    expect(auditResult).to.include({ schemaVersion: 1, connected: true, status: 'ok' });
     expect(auditResult.fixCount).to.equal(1);
-    expect(auditResult.fixes[0]).to.include({ url: 'https://krisshop.com/products/x', fixType: 'meta-tags' });
-    expect(auditResult.fixes[0].found).to.deep.equal({ before: true, after: true });
-    expect(auditResult.fixes[0]).to.have.nested.property('delta.clicks');
+    expect(auditResult.measuredCount).to.equal(1);
+    const fix = auditResult.fixes[0];
+    expect(fix.status).to.equal('measured');
+    expect(fix.found).to.deep.equal({ before: true, after: true });
+    expect(fix).to.have.nested.property('delta.clicks');
+    expect(fix.dataQuality).to.include({ beforeComplete: true, afterComplete: true, truncated: false });
+  });
+
+  it('marks not_found when the URL is absent in a window (partial)', async () => {
+    const google = { getOrganicSearchData: sinon.stub() };
+    google.getOrganicSearchData.onCall(0).resolves(rowFor(url)); // before pull
+    google.getOrganicSearchData.onCall(1).resolves(emptyRows()); // after pull
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
+
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    const fix = auditResult.fixes[0];
+    expect(fix.status).to.equal('not_found');
+    expect(fix.found).to.deep.equal({ before: true, after: false });
+    expect(fix.delta).to.equal(null);
+    expect(auditResult.measuredCount).to.equal(0);
+  });
+
+  it('marks incomplete when the after window has not fully elapsed', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: iso(-5) }]; // fixed 5 days ago
+
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    const fix = auditResult.fixes[0];
+    expect(fix.status).to.equal('incomplete');
+    expect(fix.dataQuality.afterComplete).to.equal(false);
+    expect(fix.delta).to.equal(null);
+  });
+
+  it('marks incomplete when the before window predates retention', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: iso(-520) }]; // ~17 months ago
+
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    const fix = auditResult.fixes[0];
+    expect(fix.status).to.equal('incomplete');
+    expect(fix.dataQuality).to.include({ beforeComplete: false, afterComplete: true });
   });
 
   it('groups URLs sharing a fix date into one pair of pulls', async () => {
-    const google = { getOrganicSearchData: sinon.stub().resolves({ data: { rows: [] } }) };
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
-    const twoSameDate = [
+    const fixedUrls = [
       { url: 'https://krisshop.com/a', fixType: 'meta-tags', fixDate: '2026-03-01' },
       { url: 'https://krisshop.com/b', fixType: 'alt-text', fixDate: '2026-03-01' },
     ];
-    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls: twoSameDate });
-    expect(auditResult.fixCount).to.equal(2);
-    // one before pull + one after pull for the shared date
-    expect(google.getOrganicSearchData.callCount).to.equal(2);
-    expect(auditResult.fixes[0].found).to.deep.equal({ before: false, after: false });
-    expect(auditResult.fixes[0].delta).to.equal(null);
-  });
-
-  it('records connected:false when GSC is not onboarded', async () => {
-    sinon.stub(GoogleClient, 'createFrom').rejects(new Error('No secrets found for site'));
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
-    expect(auditResult.connected).to.equal(false);
+    expect(auditResult.fixCount).to.equal(2);
+    expect(google.getOrganicSearchData.callCount).to.equal(2);
+    expect(auditResult.fixes[0].status).to.equal('not_found');
   });
 
-  it('re-raises a real infra failure instead of masking it as not-connected', async () => {
-    sinon.stub(GoogleClient, 'createFrom').rejects(new Error('AccessDenied: throttled'));
-    let threw = false;
-    try {
-      await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
-    } catch {
-      threw = true;
-    }
-    expect(threw).to.equal(true);
+  it('issues separate pulls for distinct fix dates', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [
+      { url: 'https://krisshop.com/a', fixType: 'meta-tags', fixDate: '2026-03-01' },
+      { url: 'https://krisshop.com/b', fixType: 'meta-tags', fixDate: '2026-04-01' },
+    ];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.fixCount).to.equal(2);
+    expect(google.getOrganicSearchData.callCount).to.equal(4);
   });
 
-  it('re-raises an error that has no message (falsy message path)', async () => {
-    sinon.stub(GoogleClient, 'createFrom').rejects(new Error());
-    let threw = false;
-    try {
-      await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
-    } catch {
-      threw = true;
-    }
-    expect(threw).to.equal(true);
+  it('records invalid_date without fetching', async () => {
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: 'nope' }];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.connected).to.equal(true);
+    expect(auditResult.fixes[0].status).to.equal('invalid_date');
+    expect(auditResult.fixes[0].error).to.match(/Invalid fix date/);
+    expect(google.getOrganicSearchData.callCount).to.equal(0);
   });
 
   it('records a per-group failure without wiping other groups', async () => {
     const google = { getOrganicSearchData: sinon.stub().rejects(new Error('GSC 500')) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(auditResult.connected).to.equal(true);
-    expect(auditResult.fixes[0]).to.include({ failed: true });
-    expect(auditResult.fixes[0].error).to.equal('GSC 500');
+    const fix = auditResult.fixes[0];
+    expect(fix.status).to.equal('failed');
+    expect(fix.error).to.equal('GSC 500');
+    expect(fix.found).to.deep.equal({ before: false, after: false });
+  });
+
+  it('records not_connected (and does not throw) when createFrom fails', async () => {
+    sinon.stub(GoogleClient, 'createFrom').rejects(new Error('ResourceNotFoundException: no secret'));
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.connected).to.equal(false);
+    expect(auditResult.status).to.equal('not_connected');
+    expect(auditResult.reason).to.match(/ResourceNotFound/);
   });
 
   it('reads fixedUrls from messageData as a fallback', async () => {
-    const google = { getOrganicSearchData: sinon.stub().resolves({ data: { rows: [] } }) };
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
     sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { messageData: { fixedUrls } });
     expect(auditResult.connected).to.equal(true);
     expect(auditResult.fixCount).to.equal(1);
   });
 
-  it('errors cleanly when no fixedUrls are supplied', async () => {
-    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, {});
-    expect(auditResult.error).to.equal('missing fixedUrls');
+  it('returns missing_fixed_urls when none are supplied (default auditContext)', async () => {
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site);
+    expect(auditResult.status).to.equal('missing_fixed_urls');
+    expect(auditResult.connected).to.equal(null);
+  });
+
+  it('returns too_many_fixed_urls above the cap', async () => {
+    const fixedUrls = Array.from({ length: 501 }, (_, i) => ({
+      url: `https://krisshop.com/p${i}`, fixType: 'meta-tags', fixDate: '2026-03-01',
+    }));
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.status).to.equal('too_many_fixed_urls');
   });
 });
