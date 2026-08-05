@@ -162,6 +162,12 @@ building a new backend surface:
    like today's `extractUrlsAndTopics` output, then run the existing
    `classifyAndNormalize` → `selectTopUrls` → DRS path unchanged.
 
+**Source strategy (Semrush-first, legacy fallback):** the runner tries Semrush first when the
+flag is on; if it yields no usable URLs (auth failure, no brand, outage, empty), it **falls back
+to the legacy `loadBrandPresenceData`** (PostgREST → SharePoint on `main`) so a Semrush problem
+can never silently zero out offsite. Flag off = legacy only. `domain-urls` is requested with
+`pageSize=100` (covers the per-surface top-70 in one page).
+
 **Where it's served + auth (confirmed 2026-08-05):** these are **spacecat-api-service**
 endpoints — the *Elements proxy*, `src/controllers/elements.js` (`listCitedDomains`,
 `listDomainUrls`, `listUrlPrompts`), routed at
