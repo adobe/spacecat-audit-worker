@@ -60,8 +60,9 @@ function compileRuleRegex(regex) {
 // across sources. Canonical form: host-stripped (a full URL collapses to its
 // pathname), query- and fragment-stripped, duplicate slashes collapsed, exactly one
 // leading slash, and no trailing slash except the root '/'. DRS (ga4/aa/cja) does not
-// use this — it classifies in-DB against the same url_path it stored, so its join
-// lines up by construction (spec §3).
+// use this — it classifies write-time in its own service (Python), emitting a CSV via
+// the projector, against the same url_path it stored, so its join lines up by
+// construction (see the DRS classification spec under docs/specs/).
 export function canonicalizeUrlPath(path) {
   if (typeof path !== 'string' || path === '') {
     return '/';
