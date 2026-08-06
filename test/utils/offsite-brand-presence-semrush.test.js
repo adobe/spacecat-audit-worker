@@ -42,7 +42,7 @@ describe('offsite-brand-presence-semrush', function () {
   let log;
   let fetchStub;
   let resolveBrandResultForSite;
-  let getServiceAccessTokenV3;
+  let getServiceAccessToken;
   let imsCreateFrom;
   let mod;
 
@@ -84,8 +84,8 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub = sandbox.stub();
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
-    getServiceAccessTokenV3 = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
-    imsCreateFrom = sandbox.stub().returns({ getServiceAccessTokenV3 });
+    getServiceAccessToken = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
+    imsCreateFrom = sandbox.stub().returns({ getServiceAccessToken });
     mod = await loadModule();
   });
 
@@ -129,7 +129,7 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('normalizes a lowercase token_type to Bearer', async () => {
-    getServiceAccessTokenV3.resolves({ token_type: 'bearer', access_token: 'tok' });
+    getServiceAccessToken.resolves({ token_type: 'bearer', access_token: 'tok' });
     fetchStub.resolves(okJson({ urls: [] }));
     await run();
     expect(fetchStub.firstCall.args[1].headers.Authorization).to.equal('Bearer tok');
@@ -392,13 +392,13 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('returns null when the IMS service token cannot be minted', async () => {
-    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    getServiceAccessToken.rejects(new Error('ims down'));
     expect(await run()).to.equal(null);
     expect(log.error).to.have.been.called;
   });
 
   it('returns null when the IMS token response has no access_token', async () => {
-    getServiceAccessTokenV3.resolves({ token_type: 'Bearer' });
+    getServiceAccessToken.resolves({ token_type: 'Bearer' });
     expect(await run()).to.equal(null);
     expect(erroredWith(/access_token/)).to.equal(true);
   });

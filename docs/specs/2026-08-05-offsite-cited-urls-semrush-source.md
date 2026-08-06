@@ -54,12 +54,16 @@ request carries a 10s timeout; requests run concurrently.
 
 ### 3.2 Auth
 
-The loader mints a **service IMS token** (`ImsClient.getServiceAccessTokenV3`) and sends
-`Authorization: Bearer`. The proxy's `requireImsBearer` forwards it **unchanged** to Semrush
+The loader mints a **service IMS token** via **v2 `ImsClient.getServiceAccessToken()`**
+(`authorization_code` grant, default IMS client — the same S2S path commerce/vulnerabilities/
+permissions use) and sends `Authorization: Bearer`. (v3 `getServiceAccessTokenV3()` /
+`client_credentials` returned IMS `400 unauthorized_client` — the default client isn't
+provisioned for that grant; only a dedicated integration like `CONTENTAI_*` is.) The proxy's
+`requireImsBearer` forwards it **unchanged** to Semrush
 (`docs/elements/semrush-elements-api-reference.md` §Authentication) — no `x-promise-token`
 needed for a service caller. **Open risk (LLMO-6709):** the wrapper is designed around a real
 user's IMS token, so the worker's service token must be authorized upstream by Semrush; the
-flag stays off until verified.
+flag stays off until verified (test one canary run via the `enableSemrush:true` Slack override).
 
 ### 3.3 Flow (`src/utils/offsite-brand-presence-semrush.js`)
 
@@ -124,7 +128,9 @@ added.
 - Flag off ⇒ byte-for-byte today's behavior (no regression).
 - Flag on ⇒ YouTube/Reddit cited URLs come from Semrush with exact citation counts; strict
   format filtering matches the legacy path.
-- Flag on + Semrush unavailable ⇒ automatic fallback to the legacy PostgREST → SharePoint
+- Env-enabled + Semrush fails ⇒ automatic fallback to the legacy PostgREST → SharePoint
   source (no offsite gap).
+- `enableSemrush:true` (Slack override) + Semrush fails ⇒ **hard stop** (`success:false`,
+  `dataSource:'semrush'`, no fallback) so the failure is visible during LLMO-6709 testing.
 - Shadow-run (LLMO-6711) shows acceptable top-70 overlap per surface vs the legacy source.
 - 100% test coverage on the new module; full suite green.

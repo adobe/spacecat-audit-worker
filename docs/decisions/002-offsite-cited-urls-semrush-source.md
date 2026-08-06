@@ -15,12 +15,21 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 
 ## Decision
 
-1. **Source swap behind a flag, Semrush-first with automatic legacy fallback.**
-   When `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, the runner tries the Semrush
-   loader first; if it yields **no usable result** it falls back to the legacy
-   `loadBrandPresenceData` (PostgREST → SharePoint). Flag off = legacy only.
-2. **"No usable result" = fall back, at the SURFACE granularity.** The loader
-   returns `null` — and the handler falls back — on: no org/brand, transient
+1. **Source swap behind a flag, Semrush-first — failure handling depends on HOW it
+   was enabled.** When Semrush is enabled (env var
+   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the per-run override in Decision 6),
+   the runner uses the Semrush loader. On a Semrush **failure** (loader returns `null`):
+   - **Env-enabled, or override `false`/absent →** fall back to the legacy
+     `loadBrandPresenceData` (PostgREST → SharePoint), so production is never silently
+     zeroed out.
+   - **Explicitly forced on via `enableSemrush:true` (Slack override) →** **hard stop**:
+     return `success:false` with `dataSource:'semrush'` + `fallbackReason`, and do **NOT**
+     run legacy. An operator testing Semrush on one run wants the failure **visible**, not
+     masked by legacy.
+   A genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as
+   a normal zero-URL Semrush run in both modes. Flag off (no override) = legacy only.
+2. **What counts as a Semrush FAILURE (`null`), at the SURFACE granularity.** The loader
+   returns `null` on: no org/brand, transient
    brand-resolution failure, no date window, IMS-token failure, or when a **whole
    surface (hostname) produced zero successful responses**. Rationale: a dropped
    *surface* (all YouTube or all Reddit engines failed) is indistinguishable from a
@@ -53,11 +62,16 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `search-gpt`, `microsoft-copilot`, `gemini-2.5-flash`, `google-ai-overview`,
    `perplexity`) — and **sum** citations per URL. Validating this map upstream is
    LLMO-6710.
-4. **Auth = service IMS bearer, forwarded unchanged to Semrush.** No
-   `x-promise-token` for a service caller (that header is the non-IMS/browser path).
-   **Open risk:** the proxy forwards the token unchanged and is designed around a
-   real *user* IMS token; whether Semrush accepts the worker's *service* token is
-   unverified — the flag stays off until confirmed end-to-end (LLMO-6709).
+4. **Auth = IMS service bearer via v2 `getServiceAccessToken()` (`authorization_code`
+   grant), default IMS client.** This is the same S2S path `commerce-product-enrichments`,
+   `vulnerabilities` and `permissions` use. v3 `getServiceAccessTokenV3()`
+   (`client_credentials`) was tried first but returns IMS **`400 unauthorized_client`** —
+   the worker's default IMS client is only provisioned for `authorization_code`; only a
+   dedicated integration (content-ai's `CONTENTAI_*`) is registered for `client_credentials`.
+   The token is forwarded unchanged to Semrush; no `x-promise-token` for a service caller.
+   **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so whether
+   Semrush accepts the worker's *service* token is unverified — the flag stays off until
+   confirmed end-to-end (use `enableSemrush:true` on one canary run, per Decision 6, to test).
 5. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
    (matching the legacy `handler.js` classify) so non-thread Reddit and lookalike
    YouTube hosts are dropped identically.
@@ -65,9 +79,9 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
    `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
-   `true` forces the Semrush attempt on for that run, `false` forces legacy even when the
-   env var is on, anything else (absent, empty, invalid) falls through to the env var
-   unchanged. This is the intended mechanism for verifying LLMO-6709 against the real
+   `true` forces the Semrush attempt on for that run **and makes a failure a hard stop with
+   no legacy fallback** (Decision 1), `false` forces legacy even when the env var is on,
+   anything else (absent, empty, invalid) falls through to the env var unchanged. This is the intended mechanism for verifying LLMO-6709 against the real
    Semrush proxy on one site at a time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED`
    is flipped fleet-wide. Same tri-state mechanism as the existing `enableBrandProfile`
    override. It is a **per-run** override only (one Slack invocation), not the persistent

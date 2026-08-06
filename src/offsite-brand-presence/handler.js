@@ -900,15 +900,21 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   const allUrls = new Map();
   let usedSemrush = false;
-  // Recorded on auditResult.dataSource so shadow-run parity (LLMO-6711) can join
-  // on which source served each run instead of grepping a log string.
-  let fallbackReason;
   let semrushDiagnostics;
+  // Recorded on auditResult.dataSource / fallbackReason so shadow-run parity
+  // (LLMO-6711) can join on which source served each run.
+  let fallbackReason;
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
   // This is the mechanism for testing the Semrush path live on one site/run before
   // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR).
   const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
+  // Hard stop (NO legacy fallback) applies ONLY when a run EXPLICITLY opted into
+  // Semrush via the Slack override `enableSemrush:true` — a failure there must be
+  // visible, not masked by legacy. When Semrush was enabled by the env var (or the
+  // override is false/absent), a failure falls back to legacy so production can
+  // never be silently zeroed out.
+  const hardStopOnFailure = enableSemrushOverride === true;
   // Logged unconditionally (including the off case) so a Splunk search on siteId
   // alone shows whether this run even attempted Semrush and, if so, which knob
   // decided that (Slack per-run override vs the env var) — the two can disagree.
@@ -918,14 +924,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
   });
   if (semrushEnabled) {
-    // Semrush-first: the loader returns the same allUrls shape, with
-    // count = exact citations. Everything downstream (selectTopUrls -> DRS)
-    // is unchanged. If Semrush yields no usable URLs (auth failure, no brand,
-    // outage, empty result) we fall back to the legacy PostgREST/SharePoint
-    // source below so a Semrush problem can never silently zero out offsite.
-    // onProgress mirrors the Semrush attempt into the Slack thread (when one
-    // exists — postMessageOptional no-ops otherwise) as an alternative to Splunk
-    // for the manual per-run testing this override was built for.
+    // Semrush is the source when enabled. The loader returns the same allUrls
+    // shape (count = exact citations); everything downstream (selectTopUrls ->
+    // DRS) is unchanged. onProgress mirrors the attempt into the Slack thread
+    // (when one exists — postMessageOptional no-ops otherwise) for per-run testing.
     semrushDiagnostics = {};
     const semrushUrls = await loadCitedUrlsFromSemrush({
       site,
@@ -940,7 +942,40 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         { threadTs },
       ),
     });
-    if (semrushUrls && semrushUrls.size > 0) {
+    // A `null` return means the Semrush source FAILED (auth / no-brand /
+    // no-date-window / outage / whole-surface-zero — see the loader's
+    // diagnostics.fallbackReason). A genuinely-empty-but-successful result (Map
+    // with size 0) is NOT a failure and continues as a normal zero-URL run.
+    if (semrushUrls === null) {
+      const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
+      if (hardStopOnFailure) {
+        // enableSemrush:true forced this run — surface the failure, no fallback.
+        log.error(`${LOG_PREFIX} Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
+          siteId, fallbackReason: reason,
+        });
+        await postMessageOptional(
+          context,
+          channelId,
+          `:x: *offsite-brand-presence* for *${baseURL}* — Semrush source failed (${reason}); stopping (enableSemrush:true, no fallback).`,
+          { threadTs },
+        );
+        return {
+          auditResult: {
+            success: false,
+            error: `Semrush source failed (${reason}); hard stop (enableSemrush:true)`,
+            dataSource: 'semrush',
+            fallbackReason: reason,
+          },
+          fullAuditRef: finalUrl,
+        };
+      }
+      // Enabled by the env var (or override not forced) — fall back to legacy so a
+      // Semrush problem never silently zeroes out offsite.
+      fallbackReason = reason;
+      log.warn(`${LOG_PREFIX} Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
+        siteId, fallbackReason: reason,
+      });
+    } else {
       for (const [url, info] of semrushUrls) {
         allUrls.set(url, info);
       }
@@ -956,18 +991,15 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
           engineFailureCount: semrushDiagnostics.engineFailureCount,
         });
       }
-    } else {
-      fallbackReason = semrushDiagnostics.fallbackReason ?? 'semrush-no-usable-urls';
-      log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`, {
-        siteId, fallbackReason,
-      });
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
   const semrushDegraded = usedSemrush && (semrushDiagnostics?.engineFailureCount ?? 0) > 0;
 
-  // Legacy source: runs when the flag is off, OR when Semrush was tried but
-  // produced nothing (fallback). Flag off = today's behavior, unchanged.
+  // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
+  // failed (fallback). An enableSemrush:true run that failed already hard-stopped
+  // above — there is
+  // no legacy fallback on the Semrush path.
   if (!usedSemrush) {
     const brandPresenceData = await loadBrandPresenceData({
       siteId, site, previousWeeks, context,
