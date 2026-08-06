@@ -36,10 +36,11 @@
  *
  * Note: submitForScraping does NOT enforce the active-suggestion cap
  * (LLMO-6533/LLMO-6638) — new URLs always flow through here. The cap is
- * enforced downstream in Step 3 (handler.js's evictOldestSuggestionsOverCap),
- * which evicts the least-recently-scraped suggestions once the site's
- * PRERENDER opportunity exceeds MAX_ACTIVE_SUGGESTIONS, so the freshest
- * incoming traffic displaces stale entries instead of being blocked here.
+ * enforced downstream in Step 3 (evict-suggestions-over-cap.js's
+ * evictOldestSuggestionsOverCap, called from handler.js), which evicts the
+ * least-recently-scraped suggestions once the site's PRERENDER opportunity
+ * exceeds MAX_ACTIVE_SUGGESTIONS, so the freshest incoming traffic displaces
+ * stale entries instead of being blocked here.
  *
  * The return shape is always:
  *   { urls: [{ url }], siteId, processingType: 'prerender', maxScrapeAge: 0,

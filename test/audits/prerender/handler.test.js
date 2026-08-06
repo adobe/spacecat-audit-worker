@@ -29,6 +29,7 @@ import prerenderHandler, {
 import { submitForScraping } from '../../../src/prerender/submit-for-scraping.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
+import { MAX_ACTIVE_SUGGESTIONS } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -7795,6 +7796,24 @@ describe('Prerender Audit', () => {
       getData: () => ({ url, ...extraData }),
     });
 
+    /**
+     * Cheap "filler" suggestions that pad the eligible count up toward the real
+     * MAX_ACTIVE_SUGGESTIONS cap without needing to esmock the constants module — a fresh
+     * scrapedAt keeps them out of eviction contention entirely, so they're irrelevant to
+     * each test's specific assertions.
+     */
+    const makeFillerSuggestionsAndPages = (count, prefix = 'filler') => {
+      const suggestions = Array.from(
+        { length: count },
+        (_, i) => capSuggestion(`https://example.com/${prefix}-${i}`),
+      );
+      const pages = suggestions.map((s) => ({
+        url: s.getData().url,
+        scrapedAt: new Date().toISOString(),
+      }));
+      return { suggestions, pages };
+    };
+
     const buildContext = (sandbox, {
       statusPages = [],
       suggestions = [],
@@ -7837,11 +7856,6 @@ describe('Prerender Audit', () => {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
           mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
         },
-        '../../../src/prerender/utils/constants.js': {
-          CONTENT_GAIN_THRESHOLD: 1.1,
-          DOMAIN_WIDE_SUGGESTION_KEY: 'domain-wide-aggregate|prerender',
-          MAX_ACTIVE_SUGGESTIONS: 2,
-        },
       });
     };
 
@@ -7850,17 +7864,20 @@ describe('Prerender Audit', () => {
     afterEach(() => { sandbox.restore(); });
 
     it('evicts the least-recently-scraped eligible suggestion when over the cap', async () => {
-      const suggestions = [
-        capSuggestion('https://example.com/url-a'),
-        capSuggestion('https://example.com/url-b'),
-        capSuggestion('https://example.com/page1'),
-      ];
+      // MAX_ACTIVE_SUGGESTIONS (3999) fresh filler + url-a (old) + page1 (this run) = one over.
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const urlA = capSuggestion('https://example.com/url-a');
+      const page1 = capSuggestion('https://example.com/page1');
+      const suggestions = [...filler, urlA, page1];
+
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, suggestions);
       const context = buildContext(sandbox, {
         statusPages: [
+          ...fillerPages,
           { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
-          { url: 'https://example.com/url-b', scrapedAt: '2023-06-01T00:00:00.000Z' },
         ],
         suggestions,
         bulkUpdateStatus,
@@ -7873,21 +7890,21 @@ describe('Prerender Audit', () => {
       expect(status).to.equal('OUTDATED');
       expect(evicted).to.have.length(1);
       expect(evicted[0].getData().url).to.equal('https://example.com/url-a');
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Active suggestion cap exceeded \(3\/2\): evicted 1 least-recently-scraped suggestion/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(new RegExp(`Active suggestion cap exceeded: eligible=${MAX_ACTIVE_SUGGESTIONS + 1}, cap=${MAX_ACTIVE_SUGGESTIONS}, evicted=1`)));
     });
 
     it('treats a suggestion whose URL has no status.json entry as the oldest, evicting it first', async () => {
-      const suggestions = [
-        capSuggestion('https://example.com/url-a'),
-        capSuggestion('https://example.com/url-no-status'),
-        capSuggestion('https://example.com/page1'),
-      ];
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const urlNoStatus = capSuggestion('https://example.com/url-no-status');
+      const page1 = capSuggestion('https://example.com/page1');
+      const suggestions = [...filler, urlNoStatus, page1];
+
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, suggestions);
       const context = buildContext(sandbox, {
-        statusPages: [
-          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
-        ],
+        statusPages: fillerPages,
         suggestions,
         bulkUpdateStatus,
       });
@@ -7900,14 +7917,16 @@ describe('Prerender Audit', () => {
     });
 
     it('does not evict anything when the eligible count is at or below the cap', async () => {
-      const suggestions = [
-        capSuggestion('https://example.com/url-a'),
-        capSuggestion('https://example.com/page1'),
-      ];
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const page1 = capSuggestion('https://example.com/page1');
+      const suggestions = [...filler, page1];
+
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, suggestions);
       const context = buildContext(sandbox, {
-        statusPages: [{ url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' }],
+        statusPages: fillerPages,
         suggestions,
         bulkUpdateStatus,
       });
@@ -7918,24 +7937,28 @@ describe('Prerender Audit', () => {
     });
 
     it('excludes FIXED, edgeDeployed, coveredByDomainWide, domain-wide, and path-type suggestions from the count and from eviction', async () => {
-      // Only one eligible (NEW, plain per-URL) suggestion plus page1 (also NEW) — cap is 2, so
-      // with only 2 eligible suggestions there is no overflow. The five non-eligible entries
-      // below (each individually the "oldest" by status.json scrapedAt) must never be evicted
-      // or even considered, proving they're excluded from the count.
-      const suggestions = [
-        capSuggestion('https://example.com/url-a'),
-        capSuggestion('https://example.com/page1'),
+      // MAX_ACTIVE_SUGGESTIONS - 1 fresh filler + page1 = exactly at cap, no overflow. The
+      // five non-eligible entries below (each individually the "oldest" by status.json
+      // scrapedAt) must never be evicted or even considered, proving they're excluded from
+      // the count.
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const page1 = capSuggestion('https://example.com/page1');
+      const protectedSuggestions = [
         capSuggestion('https://example.com/fixed', {}, 'FIXED'),
         capSuggestion('https://example.com/edge-deployed', { edgeDeployed: 1234567890 }),
         capSuggestion('https://example.com/covered', { coveredByDomainWide: 'dw-1' }),
         capSuggestion('https://example.com/* (All Domain URLs)', { isDomainWide: true }),
         capSuggestion('https://example.com/products/*', { allowedRegexPatterns: ['/products/*'] }),
       ];
+      const suggestions = [...filler, page1, ...protectedSuggestions];
+
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, suggestions);
       const context = buildContext(sandbox, {
         statusPages: [
-          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
+          ...fillerPages,
           { url: 'https://example.com/fixed', scrapedAt: '2010-01-01T00:00:00.000Z' },
           { url: 'https://example.com/edge-deployed', scrapedAt: '2010-01-01T00:00:00.000Z' },
           { url: 'https://example.com/covered', scrapedAt: '2010-01-01T00:00:00.000Z' },
@@ -7950,22 +7973,24 @@ describe('Prerender Audit', () => {
     });
 
     it('excludes a protected suggestion from being picked for eviction even when it is chronologically oldest', async () => {
-      // 3 eligible suggestions (url-a, url-b, page1) exceed the cap of 2 by 1, so the single
-      // oldest ELIGIBLE one (url-b) must be evicted — even though fixed-oldest has an older
-      // scrapedAt than all of them, it's FIXED and must never be picked.
-      const suggestions = [
-        capSuggestion('https://example.com/url-a'),
-        capSuggestion('https://example.com/url-b'),
-        capSuggestion('https://example.com/page1'),
-        capSuggestion('https://example.com/fixed-oldest', {}, 'FIXED'),
-      ];
+      // MAX_ACTIVE_SUGGESTIONS - 1 fresh filler + url-b + page1 = one over the cap, so the
+      // single oldest ELIGIBLE one (url-b) must be evicted — even though fixed-oldest has an
+      // older scrapedAt than all of them, it's FIXED and must never be picked.
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const urlB = capSuggestion('https://example.com/url-b');
+      const page1 = capSuggestion('https://example.com/page1');
+      const fixedOldest = capSuggestion('https://example.com/fixed-oldest', {}, 'FIXED');
+      const suggestions = [...filler, urlB, page1, fixedOldest];
+
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, suggestions);
       const context = buildContext(sandbox, {
         statusPages: [
-          { url: 'https://example.com/url-a', scrapedAt: '2023-06-01T00:00:00.000Z' },
+          ...fillerPages,
           { url: 'https://example.com/url-b', scrapedAt: '2022-01-01T00:00:00.000Z' },
-          // Older than both, but FIXED — must never be selected for eviction.
+          // Older than url-b, but FIXED — must never be selected for eviction.
           { url: 'https://example.com/fixed-oldest', scrapedAt: '2000-01-01T00:00:00.000Z' },
         ],
         suggestions,
@@ -7980,17 +8005,47 @@ describe('Prerender Audit', () => {
       expect(evicted[0].getData().url).to.equal('https://example.com/url-b');
     });
 
+    it('excludes an already-OUTDATED suggestion from the eligible pool even when it carries the oldest scrapedAt, so it is never double-evicted', async () => {
+      // MAX_ACTIVE_SUGGESTIONS - 1 fresh filler + url-b + page1 = one over the cap, so the
+      // single oldest ELIGIBLE one (url-b) must be evicted. already-outdated has an even
+      // older scrapedAt but is already OUTDATED — it must be excluded from the count and
+      // never appear in the bulkUpdateStatus call.
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const urlB = capSuggestion('https://example.com/url-b');
+      const page1 = capSuggestion('https://example.com/page1');
+      const alreadyOutdated = capSuggestion('https://example.com/already-outdated', {}, 'OUTDATED');
+      const suggestions = [...filler, urlB, page1, alreadyOutdated];
+
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          ...fillerPages,
+          { url: 'https://example.com/url-b', scrapedAt: '2022-01-01T00:00:00.000Z' },
+          // Older than url-b, but already OUTDATED — must never appear in bulkUpdateStatus.
+          { url: 'https://example.com/already-outdated', scrapedAt: '2000-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      const [evicted] = bulkUpdateStatus.firstCall.args;
+      expect(evicted).to.have.length(1);
+      expect(evicted[0].getData().url).to.equal('https://example.com/url-b');
+      expect(evicted).to.not.include(alreadyOutdated);
+    });
+
     it('does not call bulkUpdateStatus or throw when no opportunity is found', async () => {
       const bulkUpdateStatus = sandbox.stub().resolves();
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
           mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
-        },
-        '../../../src/prerender/utils/constants.js': {
-          CONTENT_GAIN_THRESHOLD: 1.1,
-          DOMAIN_WIDE_SUGGESTION_KEY: 'domain-wide-aggregate|prerender',
-          MAX_ACTIVE_SUGGESTIONS: 2,
         },
       });
       const context = buildContext(sandbox, { bulkUpdateStatus });
@@ -8006,6 +8061,54 @@ describe('Prerender Audit', () => {
       await mockHandler.processContentAndGenerateOpportunities(context);
 
       expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('skips eviction entirely (rather than evicting in an arbitrary order) when status.json upload failed this run', async () => {
+      const suggestions = Array.from(
+        { length: MAX_ACTIVE_SUGGESTIONS + 5 },
+        (_, i) => capSuggestion(`https://example.com/no-status-${i}`),
+      );
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, { suggestions, bulkUpdateStatus });
+      // Force uploadStatusSummaryToS3 to fail (and thus return []) by making the S3 PUT reject.
+      const realSend = context.s3Client.send;
+      context.s3Client.send = sandbox.stub().callsFake((command) => {
+        if (command.constructor.name === 'PutObjectCommand') return Promise.reject(new Error('S3 write failed'));
+        return realSend(command);
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Skipping suggestion cap eviction: no status.json page data available/));
+    });
+
+    it('logs the error and does not throw when bulkUpdateStatus itself fails', async () => {
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const urlA = capSuggestion('https://example.com/url-a');
+      const page1 = capSuggestion('https://example.com/page1');
+      const suggestions = [...filler, urlA, page1];
+
+      const bulkUpdateStatus = sandbox.stub().rejects(new Error('DB write failed'));
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          ...fillerPages,
+          { url: 'https://example.com/url-a', scrapedAt: '2020-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // The audit itself must still report success — a failure in this best-effort cleanup
+      // step must never be mistaken for the whole audit failing.
+      expect(result.status).to.equal('complete');
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to enforce active-suggestion cap: DB write failed/));
     });
   });
 
