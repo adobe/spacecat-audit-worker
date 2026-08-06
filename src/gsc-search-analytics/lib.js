@@ -18,7 +18,11 @@ import { buildDelta } from './summarize.js';
 
 const SCHEMA_VERSION = 1;
 const MAX_FIXED_URLS = 500; // guard against an unbounded, Lambda-timeout-risking run
+// Each distinct fix date is one date-group = up to two paginated window pulls run
+// sequentially, so cap the number of groups to stay well inside the Lambda timeout.
+const MAX_DATE_GROUPS = 30;
 const toDate = (s) => new Date(`${s}T00:00:00Z`);
+const clip = (s) => String(s).slice(0, 300); // bound stored error text
 
 // A fix entry with the stable shape every consumer can rely on.
 function baseFix(f, status, extra) {
@@ -86,6 +90,18 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
     }, finalUrl);
   }
 
+  // Each distinct valid fix date becomes one sequentially-processed date-group; bound the
+  // count so a spread-out list can't exhaust the Lambda timeout.
+  const distinctDateCount = new Set(
+    fixedUrls.filter((f) => isValidFixDate(f.fixDate)).map((f) => f.fixDate),
+  ).size;
+  if (distinctDateCount > MAX_DATE_GROUPS) {
+    log.warn(`gsc-search-analytics: ${distinctDateCount} distinct fix dates exceeds cap ${MAX_DATE_GROUPS} for ${finalUrl}`);
+    return envelope({
+      connected: null, status: 'too_many_date_groups', fixCount: 0, measuredCount: 0, fixes: [],
+    }, finalUrl);
+  }
+
   let google;
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
@@ -94,7 +110,7 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
     // any createFrom failure means the site is not connected to GSC. Record it, don't crash.
     log.info(`gsc-search-analytics: GSC not connected for ${finalUrl}: ${e.message}`);
     return envelope({
-      connected: false, status: 'not_connected', reason: e.message, fixCount: 0, measuredCount: 0, fixes: [],
+      connected: false, status: 'not_connected', reason: clip(e.message), fixCount: 0, measuredCount: 0, fixes: [],
     }, finalUrl);
   }
 
@@ -162,7 +178,7 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
       // A failure on one date-group must not wipe the others; leave a diagnostic entry.
       log.error(`gsc-search-analytics: fetch failed for ${fixDate} / ${finalUrl}: ${e.message}`);
       for (const f of group) {
-        fixes.push(baseFix(f, 'failed', { windows, error: e.message }));
+        fixes.push(baseFix(f, 'failed', { windows, error: clip(e.message) }));
       }
     }
   }

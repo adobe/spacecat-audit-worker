@@ -211,4 +211,15 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(auditResult.status).to.equal('too_many_fixed_urls');
   });
+
+  it('returns too_many_date_groups above the distinct-date cap', async () => {
+    // 31 distinct fix dates (> MAX_DATE_GROUPS of 30); stays under the 500-URL cap.
+    const fixedUrls = Array.from({ length: 31 }, (_, i) => ({
+      url: `https://krisshop.com/p${i}`,
+      fixType: 'meta-tags',
+      fixDate: `2026-03-${String(i + 1).padStart(2, '0')}`,
+    }));
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.status).to.equal('too_many_date_groups');
+  });
 });

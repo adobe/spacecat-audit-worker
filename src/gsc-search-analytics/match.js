@@ -22,6 +22,7 @@ export function normalizeUrl(u) {
   try {
     const url = new URL(u);
     url.hash = '';
+    url.searchParams.sort(); // stable query order so reordered params still match
     const path = url.pathname.replace(/\/+$/, '') || '/';
     return `${url.protocol}//${url.host.toLowerCase()}${path}${url.search}`;
   } catch {

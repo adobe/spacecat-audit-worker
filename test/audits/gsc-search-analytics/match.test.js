@@ -30,6 +30,10 @@ describe('match', () => {
     expect(normalizeUrl('https://krisshop.com/x?id=7')).to.equal('https://krisshop.com/x?id=7');
   });
 
+  it('sorts query params so reordered params still match', () => {
+    expect(normalizeUrl('https://krisshop.com/x?b=2&a=1')).to.equal('https://krisshop.com/x?a=1&b=2');
+  });
+
   it('returns the input unchanged when it is not a valid URL', () => {
     expect(normalizeUrl('not a url')).to.equal('not a url');
   });
