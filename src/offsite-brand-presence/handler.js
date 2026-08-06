@@ -914,8 +914,20 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // is unchanged. If Semrush yields no usable URLs (auth failure, no brand,
     // outage, empty result) we fall back to the legacy PostgREST/SharePoint
     // source below so a Semrush problem can never silently zero out offsite.
+    // onProgress mirrors the Semrush attempt into the Slack thread (when one
+    // exists — postMessageOptional no-ops otherwise) as an alternative to Splunk
+    // for the manual per-run testing this override was built for.
     const semrushUrls = await loadCitedUrlsFromSemrush({
-      site, previousWeeks, context, siteHostname,
+      site,
+      previousWeeks,
+      context,
+      siteHostname,
+      onProgress: (text) => postMessageOptional(
+        context,
+        channelId,
+        `*offsite-brand-presence* for *${baseURL}* — ${text}`,
+        { threadTs },
+      ),
     });
     if (semrushUrls && semrushUrls.size > 0) {
       for (const [url, info] of semrushUrls) {

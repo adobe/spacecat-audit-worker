@@ -67,8 +67,8 @@ describe('offsite-brand-presence-semrush', function () {
     });
   }
 
-  const run = (env = {}, extra = {}) => mod.loadCitedUrlsFromSemrush({
-    site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(env, extra),
+  const run = (env = {}, extra = {}, onProgress = undefined) => mod.loadCitedUrlsFromSemrush({
+    site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(env, extra), onProgress,
   });
 
   beforeEach(async () => {
@@ -347,6 +347,50 @@ describe('offsite-brand-presence-semrush', function () {
     getServiceAccessTokenV3.resolves({ token_type: 'Bearer' });
     expect(await run()).to.equal(null);
     expect(erroredWith(/access_token/)).to.equal(true);
+  });
+
+  // --- progress notifications (onProgress) -----------------------------------
+
+  it('invokes onProgress at each stage of a successful attempt', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: 10 }] })
+      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
+    const onProgress = sandbox.stub().resolves();
+
+    const allUrls = await run(ONE_ENGINE, {}, onProgress);
+
+    expect(allUrls.size).to.equal(2);
+    expect(onProgress).to.have.been.called;
+    const messages = onProgress.getCalls().map((c) => c.args[0]);
+    expect(messages.some((m) => /Starting Semrush/.test(m))).to.equal(true);
+    expect(messages.some((m) => /Querying/.test(m))).to.equal(true);
+    expect(messages.some((m) => /youtube\.com.*engine requests succeeded/.test(m))).to.equal(true);
+    expect(messages.some((m) => /reddit\.com.*engine requests succeeded/.test(m))).to.equal(true);
+    expect(messages.some((m) => /Loaded 1 URL\(s\) from `youtube\.com`/.test(m))).to.equal(true);
+    expect(messages.some((m) => /Loaded 1 URL\(s\) from `reddit\.com`/.test(m))).to.equal(true);
+    expect(messages.some((m) => /total cited URL/.test(m))).to.equal(true);
+  });
+
+  it('invokes onProgress with a failure notice on the surface that triggers fallback', async () => {
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: [{ url: YT_URL, citations: 10 }] })
+      : { ok: false, status: 500, json: async () => ({}) }));
+    const onProgress = sandbox.stub().resolves();
+
+    expect(await run(ONE_ENGINE, {}, onProgress)).to.equal(null);
+
+    const messages = onProgress.getCalls().map((c) => c.args[0]);
+    expect(messages.some((m) => /reddit\.com.*0\/1 engine requests succeeded/.test(m))).to.equal(true);
+  });
+
+  it('logs a warning and does not throw when onProgress rejects', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+    const onProgress = sandbox.stub().rejects(new Error('slack down'));
+
+    const allUrls = await run(ONE_ENGINE, {}, onProgress);
+
+    expect(allUrls).to.not.equal(null);
+    expect(warnedWith(/Failed to post Semrush progress update/)).to.equal(true);
   });
 
   // --- pure helpers ---------------------------------------------------------

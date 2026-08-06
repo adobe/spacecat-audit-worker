@@ -201,10 +201,15 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
  * @param {Array<{week:number, year:number}>} params.previousWeeks
  * @param {object} params.context - Lambda context (env, log, dataAccess).
  * @param {string} [params.siteHostname] - www-stripped site hostname for owned-URL filtering.
+ * @param {function(string): Promise<*>} [params.onProgress] - Optional best-effort progress
+ *   callback (e.g. a Slack thread reply), invoked with a short human-readable status string at
+ *   each stage of the attempt. Kept generic (not a Slack import) so this module stays testable
+ *   without a Slack dependency; a failure here is logged and swallowed, never thrown — a Slack
+ *   outage must not affect the Semrush attempt itself.
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
-  site, previousWeeks, context, siteHostname,
+  site, previousWeeks, context, siteHostname, onProgress,
 }) {
   const { log, env } = context;
   const startedAt = Date.now();
@@ -212,13 +217,26 @@ export async function loadCitedUrlsFromSemrush({
   const elapsed = () => Date.now() - startedAt;
   const baseUrl = env?.SPACECAT_API_URI || SPACECAT_API_DEFAULT_BASE_URL;
 
+  const notify = async (text) => {
+    if (typeof onProgress !== 'function') {
+      return;
+    }
+    try {
+      await onProgress(text);
+    } catch (error) {
+      log.warn(`${LOG_PREFIX} Failed to post Semrush progress update: ${error.message}`, { siteId });
+    }
+  };
+
   log.info(`${LOG_PREFIX} Starting Semrush source attempt`, { siteId, baseUrl });
+  await notify(':mag: Starting Semrush URL-Inspector lookup...');
 
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
     log.warn(`${LOG_PREFIX} Site has no organization id; skipping Semrush source`, {
       siteId, durationMs: elapsed(),
     });
+    await notify(':warning: Site has no organization id — falling back to the legacy source.');
     return null;
   }
 
@@ -230,10 +248,12 @@ export async function loadCitedUrlsFromSemrush({
       log.info(`${LOG_PREFIX} No active brand for org ${spaceCatId}; skipping Semrush source`, {
         siteId, orgId: spaceCatId, durationMs: elapsed(),
       });
+      await notify(':information_source: No active brand configured for this org — falling back to the legacy source.');
     } else {
       log.warn(`${LOG_PREFIX} Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
         siteId, orgId: spaceCatId, durationMs: elapsed(),
       });
+      await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
     }
     return null;
   }
@@ -243,6 +263,7 @@ export async function loadCitedUrlsFromSemrush({
     log.warn(`${LOG_PREFIX} Could not derive a date window; skipping Semrush source`, {
       siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
     });
+    await notify(':warning: Could not derive a date window — falling back to the legacy source.');
     return null;
   }
   const { startDate, endDate } = dateWindow;
@@ -258,6 +279,7 @@ export async function loadCitedUrlsFromSemrush({
       error: error.message,
       durationMs: elapsed(),
     });
+    await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
     return null;
   }
 
@@ -290,6 +312,7 @@ export async function loadCitedUrlsFromSemrush({
   log.info(`${LOG_PREFIX} Querying ${hostnames.length} hostnames x ${platforms.length} platforms (${requests.length} requests)`, {
     siteId, orgId: spaceCatId, brandId: brand.brandId, hostnames, platforms,
   });
+  await notify(`:satellite: Querying ${hostnames.length} surface(s) x ${platforms.length} engine(s) (${requests.length} requests)...`);
 
   const results = await Promise.all(requests.map((r) => fetchRows(r, headers, log, siteId)));
 
@@ -322,8 +345,14 @@ export async function loadCitedUrlsFromSemrush({
       log.warn(`${LOG_PREFIX} No successful Semrush response for ${hostname}; using legacy fallback`, {
         siteId, orgId: spaceCatId, hostname, platformsQueried: platforms, durationMs: elapsed(),
       });
+      // Sequential, not Promise.all: these post to a Slack thread where message
+      // order is the whole point (a readable narrative), not a perf-sensitive loop.
+      // eslint-disable-next-line no-await-in-loop
+      await notify(`:x: \`${hostname}\`: 0/${entry.okCount + entry.failCount} engine requests succeeded — falling back to the legacy source.`);
       return null;
     }
+    // eslint-disable-next-line no-await-in-loop
+    await notify(`:white_check_mark: \`${hostname}\`: ${entry.okCount}/${entry.okCount + entry.failCount} engine requests succeeded.`);
   }
 
   const allUrls = new Map();
@@ -372,6 +401,20 @@ export async function loadCitedUrlsFromSemrush({
     }
   }
 
+  // Loaded-per-surface counts, for the "loaded N results from <hostname>" progress
+  // update — distinct from the engine-success-ratio message above, since a surface can
+  // have every engine succeed yet contribute zero URLs (e.g. all filtered as off-format).
+  const loadedByHostname = new Map(hostnames.map((hostname) => [hostname, 0]));
+  for (const [, info] of allUrls) {
+    // info.domain is always youtube.com/reddit.com here — the earlier scope guard
+    // already dropped any other domain, so loadedByHostname always has this key.
+    loadedByHostname.set(info.domain, loadedByHostname.get(info.domain) + 1);
+  }
+  for (const [hostname, count] of loadedByHostname) {
+    // eslint-disable-next-line no-await-in-loop
+    await notify(`:package: Loaded ${count} URL(s) from \`${hostname}\`.`);
+  }
+
   log.info(`${LOG_PREFIX} Collected ${allUrls.size} cited URLs from Semrush`, {
     siteId,
     orgId: spaceCatId,
@@ -379,5 +422,6 @@ export async function loadCitedUrlsFromSemrush({
     urlCount: allUrls.size,
     durationMs: elapsed(),
   });
+  await notify(`:tada: Semrush source succeeded — *${allUrls.size}* total cited URL(s) in ${elapsed()}ms.`);
   return allUrls;
 }

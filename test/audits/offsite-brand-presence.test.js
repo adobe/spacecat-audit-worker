@@ -268,6 +268,28 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
+    it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+      const slackContext = { channelId: 'C-semrush', threadTs: '111.222' };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, { slackContext });
+
+      const args = mockLoadCitedUrlsFromSemrush.firstCall.args[0];
+      expect(args.onProgress).to.be.a('function');
+
+      await args.onProgress(':mag: test update');
+
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-semrush',
+        `*offsite-brand-presence* for *${BASE_URL}* — :mag: test update`,
+        { threadTs: '111.222' },
+      );
+    });
+
     it('falls back to the legacy PostgREST/SharePoint source when Semrush yields null', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(null);
