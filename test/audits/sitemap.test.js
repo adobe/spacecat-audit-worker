@@ -2224,6 +2224,8 @@ describe('Sitemap Audit', () => {
           data: {
             dataSources: [DATA_SOURCES.SITE],
           },
+          scopeType: 'site',
+          scopeId: 'site-id',
         },
       );
     });

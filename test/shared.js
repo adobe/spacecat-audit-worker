@@ -65,6 +65,8 @@ export class MockContextBuilder {
         getSuggestions: this.sandbox.stub(),
         addSuggestions: this.sandbox.stub(),
         setAuditId: this.sandbox.stub(),
+        setScopeType: this.sandbox.stub(),
+        setScopeId: this.sandbox.stub(),
         save: this.sandbox.stub(),
         setData: this.sandbox.stub(),
         getData: this.sandbox.stub(),
