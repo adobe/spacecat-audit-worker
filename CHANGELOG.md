@@ -1,3 +1,10 @@
+## [1.514.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.514.0...v1.514.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* update GPTBot/1.2 to gptbot/1.2 ([#2851](https://github.com/adobe/spacecat-audit-worker/issues/2851)) ([966f0a5](https://github.com/adobe/spacecat-audit-worker/commit/966f0a5647e46bd855598a5d8a944338803c8c8c))
+
 # [1.514.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.513.0...v1.514.0) (2026-08-04)
 
 
