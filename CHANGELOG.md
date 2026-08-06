@@ -1,3 +1,10 @@
+## [1.515.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.0...v1.515.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **offsite:** v2 IMS getServiceAccessToken + hard-stop on enableSemrush:true failure ([#2852](https://github.com/adobe/spacecat-audit-worker/issues/2852)) ([442c700](https://github.com/adobe/spacecat-audit-worker/commit/442c700ff8cc0934f7ba79123fc86649bf31da7c))
+
 # [1.515.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.514.1...v1.515.0) (2026-08-06)
 
 
