@@ -51,6 +51,24 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         }
         return false;
       });
+
+      if (!opportunity) {
+        // eslint-disable-next-line max-len
+        const resolvedOpportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.RESOLVED);
+        const resolvedOpportunity = resolvedOpportunities.find((oppty) => {
+          if (oppty.getType() === auditType) {
+            if (comparisonFn && typeof comparisonFn === 'function') {
+              return comparisonFn(oppty, opportunityInstance);
+            }
+            return true;
+          }
+          return false;
+        });
+        if (resolvedOpportunity) {
+          await resolvedOpportunity.setStatus(Oppty.STATUSES.NEW);
+          opportunity = resolvedOpportunity;
+        }
+      }
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
