@@ -84,9 +84,17 @@ export function getSemrushPlatforms(env) {
 }
 
 /**
- * Mints an IMS service access token as an Authorization header value. The scheme
- * is normalised to `Bearer` (the token endpoint may return `token_type: "bearer"`
- * lowercase, which a strict `startsWith('Bearer ')` parser upstream would reject).
+ * Mints an IMS service access token as an Authorization header value.
+ *
+ * Uses the v2 `getServiceAccessToken()` (`authorization_code` grant) with the
+ * worker's default IMS client — the same S2S path `commerce-product-enrichments`,
+ * `vulnerabilities` and `permissions` use. The default client is provisioned for
+ * `authorization_code`, NOT the `client_credentials` grant that
+ * `getServiceAccessTokenV3()` requests (which returns IMS `400 unauthorized_client`
+ * unless a dedicated client_credentials integration is configured, e.g. content-ai's
+ * `CONTENTAI_*`). The scheme is normalised to `Bearer` (the endpoint may return
+ * `token_type: "bearer"` lowercase, which a strict `startsWith('Bearer ')` parser
+ * upstream would reject).
  *
  * @param {object} context - Lambda context (env + log).
  * @returns {Promise<string>} e.g. "Bearer eyJ...".
@@ -94,7 +102,7 @@ export function getSemrushPlatforms(env) {
  */
 async function getAuthorizationHeader(context) {
   const imsClient = ImsClient.createFrom(context);
-  const token = await imsClient.getServiceAccessTokenV3();
+  const token = await imsClient.getServiceAccessToken();
   if (!token?.access_token) {
     throw new Error('IMS service token response missing access_token');
   }
