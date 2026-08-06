@@ -524,16 +524,47 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
 }
 
 /**
- * Optional `enableBrandProfile` flag from `auditContext.messageData.enableBrandProfile`
- * (RunnerAudit), same Slack-originated mechanism as {@link resolveMystiqueUrlLimit}.
- * Runners merge the resolved value into `auditResult.config.enableBrandProfile` for
- * post-processors, which forward it to Mystique on `data.enableBrandProfile`.
+ * Builds a tri-state resolver for a single boolean flag delivered via
+ * `auditContext.messageData[fieldName]` from a Slack custom arg — the shared shape
+ * behind {@link resolveEnableBrandProfile} and {@link resolveEnableSemrush} (and any
+ * future per-run override), so a third copy-paste doesn't drift from the first two.
  *
- * Tri-state by design: an explicit `true`/`false` overrides Mystique's own default
- * logic for this flag, while `undefined` (absent, empty, or invalid input) means the
- * flag is omitted entirely from the outgoing message so Mystique's default applies.
- * Slack delivers keyword values as strings, so only the strings 'true'/'false' or real
- * booleans are accepted as explicit values; anything else resolves to `undefined`.
+ * Tri-state by design: an explicit `true`/`false` (or the strings `'true'`/`'false'`)
+ * overrides the caller's own default for this run only; `undefined` (absent, empty, or
+ * invalid input) means the caller's default applies unchanged. Slack delivers keyword
+ * values as strings, so only those two string forms or real booleans are accepted as
+ * explicit values; anything else is invalid and resolves to `undefined` with a warning.
+ *
+ * @param {string} fieldName - Key read from `auditContext.messageData`.
+ * @returns {function(object, object, string): boolean|undefined}
+ */
+function makeResolveOverride(fieldName) {
+  return function resolveOverride(auditContext, log, logPrefix) {
+    const prefix = logPrefix ?? '';
+    const ctx = auditContext ?? {};
+    const raw = ctx.messageData?.[fieldName];
+    if (raw === true || raw === 'true') {
+      return true;
+    }
+    if (raw === false || raw === 'false') {
+      return false;
+    }
+    if (raw === undefined || raw === null || raw === '') {
+      return undefined;
+    }
+    log?.warn(
+      `${prefix} Invalid ${fieldName} in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
+      { raw },
+    );
+    return undefined;
+  };
+}
+
+/**
+ * Optional `enableBrandProfile` flag from `auditContext.messageData.enableBrandProfile`
+ * (RunnerAudit). Runners merge the resolved value into `auditResult.config.enableBrandProfile`
+ * for post-processors, which forward it to Mystique on `data.enableBrandProfile`; `undefined`
+ * omits the flag entirely from the outgoing message so Mystique's own default applies.
  *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableBrandProfile]
@@ -541,24 +572,22 @@ export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
  * @param {string} [logPrefix]
  * @returns {boolean|undefined}
  */
-export function resolveEnableBrandProfile(auditContext, log, logPrefix) {
-  const prefix = logPrefix ?? '';
-  const ctx = auditContext ?? {};
-  const raw = ctx.messageData?.enableBrandProfile;
-  if (raw === true || raw === 'true') {
-    return true;
-  }
-  if (raw === false || raw === 'false') {
-    return false;
-  }
-  if (raw === undefined || raw === null || raw === '') {
-    return undefined;
-  }
-  log?.warn(
-    `${prefix} Invalid enableBrandProfile in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
-  );
-  return undefined;
-}
+export const resolveEnableBrandProfile = makeResolveOverride('enableBrandProfile');
+
+/**
+ * Optional `enableSemrush` flag from `auditContext.messageData.enableSemrush`. Lets a
+ * Slack-triggered run override the global `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` env
+ * var for that single run — e.g. to test the Semrush URL-Inspector source ahead of a
+ * fleet-wide env var flip, or to force the legacy source for one run while the env var is
+ * on. `undefined` means the env var's value applies unchanged.
+ *
+ * @param {object} [auditContext]
+ * @param {boolean|string} [auditContext.messageData.enableSemrush]
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {boolean|undefined}
+ */
+export const resolveEnableSemrush = makeResolveOverride('enableSemrush');
 
 /**
  * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when
@@ -596,6 +625,9 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  *   originally requested on Slack, instead of losing it across the scrape round-trip.
  * @param {number} [urlLimit] - Forwarded so the re-triggered analysis audit still resolves the
  *   urlLimit originally requested on Slack, instead of losing it across the scrape round-trip.
+ * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
+ *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
+ *   the analysis audit that triggered it, instead of falling back to the plain env var.
  *
  * Best-effort: a transient Configuration/SQS failure is logged and swallowed rather than
  * thrown, so the analysis audit degrades to its pending_scrape result instead of failing
@@ -608,8 +640,16 @@ export async function requestOffsiteScrape(
   slackContext,
   enableBrandProfile,
   urlLimit,
+  enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
+  // enableSemrush is included so a Splunk search on siteId shows whether a per-run
+  // Semrush override survives this scrape round-trip, or gets lost/swallowed here.
+  const overrides = {
+    ...(enableBrandProfile != null && { enableBrandProfile }),
+    ...(urlLimit != null && { urlLimit }),
+    ...(enableSemrush != null && { enableSemrush }),
+  };
   try {
     const configuration = await dataAccess.Configuration.findLatest();
     await sqs.sendMessage(configuration.getQueues().audits, {
@@ -617,15 +657,13 @@ export async function requestOffsiteScrape(
       siteId,
       auditContext: {
         ...(slackContext && { slackContext }),
-        messageData: {
-          domainScope,
-          ...(enableBrandProfile != null && { enableBrandProfile }),
-          ...(urlLimit != null && { urlLimit }),
-        },
+        messageData: { domainScope, ...overrides },
       },
     });
-    log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);
+    log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`, { siteId, domainScope, ...overrides });
   } catch (error) {
-    log?.warn(`Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`);
+    log?.warn(`Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`, {
+      siteId, domainScope, error: error.message, ...overrides,
+    });
   }
 }

@@ -22,6 +22,7 @@ import {
   resolveForwardedUrlLimit,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
@@ -533,6 +534,46 @@ describe('offsite-audit-utils', () => {
     });
   });
 
+  describe('resolveEnableSemrush', () => {
+    it('returns undefined when auditContext or messageData is absent, so the env var applies', () => {
+      expect(resolveEnableSemrush({})).to.be.undefined;
+      expect(resolveEnableSemrush(undefined)).to.be.undefined;
+      expect(resolveEnableSemrush(null)).to.be.undefined;
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: '' } })).to.be.undefined;
+    });
+
+    it('returns true for boolean true or the string "true"', () => {
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: true } },
+      )).to.equal(true);
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: 'true' } },
+      )).to.equal(true);
+    });
+
+    it('returns false for boolean false or the string "false"', () => {
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: false } },
+      )).to.equal(false);
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: 'false' } },
+      )).to.equal(false);
+    });
+
+    it('returns undefined and warns when enableSemrush is invalid', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 'yes' } }, log, '[T]')).to.be.undefined;
+      expect(log.warn).to.have.been.calledOnce;
+    });
+
+    it('returns undefined and warns for numeric values (e.g. 0), same as any other invalid input', () => {
+      const log = { warn: sandbox.stub() };
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 0 } }, log, '[T]')).to.be.undefined;
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 1 } }, log, '[T]')).to.be.undefined;
+      expect(log.warn).to.have.been.calledTwice;
+    });
+  });
+
   describe('requestOffsiteScrape', () => {
     let context;
 
@@ -597,6 +638,25 @@ describe('offsite-audit-utils', () => {
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', urlLimit: 15 });
+    });
+
+    it('forwards enableSemrush in messageData alongside enableBrandProfile and urlLimit', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, 20, true);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({
+        domainScope: 'reddit.com',
+        enableBrandProfile: true,
+        urlLimit: 20,
+        enableSemrush: true,
+      });
+    });
+
+    it('forwards explicit enableSemrush:false (distinct from absent)', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, undefined, undefined, false);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', enableSemrush: false });
     });
 
     it('swallows and logs a warning when the send fails', async () => {
