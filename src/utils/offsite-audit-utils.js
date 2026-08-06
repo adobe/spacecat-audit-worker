@@ -593,6 +593,7 @@ export function resolveEnableSemrush(auditContext, log, logPrefix) {
   }
   log?.warn(
     `${prefix} Invalid enableSemrush in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
+    { raw },
   );
   return undefined;
 }
@@ -651,6 +652,13 @@ export async function requestOffsiteScrape(
   enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
+  // enableSemrush is included so a Splunk search on siteId shows whether a per-run
+  // Semrush override survives this scrape round-trip, or gets lost/swallowed here.
+  const overrides = {
+    ...(enableBrandProfile != null && { enableBrandProfile }),
+    ...(urlLimit != null && { urlLimit }),
+    ...(enableSemrush != null && { enableSemrush }),
+  };
   try {
     const configuration = await dataAccess.Configuration.findLatest();
     await sqs.sendMessage(configuration.getQueues().audits, {
@@ -658,16 +666,13 @@ export async function requestOffsiteScrape(
       siteId,
       auditContext: {
         ...(slackContext && { slackContext }),
-        messageData: {
-          domainScope,
-          ...(enableBrandProfile != null && { enableBrandProfile }),
-          ...(urlLimit != null && { urlLimit }),
-          ...(enableSemrush != null && { enableSemrush }),
-        },
+        messageData: { domainScope, ...overrides },
       },
     });
-    log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`);
+    log?.info(`Requested DRS scrape for '${domainScope}' (site ${siteId})`, { siteId, domainScope, ...overrides });
   } catch (error) {
-    log?.warn(`Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`);
+    log?.warn(`Failed to request DRS scrape for '${domainScope}' (site ${siteId}): ${error.message}`, {
+      siteId, domainScope, error: error.message, ...overrides,
+    });
   }
 }

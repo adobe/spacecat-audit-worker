@@ -900,6 +900,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
   const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
+  // Logged unconditionally (including the off case) so a Splunk search on siteId
+  // alone shows whether this run even attempted Semrush and, if so, which knob
+  // decided that (Slack per-run override vs the env var) — the two can disagree.
+  log.info(`${LOG_PREFIX} Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
+    siteId,
+    semrushEnabled,
+    decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
+  });
   if (semrushEnabled) {
     // Semrush-first: the loader returns the same allUrls shape, with
     // count = exact citations. Everything downstream (selectTopUrls -> DRS)
@@ -916,7 +924,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       usedSemrush = true;
     } else {
       fallbackReason = 'semrush-no-usable-urls';
-      log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`);
+      log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`, {
+        siteId, fallbackReason,
+      });
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';

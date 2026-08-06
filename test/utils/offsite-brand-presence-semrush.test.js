@@ -46,7 +46,8 @@ describe('offsite-brand-presence-semrush', function () {
   let imsCreateFrom;
   let mod;
 
-  const site = { getOrganizationId: () => ORG_ID };
+  const SITE_ID = '5b0d4d6e-3d2e-4a5b-8e2a-9b6f7c9c1e2a';
+  const site = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
   const makeContext = (env = {}, extra = {}) => ({ log, env, ...extra });
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
   const erroredWith = (re) => log.error.getCalls().some((c) => re.test(c.args[0]));

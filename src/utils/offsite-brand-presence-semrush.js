@@ -125,18 +125,25 @@ export function buildDomainUrlsUrl({
 }
 
 /**
- * Fetches one (hostname, platform) page.
+ * Fetches one (hostname, platform) page. Every log call carries `siteId`/`hostname`/
+ * `platform` as structured fields (in addition to the human-readable message) so a
+ * Splunk query can isolate which site/surface/engine combination failed and why,
+ * without parsing the message string.
  *
  * @returns {Promise<{ hostname: string, rows: object[], ok: boolean }>} `ok` is
  *   false on network error / timeout / non-2xx / unparseable body. The array is
  *   hard-capped at `PAGE_SIZE`.
  */
-async function fetchRows({ hostname, url }, headers, log) {
+async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
+  const ctx = { siteId, hostname, platform };
   let response;
+  const startedAt = Date.now();
   try {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
-    log.error(`${LOG_PREFIX} Fetch failed for ${hostname}: ${error.message}`);
+    log.error(`${LOG_PREFIX} Fetch failed for ${hostname}: ${error.message}`, {
+      ...ctx, error: error.message, durationMs: Date.now() - startedAt,
+    });
     return { hostname, rows: [], ok: false };
   }
 
@@ -144,9 +151,13 @@ async function fetchRows({ hostname, url }, headers, log) {
     if (response.status === 401 || response.status === 403) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      log.error(`${LOG_PREFIX} Service token rejected for ${hostname} (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`);
+      log.error(`${LOG_PREFIX} Service token rejected for ${hostname} (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, {
+        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
+      });
     } else {
-      log.error(`${LOG_PREFIX} ${hostname} returned HTTP ${response.status}`);
+      log.error(`${LOG_PREFIX} ${hostname} returned HTTP ${response.status}`, {
+        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
+      });
     }
     return { hostname, rows: [], ok: false };
   }
@@ -155,13 +166,17 @@ async function fetchRows({ hostname, url }, headers, log) {
   try {
     body = await response.json();
   } catch (error) {
-    log.error(`${LOG_PREFIX} Could not parse ${hostname} response: ${error.message}`);
+    log.error(`${LOG_PREFIX} Could not parse ${hostname} response: ${error.message}`, {
+      ...ctx, error: error.message, durationMs: Date.now() - startedAt,
+    });
     return { hostname, rows: [], ok: false };
   }
 
   const raw = Array.isArray(body?.urls) ? body.urls : [];
   if (raw.length >= PAGE_SIZE) {
-    log.warn(`${LOG_PREFIX} ${hostname} returned a full page (${raw.length} >= ${PAGE_SIZE}); response may be truncated — top URLs by citations could be missing`);
+    log.warn(`${LOG_PREFIX} ${hostname} returned a full page (${raw.length} >= ${PAGE_SIZE}); response may be truncated — top URLs by citations could be missing`, {
+      ...ctx, rowCount: raw.length, pageSize: PAGE_SIZE,
+    });
   }
   return { hostname, rows: raw.slice(0, PAGE_SIZE), ok: true };
 }
@@ -192,11 +207,18 @@ export async function loadCitedUrlsFromSemrush({
   site, previousWeeks, context, siteHostname,
 }) {
   const { log, env } = context;
+  const startedAt = Date.now();
+  const siteId = site?.getId?.();
+  const elapsed = () => Date.now() - startedAt;
   const baseUrl = env?.SPACECAT_API_URI || SPACECAT_API_DEFAULT_BASE_URL;
+
+  log.info(`${LOG_PREFIX} Starting Semrush source attempt`, { siteId, baseUrl });
 
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
-    log.warn(`${LOG_PREFIX} Site has no organization id; skipping Semrush source`);
+    log.warn(`${LOG_PREFIX} Site has no organization id; skipping Semrush source`, {
+      siteId, durationMs: elapsed(),
+    });
     return null;
   }
 
@@ -205,16 +227,22 @@ export async function loadCitedUrlsFromSemrush({
   const { brand, resolved } = await resolveBrandResultForSite(context, site);
   if (!brand?.brandId) {
     if (resolved) {
-      log.info(`${LOG_PREFIX} No active brand for org ${spaceCatId}; skipping Semrush source`);
+      log.info(`${LOG_PREFIX} No active brand for org ${spaceCatId}; skipping Semrush source`, {
+        siteId, orgId: spaceCatId, durationMs: elapsed(),
+      });
     } else {
-      log.warn(`${LOG_PREFIX} Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`);
+      log.warn(`${LOG_PREFIX} Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+        siteId, orgId: spaceCatId, durationMs: elapsed(),
+      });
     }
     return null;
   }
 
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (!dateWindow) {
-    log.warn(`${LOG_PREFIX} Could not derive a date window; skipping Semrush source`);
+    log.warn(`${LOG_PREFIX} Could not derive a date window; skipping Semrush source`, {
+      siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+    });
     return null;
   }
   const { startDate, endDate } = dateWindow;
@@ -223,7 +251,13 @@ export async function loadCitedUrlsFromSemrush({
   try {
     authorization = await getAuthorizationHeader(context);
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to obtain IMS service token: ${error.message}`);
+    log.error(`${LOG_PREFIX} Failed to obtain IMS service token: ${error.message}`, {
+      siteId,
+      orgId: spaceCatId,
+      brandId: brand.brandId,
+      error: error.message,
+      durationMs: elapsed(),
+    });
     return null;
   }
 
@@ -245,32 +279,49 @@ export async function loadCitedUrlsFromSemrush({
     for (const platform of platforms) {
       requests.push({
         hostname,
+        platform,
         url: buildDomainUrlsUrl({
           baseUrl, spaceCatId, brandId: brand.brandId, hostname, startDate, endDate, platform,
         }),
       });
     }
   }
+  const hostnames = Object.keys(OFFSITE_DOMAINS);
+  log.info(`${LOG_PREFIX} Querying ${hostnames.length} hostnames x ${platforms.length} platforms (${requests.length} requests)`, {
+    siteId, orgId: spaceCatId, brandId: brand.brandId, hostnames, platforms,
+  });
 
-  const results = await Promise.all(requests.map((r) => fetchRows(r, headers, log)));
+  const results = await Promise.all(requests.map((r) => fetchRows(r, headers, log, siteId)));
 
   // Group by surface (hostname). Fall back to legacy only when a whole surface
   // produced ZERO successful responses (that surface would be dropped) — a single
   // failed engine is a partial count, not a dropped surface, and is tolerated.
   const byHost = new Map();
   for (const hostname of Object.keys(OFFSITE_DOMAINS)) {
-    byHost.set(hostname, { anyOk: false, rows: [] });
+    byHost.set(hostname, {
+      anyOk: false, okCount: 0, failCount: 0, rows: [],
+    });
   }
   for (const result of results) {
     const entry = byHost.get(result.hostname);
     if (result.ok) {
       entry.anyOk = true;
+      entry.okCount += 1;
       entry.rows.push(...result.rows);
+    } else {
+      entry.failCount += 1;
     }
   }
   for (const [hostname, entry] of byHost) {
+    // One summary line per hostname (not per-request) — enough to see partial engine
+    // degradation in Splunk without a log line per one of the ~12 concurrent requests.
+    log.info(`${LOG_PREFIX} ${hostname}: ${entry.okCount}/${entry.okCount + entry.failCount} engine requests succeeded`, {
+      siteId, hostname, okCount: entry.okCount, failCount: entry.failCount,
+    });
     if (!entry.anyOk) {
-      log.warn(`${LOG_PREFIX} No successful Semrush response for ${hostname}; using legacy fallback`);
+      log.warn(`${LOG_PREFIX} No successful Semrush response for ${hostname}; using legacy fallback`, {
+        siteId, orgId: spaceCatId, hostname, platformsQueried: platforms, durationMs: elapsed(),
+      });
       return null;
     }
   }
@@ -321,6 +372,12 @@ export async function loadCitedUrlsFromSemrush({
     }
   }
 
-  log.info(`${LOG_PREFIX} Collected ${allUrls.size} cited URLs from Semrush`);
+  log.info(`${LOG_PREFIX} Collected ${allUrls.size} cited URLs from Semrush`, {
+    siteId,
+    orgId: spaceCatId,
+    brandId: brand.brandId,
+    urlCount: allUrls.size,
+    durationMs: elapsed(),
+  });
   return allUrls;
 }
