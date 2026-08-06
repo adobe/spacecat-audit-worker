@@ -84,7 +84,10 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 ## Enablement runbook (ordered gates before turning the flag on anywhere)
 
 The flag-off path is safe to merge now. Before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`
-in **any** environment, close these in order (LLMO-6709 → 6711):
+in **any** environment, close these in order (LLMO-6709 → 6711). The per-run Slack override
+(`enableSemrush`, Decision 6) exercises this identical code path and is subject to the same
+gate 1 precondition below — it is a controlled, single-run instrument for verifying LLMO-6709
+on one site, not a way to light up the unverified path in production ahead of sign-off:
 
 1. **Auth/authz verified (LLMO-6709).** Confirm the worker's **service** IMS token is
    accepted by the Semrush proxy end-to-end (it is forwarded unchanged; the proxy is designed
@@ -95,7 +98,9 @@ in **any** environment, close these in order (LLMO-6709 → 6711):
    itself (confused-deputy surface).
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
 3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per surface vs legacy.
-4. **Fleet enable** per environment (the flag is environment-global).
+4. **Fleet enable** per environment (the flag is environment-global) — **US markets only**
+   until region scoping (LLMO-6710, see Known gaps below) closes; non-US parity cannot be
+   claimed before then.
 
 ## Configuration / client-convention debt (to resolve before the 3rd caller)
 
@@ -106,6 +111,7 @@ The IMS scheme is justified here (the Elements proxy must forward a bearer to Se
 other not → IMS traffic to an untrusted issuer → 401 → silent legacy fallback). Documented as
 debt: pick one base-URL env var and one api-service client convention (a shared helper) **before
 the `cited-domains` follow-up adds a third caller** that copies whichever it finds first.
+Tracked under a follow-up ticket (TBD) rather than left as an unticketed prose condition.
 
 ## Alternatives Considered
 

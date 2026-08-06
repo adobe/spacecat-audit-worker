@@ -244,6 +244,15 @@ describe('offsite-brand-presence-semrush', function () {
     expect(warnedWith(/full page/)).to.equal(false);
   });
 
+  it('warns on an exactly-PAGE_SIZE (100-row) page (>= boundary, not >)', async () => {
+    const rows = Array.from({ length: 100 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    stubByHostname((hostname) => (hostname === 'youtube.com'
+      ? okJson({ urls: rows })
+      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
+    await run(ONE_ENGINE);
+    expect(warnedWith(/full page/)).to.equal(true);
+  });
+
   // --- surface-level fallback (returns null) --------------------------------
 
   it('falls back (null) when a whole hostname has no successful response — reject', async () => {

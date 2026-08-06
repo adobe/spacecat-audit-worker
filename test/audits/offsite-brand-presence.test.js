@@ -230,6 +230,16 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
     });
 
+    it('treats "1" as off, not a truthy flag value (strict === true)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = '1';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+    });
+
     it('uses the Semrush loader (with the expected args) and skips the legacy source when it yields URLs', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
