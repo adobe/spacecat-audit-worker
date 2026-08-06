@@ -11,7 +11,6 @@
  */
 
 import { Suggestion } from '@adobe/spacecat-shared-data-access';
-import { isManuallyEditedSuggestion } from '../utils/data-access.js';
 import {
   isDomainWideSuggestionData,
   isPathSuggestionData,
@@ -20,6 +19,18 @@ import {
 import { MAX_ACTIVE_SUGGESTIONS } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
+
+/**
+ * True when a suggestion was last touched by a non-system actor (typically a customer email
+ * stamped by the PATCH API). Duplicated from isManuallyEditedSuggestion in
+ * ../utils/data-access.js (small and stable enough not to warrant a cross-module import).
+ * @param {Object} suggestion - Suggestion entity (or mock).
+ * @returns {boolean}
+ */
+function isManuallyEditedSuggestion(suggestion) {
+  const updatedBy = suggestion?.getUpdatedBy?.();
+  return Boolean(updatedBy && updatedBy !== 'system');
+}
 
 /**
  * Statuses protected from cap eviction, beyond OUTDATED/FIXED (checked separately below).
