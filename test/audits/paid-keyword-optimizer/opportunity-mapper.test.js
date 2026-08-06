@@ -670,6 +670,44 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
       expect(result.data.pageTopics).to.be.an('array').that.is.empty;
     });
 
+    it('passes pageRecommendation through to opportunity.data', () => {
+      const pageRecommendation = {
+        inferredPlay: 'Branded navigational defense',
+        playConfidence: 'high',
+        primary: {
+          lever: 'on_page',
+          actionType: 'modify_heading',
+          title: 'Broaden the H1 for branded visitors',
+          detail: 'Surface the core IAM promise alongside AI.',
+          affectedClusters: ['okta'],
+          alternatives: [],
+        },
+        rankedActions: [],
+        reasoning: 'Reconciled across all branded clusters.',
+      };
+      const audit = createMockAudit();
+      const message = createClusterMessage({ extraBody: { pageRecommendation } });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.pageRecommendation).to.deep.equal(pageRecommendation);
+    });
+
+    it('defaults pageRecommendation to null when absent (old mystique) or explicitly null', () => {
+      const audit = createMockAudit();
+      // Absent: no extraBody at all.
+      const absent = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, createClusterMessage());
+      expect(absent.data.pageRecommendation).to.be.null;
+
+      // Explicitly null (strategist skipped/failed): collapses to null, not undefined.
+      const explicitNull = mapToKeywordOptimizerOpportunity(
+        TEST_SITE_ID,
+        audit,
+        createClusterMessage({ extraBody: { pageRecommendation: null } }),
+      );
+      expect(explicitNull.data.pageRecommendation).to.be.null;
+    });
+
     it('collapses explicit null pageTopics to [] (future regression guard)', () => {
       const audit = createMockAudit();
       const message = createClusterMessage({
