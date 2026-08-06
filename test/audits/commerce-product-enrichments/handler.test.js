@@ -265,7 +265,7 @@ describe('Commerce Product Enrichments Handler', () => {
         expandShadowDOM: false,
       },
       customHeaders: {
-        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot',
+        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; gptbot/1.2; +https://openai.com/gptbot',
       },
       allowCache: false,
       maxScrapeAge: 0,
@@ -518,7 +518,7 @@ describe('Commerce Product Enrichments Handler', () => {
         expandShadowDOM: false,
       },
       customHeaders: {
-        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot',
+        'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; gptbot/1.2; +https://openai.com/gptbot',
       },
       allowCache: false,
       maxScrapeAge: 0,

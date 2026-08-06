@@ -1,3 +1,24 @@
+## [1.515.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.0...v1.515.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **offsite:** v2 IMS getServiceAccessToken + hard-stop on enableSemrush:true failure ([#2852](https://github.com/adobe/spacecat-audit-worker/issues/2852)) ([442c700](https://github.com/adobe/spacecat-audit-worker/commit/442c700ff8cc0934f7ba79123fc86649bf31da7c))
+
+# [1.515.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.514.1...v1.515.0) (2026-08-06)
+
+
+### Features
+
+* **offsite:** source cited URLs from the Semrush URL-Inspector API ([#2847](https://github.com/adobe/spacecat-audit-worker/issues/2847)) ([b2bb11b](https://github.com/adobe/spacecat-audit-worker/commit/b2bb11ba6af9fc375a0a057bcc0081ee23fdcc56))
+
+## [1.514.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.514.0...v1.514.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* update GPTBot/1.2 to gptbot/1.2 ([#2851](https://github.com/adobe/spacecat-audit-worker/issues/2851)) ([966f0a5](https://github.com/adobe/spacecat-audit-worker/commit/966f0a5647e46bd855598a5d8a944338803c8c8c))
+
 # [1.514.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.513.0...v1.514.0) (2026-08-04)
 
 

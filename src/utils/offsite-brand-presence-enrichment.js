@@ -246,7 +246,7 @@ function normalizeUrl(parsed, domain) {
  *   matching this hostname or any subdomain of it are excluded
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl, siteHostname) {
+export function classifyAndNormalize(rawUrl, siteHostname) {
   let parsed;
   try {
     parsed = new URL(rawUrl);

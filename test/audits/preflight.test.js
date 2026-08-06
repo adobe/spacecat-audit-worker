@@ -2359,6 +2359,18 @@ describe('Preflight Audit', () => {
           promiseToken: 'test-token',
         });
 
+        // Preflight-scoped nav tuning: loosen waitUntil so heavy pages don't
+        // 45s-timeout into empty results (SITES-49365). ASO scans are unaffected.
+        expect(message.options.accessibilityScrapingParams).to.deep.equal({
+          waitUntil: 'domcontentloaded',
+          additionalTimeout: 3000,
+        });
+
+        // Info-level marker must be emitted so prod Splunk can prove it is live.
+        expect(log.info).to.have.been.calledWithMatch(
+          'Accessibility scrape nav tuned: waitUntil=domcontentloaded settleMs=3000',
+        );
+
         expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 2 URLs',
         );

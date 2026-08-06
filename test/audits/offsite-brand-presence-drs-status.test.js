@@ -363,6 +363,48 @@ describe('offsite-brand-presence DRS status handler', () => {
       });
     });
 
+    it('forwards enableSemrush as messageData on every triggered analysis audit when set', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableSemrush: true }), context);
+
+      const calls = context.sqs.sendMessage.getCalls();
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      const youtube = calls.find((c) => c.args[1].type === 'youtube-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: true });
+      expect(youtube.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: true });
+    });
+
+    it('forwards explicit enableSemrush:false as messageData (distinct from absent)', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableSemrush: false }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: false });
+    });
+
+    it('forwards enableBrandProfile, urlLimit, and enableSemrush together as messageData', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(
+        buildMessage({ enableBrandProfile: true, urlLimit: 20, enableSemrush: true }),
+        context,
+      );
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({
+        enableBrandProfile: true,
+        urlLimit: 20,
+        enableSemrush: true,
+      });
+    });
+
     it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
       mockGetJob.withArgs('job-c').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-w').resolves({ status: 'COMPLETED' });
