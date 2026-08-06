@@ -15,6 +15,14 @@ export const TOP_AGENTIC_URLS_LIMIT = 2000;
 export const DAILY_BATCH_SIZE = 320;
 export const TOP_ORGANIC_URLS_LIMIT = 200;
 /**
+ * Once a domain's PRERENDER opportunity accumulates more than this many active
+ * (non-OUTDATED, non-FIXED, not edgeDeployed/coveredByDomainWide) per-URL suggestions,
+ * the least-recently-scraped ones are evicted (marked OUTDATED) to make room for the
+ * freshest incoming traffic (LLMO-6533/LLMO-6638). New URLs are never blocked from being
+ * submitted for scraping — see evictOldestSuggestionsOverCap in handler.js.
+ */
+export const MAX_ACTIVE_SUGGESTIONS = 4000;
+/**
  * URLs processed within this window are treated as recently scraped and skipped.
  */
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;

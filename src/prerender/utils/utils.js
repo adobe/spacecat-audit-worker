@@ -435,3 +435,14 @@ export async function fetchLatestScrapeJobId(siteId, context) {
   log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
   return null;
 }
+
+/**
+ * Finds the site's existing PRERENDER opportunity (NEW status), if one exists.
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID to look up the opportunity
+ * @returns {Promise<Object|null>}
+ */
+export async function findPrerenderOpportunity(dataAccess, siteId) {
+  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+  return opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
+}

@@ -30,9 +30,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   importTopPages,
-  submitForScraping,
   processContentAndGenerateOpportunities,
 } from '../../../../src/prerender/handler.js';
+import { submitForScraping } from '../../../../src/prerender/submit-for-scraping.js';
 import {
   buildContext,
   buildSite,

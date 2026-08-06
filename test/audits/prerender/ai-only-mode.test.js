@@ -15,9 +15,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   importTopPages,
-  submitForScraping,
   processContentAndGenerateOpportunities,
 } from '../../../src/prerender/handler.js';
+import { submitForScraping } from '../../../src/prerender/submit-for-scraping.js';
 import { handleAiOnlyMode } from '../../../src/prerender/ai-only-handler.js';
 
 use(sinonChai);
