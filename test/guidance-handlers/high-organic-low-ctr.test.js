@@ -42,6 +42,9 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     }),
     getUpdatedBy: sandbox.stub().returns('system'),
     setAuditId: sandbox.stub(),
+    // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
     setData: sandbox.stub(),
     setGuidance: sandbox.stub(),
     save: sandbox.stub().resolvesThis(),
@@ -282,6 +285,9 @@ describe('high-organic-low-ctr guidance handler tests', () => {
         page: 'https://abc.com/abc-adoption/account',
       }),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -326,6 +332,9 @@ describe('high-organic-low-ctr guidance handler tests', () => {
         page: 'https://abc.com/abc-adoption/account',
       }),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -368,6 +377,9 @@ describe('high-organic-low-ctr guidance handler tests', () => {
         page: 'https://abc.com/abc-adoption/account',
       }),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -489,6 +501,9 @@ describe('high-organic-low-ctr guidance handler tests', () => {
         }),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
         setData: sandbox.stub(),
         setGuidance: sandbox.stub(),
         save: sandbox.stub().resolvesThis(),

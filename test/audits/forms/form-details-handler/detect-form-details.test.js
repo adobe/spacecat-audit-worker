@@ -47,6 +47,9 @@ describe('Detect Form Details Handler', () => {
             getAuditId: () => 'testAuditId',
             getDeliveryType: () => 'testDeliveryType',
             setAuditId: sinon.stub(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sinon.stub(),
+            setScopeId: sinon.stub(),
             setUpdatedBy: sinon.stub(),
             setData: sinon.stub(),
             save: sinon.stub().resolvesThis(),

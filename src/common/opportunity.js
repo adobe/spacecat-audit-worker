@@ -66,6 +66,15 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
 
   try {
     if (!opportunity) {
+      // SITES-49175 — stamp scopeType='site' + scopeId=siteId on every
+      // new site-scoped opportunity. Historically these fields were
+      // left NULL, which diverged from the V2 Mystique projector shape
+      // (`scopeType='site', scopeId=<siteId>`) and let Postgres unique-
+      // index NULL semantics permit two active rows for the same
+      // (siteId, type). Making the scope explicit unblocks the partial
+      // unique index on the data-service side. Requires the SITE entry
+      // in Oppty.SCOPE_TYPES (spacecat-shared-data-access 4.17+ once
+      // https://github.com/adobe/spacecat-shared/pull/1866 releases).
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,
@@ -77,11 +86,27 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         guidance: opportunityInstance.guidance,
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
+        scopeType: 'site',
+        scopeId: auditData.siteId,
       };
       opportunity = await Opportunity.create(opportunityData);
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit
+      // touch. Existing customer opportunities from before this fix were
+      // written with scopeType/scopeId NULL, which diverges from the V2
+      // Mystique projector shape and lets Postgres unique-index NULL
+      // semantics permit a duplicate active row for the same
+      // (siteId, type). Stamping both fields here means each scheduled
+      // audit run repairs one row's scope, so the fleet drains organically
+      // over a single audit cycle — no one-shot backfill required (though
+      // a backfill still gives faster fleet-wide convergence). Safe when
+      // both fields are already populated: setter no-ops when the value
+      // matches, and the co-presence guard in Opportunity.save() only
+      // trips when one is set without the other (both set here).
+      opportunity.setScopeType('site');
+      opportunity.setScopeId(auditData.siteId);
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
           || auditType === Audit.AUDIT_TYPES.SECURITY_CSP

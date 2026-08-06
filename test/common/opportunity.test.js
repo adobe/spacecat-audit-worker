@@ -45,6 +45,9 @@ describe('persistOffsiteOpportunity', () => {
     getType: () => 'cited-analysis',
     getData: sandbox.stub().returns(existingData),
     setAuditId: sandbox.stub(),
+    // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
     setData: sandbox.stub(),
     setUpdatedBy: sandbox.stub(),
     save: sandbox.stub().resolves(),

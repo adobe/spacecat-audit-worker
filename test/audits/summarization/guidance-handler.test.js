@@ -104,6 +104,9 @@ describe('summarization guidance handler', () => {
       getSuggestions: sinon.stub().resolves([]),
       getData: sinon.stub().returns({ subType: 'summarization' }),
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       setUpdatedBy: sinon.stub(),
@@ -485,6 +488,9 @@ describe('summarization guidance handler', () => {
       getData: () => ({ subType: 'summarization' }),
       getSuggestions: () => Promise.resolve([]),
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       setUpdatedBy: sinon.stub(),

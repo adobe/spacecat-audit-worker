@@ -35,6 +35,9 @@ describe('createLowNavigationOpportunities handler method', () => {
       getId: () => 'opportunity-id',
       getStatus: sinon.stub().returns('NEW'),
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
       save: sinon.stub(),
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       setData: sinon.stub(),
