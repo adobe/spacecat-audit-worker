@@ -902,7 +902,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: PREFLIGHT_READABILITY,
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -961,7 +961,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1026,7 +1026,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: PREFLIGHT_READABILITY,
         opportunities: [{
-          textContent: poorText2, // Different text that won't match the suggestion
+          elements: [{ textContent: poorText2 }], // Different text that won't match the suggestion
           fleschReadingEase: 20,
         }],
       }];
@@ -1093,7 +1093,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1142,7 +1142,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1176,7 +1176,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 25, // This will be used as fallback
         }],
       }];
@@ -1226,7 +1226,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1279,7 +1279,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1353,7 +1353,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1421,7 +1421,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText2, // Different text that won't match the suggestion
+          elements: [{ textContent: poorText2 }], // Different text that won't match the suggestion
           fleschReadingEase: 20,
         }],
       }];
@@ -1481,7 +1481,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -1534,7 +1534,7 @@ describe('Preflight Readability Audit', () => {
       auditsResult[0].audits = [{
         name: 'readability',
         opportunities: [{
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 15,
         }],
       }];
@@ -2018,7 +2018,7 @@ describe('Preflight Readability Audit', () => {
         type: 'seo',
         opportunities: [{
           check: 'poor-readability',
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           suggestionStatus: 'processing',
         }],
       }];
@@ -2053,7 +2053,7 @@ describe('Preflight Readability Audit', () => {
         type: 'seo',
         opportunities: [{
           check: 'poor-readability',
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           suggestionStatus: 'processing',
         }],
       }];
@@ -2197,7 +2197,7 @@ describe('Preflight Readability Audit', () => {
         type: 'seo',
         opportunities: [{
           check: 'poor-readability',
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           suggestionStatus: 'processing',
         }],
       }];
@@ -2252,12 +2252,12 @@ describe('Preflight Readability Audit', () => {
         opportunities: [
           {
             check: 'poor-readability',
-            textContent: poorText,
+            elements: [{ textContent: poorText }],
             suggestionStatus: 'processing',
           },
           {
             check: 'poor-readability',
-            textContent: 'Another poor text',
+            elements: [{ textContent: 'Another poor text' }],
             suggestionStatus: 'completed',
           },
         ],
@@ -2271,7 +2271,7 @@ describe('Preflight Readability Audit', () => {
           type: 'seo',
           opportunities: [{
             check: 'poor-readability',
-            textContent: 'Some other text',
+            elements: [{ textContent: 'Some other text' }],
             suggestionStatus: 'error',
           }],
         }],
@@ -2318,7 +2318,7 @@ describe('Preflight Readability Audit', () => {
         type: 'seo',
         opportunities: [{
           check: 'poor-readability',
-          textContent: poorText,
+          elements: [{ textContent: poorText }],
           fleschReadingEase: 20,
           suggestionStatus: 'processing',
         }],
@@ -2332,7 +2332,7 @@ describe('Preflight Readability Audit', () => {
           type: 'seo',
           opportunities: [{
             check: 'poor-readability',
-            textContent: 'Another complex text',
+            elements: [{ textContent: 'Another complex text' }],
             fleschReadingEase: 25,
             suggestionStatus: 'processing',
           }],

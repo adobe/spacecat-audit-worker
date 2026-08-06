@@ -688,7 +688,9 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
       await headingsModule.default(context, auditContext);
 
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([
+        { selector: 'body > h1', textContent: 'This is a very long H1 heading that exceeds the recommended length' },
+      ]);
     });
 
     it('should use getDomElementSelector for heading-order-invalid check', async () => {
@@ -755,7 +757,9 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
       await headingsModule.default(context, auditContext);
 
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h3.skipped-level']);
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([
+        { selector: 'body > h3.skipped-level', textContent: 'Skipped H2' },
+      ]);
     });
 
     it('should disambiguate by text when structural selector matches the wrong element first', async () => {
