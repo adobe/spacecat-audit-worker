@@ -96,7 +96,7 @@ async function checkForExistingSuggestions(
         audit.opportunities.forEach((opportunity, index) => {
           // Find matching suggestion by original text (suggestions stored directly as objects)
           const matchingSuggestion = suggestions.find(
-            (suggestion) => suggestion?.originalText === opportunity.textContent,
+            (suggestion) => suggestion?.originalText === opportunity.elements?.[0]?.textContent,
           );
 
           if (matchingSuggestion) {
@@ -256,10 +256,8 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            // Top-level textContent is retained as the internal key that matches AI
-            // suggestions back to opportunities in the suggest step; the same passage is
-            // also surfaced in elements[].textContent for the uniform response contract.
-            textContent: text,
+            // The offending passage lives once, in elements[].textContent (single source of
+            // truth). The Mystique request derives its matching key from there (see below).
             ...toElementTargets({ selector, textContent: text }),
           });
         }
@@ -373,6 +371,10 @@ export default async function readability(context, auditContext) {
         // Add page URL to each issue for context
         const issuesWithContext = audit.opportunities.map((issue) => ({
           ...issue,
+          // Shared Mystique sender/matching keys on a top-level textContent; derive it from the
+          // single source (elements[].textContent) for the request copy only, so the response
+          // opportunity itself carries no duplicate top-level field.
+          textContent: issue.elements?.[0]?.textContent,
           pageUrl: pageResult.pageUrl,
         }));
         allReadabilityIssues.push(...issuesWithContext);
