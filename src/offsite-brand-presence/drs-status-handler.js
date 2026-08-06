@@ -146,6 +146,10 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  * @param {number} [urlLimit] - Forwarded from the originating Slack request (see
  *   offsite-brand-presence/handler.js) so the re-triggered analysis audit resolves the same
  *   urlLimit, instead of losing it across the scrape round-trip.
+ * @param {boolean} [enableSemrush] - Forwarded from the originating Slack request (see
+ *   offsite-brand-presence/handler.js) so the re-triggered analysis audit's own scoped
+ *   re-scrape (if it needs one) honors the same per-run Semrush override, instead of
+ *   silently reverting to the env var across the scrape round-trip.
  * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
 async function triggerAnalysisAudits(
@@ -156,6 +160,7 @@ async function triggerAnalysisAudits(
   drsStartedAt,
   enableBrandProfile,
   urlLimit,
+  enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
 
@@ -181,6 +186,7 @@ async function triggerAnalysisAudits(
       const messageData = {
         ...(enableBrandProfile != null && { enableBrandProfile }),
         ...(urlLimit != null && { urlLimit }),
+        ...(enableSemrush != null && { enableSemrush }),
       };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(queueUrl, {
@@ -256,7 +262,7 @@ function buildSummary(baseURL, statuses, drsStartedAt, triggeredAuditTypes = [])
  *
  * @param {object} message - SQS message with auditContext { baseURL, slackContext?,
  *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes?, enableBrandProfile?,
- *   urlLimit? }
+ *   urlLimit?, enableSemrush? }
  * @param {object} context - Universal context (log, sqs, dataAccess, env)
  * @returns {Promise<Response>}
  */
@@ -266,7 +272,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { siteId, auditContext = {} } = message;
   const {
     baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [], drsStartedAt,
-    enableBrandProfile, urlLimit,
+    enableBrandProfile, urlLimit, enableSemrush,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
 
@@ -312,6 +318,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       drsStartedAt,
       enableBrandProfile,
       urlLimit,
+      enableSemrush,
     );
   } catch (err) {
     log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);

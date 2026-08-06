@@ -130,8 +130,11 @@ export function buildDomainUrlsUrl({
  * Splunk query can isolate which site/surface/engine combination failed and why,
  * without parsing the message string.
  *
- * @returns {Promise<{ hostname: string, rows: object[], ok: boolean }>} `ok` is
- *   false on network error / timeout / non-2xx / unparseable body. The array is
+ * @returns {Promise<{ hostname: string, rows: object[], ok: boolean, authFailure: boolean }>}
+ *   `ok` is false on network error / timeout / non-2xx / unparseable body. `authFailure` is
+ *   true specifically for a 401/403 (distinct from other failure causes, since an
+ *   intermittent auth/token rejection is the signal to watch during the pre-LLMO-6709
+ *   verification window even when tolerated as a partial engine failure). The rows array is
  *   hard-capped at `PAGE_SIZE`.
  */
 async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
@@ -144,11 +147,14 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
     log.error(`${LOG_PREFIX} Fetch failed for ${hostname}: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
-    return { hostname, rows: [], ok: false };
+    return {
+      hostname, rows: [], ok: false, authFailure: false,
+    };
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
+    const authFailure = response.status === 401 || response.status === 403;
+    if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
       log.error(`${LOG_PREFIX} Service token rejected for ${hostname} (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, {
@@ -159,7 +165,9 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
         ...ctx, status: response.status, durationMs: Date.now() - startedAt,
       });
     }
-    return { hostname, rows: [], ok: false };
+    return {
+      hostname, rows: [], ok: false, authFailure,
+    };
   }
 
   let body;
@@ -169,7 +177,9 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
     log.error(`${LOG_PREFIX} Could not parse ${hostname} response: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
-    return { hostname, rows: [], ok: false };
+    return {
+      hostname, rows: [], ok: false, authFailure: false,
+    };
   }
 
   const raw = Array.isArray(body?.urls) ? body.urls : [];
@@ -178,7 +188,9 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
       ...ctx, rowCount: raw.length, pageSize: PAGE_SIZE,
     });
   }
-  return { hostname, rows: raw.slice(0, PAGE_SIZE), ok: true };
+  return {
+    hostname, rows: raw.slice(0, PAGE_SIZE), ok: true, authFailure: false,
+  };
 }
 
 /**
@@ -206,10 +218,18 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
  *   each stage of the attempt. Kept generic (not a Slack import) so this module stays testable
  *   without a Slack dependency; a failure here is logged and swallowed, never thrown — a Slack
  *   outage must not affect the Semrush attempt itself.
+ * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null return,
+ *   set to `{ fallbackReason }` with a specific code (`no-organization-id`, `no-active-brand`,
+ *   `brand-resolution-failed`, `no-date-window`, `ims-token-failed`, or `surface-failed:<host>`)
+ *   instead of the single generic reason the handler used to report for every case. On a
+ *   successful (non-null) return, set to
+ *   `{ engineFailureCount, degradedHosts, authFailureDetected }` so a surface that tolerated
+ *   partial engine failures is distinguishable from a clean run — both `dataSource` and
+ *   `fallbackReason` alone report success/fail but not degradation.
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
-  site, previousWeeks, context, siteHostname, onProgress,
+  site, previousWeeks, context, siteHostname, onProgress, diagnostics,
 }) {
   const { log, env } = context;
   const startedAt = Date.now();
@@ -227,6 +247,11 @@ export async function loadCitedUrlsFromSemrush({
       log.warn(`${LOG_PREFIX} Failed to post Semrush progress update: ${error.message}`, { siteId });
     }
   };
+  const setDiagnostics = (patch) => {
+    if (diagnostics && typeof diagnostics === 'object') {
+      Object.assign(diagnostics, patch);
+    }
+  };
 
   log.info(`${LOG_PREFIX} Starting Semrush source attempt`, { siteId, baseUrl });
   await notify(':mag: Starting Semrush URL-Inspector lookup...');
@@ -237,6 +262,7 @@ export async function loadCitedUrlsFromSemrush({
       siteId, durationMs: elapsed(),
     });
     await notify(':warning: Site has no organization id — falling back to the legacy source.');
+    setDiagnostics({ fallbackReason: 'no-organization-id' });
     return null;
   }
 
@@ -249,11 +275,13 @@ export async function loadCitedUrlsFromSemrush({
         siteId, orgId: spaceCatId, durationMs: elapsed(),
       });
       await notify(':information_source: No active brand configured for this org — falling back to the legacy source.');
+      setDiagnostics({ fallbackReason: 'no-active-brand' });
     } else {
       log.warn(`${LOG_PREFIX} Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
         siteId, orgId: spaceCatId, durationMs: elapsed(),
       });
       await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
+      setDiagnostics({ fallbackReason: 'brand-resolution-failed' });
     }
     return null;
   }
@@ -264,6 +292,7 @@ export async function loadCitedUrlsFromSemrush({
       siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
     });
     await notify(':warning: Could not derive a date window — falling back to the legacy source.');
+    setDiagnostics({ fallbackReason: 'no-date-window' });
     return null;
   }
   const { startDate, endDate } = dateWindow;
@@ -280,6 +309,7 @@ export async function loadCitedUrlsFromSemrush({
       durationMs: elapsed(),
     });
     await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
+    setDiagnostics({ fallbackReason: 'ims-token-failed' });
     return null;
   }
 
@@ -322,7 +352,7 @@ export async function loadCitedUrlsFromSemrush({
   const byHost = new Map();
   for (const hostname of Object.keys(OFFSITE_DOMAINS)) {
     byHost.set(hostname, {
-      anyOk: false, okCount: 0, failCount: 0, rows: [],
+      anyOk: false, okCount: 0, failCount: 0, authFailureCount: 0, rows: [],
     });
   }
   for (const result of results) {
@@ -333,6 +363,9 @@ export async function loadCitedUrlsFromSemrush({
       entry.rows.push(...result.rows);
     } else {
       entry.failCount += 1;
+      if (result.authFailure) {
+        entry.authFailureCount += 1;
+      }
     }
   }
   for (const [hostname, entry] of byHost) {
@@ -349,11 +382,25 @@ export async function loadCitedUrlsFromSemrush({
       // order is the whole point (a readable narrative), not a perf-sensitive loop.
       // eslint-disable-next-line no-await-in-loop
       await notify(`:x: \`${hostname}\`: 0/${entry.okCount + entry.failCount} engine requests succeeded — falling back to the legacy source.`);
+      setDiagnostics({ fallbackReason: `surface-failed:${hostname}` });
       return null;
     }
     // eslint-disable-next-line no-await-in-loop
     await notify(`:white_check_mark: \`${hostname}\`: ${entry.okCount}/${entry.okCount + entry.failCount} engine requests succeeded.`);
   }
+
+  // Partial-degradation signal for LLMO-6711 shadow-run parity: a surface that
+  // tolerated failed engines (see above) still reports dataSource: 'semrush' below
+  // with no fallbackReason, so this is the only structured way to tell "clean run"
+  // from "succeeded, but N engine requests failed" without going back to logs. Any
+  // 401/403 is called out distinctly since an intermittent auth rejection is the
+  // signal to watch for during the pre-LLMO-6709 verification window specifically.
+  const engineFailureCount = [...byHost.values()].reduce((sum, entry) => sum + entry.failCount, 0);
+  const degradedHosts = [...byHost.entries()]
+    .filter(([, entry]) => entry.failCount > 0)
+    .map(([hostname]) => hostname);
+  const authFailureDetected = [...byHost.values()].some((entry) => entry.authFailureCount > 0);
+  setDiagnostics({ engineFailureCount, degradedHosts, authFailureDetected });
 
   const allUrls = new Map();
   for (const [, entry] of byHost) {
@@ -393,10 +440,12 @@ export async function loadCitedUrlsFromSemrush({
     }
   }
 
-  // Drop URLs whose total citation volume is <= 0 (malformed / all-zero rows): a
-  // zero-citation URL is not a real cited source and must not be scraped.
+  // Drop URLs whose total citation volume is zero (malformed / all-zero rows): a
+  // zero-citation URL is not a real cited source and must not be scraped. count can
+  // never go negative here — each contribution is Math.max(0, ...)-clamped above, so
+  // a sum of non-negative values is always >= 0; the check is `=== 0`, not `<= 0`.
   for (const [url, info] of allUrls) {
-    if (info.count <= 0) {
+    if (info.count === 0) {
       allUrls.delete(url);
     }
   }

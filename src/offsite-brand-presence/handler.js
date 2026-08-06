@@ -784,6 +784,10 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  * @param {number} [urlLimit] - Forwarded so the analysis audits triggered once DRS scraping
  *   completes (see drs-status-handler.js) still resolve the urlLimit originally requested
  *   on Slack, instead of losing it across the scrape round-trip.
+ * @param {boolean} [enableSemrush] - Forwarded so the analysis audits triggered once DRS
+ *   scraping completes (see drs-status-handler.js) still honor the same per-run Semrush
+ *   override originally requested on Slack, instead of silently reverting to the env var
+ *   across the scrape round-trip — mirrors enableBrandProfile/urlLimit exactly.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -795,6 +799,7 @@ async function scheduleDrsStatusPoll(
   drsStartedAt,
   enableBrandProfile,
   urlLimit,
+  enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
 
@@ -821,6 +826,7 @@ async function scheduleDrsStatusPoll(
       drsStartedAt,
       ...(enableBrandProfile != null && { enableBrandProfile }),
       ...(urlLimit != null && { urlLimit }),
+      ...(enableSemrush != null && { enableSemrush }),
     },
   }, null, pollIntervalSeconds);
 
@@ -897,17 +903,37 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Recorded on auditResult.dataSource so shadow-run parity (LLMO-6711) can join
   // on which source served each run instead of grepping a log string.
   let fallbackReason;
+  let semrushDiagnostics;
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
-  const semrushEnabled = enableSemrushOverride
+  const semrushRequested = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
+  const decidedBy = enableSemrushOverride !== undefined ? 'slack-override' : 'env-var';
+  // Gate 1 (LLMO-6709: the worker's service IMS token verified end-to-end against the
+  // real Semrush proxy, no token leakage into trace spans, org-scoping confirmed) must
+  // close in an environment before ANY Semrush attempt runs there — enforced here in
+  // code, not just documented in the ADR. Without this, the per-run Slack override
+  // (`enableSemrush`) could force a real, unverified request against production the
+  // moment someone with Slack access sets it — a much larger population than the
+  // deploy access that controls OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED itself.
+  const gate1Verified = context.env?.OFFSITE_SEMRUSH_GATE1_VERIFIED === 'true';
+  const semrushEnabled = semrushRequested && gate1Verified;
   // Logged unconditionally (including the off case) so a Splunk search on siteId
   // alone shows whether this run even attempted Semrush and, if so, which knob
   // decided that (Slack per-run override vs the env var) — the two can disagree.
   log.info(`${LOG_PREFIX} Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
-    siteId,
-    semrushEnabled,
-    decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
+    siteId, semrushRequested, gate1Verified, semrushEnabled, decidedBy,
   });
+  if (semrushRequested && !gate1Verified) {
+    log.warn(`${LOG_PREFIX} Semrush requested (${decidedBy}) but gate 1 (LLMO-6709) is not marked verified via OFFSITE_SEMRUSH_GATE1_VERIFIED in this environment — using the legacy source`, {
+      siteId, decidedBy,
+    });
+    await postMessageOptional(
+      context,
+      channelId,
+      `*offsite-brand-presence* for *${baseURL}* — :no_entry: Semrush was requested (${decidedBy}) but is gated off in this environment until LLMO-6709 (auth verification) closes. Using the legacy source.`,
+      { threadTs },
+    );
+  }
   if (semrushEnabled) {
     // Semrush-first: the loader returns the same allUrls shape, with
     // count = exact citations. Everything downstream (selectTopUrls -> DRS)
@@ -917,11 +943,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // onProgress mirrors the Semrush attempt into the Slack thread (when one
     // exists — postMessageOptional no-ops otherwise) as an alternative to Splunk
     // for the manual per-run testing this override was built for.
+    semrushDiagnostics = {};
     const semrushUrls = await loadCitedUrlsFromSemrush({
       site,
       previousWeeks,
       context,
       siteHostname,
+      diagnostics: semrushDiagnostics,
       onProgress: (text) => postMessageOptional(
         context,
         channelId,
@@ -934,14 +962,26 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         allUrls.set(url, info);
       }
       usedSemrush = true;
+      // Surfaced even on success: a run that tolerated partial engine/auth failures
+      // reports the same dataSource: 'semrush' as a clean run otherwise, which is
+      // exactly the signal LLMO-6711's shadow-run parity work needs to avoid grepping
+      // logs, and the one auth-rejection signal that matters most pre-LLMO-6709.
+      if (semrushDiagnostics.authFailureDetected) {
+        log.warn(`${LOG_PREFIX} Semrush succeeded but at least one engine request returned 401/403 — possible auth/token issue during the pre-LLMO-6709 verification window`, {
+          siteId,
+          degradedHosts: semrushDiagnostics.degradedHosts,
+          engineFailureCount: semrushDiagnostics.engineFailureCount,
+        });
+      }
     } else {
-      fallbackReason = 'semrush-no-usable-urls';
+      fallbackReason = semrushDiagnostics.fallbackReason ?? 'semrush-no-usable-urls';
       log.warn(`${LOG_PREFIX} Semrush source returned no URLs; falling back to PostgREST/SharePoint`, {
         siteId, fallbackReason,
       });
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
+  const semrushDegraded = usedSemrush && (semrushDiagnostics?.engineFailureCount ?? 0) > 0;
 
   // Legacy source: runs when the flag is off, OR when Semrush was tried but
   // produced nothing (fallback). Flag off = today's behavior, unchanged.
@@ -1029,6 +1069,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         drsStartedAt,
         enableBrandProfile,
         urlLimit,
+        enableSemrushOverride,
       );
     } catch (err) {
       log.warn(`${LOG_PREFIX} Failed to schedule DRS status poll: ${err.message}`);
@@ -1050,6 +1091,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       weeks: previousWeeks,
       dataSource,
       ...(fallbackReason ? { fallbackReason } : {}),
+      ...(semrushDegraded ? {
+        semrushEngineFailureCount: semrushDiagnostics.engineFailureCount,
+        semrushDegradedHosts: semrushDiagnostics.degradedHosts,
+      } : {}),
     },
     fullAuditRef: finalUrl,
   };

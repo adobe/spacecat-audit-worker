@@ -67,9 +67,14 @@ describe('offsite-brand-presence-semrush', function () {
     });
   }
 
-  const run = (env = {}, extra = {}, onProgress = undefined) => mod.loadCitedUrlsFromSemrush({
-    site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(env, extra), onProgress,
-  });
+  const run = (env = {}, extra = {}, onProgress = undefined, diagnostics = undefined) => mod
+    .loadCitedUrlsFromSemrush({
+      site,
+      previousWeeks: PREVIOUS_WEEKS,
+      context: makeContext(env, extra),
+      onProgress,
+      diagnostics,
+    });
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -275,9 +280,18 @@ describe('offsite-brand-presence-semrush', function () {
     expect(await run(ONE_ENGINE)).to.equal(null);
   });
 
-  it('logs a distinct rejection and falls back on a 401/403 surface', async () => {
+  it('logs a distinct rejection and falls back on a 401 surface', async () => {
     stubByHostname((hostname) => (hostname === 'reddit.com'
       ? { ok: false, status: 401 }
+      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
+    const result = await run(ONE_ENGINE);
+    expect(result).to.equal(null);
+    expect(erroredWith(/Service token rejected/)).to.equal(true);
+  });
+
+  it('logs a distinct rejection and falls back on a 403 surface', async () => {
+    stubByHostname((hostname) => (hostname === 'reddit.com'
+      ? { ok: false, status: 403 }
       : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
     const result = await run(ONE_ENGINE);
     expect(result).to.equal(null);
@@ -306,16 +320,56 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.get(RD_URL).count).to.equal(14); // reddit ok on both engines
   });
 
+  // --- diagnostics out-param --------------------------------------------------
+
+  it('reports a specific fallbackReason for a fully-failed surface, distinct from other null causes', async () => {
+    stubByHostname((hostname) => (hostname === 'reddit.com'
+      ? Promise.reject(new Error('network down'))
+      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
+    const diagnostics = {};
+    expect(await run(ONE_ENGINE, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('surface-failed:reddit.com');
+  });
+
+  it('reports engineFailureCount/degradedHosts/authFailureDetected on a successful but degraded run', async () => {
+    stubByHostname((hostname, platform) => {
+      if (hostname === 'youtube.com' && platform === 'search-gpt') {
+        return { ok: false, status: 401 };
+      }
+      return hostname === 'youtube.com'
+        ? okJson({ urls: [{ url: YT_URL, citations: 5 }] })
+        : okJson({ urls: [{ url: RD_URL, citations: 7 }] });
+    });
+    const diagnostics = {};
+    const allUrls = await run(TWO_ENGINES, {}, undefined, diagnostics);
+    expect(allUrls).to.not.equal(null);
+    expect(diagnostics.engineFailureCount).to.equal(1);
+    expect(diagnostics.degradedHosts).to.deep.equal(['youtube.com']);
+    expect(diagnostics.authFailureDetected).to.equal(true);
+  });
+
+  it('reports no degradation on a fully clean run', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+    const diagnostics = {};
+    await run(ONE_ENGINE, {}, undefined, diagnostics);
+    expect(diagnostics.engineFailureCount).to.equal(0);
+    expect(diagnostics.degradedHosts).to.deep.equal([]);
+    expect(diagnostics.authFailureDetected).to.equal(false);
+  });
+
   // --- precondition guards (return null) -----------------------------------
 
   it('returns null when the site has no organization id', async () => {
+    const diagnostics = {};
     const result = await mod.loadCitedUrlsFromSemrush({
       site: { getOrganizationId: () => null },
       previousWeeks: PREVIOUS_WEEKS,
       context: makeContext(),
+      diagnostics,
     });
     expect(result).to.equal(null);
     expect(fetchStub).to.not.have.been.called;
+    expect(diagnostics.fallbackReason).to.equal('no-organization-id');
   });
 
   it('returns null and logs info when the brand is confirmed absent (resolved=true)', async () => {

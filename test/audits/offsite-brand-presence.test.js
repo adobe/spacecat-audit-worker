@@ -207,6 +207,13 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Semrush source (OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED)', () => {
+    beforeEach(() => {
+      // Gate 1 (LLMO-6709) defaults to verified in this describe block so the existing
+      // env-var/override tests below exercise the flag logic itself; the dedicated
+      // "Gate 1 (OFFSITE_SEMRUSH_GATE1_VERIFIED)" block below covers the gate independently.
+      context.env.OFFSITE_SEMRUSH_GATE1_VERIFIED = 'true';
+    });
+
     it('does not invoke the Semrush loader when the flag is off (regression)', async () => {
       // flag unset in env
       stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
@@ -268,6 +275,37 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
+    it('surfaces semrushEngineFailureCount/semrushDegradedHosts and warns when the loader reports degradation', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.callsFake(async (args) => {
+        Object.assign(args.diagnostics, {
+          engineFailureCount: 1,
+          degradedHosts: ['youtube.com'],
+          authFailureDetected: true,
+        });
+        return new Map([['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }]]);
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult.semrushEngineFailureCount).to.equal(1);
+      expect(result.auditResult.semrushDegradedHosts).to.deep.equal(['youtube.com']);
+      expect(log.warn).to.have.been.calledWithMatch(/possible auth\/token issue/);
+    });
+
+    it('does not surface degradation fields on a clean Semrush success', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult).to.not.have.property('semrushEngineFailureCount');
+      expect(result.auditResult).to.not.have.property('semrushDegradedHosts');
+    });
+
     it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
@@ -316,6 +354,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('semrush-no-usable-urls');
     });
 
     it('a Slack-requested enableSemrush:true override invokes the Semrush loader even when the env var is off', async () => {
@@ -381,6 +421,77 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.dataSource).to.equal('legacy');
       expect(result.auditResult.fallbackReason).to.equal('semrush-no-usable-urls');
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+    });
+  });
+
+  describe('Gate 1 (OFFSITE_SEMRUSH_GATE1_VERIFIED)', () => {
+    // Gate 1 is unset/false by default here (no beforeEach override), matching the real
+    // default in every environment until LLMO-6709 closes.
+
+    it('blocks the env-var flag when gate 1 is not verified', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(/gate 1/);
+    });
+
+    it('blocks the Slack per-run override when gate 1 is not verified', async () => {
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(/gate 1/);
+    });
+
+    it('posts a Slack notice explaining the gate block when a thread exists', async () => {
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+      const slackContext = { channelId: 'C-gate', threadTs: '999.111' };
+
+      await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { slackContext, messageData: { enableSemrush: true } },
+      );
+
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-gate',
+        sinon.match(/gated off/),
+        { threadTs: '999.111' },
+      );
+    });
+
+    it('does not warn or notify when Semrush was never requested (flag off, no override)', async () => {
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(log.warn.getCalls().some((c) => /gate 1/.test(c.args[0]))).to.equal(false);
+    });
+
+    it('allows Semrush through once gate 1 is verified, mirroring the env var behavior', async () => {
+      context.env.OFFSITE_SEMRUSH_GATE1_VERIFIED = 'true';
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
     });
   });
 
@@ -1822,6 +1933,29 @@ describe('Offsite Brand Presence Handler', () => {
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.urlLimit).to.be.undefined;
+    });
+
+    it('forwards the Semrush override to the poll message auditContext when set on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { enableSemrush: true },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableSemrush).to.equal(true);
+    });
+
+    it('omits enableSemrush from the poll message auditContext when absent on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableSemrush).to.be.undefined;
     });
   });
 
