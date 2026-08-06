@@ -7791,9 +7791,10 @@ describe('Prerender Audit', () => {
     const clientHtml = '<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>';
 
     /** Builds a minimal suggestion stub for eviction tests. */
-    const capSuggestion = (url, extraData = {}, status = 'NEW') => ({
+    const capSuggestion = (url, extraData = {}, status = 'NEW', updatedBy = 'system') => ({
       getStatus: () => status,
       getData: () => ({ url, ...extraData }),
+      getUpdatedBy: () => updatedBy,
     });
 
     /**
@@ -7962,6 +7963,43 @@ describe('Prerender Audit', () => {
           { url: 'https://example.com/fixed', scrapedAt: '2010-01-01T00:00:00.000Z' },
           { url: 'https://example.com/edge-deployed', scrapedAt: '2010-01-01T00:00:00.000Z' },
           { url: 'https://example.com/covered', scrapedAt: '2010-01-01T00:00:00.000Z' },
+        ],
+        suggestions,
+        bulkUpdateStatus,
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('excludes SKIPPED, REJECTED, APPROVED, IN_PROGRESS, ERROR, and manually-edited suggestions from the count and from eviction, mirroring handleOutdatedSuggestions\' protections', async () => {
+      // MAX_ACTIVE_SUGGESTIONS - 1 fresh filler + page1 = exactly at cap, no overflow. The six
+      // protected entries below (each individually the "oldest" by status.json scrapedAt)
+      // represent an operator/customer decision or in-flight work — they must never be
+      // evicted or even considered, proving they're excluded from the count.
+      const { suggestions: filler, pages: fillerPages } = makeFillerSuggestionsAndPages(
+        MAX_ACTIVE_SUGGESTIONS - 1,
+      );
+      const page1 = capSuggestion('https://example.com/page1');
+      const protectedSuggestions = [
+        capSuggestion('https://example.com/skipped', {}, 'SKIPPED'),
+        capSuggestion('https://example.com/rejected', {}, 'REJECTED'),
+        capSuggestion('https://example.com/approved', {}, 'APPROVED'),
+        capSuggestion('https://example.com/in-progress', {}, 'IN_PROGRESS'),
+        capSuggestion('https://example.com/error', {}, 'ERROR'),
+        capSuggestion('https://example.com/manually-edited', {}, 'NEW', 'customer@example.com'),
+      ];
+      const suggestions = [...filler, page1, ...protectedSuggestions];
+
+      const bulkUpdateStatus = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, suggestions);
+      const context = buildContext(sandbox, {
+        statusPages: [
+          ...fillerPages,
+          ...protectedSuggestions.map((s) => (
+            { url: s.getData().url, scrapedAt: '2010-01-01T00:00:00.000Z' }
+          )),
         ],
         suggestions,
         bulkUpdateStatus,

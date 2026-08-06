@@ -11,6 +11,7 @@
  */
 
 import { Suggestion } from '@adobe/spacecat-shared-data-access';
+import { isManuallyEditedSuggestion } from '../utils/data-access.js';
 import {
   isDomainWideSuggestionData,
   isPathSuggestionData,
@@ -21,11 +22,29 @@ import { MAX_ACTIVE_SUGGESTIONS } from './utils/constants.js';
 const LOG_PREFIX = 'Prerender -';
 
 /**
+ * Statuses protected from cap eviction, beyond OUTDATED/FIXED (checked separately below).
+ * Mirrors handleOutdatedSuggestions' excludedStatuses in ../utils/data-access.js — the
+ * "disappeared URL" outdating path already refuses to touch these because they represent an
+ * operator/customer decision (SKIPPED, REJECTED, APPROVED) or active work in flight
+ * (IN_PROGRESS, ERROR-pending-retry). The cap-based eviction path must not be looser than
+ * that: it should never force-outdate a suggestion the normal sync logic would leave alone.
+ */
+const CAP_PROTECTED_STATUSES = [
+  Suggestion.STATUSES.ERROR,
+  Suggestion.STATUSES.SKIPPED,
+  Suggestion.STATUSES.REJECTED,
+  Suggestion.STATUSES.APPROVED,
+  Suggestion.STATUSES.IN_PROGRESS,
+];
+
+/**
  * Determines whether a suggestion counts toward the active-suggestion cap and is eligible
  * for eviction (LLMO-6533/LLMO-6638): an individual per-URL suggestion (not domain-wide or
- * path-type) that is not already OUTDATED or FIXED, not deployed at the edge, and not
- * covered by an active domain-wide deployment. Those states are either already resolved,
- * off the Current tab, or otherwise protected — excluded from both the count and eviction.
+ * path-type) that is not already OUTDATED or FIXED, not deployed at the edge, not covered by
+ * an active domain-wide deployment, not in a protected status (see CAP_PROTECTED_STATUSES),
+ * and not manually edited by a customer. Those states are either already resolved, off the
+ * Current tab, reflect a deliberate decision, or are otherwise protected — excluded from
+ * both the count and eviction.
  * @param {Object} suggestion - Suggestion entity
  * @returns {boolean}
  */
@@ -37,8 +56,10 @@ function isCapEligibleSuggestion(suggestion) {
     && !isPathSuggestionData(data)
     && status !== Suggestion.STATUSES.OUTDATED
     && status !== Suggestion.STATUSES.FIXED
+    && !CAP_PROTECTED_STATUSES.includes(status)
     && !data.edgeDeployed
-    && !data.coveredByDomainWide;
+    && !data.coveredByDomainWide
+    && !isManuallyEditedSuggestion(suggestion);
 }
 
 /**
