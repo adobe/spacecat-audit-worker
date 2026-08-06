@@ -19,16 +19,6 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    When `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, the runner tries the Semrush
    loader first; if it yields **no usable result** it falls back to the legacy
    `loadBrandPresenceData` (PostgREST → SharePoint). Flag off = legacy only.
-1b. **Gate 1 is enforced in code, not just documented.** Neither this flag nor the
-   per-run Slack override (Decision 6) has any effect unless
-   `OFFSITE_SEMRUSH_GATE1_VERIFIED=true` in that environment — a second,
-   deploy-controlled flag flipped only once LLMO-6709 (auth verified end-to-end, no
-   token leakage into trace spans, org-scoping confirmed) actually closes there. A
-   request that is blocked by this gate is logged and (when a Slack thread exists)
-   posted to it, naming which knob requested Semrush, rather than silently honored.
-   This exists because Slack-trigger access is a much larger population than
-   deploy access, and a markdown sentence cannot stop a Slack command from setting
-   a boolean at runtime.
 2. **"No usable result" = fall back, at the SURFACE granularity.** The loader
    returns `null` — and the handler falls back — on: no org/brand, transient
    brand-resolution failure, no date window, IMS-token failure, or when a **whole
@@ -71,11 +61,15 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 5. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
    (matching the legacy `handler.js` classify) so non-thread Reddit and lookalike
    YouTube hosts are dropped identically.
-6. **Per-run override via Slack custom arg.** `enableSemrush` (`auditContext.messageData.enableSemrush`,
-   resolved by `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
+6. **Per-run override via Slack custom arg — how the first live runs get tested.**
+   `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
+   `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
    `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
    `true` forces the Semrush attempt on for that run, `false` forces legacy even when the
-   env var is on. This is the same tri-state mechanism as the existing `enableBrandProfile`
+   env var is on, anything else (absent, empty, invalid) falls through to the env var
+   unchanged. This is the intended mechanism for verifying LLMO-6709 against the real
+   Semrush proxy on one site at a time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED`
+   is flipped fleet-wide. Same tri-state mechanism as the existing `enableBrandProfile`
    override. It is a **per-run** override only (one Slack invocation), not the persistent
    **per-site** cutover tracked under LLMO-6711.
 
@@ -103,11 +97,10 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 ## Enablement runbook (ordered gates before turning the flag on anywhere)
 
 The flag-off path is safe to merge now. Before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`
-in **any** environment, close these in order (LLMO-6709 → 6711). The per-run Slack override
-(`enableSemrush`, Decision 6) exercises this identical code path and is code-gated behind the
-same gate 1 precondition below (Decision 1b, `OFFSITE_SEMRUSH_GATE1_VERIFIED`) — it is a
-controlled, single-run instrument for verifying LLMO-6709 on one site once that flag is set,
-not a way to light up the unverified path in production ahead of sign-off.
+fleet-wide in any environment, close these in order (LLMO-6709 → 6711). The per-run Slack
+override (`enableSemrush`, Decision 6) is the intended tool for step 1 below: use it to run a
+single live request against the real Semrush proxy on one site and confirm the auth path
+works end-to-end, before flipping the env var for the whole fleet.
 
 1. **Auth/authz verified (LLMO-6709).** Confirm the worker's **service** IMS token is
    accepted by the Semrush proxy end-to-end (it is forwarded unchanged; the proxy is designed
@@ -115,9 +108,7 @@ not a way to light up the unverified path in production ahead of sign-off.
    into traces/spans (service-bearer leak). Confirm the token is org-scoped, or document that
    tenant isolation is fully delegated to the proxy's per-caller org authz — the worker sends
    `spaceCatId = site.getOrganizationId()` with a broad service token and asserts no boundary
-   itself (confused-deputy surface). Once confirmed, set `OFFSITE_SEMRUSH_GATE1_VERIFIED=true`
-   in that environment — this is the actual code-level switch gating both the fleet flag and
-   the per-run Slack override (Decision 1b); nothing before this step can produce real traffic.
+   itself (confused-deputy surface).
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
 3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per surface vs legacy.
 4. **Fleet enable** per environment (the flag is environment-global) — **US markets only**
@@ -132,8 +123,8 @@ The IMS scheme is justified here (the Elements proxy must forward a bearer to Se
 **two base-URL env vars + two auth schemes** can drift (one caller repointed to stage/prod, the
 other not → IMS traffic to an untrusted issuer → 401 → silent legacy fallback). Documented as
 debt: pick one base-URL env var and one api-service client convention (a shared helper) **before
-the `cited-domains` follow-up adds a third caller** that copies whichever it finds first.
-Tracked under a follow-up ticket (TBD) rather than left as an unticketed prose condition.
+the `cited-domains` follow-up adds a third caller** that copies whichever it finds first. A
+tracking ticket will be filed before this debt is resolved; not required to close this PR.
 
 ## Alternatives Considered
 

@@ -905,35 +905,18 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   let fallbackReason;
   let semrushDiagnostics;
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
-  const semrushRequested = enableSemrushOverride
+  // This is the mechanism for testing the Semrush path live on one site/run before
+  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR).
+  const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
-  const decidedBy = enableSemrushOverride !== undefined ? 'slack-override' : 'env-var';
-  // Gate 1 (LLMO-6709: the worker's service IMS token verified end-to-end against the
-  // real Semrush proxy, no token leakage into trace spans, org-scoping confirmed) must
-  // close in an environment before ANY Semrush attempt runs there — enforced here in
-  // code, not just documented in the ADR. Without this, the per-run Slack override
-  // (`enableSemrush`) could force a real, unverified request against production the
-  // moment someone with Slack access sets it — a much larger population than the
-  // deploy access that controls OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED itself.
-  const gate1Verified = context.env?.OFFSITE_SEMRUSH_GATE1_VERIFIED === 'true';
-  const semrushEnabled = semrushRequested && gate1Verified;
   // Logged unconditionally (including the off case) so a Splunk search on siteId
   // alone shows whether this run even attempted Semrush and, if so, which knob
   // decided that (Slack per-run override vs the env var) — the two can disagree.
   log.info(`${LOG_PREFIX} Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
-    siteId, semrushRequested, gate1Verified, semrushEnabled, decidedBy,
+    siteId,
+    semrushEnabled,
+    decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
   });
-  if (semrushRequested && !gate1Verified) {
-    log.warn(`${LOG_PREFIX} Semrush requested (${decidedBy}) but gate 1 (LLMO-6709) is not marked verified via OFFSITE_SEMRUSH_GATE1_VERIFIED in this environment — using the legacy source`, {
-      siteId, decidedBy,
-    });
-    await postMessageOptional(
-      context,
-      channelId,
-      `*offsite-brand-presence* for *${baseURL}* — :no_entry: Semrush was requested (${decidedBy}) but is gated off in this environment until LLMO-6709 (auth verification) closes. Using the legacy source.`,
-      { threadTs },
-    );
-  }
   if (semrushEnabled) {
     // Semrush-first: the loader returns the same allUrls shape, with
     // count = exact citations. Everything downstream (selectTopUrls -> DRS)
