@@ -13,7 +13,7 @@
 import rs from 'text-readability';
 import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
-import { saveIntermediateResults } from '../../preflight/utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from '../../preflight/utils.js';
 
 import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
@@ -157,6 +157,9 @@ export default async function readability(context, auditContext) {
     site, job, log,
   } = context;
   let isProcessing = false;
+  // Tracks whether the suggest-step Mystique dispatch threw, so the structured completion line
+  // can report status=fail (the readability audit's one hard failure mode).
+  let suggestSendFailed = false;
   const {
     previewUrls,
     step,
@@ -423,6 +426,7 @@ export default async function readability(context, auditContext) {
             + 'readability issues already have suggestions');
         }
       } catch (error) {
+        suggestSendFailed = true;
         log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
           error: error.message,
           stack: error.stack,
@@ -470,6 +474,16 @@ export default async function readability(context, auditContext) {
     `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
     + `Readability audit completed in ${readabilityElapsed} seconds`,
   );
+
+  // Structured completion line (info + [preflight-audit] prefix + pfauditmetric marker) so the
+  // SITES-49489 dashboard picks up readability. fail = the suggest-step Mystique dispatch threw.
+  const structured = formatStructuredAuditLog({
+    audit: PREFLIGHT_READABILITY,
+    status: suggestSendFailed ? 'fail' : 'ok',
+    durationMs: readabilityEndTime - readabilityStartTime,
+    error: suggestSendFailed ? 'Mystique readability suggestion dispatch failed' : undefined,
+  });
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Readability audit completed in ${readabilityElapsed} seconds.${structured}`);
 
   timeExecutionBreakdown.push({
     name: auditStepName,

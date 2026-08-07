@@ -14,7 +14,7 @@ import { createHash } from 'crypto';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { getObjectFromKey, getObjectMetadataUsingPrefix } from '../utils/s3-utils.js';
 import { generateAccessibilityFilename } from './accessibility.js';
@@ -289,6 +289,12 @@ export async function processFormAccessibilityOpportunities(
       );
     }
 
+    // Track outcome for the structured completion line: a Mystique round-trip that times out
+    // (SITES-49003) leaves the fresh result file(s) missing, and per-form processing can throw -
+    // both mean the audit did not fully succeed.
+    let formsWithData = 0;
+    let formErrors = 0;
+
     // Process each detected form's accessibility result file (a page can have
     // more than one entry when it has multiple forms)
     for (const { form: url, formSource } of resolvedFormEntries) {
@@ -313,6 +319,7 @@ export async function processFormAccessibilityOpportunities(
           log.warn(`[preflight-audit] ${siteId} No form accessibility data found for ${url} at key: ${fileKey}`);
           // Skip to next URL if no data found
         } else {
+          formsWithData += 1;
           log.info(`[preflight-audit] ${siteId} Successfully loaded form accessibility data for ${url}`);
 
           // Get the page result for this URL
@@ -342,6 +349,7 @@ export async function processFormAccessibilityOpportunities(
           }
         }
       } catch (error) {
+        formErrors += 1;
         log.error(`[preflight-audit] Error processing accessibility file for ${url}: ${error.message}`, error);
 
         // Add error opportunity to the audit
@@ -366,10 +374,19 @@ export async function processFormAccessibilityOpportunities(
     const accessibilityElapsed = ((accessibilityEndTime - accessibilityStartTime) / 1000)
       .toFixed(2);
 
-    log.info(
-      `[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}.
-Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
-    );
+    // Structured completion line with the pfauditmetric marker so the SITES-49489 dashboard picks
+    // up form-accessibility. fail = the Mystique round-trip timed out (fresh result file(s)
+    // missing - the SITES-49003 signature) or a form threw during processing.
+    const failed = formErrors > 0 || formsWithData < resolvedFormEntries.length;
+    const structured = formatStructuredAuditLog({
+      audit: PREFLIGHT_FORM_ACCESSIBILITY,
+      status: failed ? 'fail' : 'ok',
+      durationMs: accessibilityEndTime - accessibilityStartTime,
+      error: failed
+        ? `${formsWithData}/${resolvedFormEntries.length} forms returned data, ${formErrors} processing error(s)`
+        : undefined,
+    });
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Form Accessibility audit completed in ${accessibilityElapsed} seconds.${structured}`);
 
     timeExecutionBreakdown.push({
       name: 'form-accessibility-processing',
