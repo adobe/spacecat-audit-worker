@@ -1,3 +1,10 @@
+## [1.516.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.2...v1.516.3) (2026-08-07)
+
+
+### Performance Improvements
+
+* **preflight:** emit pfauditmetric marker for accessibility, form-accessibility, readability ([#2865](https://github.com/adobe/spacecat-audit-worker/issues/2865)) ([38de139](https://github.com/adobe/spacecat-audit-worker/commit/38de13922dbae1c3b0ad48425dcd327b88655345))
+
 ## [1.516.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.1...v1.516.2) (2026-08-07)
 
 
