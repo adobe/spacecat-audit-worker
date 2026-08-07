@@ -2360,15 +2360,18 @@ describe('Preflight Audit', () => {
         });
 
         // Preflight-scoped nav tuning: loosen waitUntil so heavy pages don't
-        // 45s-timeout into empty results (SITES-49365). ASO scans are unaffected.
+        // 45s-timeout into empty results (SITES-49365), plus a bounded
+        // network-idle wait so axe doesn't under-report (SITES-49491). ASO
+        // scans are unaffected.
         expect(message.options.accessibilityScrapingParams).to.deep.equal({
           waitUntil: 'domcontentloaded',
+          networkIdleTimeout: 15000,
           additionalTimeout: 3000,
         });
 
         // Info-level marker must be emitted so prod Splunk can prove it is live.
         expect(log.info).to.have.been.calledWithMatch(
-          'Accessibility scrape nav tuned: waitUntil=domcontentloaded settleMs=3000',
+          'Accessibility scrape nav tuned: waitUntil=domcontentloaded networkIdleMs=15000 settleMs=3000',
         );
 
         expect(log.debug).to.have.been.calledWith(
