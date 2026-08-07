@@ -1,3 +1,10 @@
+## [1.515.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.5...v1.515.6) (2026-08-07)
+
+
+### Bug Fixes
+
+* **preflight:** bounded network-idle settle for a11y scrape (SITES-49491) ([#2861](https://github.com/adobe/spacecat-audit-worker/issues/2861)) ([2d3e6f2](https://github.com/adobe/spacecat-audit-worker/commit/2d3e6f2271479abc7f6d0eacbddf935e50cfa904))
+
 ## [1.515.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.4...v1.515.5) (2026-08-07)
 
 
