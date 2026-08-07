@@ -1,3 +1,10 @@
+# [1.516.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.6...v1.516.0) (2026-08-07)
+
+
+### Features
+
+* **preflight:** add structured audit=/status=/duration_ms= logging to check handlers ([#2862](https://github.com/adobe/spacecat-audit-worker/issues/2862)) ([173bb45](https://github.com/adobe/spacecat-audit-worker/commit/173bb4551bb52a924cd20499c2dfc6913496df7a))
+
 ## [1.515.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.5...v1.515.6) (2026-08-07)
 
 
