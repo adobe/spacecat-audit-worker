@@ -51,6 +51,26 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         }
         return false;
       });
+
+      if (!opportunity) {
+        // eslint-disable-next-line max-len
+        const resolvedOpportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.RESOLVED);
+        const resolvedOpportunity = [...resolvedOpportunities]
+          .sort((a, b) => new Date(b.getUpdatedAt?.() ?? 0) - new Date(a.getUpdatedAt?.() ?? 0))
+          .find((oppty) => {
+            if (oppty.getType() === auditType) {
+              if (comparisonFn && typeof comparisonFn === 'function') {
+                return comparisonFn(oppty, opportunityInstance);
+              }
+              return true;
+            }
+            return false;
+          });
+        if (resolvedOpportunity) {
+          await resolvedOpportunity.setStatus(Oppty.STATUSES.NEW);
+          opportunity = resolvedOpportunity;
+        }
+      }
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
@@ -66,6 +86,15 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
 
   try {
     if (!opportunity) {
+      // SITES-49175 — stamp scopeType='site' + scopeId=siteId on every
+      // new site-scoped opportunity. Historically these fields were
+      // left NULL, which diverged from the V2 Mystique projector shape
+      // (`scopeType='site', scopeId=<siteId>`) and let Postgres unique-
+      // index NULL semantics permit two active rows for the same
+      // (siteId, type). Making the scope explicit unblocks the partial
+      // unique index on the data-service side. Requires the SITE entry
+      // in Oppty.SCOPE_TYPES (spacecat-shared-data-access 4.17+ once
+      // https://github.com/adobe/spacecat-shared/pull/1866 releases).
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,
@@ -77,11 +106,27 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         guidance: opportunityInstance.guidance,
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
+        scopeType: Oppty.SCOPE_TYPES.SITE,
+        scopeId: auditData.siteId,
       };
       opportunity = await Opportunity.create(opportunityData);
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit
+      // touch. Existing customer opportunities from before this fix were
+      // written with scopeType/scopeId NULL, which diverges from the V2
+      // Mystique projector shape and lets Postgres unique-index NULL
+      // semantics permit a duplicate active row for the same
+      // (siteId, type). Stamping both fields here means each scheduled
+      // audit run repairs one row's scope, so the fleet drains organically
+      // over a single audit cycle — no one-shot backfill required (though
+      // a backfill still gives faster fleet-wide convergence). Safe when
+      // both fields are already populated: setter no-ops when the value
+      // matches, and the co-presence guard in Opportunity.save() only
+      // trips when one is set without the other (both set here).
+      opportunity.setScopeType(Oppty.SCOPE_TYPES.SITE);
+      opportunity.setScopeId(auditData.siteId);
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
           || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
