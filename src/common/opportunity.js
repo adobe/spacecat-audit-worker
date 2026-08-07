@@ -55,15 +55,17 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       if (!opportunity) {
         // eslint-disable-next-line max-len
         const resolvedOpportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.RESOLVED);
-        const resolvedOpportunity = resolvedOpportunities.find((oppty) => {
-          if (oppty.getType() === auditType) {
-            if (comparisonFn && typeof comparisonFn === 'function') {
-              return comparisonFn(oppty, opportunityInstance);
+        const resolvedOpportunity = [...resolvedOpportunities]
+          .sort((a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()))
+          .find((oppty) => {
+            if (oppty.getType() === auditType) {
+              if (comparisonFn && typeof comparisonFn === 'function') {
+                return comparisonFn(oppty, opportunityInstance);
+              }
+              return true;
             }
-            return true;
-          }
-          return false;
-        });
+            return false;
+          });
         if (resolvedOpportunity) {
           await resolvedOpportunity.setStatus(Oppty.STATUSES.NEW);
           opportunity = resolvedOpportunity;
