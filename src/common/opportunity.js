@@ -106,7 +106,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         guidance: opportunityInstance.guidance,
         tags: opportunityInstance.tags,
         data: opportunityInstance.data,
-        scopeType: 'site',
+        scopeType: Oppty.SCOPE_TYPES.SITE,
         scopeId: auditData.siteId,
       };
       opportunity = await Opportunity.create(opportunityData);
@@ -125,7 +125,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       // both fields are already populated: setter no-ops when the value
       // matches, and the co-presence guard in Opportunity.save() only
       // trips when one is set without the other (both set here).
-      opportunity.setScopeType('site');
+      opportunity.setScopeType(Oppty.SCOPE_TYPES.SITE);
       opportunity.setScopeId(auditData.siteId);
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
