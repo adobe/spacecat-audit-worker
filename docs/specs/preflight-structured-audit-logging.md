@@ -24,11 +24,16 @@ breakdown and top-error panels need dependable, queryable fields.
 ## Goals
 
 1. Emit one machine-parseable completion line per check with stable fields:
-   `audit=<name> status=<ok|fail> duration_ms=<n> [error="<message>"]`.
-2. Make the fields Splunk-auto-extractable (logfmt `key=value`) — no SPL-side `rex` needed.
-3. Attribute failures to the specific check for `canonical`/`links` (add local `try/catch` that
+   `pfauditmetric audit=<name> status=<ok|fail> duration_ms=<n> [error="<message>"]`.
+2. Make the fields cheaply queryable. **Correction (see note below): the sourcetype is
+   `KV_MODE=json`, so these `key=value` tokens live inside the JSON `message` string and are NOT
+   auto-extracted — the dashboard `rex`-extracts them.** The logfmt shape keeps that `rex` trivial.
+3. Lead the suffix with a rare, breaker-free marker token (`pfauditmetric`) so the dashboard can
+   anchor on a tiny postings list — without it, a wide-window search is unusably slow (see
+   "Query performance" below).
+4. Attribute failures to the specific check for `canonical`/`links` (add local `try/catch` that
    logs the structured line and rethrows — preserving today's fail-hard behavior).
-4. Ensure the lines are prod-visible (emit at `log.info`, not `debug`).
+5. Ensure the lines are prod-visible (emit at `log.info`, not `debug`).
 
 ## Non-Goals
 
@@ -51,8 +56,22 @@ A shared helper `formatStructuredAuditLog({ audit, status, durationMs, error })`
 existing completion message:
 
 ```
-[preflight-audit] site: <id>, job: <id>, step: <step>. Canonical audit completed in 0.12 seconds. audit=canonical status=ok duration_ms=120
+[preflight-audit] site: <id>, job: <id>, step: <step>. Canonical audit completed in 0.12 seconds. pfauditmetric audit=canonical status=ok duration_ms=120
 ```
+
+### Query performance — why the `pfauditmetric` marker exists
+
+The dashboard groups by `audit`/`status`/`duration_ms`, which are `rex`-extracted from `message`
+at search time, so Splunk's index cannot help with them — to *find* the lines it must use the
+search terms. Every otherwise-natural anchor (`audit`, `preflight`, `duration_ms`) is a **common**
+term in the `dx_aem_sites_spacecat_backend_*` sourcetype (it carries every SpaceCat Lambda/worker
+log; `api-service` alone emits `duration_ms` on nearly every request), so a wide-window search has
+to intersect enormous postings lists across a busy shared index — a 14-day search hangs, even a
+bare `count`. `pfauditmetric` is a made-up token that appears on **only** these completion lines,
+so it is a single rare indexed term (all lowercase, no Splunk breakers) with a tiny postings list.
+Anchoring the dashboard base search on it (`... "pfauditmetric" | rex ...`) makes the search cost
+proportional to preflight volume alone — fast at any window. For very high preflight volume or
+multi-month views, report acceleration / a summary index is the further step (needs Splunk perms).
 
 | Field | Meaning |
 |-------|---------|
@@ -98,17 +117,25 @@ imprecision documented here.
 
 ## Success Criteria
 
-- Every check above emits `audit=<name> status=<ok|fail> duration_ms=<n>` on completion, plus
-  `error="<message>"` on failure, at `log.info`.
+- Every check above emits `pfauditmetric audit=<name> status=<ok|fail> duration_ms=<n>` on
+  completion, plus `error="<message>"` on failure, at `log.info`.
 - `canonical`/`links` failures are attributable to the specific check, not just the job-level catch.
 - The `error=` value never contains a raw newline.
-- Splunk auto-extracts `audit`, `status`, `duration_ms`, `error` with no query-side regex.
+- The dashboard anchors on `pfauditmetric` and `rex`-extracts `audit`/`status`/`duration_ms`/`error`
+  from `message` (the sourcetype is `KV_MODE=json` — no auto-extraction), and a wide-window
+  (e.g. 14-day) query returns without hanging.
 - 100% unit-test coverage on all touched files, including a dedicated
-  `formatStructuredAuditLog` suite (happy path, newline/quote/backslash escaping, truncation,
-  fail-without-error).
+  `formatStructuredAuditLog` suite (marker prefix, happy path, newline/quote/backslash escaping,
+  truncation, fail-without-error).
 
 ## Downstream
 
-SITES-49489 builds the Splunk Dashboard Studio board on these fields:
-`index=dx_aem_engineering sourcetype=dx_aem_sites_spacecat_backend_prod "[preflight-audit]" audit=* | stats count by audit status`
-and a top-error panel keyed on `audit` + `error`.
+SITES-49489 builds the Splunk classic dashboard (`aso_preflight_status`) on these fields. Base
+search anchors on the marker and `rex`-extracts the fields from `message`:
+```
+index=dx_aem_engineering sourcetype=dx_aem_sites_spacecat_backend_prod "pfauditmetric"
+| rex field=message "audit=(?<audit>\S+)\s+status=(?<status>\S+)\s+duration_ms=(?<duration_ms>\d+)"
+| rex field=message "error=\"(?<error>.*)\""
+| stats count by audit status
+```
+plus a top-error panel keyed on `audit` + `error`.
