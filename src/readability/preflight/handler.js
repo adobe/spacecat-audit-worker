@@ -157,8 +157,13 @@ export default async function readability(context, auditContext) {
     site, job, log,
   } = context;
   let isProcessing = false;
-  // Tracks whether the suggest-step Mystique dispatch threw, so the structured completion line
-  // can report status=fail (the readability audit's one hard failure mode).
+  // Failure signals for the structured completion line. Unlike accessibility/form-accessibility
+  // (which poll S3 for an expected set of result files, so they compare found-vs-expected),
+  // readability scores in-process from the scrapedObjects it is handed - there is no "expected
+  // files/pages" count to fall short of. Its degradation modes are therefore: a per-element
+  // scoring error (scoringErrors), or the suggest-step Mystique dispatch throwing
+  // (suggestSendFailed).
+  let scoringErrors = 0;
   let suggestSendFailed = false;
   const {
     previewUrls,
@@ -205,6 +210,10 @@ export default async function readability(context, auditContext) {
 
     let processedElements = 0;
     let poorReadabilityCount = 0;
+    // Per-page scoring-error tally; rolled up into the function-level scoringErrors after this
+    // page's analyses settle. Kept page-local so the in-loop analyzeReadability closure only
+    // mutates loop-scoped state (avoids no-loop-func on the shared counter).
+    let pageScoringErrors = 0;
     const detectedLanguages = new Set(); // Track languages actually detected
 
     // Helper function to detect if text is in a supported language
@@ -264,6 +273,7 @@ export default async function readability(context, auditContext) {
           });
         }
       } catch (error) {
+        pageScoringErrors += 1;
         const errorContext = `element with index ${elementIndex}`;
         log.error(
           `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
@@ -352,6 +362,10 @@ export default async function readability(context, auditContext) {
     // Execute all readability analyses in parallel
     // eslint-disable-next-line no-await-in-loop
     await Promise.all(readabilityPromises);
+
+    // Roll this page's scoring errors into the run-level total (mutated here in the loop body,
+    // not inside the in-loop analyze closure, to satisfy no-loop-func).
+    scoringErrors += pageScoringErrors;
 
     const detectedLanguagesList = detectedLanguages.size > 0
       ? Array.from(detectedLanguages).join(', ')
@@ -470,18 +484,17 @@ export default async function readability(context, auditContext) {
   const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
   const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
 
-  log.debug(
-    `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
-    + `Readability audit completed in ${readabilityElapsed} seconds`,
-  );
-
-  // Structured completion line (info + [preflight-audit] prefix + pfauditmetric marker) so the
-  // SITES-49489 dashboard picks up readability. fail = the suggest-step Mystique dispatch threw.
+  // Single structured completion line (info + [preflight-audit] prefix + pfauditmetric marker) so
+  // the SITES-49489 dashboard picks up readability, consistent with the other two handlers. fail =
+  // any per-element scoring error, or the suggest-step Mystique dispatch threw.
+  const failed = scoringErrors > 0 || suggestSendFailed;
   const structured = formatStructuredAuditLog({
     audit: PREFLIGHT_READABILITY,
-    status: suggestSendFailed ? 'fail' : 'ok',
+    status: failed ? 'fail' : 'ok',
     durationMs: readabilityEndTime - readabilityStartTime,
-    error: suggestSendFailed ? 'Mystique readability suggestion dispatch failed' : undefined,
+    error: failed
+      ? `readability degraded (scoring errors: ${scoringErrors}, suggestion dispatch failed: ${suggestSendFailed})`
+      : undefined,
   });
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Readability audit completed in ${readabilityElapsed} seconds.${structured}`);
 
