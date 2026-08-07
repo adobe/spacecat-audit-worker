@@ -231,7 +231,9 @@ export default async function canonical(context, auditContext) {
       audit: PREFLIGHT_CANONICAL, status, durationMs: endTime - startTime, error: errorMessage,
     });
 
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${elapsed} seconds.${structured}`);
+    // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+    // the per-audit dashboard would have no canonical data. Matches the DOM-based block's level.
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${elapsed} seconds.${structured}`);
 
     timeExecutionBreakdown.push({
       name: 'canonical',

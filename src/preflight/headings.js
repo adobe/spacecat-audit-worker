@@ -314,7 +314,9 @@ export default async function headings(context, auditContext) {
     durationMs: headingsEndTime - headingsStartTime,
     error: errorMessage,
   });
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds.${headingsStructured}`);
+  // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+  // the per-audit dashboard would have no headings data. Matches the DOM-based block's level.
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds.${headingsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'headings',

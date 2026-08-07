@@ -158,7 +158,9 @@ export default async function metatags(context, auditContext) {
     durationMs: metatagsEndTime - metatagsStartTime,
     error: errorMessage,
   });
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds.${metatagsStructured}`);
+  // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+  // the per-audit dashboard would have no metatags data. Matches the DOM-based block's level.
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds.${metatagsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'metatags',

@@ -57,7 +57,14 @@ export function formatStructuredAuditLog({
 }) {
   const parts = [`audit=${audit}`, `status=${status}`, `duration_ms=${durationMs}`];
   if (status === 'fail' && error) {
-    const escaped = String(error).replace(/\\/g, '\\\\').replace(/"/g, '\\"').slice(0, 500);
+    // Collapse newlines/CRs to spaces BEFORE quoting: a raw newline inside the quoted value
+    // would split the log entry into two lines and corrupt Splunk's per-line field extraction
+    // (error messages from stack traces / multi-line assertions commonly contain them).
+    const escaped = String(error)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/[\r\n]+/g, ' ')
+      .slice(0, 500);
     parts.push(`error="${escaped}"`);
   }
   return ` ${parts.join(' ')}`;

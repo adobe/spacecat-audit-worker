@@ -222,13 +222,26 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
       expect(context.log.error).to.have.been.calledOnce;
       expect(context.log.error.firstCall.args[0]).to.include('Links audit failed');
 
-      const completionCall = context.log.debug.getCalls()
+      const completionCall = context.log.info.getCalls()
         .find((c) => c.args[0].includes('Links audit completed'));
       expect(completionCall).to.exist;
       expect(completionCall.args[0]).to.match(/audit=links status=fail duration_ms=\d+ error="links-checks boom"/);
 
       const breakdown = auditCtx.timeExecutionBreakdown.find((e) => e.name === 'links');
       expect(breakdown).to.exist;
+    });
+
+    it('logs a structured status=ok line at info level on the happy path', async () => {
+      const context = buildContext({ getHandlers: () => ({}) });
+      const auditCtx = buildAuditContext();
+
+      await linksRunner(context, auditCtx);
+
+      const completionCall = context.log.info.getCalls()
+        .find((c) => c.args[0].includes('Links audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=links status=ok duration_ms=\d+/);
+      expect(completionCall.args[0]).to.not.include('error=');
     });
   });
 });

@@ -393,13 +393,29 @@ describe('Preflight Canonical Audit', () => {
       expect(ctx.log.error).to.have.been.calledOnce;
       expect(ctx.log.error.getCall(0).args[0]).to.include('Canonical audit failed');
 
-      const completionCall = ctx.log.debug.getCalls()
+      const completionCall = ctx.log.info.getCalls()
         .find((c) => c.args[0].includes('Canonical audit completed'));
       expect(completionCall).to.exist;
       expect(completionCall.args[0]).to.match(/audit=canonical status=fail duration_ms=\d+ error="/);
 
       const breakdown = auditCtx.timeExecutionBreakdown.find((e) => e.name === 'canonical');
       expect(breakdown).to.exist;
+    });
+
+    it('logs a structured status=ok line at info level on the happy path', async () => {
+      const ctx = buildContext();
+      const auditCtx = buildAuditContext([buildScrapedObject({
+        exists: true, count: 1, href: PAGE_URL, inHead: true,
+      })]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const completionCall = ctx.log.info.getCalls()
+        .find((c) => c.args[0].includes('Canonical audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=canonical status=ok duration_ms=\d+/);
+      // No error= token on the success path.
+      expect(completionCall.args[0]).to.not.include('error=');
     });
   });
 });

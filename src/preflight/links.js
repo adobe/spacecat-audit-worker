@@ -237,7 +237,6 @@ export default async function links(context, auditContext) {
         audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
       }
     });
-    // Check for insecure links in each scraped page
   } catch (error) {
     auditStatus = 'fail';
     auditErrorMessage = error.message;
@@ -254,7 +253,9 @@ export default async function links(context, auditContext) {
       error: auditErrorMessage,
     });
 
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds.${structured}`);
+    // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+    // the per-audit dashboard would have no links data. Matches the DOM-based block's level.
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds.${structured}`);
 
     timeExecutionBreakdown.push({
       name: 'links',
