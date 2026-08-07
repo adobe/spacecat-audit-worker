@@ -1,3 +1,10 @@
+## [1.515.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.4...v1.515.5) (2026-08-07)
+
+
+### Bug Fixes
+
+* **deps:** bump spacecat-shared-data-access to 4.17.0 (SITES-49175) ([#2859](https://github.com/adobe/spacecat-audit-worker/issues/2859)) ([b6a9f2d](https://github.com/adobe/spacecat-audit-worker/commit/b6a9f2da086f6e80376472e698cf92ae0cd19453))
+
 ## [1.515.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.3...v1.515.4) (2026-08-07)
 
 
