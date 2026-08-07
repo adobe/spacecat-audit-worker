@@ -380,4 +380,26 @@ describe('Preflight Canonical Audit', () => {
       expect(ctx.dataAccess.AsyncJob.findById).to.have.been.calledWith('job-123');
     });
   });
+
+  describe('error handling', () => {
+    it('logs a structured failure line, still records timing, and rethrows', async () => {
+      const ctx = buildContext();
+      // Empty audits map: `audits.get(url)` resolves to undefined, so `.audits.push(...)`
+      // throws inside the try block — exercises the catch/finally without invasive mocking.
+      const auditCtx = buildAuditContext([], { audits: new Map() });
+
+      await expect(canonicalHandler(ctx, auditCtx)).to.be.rejected;
+
+      expect(ctx.log.error).to.have.been.calledOnce;
+      expect(ctx.log.error.getCall(0).args[0]).to.include('Canonical audit failed');
+
+      const completionCall = ctx.log.debug.getCalls()
+        .find((c) => c.args[0].includes('Canonical audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=canonical status=fail duration_ms=\d+ error="/);
+
+      const breakdown = auditCtx.timeExecutionBreakdown.find((e) => e.name === 'canonical');
+      expect(breakdown).to.exist;
+    });
+  });
 });

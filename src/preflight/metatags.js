@@ -12,7 +12,7 @@
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
@@ -64,6 +64,8 @@ export default async function metatags(context, auditContext) {
 
   const metatagsStartTime = Date.now();
   const metatagsStartTimestamp = new Date().toISOString();
+  let status = 'ok';
+  let errorMessage;
   // Create metatags audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
@@ -142,13 +144,21 @@ export default async function metatags(context, auditContext) {
       });
     });
   } catch (error) {
+    status = 'fail';
+    errorMessage = error.message;
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit failed: ${error.message}`);
   }
 
   const metatagsEndTime = Date.now();
   const metatagsEndTimestamp = new Date().toISOString();
   const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+  const metatagsStructured = formatStructuredAuditLog({
+    audit: PREFLIGHT_METATAGS,
+    status,
+    durationMs: metatagsEndTime - metatagsStartTime,
+    error: errorMessage,
+  });
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds.${metatagsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'metatags',

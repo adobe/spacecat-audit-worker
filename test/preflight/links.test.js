@@ -203,4 +203,32 @@ describe('preflight/links - default runner: excludedElementClasses plumbing', ()
       ]);
     });
   });
+
+  describe('error handling', () => {
+    it('logs a structured failure line, still records timing, and rethrows', async () => {
+      runLinksChecksStub.rejects(new Error('links-checks boom'));
+      const context = buildContext({ getHandlers: () => ({}) });
+      const auditCtx = buildAuditContext();
+
+      let thrown;
+      try {
+        await linksRunner(context, auditCtx);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.exist;
+      expect(thrown.message).to.equal('links-checks boom');
+
+      expect(context.log.error).to.have.been.calledOnce;
+      expect(context.log.error.firstCall.args[0]).to.include('Links audit failed');
+
+      const completionCall = context.log.debug.getCalls()
+        .find((c) => c.args[0].includes('Links audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=links status=fail duration_ms=\d+ error="links-checks boom"/);
+
+      const breakdown = auditCtx.timeExecutionBreakdown.find((e) => e.name === 'links');
+      expect(breakdown).to.exist;
+    });
+  });
 });

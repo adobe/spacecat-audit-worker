@@ -42,3 +42,23 @@ export function getPrefixedPageAuthToken(site, token, options) {
     return `token ${token}`;
   }
 }
+
+/**
+ * Builds a logfmt-style `key=value` suffix for a per-audit completion log line, so Splunk's
+ * automatic field extraction picks up `audit`/`status`/`duration_ms`/`error` without any
+ * SPL-side regex. Appended to the existing `[preflight-audit] site: ..., job: ...` message,
+ * never replacing it.
+ * @param {{ audit: string, status: 'ok'|'fail', durationMs: number, error?: string }} params
+ * @returns {string} A leading-space-prefixed suffix, e.g.
+ *   ` audit=canonical status=ok duration_ms=120`
+ */
+export function formatStructuredAuditLog({
+  audit, status, durationMs, error,
+}) {
+  const parts = [`audit=${audit}`, `status=${status}`, `duration_ms=${durationMs}`];
+  if (status === 'fail' && error) {
+    const escaped = String(error).replace(/\\/g, '\\\\').replace(/"/g, '\\"').slice(0, 500);
+    parts.push(`error="${escaped}"`);
+  }
+  return ` ${parts.join(' ')}`;
+}
