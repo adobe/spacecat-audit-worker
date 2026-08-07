@@ -61,6 +61,8 @@ describe('Cited Analysis Guidance Handler', () => {
       setStatus: sandbox.stub(),
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sandbox.stub().resolves(),
     };
 

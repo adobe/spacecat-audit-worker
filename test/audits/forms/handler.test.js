@@ -108,6 +108,8 @@ describe('audit and send scraping step', () => {
         // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sinon.stub(),
         setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
       },
@@ -1357,6 +1359,8 @@ describe('process opportunity step', () => {
     // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
     setScopeType: sinon.stub(),
     setScopeId: sinon.stub(),
+    getScopeType: () => null,
+    getScopeId: () => null,
     save: sinon.stub(),
     getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
   };
@@ -1375,6 +1379,8 @@ describe('process opportunity step', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub(),
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     };
@@ -1424,6 +1430,8 @@ describe('process opportunity step', () => {
           // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
           setScopeType: sinon.stub(),
           setScopeId: sinon.stub(),
+          getScopeType: () => null,
+          getScopeId: () => null,
           save: sinon.stub(),
           getType: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         },

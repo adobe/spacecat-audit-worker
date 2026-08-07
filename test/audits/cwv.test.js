@@ -451,9 +451,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
-        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         getData: sandbox.stub().returns(opptyData),
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),

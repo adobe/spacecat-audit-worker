@@ -45,6 +45,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
     setScopeType: sandbox.stub(),
     setScopeId: sandbox.stub(),
+    getScopeType: () => null,
+    getScopeId: () => null,
     setData: sandbox.stub(),
     setGuidance: sandbox.stub(),
     save: sandbox.stub().resolvesThis(),
@@ -288,6 +290,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -335,6 +339,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -380,6 +386,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
       save: sandbox.stub().resolvesThis(),
@@ -504,6 +512,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
         // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         setData: sandbox.stub(),
         setGuidance: sandbox.stub(),
         save: sandbox.stub().resolvesThis(),

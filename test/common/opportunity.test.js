@@ -28,9 +28,11 @@ describe('convertToOpportunity — RESOLVED fallback', () => {
   const auditId = 'audit-id';
   const auditType = 'broken-backlinks';
 
-  const makeOpp = (type, updatedAt = '2024-01-01T00:00:00Z') => ({
+  const makeOpp = (type, updatedAt = '2024-01-01T00:00:00Z', scopeType = null, scopeId = null) => ({
     getType: () => type,
     getUpdatedAt: () => updatedAt,
+    getScopeType: () => scopeType,
+    getScopeId: () => scopeId,
     setStatus: sandbox.stub().resolves(),
     setAuditId: sandbox.stub(),
     getData: sandbox.stub().returns({}),
@@ -39,7 +41,7 @@ describe('convertToOpportunity — RESOLVED fallback', () => {
     setScopeType: sandbox.stub(),
     setScopeId: sandbox.stub(),
     save: sandbox.stub().resolves(),
-    getId: () => `opp-${updatedAt}`,
+    getId: () => `opp-${updatedAt}-${scopeType ?? 'null'}`,
   });
 
   const makeContext = ({ newOpps = [], resolvedOpps = [], createStub } = {}) => {
@@ -177,6 +179,40 @@ describe('convertToOpportunity — RESOLVED fallback', () => {
     );
 
     expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('prefers a scoped NEW opportunity over a null-scope one to avoid unique constraint collision', async () => {
+    const nullScope = makeOpp(auditType, '2024-01-01T00:00:00Z');
+    const scoped = makeOpp(auditType, '2024-02-01T00:00:00Z', 'site', siteId);
+    const context = makeContext({ newOpps: [nullScope, scoped] });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(result.getId()).to.equal(scoped.getId());
+    expect(scoped.setScopeType).to.have.been.called;
+    expect(nullScope.setScopeType).to.not.have.been.called;
+  });
+
+  it('uses the first null-scope NEW opportunity when no scoped row exists', async () => {
+    const nullScope = makeOpp(auditType, '2024-01-01T00:00:00Z');
+    const context = makeContext({ newOpps: [nullScope] });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(result.getId()).to.equal(nullScope.getId());
+    expect(nullScope.setScopeType).to.have.been.called;
   });
 });
 
