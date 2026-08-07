@@ -59,6 +59,14 @@ function rebaseUrl(url, preferredBase, log) {
   }
 }
 
+// Sites with no configured baseURL have no scope to restrict to, so nothing should be
+// filtered out. filterBySiteScope's own empty-siteBaseUrl handling is fail-closed (it
+// rejects everything), which is the right default for a scope check but not what
+// prerender wants here: an unconfigured baseURL should fall back to unfiltered top pages.
+function scopeToBaseUrl(urls, siteBaseUrl) {
+  return siteBaseUrl ? filterBySiteScope(urls, siteBaseUrl) : urls;
+}
+
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -557,7 +565,7 @@ export async function submitForScraping(context) {
       rebasedCsvUrls,
       { includeQueryParams: true },
     );
-    const explicitUrls = filterBySiteScope(mergedCsvUrls, siteBaseUrl);
+    const explicitUrls = scopeToBaseUrl(mergedCsvUrls, siteBaseUrl);
     const scopeFilteredCount = mergedCsvUrls.length - explicitUrls.length;
 
     log.info(`
@@ -631,7 +639,7 @@ export async function submitForScraping(context) {
       { includeQueryParams: true },
     );
     // Single site-scope filter on the merged candidate set (scoped here, not per-source).
-    finalUrls = filterBySiteScope(crossSlackDeduped, siteBaseUrl);
+    finalUrls = scopeToBaseUrl(crossSlackDeduped, siteBaseUrl);
     scopeFilteredCount = crossSlackDeduped.length - finalUrls.length;
     filteredCount = organicSlackFiltered + includedSlackFiltered;
     currentOrganic = organicSlackDeduped.length;
@@ -680,7 +688,7 @@ export async function submitForScraping(context) {
     );
     // Single site-scope filter on the merged candidate set, applied before the daily-batch
     // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
-    const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
+    const scopedUrls = scopeToBaseUrl(crossDeduped, siteBaseUrl);
     scopeFilteredCount = crossDeduped.length - scopedUrls.length;
     const batchedUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
 
