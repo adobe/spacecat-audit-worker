@@ -549,7 +549,7 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
 
           if (!scrapedData?.scrapeResult?.rawBody) {
             log.warn(`[ReadabilityAnalysis] No rawBody found in scraped data for URL: ${url}`);
-            return { issues: [], processed: false };
+            return { issues: [], processed: false, scrapedUrls: [] };
           }
 
           const { finalUrl, scrapeResult: { rawBody }, scrapedAt } = scrapedData;
@@ -557,9 +557,17 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
           // Extract page traffic data if available
           const traffic = extractTrafficFromKey() || 0;
 
+          // The URL a resulting suggestion is recorded under is finalUrl || url
+          // (see pageUrl in analyzePageContent). Surface every representation this
+          // page can be keyed by — both the requested scrape URL and the resolved
+          // finalUrl — so the caller's OUTDATED scoping matches whatever data.url
+          // was stored, even across redirects/normalization (LLMO-6761).
+          const resolvedUrl = finalUrl || url;
+          const scrapedUrls = resolvedUrl === url ? [url] : [url, resolvedUrl];
+
           const pageIssues = await analyzePageContent(
             rawBody,
-            finalUrl || url,
+            resolvedUrl,
             traffic,
             log,
             scrapedAt,
@@ -568,10 +576,11 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
           return {
             issues: pageIssues,
             processed: pageIssues.length > 0,
+            scrapedUrls,
           };
         } catch (error) {
           log.error(`[ReadabilityAnalysis] Error processing scraped data for URL ${url}: ${error.message}`);
-          return { issues: [], processed: false };
+          return { issues: [], processed: false, scrapedUrls: [] };
         }
       },
     );
@@ -581,10 +590,14 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
 
     // Collect all issues and count processed URLs
     const allReadabilityIssues = [];
+    const scrapedUrls = new Set();
     let urlsProcessed = 0;
 
     pageResults.forEach((result) => {
       allReadabilityIssues.push(...result.issues);
+      // Every per-page branch returns a scrapedUrls array (possibly empty), so no
+      // nullish guard is needed here.
+      result.scrapedUrls.forEach((u) => scrapedUrls.add(u));
       if (result.processed) {
         urlsProcessed += 1;
       }
@@ -604,6 +617,10 @@ export async function analyzePageReadability(s3Client, bucketName, scrapeResultP
         ? `Found ${limitedIssues.length} readability issues`
         : 'No readability issues found',
       readabilityIssues: limitedIssues,
+      // Every URL representation of the pages actually read this run (request URL
+      // + resolved finalUrl), including pages with zero issues — used to scope
+      // OUTDATED eligibility to the current scrape sample (LLMO-6761).
+      scrapedUrls: Array.from(scrapedUrls),
       urlsProcessed,
     };
   } catch (error) {

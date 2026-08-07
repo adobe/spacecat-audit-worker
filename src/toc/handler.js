@@ -757,6 +757,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     newData: tocSuggestions,
     context,
     buildKey,
+    // Preserve prior behavior: TOC edited suggestions stay protected from the
+    // OUTDATED sweep. Only FAQ/Summarization/Readability changed in LLMO-6761;
+    // TOC is out of scope, so keep its edited suggestions exempt (LLMO-6761).
+    protectEditedFromOutdated: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: suggestion.type,

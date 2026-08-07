@@ -998,6 +998,9 @@ describe('Headings Audit', () => {
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.headings);
       expect(syncCall.args[0]).to.have.property('context', context);
+      // headings edited suggestions stay protected from the OUTDATED sweep — out of
+      // the LLMO-6761 scope, so prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
   });
 
@@ -2686,6 +2689,9 @@ describe('Headings Audit', () => {
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.headings);
       expect(syncCall.args[0]).to.have.property('context', context);
+      // headings edited suggestions stay protected from the OUTDATED sweep — out of
+      // the LLMO-6761 scope, so prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
 
     it('tests mapNewSuggestion function execution in opportunityAndSuggestions', async () => {

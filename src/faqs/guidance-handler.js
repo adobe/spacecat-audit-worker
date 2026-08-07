@@ -330,6 +330,9 @@ async function addSuggestions(
     opportunity,
     newData: enhancedSuggestions,
     buildKey: (suggestion) => `${suggestion.url}::${suggestion.topic}::${suggestion.item.question}`,
+    // buildKey embeds the question text, so an edit drifts the key — protect edited
+    // suggestions from being falsely swept to OUTDATED on key mismatch (LLMO-6537).
+    protectEditedFromOutdated: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
@@ -346,9 +349,6 @@ async function addSuggestions(
       // Do not overwrite a customer-edited FAQ. isEdited is set only by the UI
       // edit-save action (never inferred from updatedBy); preserve the edited
       // question/answer and the write-once original snapshot (LLMO-6537).
-      // NOTE: an edited *question* also changes buildKey above, so the edited
-      // suggestion may not match on re-audit — the syncSuggestions OUTDATED-sweep
-      // filter (data-access.js) additionally exempts isEdited to keep it alive.
       if (existingData.isEdited) {
         return {
           ...existingData,

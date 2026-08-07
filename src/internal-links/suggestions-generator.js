@@ -400,6 +400,10 @@ export async function syncBrokenInternalLinksSuggestions({
     newDataKeys,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
+    // Preserve prior behavior: internal-links edited suggestions stay protected
+    // from the OUTDATED sweep. Only FAQ/Summarization/Readability changed in
+    // LLMO-6761; internal-links is out of scope (LLMO-6761).
+    protectEditedFromOutdated: true,
   });
 
   // SKIPPED and REJECTED suggestions are operator decisions that must not be

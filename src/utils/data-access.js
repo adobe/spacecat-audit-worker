@@ -246,6 +246,10 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {boolean} [params.outdateInProgress] - Defaults to false, preserving today's
  *   behavior of leaving IN_PROGRESS suggestions alone. Pass true to also outdate them
  *   when no longer detected.
+ * @param {boolean} [params.protectEditedFromOutdated] - When true, suggestions with
+ *   data.isEdited are excluded from the OUTDATED sweep. Use when buildKey includes
+ *   editable content (e.g. FAQs embed the question text) so an edit-driven key drift
+ *   doesn't falsely age out the suggestion (LLMO-6537).
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
@@ -256,6 +260,7 @@ export const handleOutdatedSuggestions = async ({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   outdateInProgress = false,
+  protectEditedFromOutdated = false,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
@@ -305,13 +310,12 @@ export const handleOutdatedSuggestions = async ({
       }
       return true;
     })
-    // Never age out a suggestion the customer edited. data.isEdited is the durable,
-    // edit-only flag set by the UI edit-save action (the TOC pattern) — the only
-    // signal used, never updatedBy (which non-edit actions like rollback or moving
-    // Ignored->New also mutate, so it can't tell an edit from a move). Also covers the
-    // case where buildKey drifts on edit (e.g. FAQ buildKey embeds the question), so
-    // the edited suggestion no longer matches any new item (LLMO-6537).
-    .filter((existing) => existing.getData?.()?.isEdited !== true);
+    // By default, edited suggestions (data.isEdited) are NOT protected from OUTDATED —
+    // if the issue is no longer detected, the edited suggestion should be cleared.
+    // Handlers where buildKey includes editable content (e.g. FAQs embed the question)
+    // opt in to protection via protectEditedFromOutdated, because an edit would drift
+    // the key and falsely look like "issue disappeared" (LLMO-6537).
+    .filter((existing) => !(protectEditedFromOutdated && existing.getData?.()?.isEdited === true));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -426,11 +430,13 @@ export const isTBYBSite = checkIsTBYBSite;
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
  * For REJECTED suggestions that appear again, preserves REJECTED status.
- * Customer-edited suggestions (`data.isEdited`, set by the UI edit-save action) are
- * protected from being aged out to OUTDATED and from reconcile-to-FIXED; on the
- * matched-key path their edited fields are preserved by each handler's
- * mergeDataFunction (the TOC pattern). Note: this is distinct from the alt-text
- * domain-specific `isManuallyEdited` data flag (LLMO-6537).
+ * Customer-edited suggestions (`data.isEdited`, set by the UI edit-save action):
+ * Scenario 1 — same issue re-detected: edited suggestions are skipped entirely
+ * on the matched-key path (centralized guard, LLMO-6761). Scenario 2 — issue no
+ * longer detected: edited suggestions ARE cleared (OUTDATED / FIXED) like any
+ * other; handlers where buildKey includes editable content (e.g. FAQs) opt in to
+ * OUTDATED protection via `protectEditedFromOutdated`. Note: this is distinct from
+ * the alt-text domain-specific `isManuallyEdited` data flag (LLMO-6537).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -449,6 +455,8 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
  * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
+ * @param {boolean} [params.protectEditedFromOutdated] - See
+ *   {@link handleOutdatedSuggestions}.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -465,6 +473,7 @@ export async function syncSuggestions({
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
   outdateInProgress = false,
+  protectEditedFromOutdated = false,
 }) {
   if (!context) {
     return;
@@ -497,6 +506,7 @@ export async function syncSuggestions({
     statusToSetForOutdated,
     scrapedUrlsSet,
     outdateInProgress,
+    protectEditedFromOutdated,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
@@ -547,11 +557,12 @@ export async function syncSuggestions({
       return;
     }
 
-    // Customer-edited suggestions (data.isEdited) are NOT hard-skipped here — they fall
-    // through to mergeDataFunction, which preserves the edited field(s) + original
-    // snapshot while letting non-edited metadata refresh (the TOC pattern). Protection
-    // is per-handler in mergeDataFunction, keyed on data.isEdited, not on updatedBy
-    // (LLMO-6537).
+    // Scenario 1: same issue re-detected after customer edit → keep as-is (LLMO-6761).
+    if (existingData?.isEdited === true) {
+      log.debug(`Skipping edited suggestion ${existingKey} - preserving customer edit`);
+      return;
+    }
+
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly
@@ -672,7 +683,8 @@ export function getDisappearedSuggestions(existingSuggestions, newDataKeys, buil
  * Reconciles disappeared suggestions by checking if issues were fixed externally.
  *
  * Candidates:
- *   - Suggestions in NEW status that disappeared from the fresh audit data.
+ *   - Suggestions in NEW status that disappeared from the fresh audit data
+ *     (including customer-edited ones — if the issue is fixed, clear it).
  *   - Suggestions in OUTDATED status whose data has `isEdited === true` — these
  *     are second-chance candidates for customer-deployed fixes that landed after
  *     a prior audit swept them to OUTDATED. `isEdited: true` means the customer
@@ -709,17 +721,17 @@ export async function reconcileDisappearedSuggestions({
     // Accept NEW suggestions, plus OUTDATED suggestions with `isEdited: true`
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
+    // Include NEW suggestions (issue disappeared → candidate for FIXED reconciliation)
+    // and OUTDATED+isEdited suggestions (redirect-target attribution — see docstring).
+    // Edited NEW suggestions are no longer exempt: if the issue is genuinely fixed,
+    // the edited suggestion should be cleared too (LLMO-6537).
     const candidates = disappearedSuggestions.filter((s) => {
       const status = s?.getStatus?.();
-      const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
-        // Never auto-reconcile a customer-edited NEW suggestion to FIXED — the durable
-        // data.isEdited flag protects it (the TOC pattern; updatedBy is not consulted).
-        // The OUTDATED+isEdited branch below is intentionally exempt (redirect-target
-        // attribution) (LLMO-6537).
-        return !isEdited;
+        return true;
       }
-      if (outdatedStatus && status === outdatedStatus && isEdited) {
+      if (outdatedStatus && status === outdatedStatus
+        && s?.getData?.()?.isEdited === true) {
         return true;
       }
       return false;

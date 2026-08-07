@@ -175,7 +175,9 @@ export async function processReadabilityOpportunities(context) {
       };
     }
 
-    const { readabilityIssues: allIssues, urlsProcessed } = readabilityAnalysisResult;
+    const {
+      readabilityIssues: allIssues, urlsProcessed, scrapedUrls = [],
+    } = readabilityAnalysisResult;
 
     // Filter out issues without a selector — they cannot be uniquely identified
     const readabilityIssues = allIssues.filter((issue) => Boolean(issue.selector));
@@ -203,6 +205,9 @@ export async function processReadabilityOpportunities(context) {
 
       return {
         ...data,
+        // url mirrors pageUrl so handleOutdatedSuggestions' scrapedUrlsSet check
+        // (which reads data.url) can scope OUTDATED eligibility below.
+        url: issue.pageUrl,
         scrapedAt: new Date(issue.scrapedAt).toISOString(),
         id: `readability-${siteId}-${index}`,
         textPreview: textContent?.substring(0, 500),
@@ -212,11 +217,23 @@ export async function processReadabilityOpportunities(context) {
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
     const buildKey = (data) => `${data.pageUrl}-${data.selector}`;
 
+    // Readability only audits a top-N-by-traffic sample of pages each run (not the
+    // whole site), and that sample shifts over time. Scope OUTDATED eligibility to
+    // pages actually scraped THIS run so a page merely falling out of this cycle's
+    // sample doesn't get its suggestion wrongly cleared as "issue disappeared"
+    // (LLMO-6537). Include both the requested scrape URLs (scrapeResultPaths keys —
+    // keeps pages that failed to read protected) and the resolved finalUrls the
+    // analysis recorded, because a suggestion's data.url is `finalUrl || url`; on a
+    // redirect the two diverge and a request-URL-only set would never age out a
+    // genuinely-fixed page (LLMO-6761).
+    const scrapedUrlsSet = new Set([...scrapeResultPaths.keys(), ...scrapedUrls]);
+
     await syncSuggestions({
       opportunity,
       newData: suggestionsData,
       context,
       buildKey,
+      scrapedUrlsSet,
       mapNewSuggestion: (data) => ({
         opportunityId: opportunity.getId(),
         type: SuggestionModel.TYPES.CONTENT_UPDATE,
