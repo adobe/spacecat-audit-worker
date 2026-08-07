@@ -36,6 +36,8 @@ describe('convertToOpportunity — RESOLVED fallback', () => {
     getData: sandbox.stub().returns({}),
     setData: sandbox.stub(),
     setUpdatedBy: sandbox.stub(),
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
     save: sandbox.stub().resolves(),
     getId: () => `opp-${updatedAt}`,
   });

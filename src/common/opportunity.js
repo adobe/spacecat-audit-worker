@@ -56,7 +56,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         // eslint-disable-next-line max-len
         const resolvedOpportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.RESOLVED);
         const resolvedOpportunity = [...resolvedOpportunities]
-          .sort((a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()))
+          .sort((a, b) => new Date(b.getUpdatedAt?.() ?? 0) - new Date(a.getUpdatedAt?.() ?? 0))
           .find((oppty) => {
             if (oppty.getType() === auditType) {
               if (comparisonFn && typeof comparisonFn === 'function') {
