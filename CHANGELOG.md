@@ -1,3 +1,10 @@
+## [1.516.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.1...v1.516.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* **opportunity:** prefer scoped row to avoid unique constraint collision (SITES-49175) ([#2863](https://github.com/adobe/spacecat-audit-worker/issues/2863)) ([98bd418](https://github.com/adobe/spacecat-audit-worker/commit/98bd418bfaac65f8a33610be1a128c5e383ea008)), closes [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850)
+
 ## [1.516.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.0...v1.516.1) (2026-08-07)
 
 
