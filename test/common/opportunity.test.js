@@ -19,6 +19,167 @@ import chaiAsPromised from 'chai-as-promised';
 use(sinonChai);
 use(chaiAsPromised);
 
+describe('convertToOpportunity — RESOLVED fallback', () => {
+  let sandbox;
+  let convertToOpportunity;
+  let checkGoogleConnectionStub;
+
+  const siteId = 'site-id';
+  const auditId = 'audit-id';
+  const auditType = 'broken-backlinks';
+
+  const makeOpp = (type, updatedAt = '2024-01-01T00:00:00Z') => ({
+    getType: () => type,
+    getUpdatedAt: () => updatedAt,
+    setStatus: sandbox.stub().resolves(),
+    setAuditId: sandbox.stub(),
+    getData: sandbox.stub().returns({}),
+    setData: sandbox.stub(),
+    setUpdatedBy: sandbox.stub(),
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
+    save: sandbox.stub().resolves(),
+    getId: () => `opp-${updatedAt}`,
+  });
+
+  const makeContext = ({ newOpps = [], resolvedOpps = [], createStub } = {}) => {
+    const create = createStub ?? sandbox.stub().resolves(makeOpp(auditType));
+    return {
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub()
+            .onFirstCall().resolves(newOpps)
+            .onSecondCall()
+            .resolves(resolvedOpps),
+          create,
+        },
+      },
+      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub() },
+    };
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    checkGoogleConnectionStub = sandbox.stub().resolves(true);
+    ({ convertToOpportunity } = await esmock('../../src/common/opportunity.js', {
+      '../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: checkGoogleConnectionStub,
+      },
+    }));
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('reopens the matching RESOLVED opportunity and saves it without creating a new one', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub();
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(resolved.setStatus).to.have.been.calledOnce;
+    expect(resolved.save).to.have.been.calledOnce;
+    expect(createStub).to.not.have.been.called;
+    expect(result.getId()).to.equal(resolved.getId());
+  });
+
+  it('picks the most recently updated RESOLVED opportunity when multiple match', async () => {
+    const older = makeOpp(auditType, '2023-01-01T00:00:00Z');
+    const newer = makeOpp(auditType, '2024-06-01T00:00:00Z');
+    const context = makeContext({ resolvedOpps: [older, newer] });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(newer.setStatus).to.have.been.calledOnce;
+    expect(older.setStatus).to.not.have.been.called;
+  });
+
+  it('reopens a RESOLVED opportunity when comparisonFn returns true', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub();
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+    const comparisonFn = sandbox.stub().returns(true);
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+      {},
+      comparisonFn,
+    );
+
+    expect(comparisonFn).to.have.been.called;
+    expect(resolved.setStatus).to.have.been.calledOnce;
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('does not reopen a RESOLVED opportunity when comparisonFn returns false', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+    const comparisonFn = sandbox.stub().returns(false);
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+      {},
+      comparisonFn,
+    );
+
+    expect(resolved.setStatus).to.not.have.been.called;
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('creates a new opportunity when RESOLVED opportunities exist but none match the type', async () => {
+    const wrongType = makeOpp('other-audit-type');
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ resolvedOpps: [wrongType], createStub });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(wrongType.setStatus).to.not.have.been.called;
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('creates a new opportunity when no NEW or RESOLVED opportunities exist', async () => {
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ createStub });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(createStub).to.have.been.calledOnce;
+  });
+});
+
 describe('persistOffsiteOpportunity', () => {
   let sandbox;
   let persistOffsiteOpportunity;
