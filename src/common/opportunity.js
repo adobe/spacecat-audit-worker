@@ -50,9 +50,9 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         return false;
       });
       // Prefer a scoped row over a legacy null-scope row: if both exist for the same
-      // (siteId, type), stamping scope on the null-scope row would violate
+      // (siteId, type), stamping scope on the null/undefined-scope row would violate
       // idx_opportunities_unique_active_scope and abort the audit step.
-      opportunity = typeMatches.find((oppty) => oppty.getScopeType() !== null)
+      opportunity = typeMatches.find((oppty) => oppty.getScopeType())
         ?? typeMatches[0];
 
       if (!opportunity) {
