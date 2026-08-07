@@ -1,3 +1,10 @@
+## [1.515.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.2...v1.515.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* **opportunity:** reopen RESOLVED opportunity instead of creating duplicate ([#2853](https://github.com/adobe/spacecat-audit-worker/issues/2853)) ([b014934](https://github.com/adobe/spacecat-audit-worker/commit/b01493477f1aeb9fcc6a719b57e8266b9358b03c)), closes [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850) [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850)
+
 ## [1.515.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.1...v1.515.2) (2026-08-07)
 
 
