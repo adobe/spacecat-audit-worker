@@ -165,6 +165,23 @@ describe('runGscSearchAnalytics', () => {
     expect(failFix.found).to.deep.equal({ before: false, after: false });
   });
 
+  it('warns on a host mismatch: rows returned but no fixed URL matched', async () => {
+    const warn = sinon.spy();
+    const ctx = { log: { info() {}, warn, error() {} } };
+    // GSC rows are on a different host than the supplied fixed URL -> nothing matches.
+    const google = {
+      getOrganicSearchData: sinon.stub().resolves({
+        data: { rows: [{ keys: ['https://othersite.com/x'], clicks: 5, impressions: 50, ctr: 0.1, position: 4 }] },
+      }),
+    };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, ctx, site, { fixedUrls });
+    expect(auditResult.fixes[0].status).to.equal('not_found');
+    expect(warn.calledOnce).to.equal(true);
+    expect(warn.firstCall.args[0]).to.match(/host mismatch/);
+  });
+
   it('flags truncation and reads not_found when the URL is past the page cap', async () => {
     const targetAfterMs = afterStartMs('2026-03-01');
     const google = {

@@ -147,10 +147,14 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
         afterComplete: completeness.afterComplete,
         truncated: [beforeRes, afterRes].some((r) => r.truncated),
       };
+      let matchedAny = false;
       for (const f of group) {
         const b = lookup(beforeMap, f.url);
         const a = lookup(afterMap, f.url);
         const found = { before: !!b, after: !!a };
+        if (found.before || found.after) {
+          matchedAny = true;
+        }
         let status;
         // Completeness is checked FIRST: a not-yet-elapsed after-window legitimately
         // returns no rows, which must read as 'incomplete', not 'not_found'.
@@ -173,6 +177,13 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
           found,
           dataQuality,
         });
+      }
+      // Rows came back but none of this group's fixed URLs matched -> almost always a
+      // host mismatch (www/apex, or fixedUrls built from a different host than the GSC
+      // property). Surface it instead of silently reporting not_found.
+      const rowsSeen = beforeMap.size + afterMap.size > 0;
+      if (!matchedAny && rowsSeen) {
+        log.warn(`gsc-search-analytics: ${fixDate} returned rows but no fixed URL matched for ${finalUrl} - likely host mismatch (www/apex or GSC property host)`);
       }
     } catch (e) {
       // A failure on one date-group must not wipe the others; leave a diagnostic entry.

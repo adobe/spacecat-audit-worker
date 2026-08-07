@@ -34,6 +34,17 @@ describe('match', () => {
     expect(normalizeUrl('https://krisshop.com/x?b=2&a=1')).to.equal('https://krisshop.com/x?a=1&b=2');
   });
 
+  it('strips a leading www so apex and www reconcile', () => {
+    expect(normalizeUrl('https://www.krisshop.com/x/')).to.equal('https://krisshop.com/x');
+  });
+
+  it('matches a www-host GSC row against an apex fixed URL', () => {
+    const map = indexRows([{
+      keys: ['https://www.krisshop.com/x'], clicks: 3, impressions: 30, ctr: 0.1, position: 6,
+    }]);
+    expect(lookup(map, 'https://krisshop.com/x')).to.include({ clicks: 3 });
+  });
+
   it('returns the input unchanged when it is not a valid URL', () => {
     expect(normalizeUrl('not a url')).to.equal('not a url');
   });

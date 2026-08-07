@@ -35,9 +35,17 @@ Per-fix `status`:
 
 `delta` is populated **only** for `measured`, so a partial window can never masquerade as a complete change.
 
+## Timing
+
+A fix yields a `measured` delta only once its after-window has elapsed past GSC's ~3-day lag (roughly fix date + 87 days) **and** its before-window is still within the ~13-month retention horizon. So only fixes aged roughly **3-13 months** produce a delta; more recent fixes come back `incomplete` and need a later re-run once their after-window closes.
+
 ## Consumption
 
 Read the latest row via the `query-audits` skill (PostgREST, `audits`/`latest_audits`) filtered to the site and `audit_type = gsc-search-analytics`; the per-URL table is `audit_result.fixes`.
+
+Note: `latest_audits` holds a **snapshot, not a cumulative history** — each run replaces the prior `fixedUrls` set for the site. Consumers should treat one row as "the result of the most recent run for this exact URL list," not an accumulation across runs.
+
+URL matching assumes `www.` and apex are equivalent (see `match.js`). If a window returns rows but none of the fixed URLs match, the runner logs a host-mismatch warning rather than silently reporting `not_found`.
 
 ## Non-goals
 
