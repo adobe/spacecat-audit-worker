@@ -1,3 +1,10 @@
+## [1.516.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.0...v1.516.1) (2026-08-07)
+
+
+### Performance Improvements
+
+* **preflight:** add rare pfauditmetric marker to structured log line for Splunk ([#2864](https://github.com/adobe/spacecat-audit-worker/issues/2864)) ([40fc601](https://github.com/adobe/spacecat-audit-worker/commit/40fc60194e416dfd3de3f8388a309d9d25e83903)), closes [#2862](https://github.com/adobe/spacecat-audit-worker/issues/2862)
+
 # [1.516.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.6...v1.516.0) (2026-08-07)
 
 
