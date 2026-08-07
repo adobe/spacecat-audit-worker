@@ -431,12 +431,12 @@ export const isTBYBSite = checkIsTBYBSite;
  * Updates existing suggestions with new data if they match based on the provided key.
  * For REJECTED suggestions that appear again, preserves REJECTED status.
  * Customer-edited suggestions (`data.isEdited`, set by the UI edit-save action):
- * on the matched-key path their edited fields are preserved by each handler's
- * mergeDataFunction (the TOC pattern). By default, edited suggestions ARE eligible
- * for OUTDATED and reconcile-to-FIXED when the issue disappears; handlers where
- * buildKey includes editable content (e.g. FAQs) opt in to OUTDATED protection
- * via `protectEditedFromOutdated`. Note: this is distinct from the alt-text
- * domain-specific `isManuallyEdited` data flag (LLMO-6537).
+ * Scenario 1 — same issue re-detected: edited suggestions are skipped entirely
+ * on the matched-key path (centralized guard, LLMO-6761). Scenario 2 — issue no
+ * longer detected: edited suggestions ARE cleared (OUTDATED / FIXED) like any
+ * other; handlers where buildKey includes editable content (e.g. FAQs) opt in to
+ * OUTDATED protection via `protectEditedFromOutdated`. Note: this is distinct from
+ * the alt-text domain-specific `isManuallyEdited` data flag (LLMO-6537).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -557,11 +557,12 @@ export async function syncSuggestions({
       return;
     }
 
-    // Customer-edited suggestions (data.isEdited) are NOT hard-skipped here — they fall
-    // through to mergeDataFunction, which preserves the edited field(s) + original
-    // snapshot while letting non-edited metadata refresh (the TOC pattern). Protection
-    // is per-handler in mergeDataFunction, keyed on data.isEdited, not on updatedBy
-    // (LLMO-6537).
+    // Scenario 1: same issue re-detected after customer edit → keep as-is (LLMO-6761).
+    if (existingData?.isEdited === true) {
+      log.debug(`Skipping edited suggestion ${existingKey} - preserving customer edit`);
+      return;
+    }
+
     const newDataItem = newDataByKey.get(existingKey);
     // mergeDataFunction must return a new object (not mutate existingData)
     // for deepEqual comparison to work correctly

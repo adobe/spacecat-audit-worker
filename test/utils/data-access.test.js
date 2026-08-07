@@ -1099,6 +1099,73 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
     });
 
+    it('should skip edited suggestion on matched-key path (Scenario 1 — keep as-is)', async () => {
+      const editedData = { key: '1', title: 'customer edit', isEdited: true };
+      const existingSuggestions = [{
+        id: '1',
+        data: editedData,
+        getData: sinon.stub().returns(editedData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new audit suggestion' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping edited suggestion .* preserving customer edit/),
+      );
+    });
+
+    it('should overwrite non-edited suggestion on matched-key path (Scenario 1 — no edit)', async () => {
+      const existingData = { key: '1', title: 'old title' };
+      const existingSuggestions = [{
+        id: '1',
+        data: existingData,
+        getData: sinon.stub().returns(existingData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
     it('should update suggestion when status changes but data does not', async () => {
       const suggestionsData = [
         { key: '1', title: 'same title', description: 'same description' },
