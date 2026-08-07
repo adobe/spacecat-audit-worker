@@ -2165,6 +2165,8 @@ describe('Sitemap Audit', () => {
         // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sinon.stub(),
         setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),
         addSuggestions: sinon.stub().resolves({ createdItems: [] }),

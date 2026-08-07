@@ -40,17 +40,20 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
     try {
       // eslint-disable-next-line max-len
       const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.NEW);
-      opportunity = opportunities.find((oppty) => {
+      const typeMatches = opportunities.filter((oppty) => {
         if (oppty.getType() === auditType) {
-          // If comparison function is provided, use it to determine if opportunities are the same
           if (comparisonFn && typeof comparisonFn === 'function') {
             return comparisonFn(oppty, opportunityInstance);
           }
-          // Default behavior: just match by type
           return true;
         }
         return false;
       });
+      // Prefer a scoped row over a legacy null-scope row: if both exist for the same
+      // (siteId, type), stamping scope on the null-scope row would violate
+      // idx_opportunities_unique_active_scope and abort the audit step.
+      opportunity = typeMatches.find((oppty) => oppty.getScopeType() !== null)
+        ?? typeMatches[0];
 
       if (!opportunity) {
         // eslint-disable-next-line max-len

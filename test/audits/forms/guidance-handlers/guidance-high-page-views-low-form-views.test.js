@@ -67,6 +67,8 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),
@@ -118,6 +120,8 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       getSuggestions: sinon.stub().resolves([]),
@@ -150,6 +154,8 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       getSuggestions: sinon.stub().resolves(["existing suggestion"]),
@@ -187,6 +193,8 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),

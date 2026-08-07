@@ -63,6 +63,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
@@ -794,6 +796,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
@@ -1893,6 +1897,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
                 setScopeType: sandbox.stub(),
                 setScopeId: sandbox.stub(),
+                getScopeType: () => null,
+                getScopeId: () => null,
               }),
             },
             Site: {
@@ -2195,6 +2201,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
                 setScopeType: sandbox.stub(),
                 setScopeId: sandbox.stub(),
+                getScopeType: () => null,
+                getScopeId: () => null,
               }),
             },
             Site: {
