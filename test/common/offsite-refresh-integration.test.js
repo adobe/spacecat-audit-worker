@@ -70,6 +70,9 @@ describe('offsite refresh handler composition', () => {
     const audit = {
       getAuditResult: () => ({}),
     };
+    const allBySiteIdAndStatus = sandbox.stub();
+    allBySiteIdAndStatus.withArgs(siteId, 'NEW').resolves([evergreenOpportunity]);
+    allBySiteIdAndStatus.withArgs(siteId, 'IN_PROGRESS').resolves([]);
     const context = {
       log,
       dataAccess: {
@@ -80,7 +83,7 @@ describe('offsite refresh handler composition', () => {
           findById: sandbox.stub().resolves(audit),
         },
         Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub().resolves([evergreenOpportunity]),
+          allBySiteIdAndStatus,
           saveMany: sandbox.stub().resolves(),
           create: sandbox.stub(),
         },
