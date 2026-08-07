@@ -2181,6 +2181,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('NEW'),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().rejects(new Error('Create Error')),
     };
@@ -2219,6 +2222,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('NEW'),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([]),
@@ -2546,6 +2552,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('IN_PROGRESS'), // Key difference - tests line 512
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([]),
@@ -2599,6 +2608,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('NEW'),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(), // Key: this succeeds
       getSuggestions: sandbox.stub().resolves([]),
@@ -2651,6 +2663,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('NEW'),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([]),
@@ -2661,6 +2676,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getType: sandbox.stub().returns('a11y-assistive'),
       getStatus: sandbox.stub().returns('IN_PROGRESS'),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
       getSuggestions: sandbox.stub().resolves([]),
@@ -3324,6 +3342,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3465,6 +3486,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub().resolves(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub().resolves(),
+      setScopeId: sandbox.stub().resolves(),
       setUpdatedBy: sandbox.stub().resolves(),
       save: sandbox.stub().resolves(),
     };
@@ -3551,6 +3575,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3648,6 +3675,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
       getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3735,6 +3765,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3814,6 +3847,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3888,6 +3924,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -3990,6 +4029,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
@@ -4100,6 +4142,9 @@ describe('handleAccessibilityRemediationGuidance', () => {
         },
       ]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };

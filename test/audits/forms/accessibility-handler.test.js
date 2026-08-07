@@ -60,6 +60,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getType: () => 'form-accessibility',
         getStatus: () => 'NEW',
         setAuditId: sandbox.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
@@ -788,6 +791,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getType: () => 'form-accessibility',
         getStatus: () => 'NEW',
         setAuditId: sandbox.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
@@ -1884,6 +1890,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 getSiteId: () => siteId,
                 setUpdatedBy: sandbox.stub(),
                 setAuditId: sandbox.stub(),
+                // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+                setScopeType: sandbox.stub(),
+                setScopeId: sandbox.stub(),
               }),
             },
             Site: {
@@ -2183,6 +2192,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 getId: () => opportunityId,
                 setUpdatedBy: sandbox.stub(),
                 setAuditId: sandbox.stub(),
+                // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+                setScopeType: sandbox.stub(),
+                setScopeId: sandbox.stub(),
               }),
             },
             Site: {

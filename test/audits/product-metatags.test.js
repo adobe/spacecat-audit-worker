@@ -1396,6 +1396,9 @@ describe('Product MetaTags', () => {
           getId: () => 'opportunity-id',
           getSiteId: () => 'site-id',
           setAuditId: sinon.stub(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sinon.stub(),
+          setScopeId: sinon.stub(),
           save: sinon.stub(),
           getSuggestions: sinon.stub().returns(productTestData.existingSuggestions),
           addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
@@ -4868,6 +4871,9 @@ describe('Product MetaTags', () => {
         getId: () => 'opportunity-id',
         getSiteId: () => 'site-id',
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1] }),
@@ -5109,6 +5115,9 @@ describe('Product MetaTags', () => {
             getId: () => 'opportunity-id',
             getSiteId: () => 'site-id',
             setAuditId: sinon.stub(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sinon.stub(),
+            setScopeId: sinon.stub(),
             save: sinon.stub(),
             getSuggestions: sinon.stub().returns([]),
             addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [] }),

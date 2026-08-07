@@ -1346,6 +1346,9 @@ describe('Scrape Utils', () => {
         getId: sandbox.stub().returns('test-opportunity-id'),
         save: sandbox.stub(),
         setAuditId: sandbox.stub().returnsThis(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sandbox.stub().returnsThis(),
+        setScopeId: sandbox.stub().returnsThis(),
         setUpdatedBy: sandbox.stub().returnsThis(),
       };
 
@@ -1409,6 +1412,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('test-opportunity-id'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1454,6 +1460,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('test-opportunity-id'),
           save: sandbox.stub().rejects(saveError),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1461,6 +1470,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('test-opportunity-id'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1536,6 +1548,9 @@ describe('Scrape Utils', () => {
             getId: sandbox.stub().returns('test-opportunity-id'),
             save: sandbox.stub().rejects(saveError),
             setAuditId: sandbox.stub().returnsThis(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sandbox.stub().returnsThis(),
+            setScopeId: sandbox.stub().returnsThis(),
             setUpdatedBy: sandbox.stub().returnsThis(),
           });
         }
@@ -1545,6 +1560,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('test-opportunity-id'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1712,6 +1730,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns(null),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1740,6 +1761,9 @@ describe('Scrape Utils', () => {
             getId: sandbox.stub().returns(`opportunity-${i}`),
             save: sandbox.stub().rejects(saveError),
             setAuditId: sandbox.stub().returnsThis(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sandbox.stub().returnsThis(),
+            setScopeId: sandbox.stub().returnsThis(),
             setUpdatedBy: sandbox.stub().returnsThis(),
           });
         }
@@ -1749,6 +1773,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('opportunity-success'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1809,6 +1836,9 @@ describe('Scrape Utils', () => {
             getId: sandbox.stub().returns(`opportunity-${i}`),
             save: sandbox.stub().rejects(saveError),
             setAuditId: sandbox.stub().returnsThis(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sandbox.stub().returnsThis(),
+            setScopeId: sandbox.stub().returnsThis(),
             setUpdatedBy: sandbox.stub().returnsThis(),
           });
         }
@@ -1818,6 +1848,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('opportunity-success'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1871,6 +1904,9 @@ describe('Scrape Utils', () => {
           getId: sandbox.stub().returns('bd068a2a-8150-4ea7-b821-9120b2561cdc'),
           save: sandbox.stub().resolves(),
           setAuditId: sandbox.stub().returnsThis(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sandbox.stub().returnsThis(),
+          setScopeId: sandbox.stub().returnsThis(),
           setUpdatedBy: sandbox.stub().returnsThis(),
         };
 
@@ -1921,6 +1957,9 @@ describe('Scrape Utils', () => {
             getId: sandbox.stub().returns('same-opportunity-id'),
             save: sandbox.stub(),
             setAuditId: sandbox.stub().returnsThis(),
+            // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+            setScopeType: sandbox.stub().returnsThis(),
+            setScopeId: sandbox.stub().returnsThis(),
             setUpdatedBy: sandbox.stub().returnsThis(),
           });
         }

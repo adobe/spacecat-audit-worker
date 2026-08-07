@@ -1,3 +1,41 @@
+## [1.515.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.5...v1.515.6) (2026-08-07)
+
+
+### Bug Fixes
+
+* **preflight:** bounded network-idle settle for a11y scrape (SITES-49491) ([#2861](https://github.com/adobe/spacecat-audit-worker/issues/2861)) ([2d3e6f2](https://github.com/adobe/spacecat-audit-worker/commit/2d3e6f2271479abc7f6d0eacbddf935e50cfa904))
+
+## [1.515.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.4...v1.515.5) (2026-08-07)
+
+
+### Bug Fixes
+
+* **deps:** bump spacecat-shared-data-access to 4.17.0 (SITES-49175) ([#2859](https://github.com/adobe/spacecat-audit-worker/issues/2859)) ([b6a9f2d](https://github.com/adobe/spacecat-audit-worker/commit/b6a9f2da086f6e80376472e698cf92ae0cd19453))
+
+## [1.515.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.3...v1.515.4) (2026-08-07)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2858](https://github.com/adobe/spacecat-audit-worker/issues/2858)) ([999bdce](https://github.com/adobe/spacecat-audit-worker/commit/999bdceaccace9b0d362296b44f692761d71776a))
+
+## [1.515.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.2...v1.515.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* **opportunity:** reopen RESOLVED opportunity instead of creating duplicate ([#2853](https://github.com/adobe/spacecat-audit-worker/issues/2853)) ([b014934](https://github.com/adobe/spacecat-audit-worker/commit/b01493477f1aeb9fcc6a719b57e8266b9358b03c)), closes [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850) [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850)
+
+## [1.515.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.1...v1.515.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2746](https://github.com/adobe/spacecat-audit-worker/issues/2746)) ([6192588](https://github.com/adobe/spacecat-audit-worker/commit/61925886012e38f1a7eddd40523adf6810d76a35))
+* **opportunity:** stamp scopeType='site' + scopeId on new opps (SITES-49175) ([#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850)) ([309a5c4](https://github.com/adobe/spacecat-audit-worker/commit/309a5c413d5b2617a6991b1c11f97ab03346c829)), closes [spacecat-shared#1866](https://github.com/spacecat-shared/issues/1866)
+* **preflight:** loosen accessibility scrape nav wait to avoid 45s timeout (SITES-49365) ([#2855](https://github.com/adobe/spacecat-audit-worker/issues/2855)) ([75b3608](https://github.com/adobe/spacecat-audit-worker/commit/75b36081cb54da390698eec160eb4176e6853267))
+* **prerender:** restore unrestricted top-pages fallback when baseURL is empty ([#2857](https://github.com/adobe/spacecat-audit-worker/issues/2857)) ([0e828bd](https://github.com/adobe/spacecat-audit-worker/commit/0e828bdd8d5bf8c21dced71cef354c144f5c2f38))
+
 ## [1.515.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.0...v1.515.1) (2026-08-06)
 
 

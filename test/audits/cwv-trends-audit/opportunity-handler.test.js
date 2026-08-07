@@ -32,6 +32,9 @@ describe('CWV Trends Opportunity Handler', () => {
       getTitle: () => title,
       getData: () => ({ deviceType: 'mobile' }),
       setAuditId: sandbox.spy(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.spy(),
+      setScopeId: sandbox.spy(),
       setData: sandbox.spy(),
       setUpdatedBy: sandbox.spy(),
       save: sandbox.stub().resolves(),

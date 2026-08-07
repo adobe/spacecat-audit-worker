@@ -21,6 +21,29 @@ import { formatWcagRule } from '../accessibility/utils/generate-individual-oppor
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
+/*
+ * Navigation tuning for the Preflight accessibility scrape.
+ *
+ * The content-scraper accessibility handler defaults to
+ * waitUntil ['networkidle2', 'load'], which requires the network to fully
+ * settle before axe runs. Heavy author/marketing pages with persistent
+ * background traffic never reach that state, so page.goto aborts at the ~45s
+ * nav timeout, the scrape fails, and the audit returns an empty (false-clean)
+ * result. axe only needs the DOM built, not an idle network, so we navigate on
+ * 'domcontentloaded' (which always fires), then wait for the network to go quiet
+ * (bounded by NETWORK_IDLE_MS) so async/lazy content (embeds, video, late XHR)
+ * renders before axe runs, plus a short fixed settle. The bounded network-idle
+ * wait fixes non-deterministic under-reporting seen with a fixed sleep alone
+ * (SITES-49491); it can't hang because the wait is capped and non-fatal.
+ *
+ * Scoped to Preflight only: ASO scheduled accessibility scans are sent from
+ * src/accessibility/handler.js (config-driven scrapingParams) and are NOT
+ * affected by this. See SITES-49365.
+ */
+export const PREFLIGHT_A11Y_SCRAPE_WAIT_UNTIL = 'domcontentloaded';
+export const PREFLIGHT_A11Y_SCRAPE_SETTLE_MS = 3000;
+export const PREFLIGHT_A11Y_SCRAPE_NETWORK_IDLE_MS = 15000;
+
 /**
  * Generate normalized filename from URL
  */
@@ -105,9 +128,24 @@ export async function scrapeAccessibilityData(context, auditContext) {
         options: {
           enableAuthentication,
           a11yPreflight: true,
+          // Loosen navigation so heavy pages don't 45s-timeout into empty
+          // results (SITES-49365), then wait (bounded) for async content so axe
+          // doesn't under-report (SITES-49491). Preflight-scoped; ASO unaffected.
+          accessibilityScrapingParams: {
+            waitUntil: PREFLIGHT_A11Y_SCRAPE_WAIT_UNTIL,
+            networkIdleTimeout: PREFLIGHT_A11Y_SCRAPE_NETWORK_IDLE_MS,
+            additionalTimeout: PREFLIGHT_A11Y_SCRAPE_SETTLE_MS,
+          },
           ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
         },
       };
+
+      // Info-level marker so prod Splunk can confirm the nav tuning is live
+      // (the full-message log below is debug-only and not emitted in prod).
+      log.info(`[preflight-audit] site: ${siteId}, job: ${jobId}, step: ${step}. `
+        + `Accessibility scrape nav tuned: waitUntil=${PREFLIGHT_A11Y_SCRAPE_WAIT_UNTIL} `
+        + `networkIdleMs=${PREFLIGHT_A11Y_SCRAPE_NETWORK_IDLE_MS} `
+        + `settleMs=${PREFLIGHT_A11Y_SCRAPE_SETTLE_MS} (SITES-49365, SITES-49491)`);
 
       log.debug(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
       log.debug(`[preflight-audit] Processing type: ${scrapeMessage.processingType}`);
