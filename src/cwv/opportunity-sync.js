@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { syncSuggestions } from '../utils/data-access.js';
+import { Audit, Suggestion, FixEntity } from '@adobe/spacecat-shared-data-access';
+import { syncSuggestions, defaultMergeStatusFunction } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS, calculateConfidenceScore } from './kpi-metrics.js';
@@ -144,6 +144,60 @@ export function mergeCwvData(existingData, newDataItem) {
 }
 
 /**
+ * How long a CWV suggestion may sit IN_PROGRESS before a re-audit treats it as
+ * stale and reclaims it back to NEW. Mystique flips a suggestion to IN_PROGRESS
+ * the moment it hands a generated patch off for deploy; on an auto-deploy-off
+ * site nothing ever consumes that hand-off, so without this the suggestion is
+ * stuck forever. 24h is comfortably longer than the transient deploy window, so
+ * a genuinely in-flight IN_PROGRESS is never reclaimed mid-deploy.
+ */
+export const STALE_IN_PROGRESS_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * FixEntity statuses that represent a real in-flight or live deploy. A suggestion
+ * covered by a fix in one of these states must never be reclaimed — the deploy
+ * hand-off is legitimately still owned downstream.
+ */
+const ACTIVE_FIX_STATUSES = new Set([
+  FixEntity.STATUSES.PENDING,
+  FixEntity.STATUSES.DEPLOYED,
+  FixEntity.STATUSES.PUBLISHED,
+]);
+
+/**
+ * Builds the CWV mergeStatusFunction for syncSuggestions. On re-audit it reclaims
+ * STALE stuck IN_PROGRESS suggestions back to NEW so they self-heal instead of
+ * accumulating every weekly run (Mystique sets IN_PROGRESS as the deploy hand-off;
+ * on auto-deploy-off sites nothing ever deploys it). A suggestion is reclaimed ONLY
+ * when ALL of the following hold:
+ *   - it is IN_PROGRESS,
+ *   - it has NO active fix entity (PENDING/DEPLOYED/PUBLISHED) — never touch a real
+ *     in-flight/live deploy, and
+ *   - it is stale (> STALE_IN_PROGRESS_MS since updatedAt) — never touch a freshly-set
+ *     IN_PROGRESS still inside the transient deploy window.
+ * Every other case delegates to defaultMergeStatusFunction, preserving its behaviour
+ * (incl. OUTDATED-regression and ERROR→NEW handling).
+ *
+ * @param {Set<string>} activeFixSuggestionIds - suggestion ids covered by an active fix.
+ * @param {boolean} fixFetchFailed - true if the fix-entity fetch failed; when true the
+ *   function behaves exactly like defaultMergeStatusFunction (fail safe: no reclaim).
+ * @returns {Function} mergeStatusFunction(existing, newDataItem, context)
+ */
+export function createMergeCwvStatus(activeFixSuggestionIds, fixFetchFailed) {
+  return (existing, newDataItem, context) => {
+    if (
+      !fixFetchFailed
+      && existing.getStatus() === Suggestion.STATUSES.IN_PROGRESS
+      && !activeFixSuggestionIds.has(existing.getId())
+      && Date.now() - new Date(existing.getUpdatedAt()).getTime() > STALE_IN_PROGRESS_MS
+    ) {
+      return Suggestion.STATUSES.NEW;
+    }
+    return defaultMergeStatusFunction(existing, newDataItem, context);
+  };
+}
+
+/**
  * Synchronizes opportunities and suggestions for a CWV audit
  * Creates or updates opportunity and syncs suggestions
  * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess
@@ -200,6 +254,29 @@ export async function syncOpportunitiesAndSuggestions(context) {
     kpiDeltas,
   );
 
+  // Build the set of suggestion ids that are covered by an ACTIVE fix entity
+  // (PENDING/DEPLOYED/PUBLISHED). mergeCwvStatus uses this to reclaim ONLY the
+  // stuck IN_PROGRESS suggestions that have no real in-flight/live deploy. On any
+  // fetch failure we fail safe — skip reclaim entirely this run (fixFetchFailed) —
+  // rather than risk reclaiming a suggestion whose deploy is genuinely in flight.
+  const activeFixSuggestionIds = new Set();
+  let fixFetchFailed = false;
+  try {
+    const fixEntities = await opportunity.getFixEntities();
+    (fixEntities || []).forEach((fixEntity) => {
+      if (ACTIVE_FIX_STATUSES.has(fixEntity.getStatus())) {
+        const suggestionId = fixEntity.getChangeDetails?.()?.suggestionId;
+        if (suggestionId) {
+          activeFixSuggestionIds.add(suggestionId);
+        }
+      }
+    });
+  } catch (e) {
+    fixFetchFailed = true;
+    log.warn(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - failed to fetch fix entities; skipping IN_PROGRESS reclaim this run: ${e.message}`);
+  }
+  const mergeCwvStatus = createMergeCwvStatus(activeFixSuggestionIds, fixFetchFailed);
+
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxConfidenceForUrls = Math.max(
@@ -218,6 +295,10 @@ export async function syncOpportunitiesAndSuggestions(context) {
     // OUTDATED for any metric whose failure has resolved (skip list preserves
     // APPROVED/REJECTED/FIXED/SKIPPED/IN_PROGRESS/ERROR/OUTDATED).
     mergeDataFunction: mergeCwvData,
+    // On re-audit: reclaim STALE stuck IN_PROGRESS suggestions (no active fix,
+    // >24h old) back to NEW so the Mystique deploy hand-off self-heals on
+    // auto-deploy-off sites instead of accumulating every weekly audit.
+    mergeStatusFunction: mergeCwvStatus,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
