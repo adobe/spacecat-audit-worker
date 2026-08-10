@@ -13,6 +13,7 @@
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { resolveBrandResultForSite } from './brand-resolver.js';
+import { resolveSemrushEntitlement } from './semrush-entitlement.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import {
@@ -228,8 +229,9 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
  *   outage must not affect the Semrush attempt itself.
  * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null return,
  *   set to `{ fallbackReason }` with a specific code (`no-organization-id`, `no-active-brand`,
- *   `brand-resolution-failed`, `no-date-window`, `ims-token-failed`, or `surface-failed:<host>`)
- *   instead of the single generic reason the handler used to report for every case. On a
+ *   `brand-resolution-failed`, `not-entitled`, `entitlement-check-failed`, `no-date-window`,
+ *   `ims-token-failed`, or `surface-failed:<host>`) instead of the single generic reason the
+ *   handler used to report for every case. On a
  *   successful (non-null) return, set to
  *   `{ engineFailureCount, degradedHosts, authFailureDetected }` so a surface that tolerated
  *   partial engine failures is distinguishable from a clean run — both `dataSource` and
@@ -290,6 +292,36 @@ export async function loadCitedUrlsFromSemrush({
       });
       await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
       setDiagnostics({ fallbackReason: 'brand-resolution-failed' });
+    }
+    return null;
+  }
+
+  // Gate on entitlement BEFORE any Semrush HTTP call (or minting an IMS token for
+  // one): Semrush data only exists for brands provisioned in Semrush (serenity flag
+  // on AND a resolvable workspace — same "flag AND workspace" gate api-service uses
+  // to serve any Serenity route). Calling it for a non-entitled brand is a wasted
+  // request on a paid, rate-limited product, and reliably yields an error/empty
+  // response that would just fall back anyway.
+  const entitlement = await resolveSemrushEntitlement(context, {
+    orgId: spaceCatId, brandId: brand.brandId,
+  });
+  if (!entitlement.entitled) {
+    if (entitlement.resolved) {
+      log.info(`${LOG_PREFIX} Brand not entitled for Semrush (${entitlement.reason}) for org ${spaceCatId}; skipping Semrush source`, {
+        siteId,
+        orgId: spaceCatId,
+        brandId: brand.brandId,
+        entitlementReason: entitlement.reason,
+        durationMs: elapsed(),
+      });
+      await notify(':information_source: Brand is not entitled for Semrush — falling back to the legacy source.');
+      setDiagnostics({ fallbackReason: 'not-entitled' });
+    } else {
+      log.warn(`${LOG_PREFIX} Semrush entitlement check failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+        siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+      });
+      await notify(':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.');
+      setDiagnostics({ fallbackReason: 'entitlement-check-failed' });
     }
     return null;
   }

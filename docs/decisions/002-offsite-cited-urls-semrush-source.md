@@ -86,6 +86,46 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    is flipped fleet-wide. Same tri-state mechanism as the existing `enableBrandProfile`
    override. It is a **per-run** override only (one Slack invocation), not the persistent
    **per-site** cutover tracked under LLMO-6711.
+7. **Entitlement gate — "flag AND workspace", before any Semrush HTTP call
+   (LLMO-6841).** Semrush data only exists for brands actually provisioned in Semrush;
+   calling the proxy for a non-entitled brand wastes a request on a paid, rate-limited
+   product and reliably yields an error/empty response that just falls back anyway. The
+   loader (`src/utils/semrush-entitlement.js`, `resolveSemrushEntitlement`) checks:
+   - the org-wide `serenity` feature flag (`feature_flags`, product `LLMO`) is `true` — read
+     directly via `postgrestClient`, the same mechanism `brandalf-utils.js`'s
+     `isBrandalfEnabled` already uses (no shared-package helper exists for this; api-service's
+     own `readFeatureFlag` is private, unpublished application code), **AND**
+   - a Semrush workspace resolves for the brand — via the shared
+     `@adobe/spacecat-shared-data-access` model layer (`dataAccess.Brand#getSemrushSubWorkspaceId()`,
+     falling back to `dataAccess.Organization#getSemrushWorkspaceId()` — the flat org
+     workspace), the exact entities/getters spacecat-api-service's own `workspace-resolver.js`
+     reads. This is genuine reuse, not a duplicate of column/schema knowledge: the worker
+     already depends on this package and its `dataAccess` middleware already wires up the
+     `Organization`/`Brand` collections the same way api-service does. What is **not** reused
+     is api-service's TTL-bounded in-memory caching around that lookup (`workspace-resolver.js`'s
+     `cache`/`brandCache` Maps) — that caching is private application code in api-service, not
+     exported from any package, so importing it isn't possible without a cross-repo extraction.
+     Re-implementing it here was judged not worth the duplication for a once-per-audit-run
+     check (this is not a hot per-request UI path the way api-service's is).
+   This mirrors the exact "flag AND workspace" gate spacecat-api-service uses to decide
+   whether to serve *any* Serenity route for an org (`serenity-active.js` +
+   `workspace-resolver.js`'s `resolveBrandWorkspace`), so "entitled" means the same thing
+   in the worker as everywhere else. The check runs immediately after brand resolution
+   succeeds and *before* minting the IMS token or building any Semrush request. On a
+   non-entitled brand the loader returns `null` with `fallbackReason: 'not-entitled'`
+   (confirmed) or `'entitlement-check-failed'` (the check itself errored/timed out — fails
+   **closed**, i.e. skip Semrush, same as any other transient PostgREST failure in this
+   loader). Both reasons are exempted from the Decision 1 hard-stop: even a canary run
+   forced on via `enableSemrush:true` falls back to legacy cleanly for these two reasons —
+   entitlement scoping is expected behavior, not a technical failure to surface loudly.
+   This check is purely an **extra narrowing** inside the existing
+   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` / `enableSemrush` gate, not a replacement for it.
+   Considered and rejected: the api-service `.../serenity/brand-presence/access` endpoint
+   (built for a per-user IMS bearer from a browser session; the worker's *service* IMS
+   token, per Decision 4, is untested against it — see the LLMO-6709 open risk); reusing
+   `isBrandalfEnabled` (a different flag — `brandalf` — from a different cohort than
+   Semrush/Serenity entitlement); and a net-new per-site allowlist (the workspace columns
+   already are the authoritative provisioning signal, no new construct needed).
 
 ## Consequences
 

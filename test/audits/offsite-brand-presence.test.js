@@ -448,6 +448,47 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.fallbackReason).to.equal('ims-token-failed');
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
+
+    it('falls back to legacy (never hard-stops) on a not-entitled brand, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = 'not-entitled';
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('not-entitled');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+    });
+
+    it('falls back to legacy (never hard-stops) when the entitlement check itself fails, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = 'entitlement-check-failed';
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('entitlement-check-failed');
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+    });
   });
 
   describe('URL Extraction', () => {

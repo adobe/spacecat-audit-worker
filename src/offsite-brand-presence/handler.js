@@ -108,6 +108,12 @@ const TOP_CITED_BUCKET = 'top-cited';
 // Valid values for messageData.domainScope on granular single-audit runs.
 const VALID_DOMAIN_SCOPES = new Set([...Object.keys(OFFSITE_DOMAINS), TOP_CITED_BUCKET]);
 
+// fallbackReason codes for a deliberate entitlement-based skip (brand not provisioned
+// in Semrush) — never a hard-stop, even under an explicit `enableSemrush:true` canary
+// run: the "no errors for non-entitled brands" contract must hold regardless of how
+// Semrush was enabled for this run.
+const ENTITLEMENT_SKIP_REASONS = new Set(['not-entitled', 'entitlement-check-failed']);
+
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
@@ -948,7 +954,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
       const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
-      if (hardStopOnFailure) {
+      // A deliberate entitlement-based skip is never a hard stop, even when this run
+      // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
+      // errors" for a non-entitled brand must hold regardless of how Semrush was
+      // enabled. Hard-stop stays reserved for genuine technical failures (auth,
+      // outage, etc.) that a canary run wants surfaced, not for expected scoping.
+      const isEntitlementSkip = ENTITLEMENT_SKIP_REASONS.has(reason);
+      if (hardStopOnFailure && !isEntitlementSkip) {
         // enableSemrush:true forced this run — surface the failure, no fallback.
         log.error(`${LOG_PREFIX} Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
           siteId, fallbackReason: reason,
@@ -969,12 +981,18 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
           fullAuditRef: finalUrl,
         };
       }
-      // Enabled by the env var (or override not forced) — fall back to legacy so a
-      // Semrush problem never silently zeroes out offsite.
+      // Enabled by the env var (or override not forced, or an entitlement skip) —
+      // fall back to legacy so a Semrush problem never silently zeroes out offsite.
       fallbackReason = reason;
-      log.warn(`${LOG_PREFIX} Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
-        siteId, fallbackReason: reason,
-      });
+      if (isEntitlementSkip) {
+        log.info(`${LOG_PREFIX} Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
+          siteId, fallbackReason: reason,
+        });
+      } else {
+        log.warn(`${LOG_PREFIX} Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
+          siteId, fallbackReason: reason,
+        });
+      }
     } else {
       for (const [url, info] of semrushUrls) {
         allUrls.set(url, info);

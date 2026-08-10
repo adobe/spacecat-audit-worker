@@ -42,6 +42,7 @@ describe('offsite-brand-presence-semrush', function () {
   let log;
   let fetchStub;
   let resolveBrandResultForSite;
+  let resolveSemrushEntitlement;
   let getServiceAccessToken;
   let imsCreateFrom;
   let mod;
@@ -56,6 +57,7 @@ describe('offsite-brand-presence-semrush', function () {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
       '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
+      '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
     });
   }
@@ -84,6 +86,10 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub = sandbox.stub();
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
+    resolveSemrushEntitlement = sandbox.stub()
+      .resolves({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'subworkspace',
+      });
     getServiceAccessToken = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
     imsCreateFrom = sandbox.stub().returns({ getServiceAccessToken });
     mod = await loadModule();
@@ -382,6 +388,44 @@ describe('offsite-brand-presence-semrush', function () {
     resolveBrandResultForSite.resolves({ brand: null, resolved: false });
     expect(await run()).to.equal(null);
     expect(warnedWith(/transient/)).to.equal(true);
+  });
+
+  // --- entitlement gate (before any Semrush HTTP call) -----------------------
+
+  it('returns null and does not call Semrush when the brand is not entitled', async () => {
+    resolveSemrushEntitlement.resolves({ entitled: false, resolved: true, reason: 'no-workspace' });
+    const diagnostics = {};
+
+    const result = await run({}, {}, undefined, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('not-entitled');
+    expect(fetchStub).to.not.have.been.called;
+    expect(getServiceAccessToken).to.not.have.been.called;
+    expect(log.info).to.have.been.calledWithMatch(/not entitled for Semrush \(no-workspace\)/);
+  });
+
+  it('returns null and warns (not entitled, transient) when the entitlement check itself fails', async () => {
+    resolveSemrushEntitlement.resolves({ entitled: false, resolved: false, reason: 'check-failed' });
+    const diagnostics = {};
+
+    const result = await run({}, {}, undefined, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('entitlement-check-failed');
+    expect(fetchStub).to.not.have.been.called;
+    expect(warnedWith(/entitlement check failed \(transient\)/)).to.equal(true);
+  });
+
+  it('passes the resolved orgId/brandId to the entitlement check and proceeds when entitled', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+
+    await run();
+
+    expect(resolveSemrushEntitlement).to.have.been.calledOnce;
+    expect(resolveSemrushEntitlement.firstCall.args[1]).to.deep.equal({
+      orgId: ORG_ID, brandId: BRAND_ID,
+    });
   });
 
   it('returns null when no date window can be derived', async () => {
