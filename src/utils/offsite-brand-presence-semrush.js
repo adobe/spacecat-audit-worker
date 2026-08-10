@@ -48,6 +48,29 @@ export const PAGE_SIZE = 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Max chars of a non-2xx response body to log. The body of a rejected
+ * serenity/Semrush call identifies the rejecter — api-service `requireImsBearer`
+ * ("...send the x-promise-token header instead") vs a Semrush upstream error —
+ * which decides who owns the LLMO-6709 auth fix. Capped defensively.
+ */
+const ERROR_BODY_SNIPPET_MAX = 500;
+
+/**
+ * Reads a non-2xx response body as a short diagnostic snippet. Never throws.
+ *
+ * @param {Response} response
+ * @returns {Promise<string>} the body (trimmed + capped), or '' if empty/unreadable.
+ */
+async function readErrorBodySnippet(response) {
+  try {
+    const text = await response.text();
+    return text ? text.slice(0, ERROR_BODY_SNIPPET_MAX) : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Mints an IMS service access token as an Authorization header value.
  *
  * Uses the v2 `getServiceAccessToken()` (`authorization_code` grant) with the
@@ -117,15 +140,20 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
   }
 
   if (!response.ok) {
+    const durationMs = Date.now() - startedAt;
     const authFailure = response.status === 401 || response.status === 403;
+    // Capture the body so the rejecter is identifiable (api-service requireImsBearer
+    // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
+    const responseBody = await readErrorBodySnippet(response);
+    const logCtx = {
+      ...ctx, status: response.status, responseBody, durationMs,
+    };
     if (authFailure) {
-      log.error(`${LOG_PREFIX} Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, {
-        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
-      });
+      // Distinct branch so a rejected service token is visible instead of being
+      // masked as "Semrush returned nothing" (LLMO-6709 verification).
+      log.error(`${LOG_PREFIX} Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, logCtx);
     } else {
-      log.error(`${LOG_PREFIX} domain-urls returned HTTP ${response.status}`, {
-        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
-      });
+      log.error(`${LOG_PREFIX} domain-urls returned HTTP ${response.status}`, logCtx);
     }
     return {
       rows: [], ok: false, authFailure, truncated: false,

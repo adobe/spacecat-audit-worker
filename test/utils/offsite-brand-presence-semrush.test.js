@@ -372,6 +372,23 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.fallbackReason).to.equal('domain-urls-auth-failed');
   });
 
+  it('logs the response body on a 401 so the rejecter (api-service vs Semrush) is identifiable', async () => {
+    const proxyMsg = 'Elements proxy requires IMS authentication; send the x-promise-token header instead';
+    fetchStub.resolves({ ok: false, status: 401, text: async () => proxyMsg });
+    const result = await run();
+    expect(result).to.equal(null);
+    expect(erroredWith(/Service token rejected/)).to.equal(true);
+    // The captured body identifies the rejecter (api-service vs Semrush) — LLMO-6709.
+    expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === proxyMsg)).to.equal(true);
+  });
+
+  it('handles an empty/unreadable error body on a non-2xx response', async () => {
+    fetchStub.resolves({ ok: false, status: 500, text: async () => '' });
+    const result = await run();
+    expect(result).to.equal(null);
+    expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === '')).to.equal(true);
+  });
+
   it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 403', async () => {
     fetchStub.resolves({ ok: false, status: 403 });
     const diagnostics = {};
