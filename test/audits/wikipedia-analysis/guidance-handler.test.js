@@ -465,6 +465,31 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       );
     });
 
+    it('logs the suggestion_sync failure and rethrows when syncSuggestions fails', async () => {
+      syncSuggestionsStub.rejects(new Error('suggestion write conflict'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            company: 'Example Corp',
+            suggestions: [
+              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      // Inner catch logs the failed sync event, then rethrows into the outer catch (badRequest).
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync outcome=failure/),
+      );
+    });
+
     it('should return notFound when audit not found', async () => {
       context.dataAccess.Audit.findById.resolves(null);
 
