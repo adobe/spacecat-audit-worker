@@ -79,7 +79,7 @@ async function enableBrandClaims(postgrestClient, brandId, updatedBy) {
   return data || null;
 }
 
-async function findLatestSheet(s3Client, bucket, prefix) {
+async function findLatestSheet(s3Client, bucket, prefix, log) {
   let best = null;
   let continuationToken;
   let pages = 0;
@@ -123,6 +123,12 @@ async function findLatestSheet(s3Client, bucket, prefix) {
     continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
   } while (continuationToken && pages < MAX_LISTING_PAGES);
 
+  // Keys sort lexicographically and the newest partitions sort last, so stopping at the
+  // page cap with more results pending risks selecting a stale sheet — surface it.
+  if (continuationToken) {
+    log?.warn?.(`brand-claims: S3 listing hit the ${MAX_LISTING_PAGES}-page cap for prefix ${prefix} — selection may be stale`);
+  }
+
   return best;
 }
 
@@ -138,22 +144,21 @@ export default async function brandClaimsHandler(message, context) {
     return ok();
   }
 
+  // Infra/config faults throw so SQS retries and the message hits the DLQ with an error
+  // signal, rather than being silently acked and lost.
   const queueUrl = env?.SQS_BP_SHEET_READY_QUEUE_URL;
   if (!hasText(queueUrl)) {
-    log.error('brand-claims: SQS_BP_SHEET_READY_QUEUE_URL is not configured');
-    return ok();
+    throw new Error('brand-claims: SQS_BP_SHEET_READY_QUEUE_URL is not configured');
   }
 
   const drsBpBucket = env?.DRS_BP_BUCKET;
   if (!hasText(drsBpBucket)) {
-    log.error('brand-claims: DRS_BP_BUCKET is not configured');
-    return ok();
+    throw new Error('brand-claims: DRS_BP_BUCKET is not configured');
   }
 
   const postgrestClient = dataAccess?.services?.postgrestClient;
   if (!postgrestClient?.from) {
-    log.error(`brand-claims: brand storage (postgrestClient) is not available for site ${siteId}`);
-    return ok();
+    throw new Error(`brand-claims: brand storage (postgrestClient) is not available for site ${siteId}`);
   }
 
   const { Site, Organization } = dataAccess;
@@ -163,25 +168,34 @@ export default async function brandClaimsHandler(message, context) {
     return ok();
   }
 
+  // Use the canonical server-resolved id for the org lookup, brand query, and S3 prefix
+  // rather than trusting the raw message value.
+  const resolvedSiteId = site.getId();
   const organizationId = site.getOrganizationId();
   const organization = await Organization.findById(organizationId);
   const imsOrgId = organization?.getImsOrgId?.();
   if (!hasText(imsOrgId)) {
-    log.warn(`brand-claims: could not resolve an IMS org for site ${siteId}`);
+    log.warn(`brand-claims: could not resolve an IMS org for site ${resolvedSiteId}`);
     return ok();
   }
 
-  const brand = await getBrandForSite(postgrestClient, organizationId, siteId, log);
+  const brand = await getBrandForSite(postgrestClient, organizationId, resolvedSiteId, log);
   if (!brand) {
-    log.warn(`brand-claims: no active brand found for site ${siteId}`);
+    log.warn(`brand-claims: no active brand found for site ${resolvedSiteId}`);
     return ok();
   }
 
   if (brand.brand_claims_enabled) {
-    log.info(`brand-claims: already enabled for brand ${brand.id} ("${brand.name}") on site ${siteId} — skipping enable`);
+    log.info(`brand-claims: already enabled for brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} — skipping enable`);
   } else {
-    await enableBrandClaims(postgrestClient, brand.id, 'audit-worker:brand-claims');
-    log.info(`brand-claims: enabled for brand ${brand.id} ("${brand.name}") on site ${siteId}`);
+    const updated = await enableBrandClaims(postgrestClient, brand.id, 'audit-worker:brand-claims');
+    if (!updated) {
+      // The brand was soft-deleted between the read and the write (.neq status guard);
+      // nothing was enabled, so publishing a ready-signal would be meaningless.
+      log.warn(`brand-claims: enable did not take for brand ${brand.id} on site ${resolvedSiteId} (brand missing or deleted) — skipping run`);
+      return ok();
+    }
+    log.info(`brand-claims: enabled for brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId}`);
   }
 
   const brandSlug = sanitizePathComponent(brand.name);
@@ -190,10 +204,10 @@ export default async function brandClaimsHandler(message, context) {
     return ok();
   }
 
-  const prefix = `${siteId}/${brandSlug}/analytics/${BP_PLATFORM}/`;
-  const sheet = await findLatestSheet(s3Client, drsBpBucket, prefix);
+  const prefix = `${resolvedSiteId}/${brandSlug}/analytics/${BP_PLATFORM}/`;
+  const sheet = await findLatestSheet(s3Client, drsBpBucket, prefix, log);
   if (!sheet) {
-    log.warn(`brand-claims: no Brand Presence sheet found for site ${siteId} on platform ${BP_PLATFORM} — enabled but nothing to run`);
+    log.warn(`brand-claims: no Brand Presence sheet found for site ${resolvedSiteId} on platform ${BP_PLATFORM} — enabled but nothing to run`);
     return ok();
   }
 
@@ -203,7 +217,7 @@ export default async function brandClaimsHandler(message, context) {
     organization_id: imsOrgId,
     brand_id: brand.id,
     brand: brandSlug,
-    site_id: siteId,
+    site_id: resolvedSiteId,
     week: sheet.week,
     year: sheet.year,
     cadence: sheet.cadence,
@@ -216,7 +230,7 @@ export default async function brandClaimsHandler(message, context) {
   };
 
   await sqs.sendMessage(queueUrl, event);
-  log.info(`brand-claims: published ready-signal for site ${siteId} (brand "${brand.name}"), s3_key=${sheet.key}`);
+  log.info(`brand-claims: published ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), s3_key=${sheet.key}`);
 
   return ok();
 }

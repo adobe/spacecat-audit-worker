@@ -34,18 +34,27 @@ describe('Brand Claims audit handler', function () {
   let postgrestClient;
   let selectResult;
   let updateResult;
+  let pgCalls;
 
-  const makeBuilder = () => {
-    const builder = {
-      select: () => builder,
-      update: () => builder,
-      eq: () => builder,
-      neq: () => builder,
-      order: () => Promise.resolve(selectResult),
-      maybeSingle: () => Promise.resolve(updateResult),
-    };
-    return builder;
-  };
+  // Records each PostgREST query so tests can assert the exact table, columns, and
+  // filters (a no-op builder would let a dropped tenant filter pass silently).
+  const makePostgrest = () => ({
+    from: (table) => {
+      const rec = {
+        table, select: undefined, update: undefined, eqs: [], neqs: [],
+      };
+      pgCalls.push(rec);
+      const builder = {
+        select: (cols) => { rec.select = cols; return builder; },
+        update: (payload) => { rec.update = payload; return builder; },
+        eq: (col, val) => { rec.eqs.push([col, val]); return builder; },
+        neq: (col, val) => { rec.neqs.push([col, val]); return builder; },
+        order: () => Promise.resolve(selectResult),
+        maybeSingle: () => Promise.resolve(updateResult),
+      };
+      return builder;
+    },
+  });
 
   const buildContext = (overrides = {}) => ({
     log,
@@ -81,7 +90,8 @@ describe('Brand Claims audit handler', function () {
     s3Client = { send: sandbox.stub().resolves({ Contents: [], IsTruncated: false }) };
     selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
     updateResult = { data: { id: BRAND_ID, name: 'Acme Corp' }, error: null };
-    postgrestClient = { from: () => makeBuilder() };
+    pgCalls = [];
+    postgrestClient = makePostgrest();
   });
 
   afterEach(() => {
@@ -89,6 +99,22 @@ describe('Brand Claims audit handler', function () {
   });
 
   describe('sanitizePathComponent', () => {
+    // Golden vectors — must stay in lockstep with the DRS producer and the api-service
+    // run-brand-claims command. A diff here means the S3 prefix will not match the sheet.
+    it('matches the known DRS input/output vectors', () => {
+      const vectors = [
+        ['Acme Corp', 'acmecorp'],
+        ['Acme.Co/Foo\\Bar', 'acme-co-foo-bar'],
+        ['  Trimmed  ', 'trimmed'],
+        ['Über Brand!', 'berbrand'],
+        ['a__b--c', 'a__b-c'],
+        ['...leading.dots...', 'leading-dots'],
+      ];
+      vectors.forEach(([input, expected]) => {
+        expect(sanitizePathComponent(input), input).to.equal(expected);
+      });
+    });
+
     it('normalizes dots, slashes, backslashes and case', () => {
       expect(sanitizePathComponent('Acme.Co/Foo\\Bar')).to.equal('acme-co-foo-bar');
     });
@@ -115,28 +141,25 @@ describe('Brand Claims audit handler', function () {
       expect(log.error).to.have.been.calledWithMatch('missing siteId');
     });
 
-    it('returns ok when the queue URL is not configured', async () => {
+    it('throws (SQS retry) when the queue URL is not configured', async () => {
       const ctx = buildContext();
       delete ctx.env.SQS_BP_SHEET_READY_QUEUE_URL;
-      const res = await brandClaimsHandler(message, ctx);
-      expect(res.status).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch('SQS_BP_SHEET_READY_QUEUE_URL');
+      await expect(brandClaimsHandler(message, ctx))
+        .to.be.rejectedWith('SQS_BP_SHEET_READY_QUEUE_URL');
     });
 
-    it('returns ok when the DRS bucket is not configured', async () => {
+    it('throws (SQS retry) when the DRS bucket is not configured', async () => {
       const ctx = buildContext();
       delete ctx.env.DRS_BP_BUCKET;
-      const res = await brandClaimsHandler(message, ctx);
-      expect(res.status).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch('DRS_BP_BUCKET');
+      await expect(brandClaimsHandler(message, ctx))
+        .to.be.rejectedWith('DRS_BP_BUCKET');
     });
 
-    it('returns ok when the postgrest client is unavailable', async () => {
+    it('throws (SQS retry) when the postgrest client is unavailable', async () => {
       const ctx = buildContext();
       ctx.dataAccess.services = {};
-      const res = await brandClaimsHandler(message, ctx);
-      expect(res.status).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch('postgrestClient');
+      await expect(brandClaimsHandler(message, ctx))
+        .to.be.rejectedWith('postgrestClient');
     });
 
     it('returns ok when the site cannot be found', async () => {
@@ -180,7 +203,7 @@ describe('Brand Claims audit handler', function () {
       expect(sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('tolerates the enable write returning no row and still runs', async () => {
+    it('skips the run when the enable write matches no row (brand deleted mid-flight)', async () => {
       updateResult = { data: null, error: null };
       s3Client.send.resolves({
         Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
@@ -188,7 +211,8 @@ describe('Brand Claims audit handler', function () {
       });
       const res = await brandClaimsHandler(message, buildContext());
       expect(res.status).to.equal(200);
-      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch('enable did not take');
+      expect(sqs.sendMessage).to.not.have.been.called;
     });
   });
 
@@ -256,7 +280,7 @@ describe('Brand Claims audit handler', function () {
 
       const [queueUrl, event] = sqs.sendMessage.firstCall.args;
       expect(queueUrl).to.equal('https://sqs.test/bp-sheet-ready');
-      expect(event).to.include({
+      expect(event).to.deep.equal({
         event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
         schema_version: 1,
         organization_id: 'ims-org@AdobeOrg',
@@ -266,10 +290,39 @@ describe('Brand Claims audit handler', function () {
         week: 2,
         year: 2026,
         cadence: 'daily',
+        sheet_date: '2026-01-02',
         platform: 'chatgpt_free',
         s3_bucket: 'drs-bp-bucket',
         s3_key: `${prefix}/2026/01/02/bp-w2-2026-030405.xlsx`,
+        parent_job_id: null,
+        batch_id: null,
       });
+    });
+
+    it('queries and writes the brands table with the expected filters and payload', async () => {
+      s3Client.send.resolves({
+        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      await brandClaimsHandler(message, buildContext());
+
+      const read = pgCalls[0];
+      expect(read.table).to.equal('brands');
+      expect(read.select).to.equal('id, name, brand_claims_enabled');
+      expect(read.eqs).to.deep.include.members([
+        ['organization_id', ORG_ID],
+        ['status', 'active'],
+        ['site_id', SITE_ID],
+      ]);
+
+      const write = pgCalls[1];
+      expect(write.table).to.equal('brands');
+      expect(write.update).to.deep.equal({
+        brand_claims_enabled: true,
+        updated_by: 'audit-worker:brand-claims',
+      });
+      expect(write.eqs).to.deep.include(['id', BRAND_ID]);
+      expect(write.neqs).to.deep.include(['status', 'deleted']);
     });
 
     it('skips the enable write when the gate is already on but still runs', async () => {
