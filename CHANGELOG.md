@@ -1,3 +1,10 @@
+# [1.517.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.5...v1.517.0) (2026-08-10)
+
+
+### Features
+
+* **offsite:** log Semrush non-2xx response body to pinpoint the 401 rejecter (LLMO-6709) ([#2854](https://github.com/adobe/spacecat-audit-worker/issues/2854)) ([fca3d39](https://github.com/adobe/spacecat-audit-worker/commit/fca3d39c707b71a2535c84ef8e20aa47a13fc06f))
+
 ## [1.516.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.4...v1.516.5) (2026-08-10)
 
 
