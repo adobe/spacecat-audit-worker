@@ -1,3 +1,10 @@
+## [1.516.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.4...v1.516.5) (2026-08-10)
+
+
+### Bug Fixes
+
+* resolve the organization's own brandalf flag row, not a brand's override ([#2870](https://github.com/adobe/spacecat-audit-worker/issues/2870)) ([1cc78ad](https://github.com/adobe/spacecat-audit-worker/commit/1cc78ad62b9817e10c6e50570acaa6b6ff11d680))
+
 ## [1.516.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.3...v1.516.4) (2026-08-08)
 
 
