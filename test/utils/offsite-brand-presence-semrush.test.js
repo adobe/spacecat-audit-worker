@@ -25,15 +25,9 @@ const PREVIOUS_WEEKS = [{ week: 29, year: 2026 }, { week: 28, year: 2026 }];
 const YT_URL = 'https://www.youtube.com/watch?v=abc';
 const YT_NORM = 'https://youtu.be/abc';
 const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
-
-// Full provider engine set (SEMRUSH_PLATFORM_BY_PROVIDER values), the default.
-const DEFAULT_PLATFORMS = [
-  'google-ai-mode', 'search-gpt', 'microsoft-copilot', 'gemini-2.5-flash', 'google-ai-overview', 'perplexity',
-];
+const CITED_URL = 'https://example.org/page';
 
 const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
-const ONE_ENGINE = { OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt' };
-const TWO_ENGINES = { OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt, google-ai-mode' };
 
 describe('offsite-brand-presence-semrush', function () {
   this.timeout(10000);
@@ -47,23 +41,21 @@ describe('offsite-brand-presence-semrush', function () {
   let mod;
 
   const SITE_ID = '5b0d4d6e-3d2e-4a5b-8e2a-9b6f7c9c1e2a';
-  const site = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
+  const site = {
+    getOrganizationId: () => ORG_ID,
+    getId: () => SITE_ID,
+    getConfig: () => ({ getBrandKeywords: () => [] }),
+  };
   const makeContext = (env = {}, extra = {}) => ({ log, env, ...extra });
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
   const erroredWith = (re) => log.error.getCalls().some((c) => re.test(c.args[0]));
 
-  async function loadModule() {
+  async function loadModule(overrides = {}) {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
       '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
-    });
-  }
-
-  function stubByHostname(fn) {
-    fetchStub.callsFake(async (url) => {
-      const params = new URL(url).searchParams;
-      return fn(params.get('hostname'), params.get('platform'));
+      ...overrides,
     });
   }
 
@@ -95,23 +87,30 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- happy path -----------------------------------------------------------
 
-  it('queries each engine per hostname and SUMS citations per URL', async () => {
-    stubByHostname((hostname, platform) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: platform === 'google-ai-mode' ? 5 : 10 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: platform === 'google-ai-mode' ? 4 : 7 }] })));
-
-    const allUrls = await run(TWO_ENGINES);
-
-    expect(fetchStub.callCount).to.equal(4); // 2 hosts x 2 engines
-    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 15, domain: 'youtube.com' }); // 10 + 5
-    expect(allUrls.get(RD_URL)).to.deep.equal({ count: 11, domain: 'reddit.com' }); // 7 + 4
-  });
-
-  it('defaults to the full provider engine set (one request per engine per hostname)', async () => {
+  it('makes exactly ONE domain-urls request (no hostname, platform=all)', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
     await run();
-    expect(mod.getSemrushPlatforms(undefined)).to.have.lengthOf(6);
-    expect(fetchStub.callCount).to.equal(12); // 2 hosts x 6 engines
+
+    expect(fetchStub.callCount).to.equal(1);
+    const [url] = fetchStub.firstCall.args;
+    expect(new URL(url).searchParams.has('hostname')).to.equal(false);
+    expect(new URL(url).searchParams.get('platform')).to.equal('all');
+  });
+
+  it('splits the single response into youtube / reddit / cited buckets', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: YT_URL, citations: 10 },
+        { url: RD_URL, citations: 7 },
+        { url: CITED_URL, citations: 5, contentType: 'Third-party' },
+      ],
+    }));
+
+    const allUrls = await run();
+
+    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 10, domain: 'youtube.com' });
+    expect(allUrls.get(RD_URL)).to.deep.equal({ count: 7, domain: 'reddit.com' });
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
   });
 
   it('sends Authorization+Accept+timeout, no Content-Type, no x-promise-token by default', async () => {
@@ -120,7 +119,6 @@ describe('offsite-brand-presence-semrush', function () {
 
     const [url, opts] = fetchStub.firstCall.args;
     expect(url).to.contain(`${mod.SPACECAT_API_DEFAULT_BASE_URL}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
-    expect(new URL(url).searchParams.get('platform')).to.be.oneOf(DEFAULT_PLATFORMS);
     expect(opts.headers.Authorization).to.equal('Bearer tok');
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('Content-Type');
@@ -147,80 +145,171 @@ describe('offsite-brand-presence-semrush', function () {
     expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/v2/orgs/');
   });
 
-  it('honours an OFFSITE_SEMRUSH_PLATFORMS override', async () => {
+  it('always requests PAGE_SIZE', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
-    await run(ONE_ENGINE);
-    expect(fetchStub.callCount).to.equal(2); // 2 hosts x 1 engine
-    fetchStub.getCalls().forEach((c) => {
-      expect(new URL(c.args[0]).searchParams.get('platform')).to.equal('search-gpt');
-    });
+    await run();
+    expect(new URL(fetchStub.firstCall.args[0]).searchParams.get('pageSize')).to.equal(String(mod.PAGE_SIZE));
   });
 
   // --- filtering / scope ----------------------------------------------------
 
   it('drops URLs failing the strict youtube/reddit formats', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { url: 'https://music.youtube.com/watch?v=z', citations: 99 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 7 }, { url: 'https://www.reddit.com/settings', citations: 99 }] })));
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: YT_URL, citations: 10 },
+        { url: 'https://music.youtube.com/watch?v=z', citations: 99 },
+        { url: RD_URL, citations: 7 },
+        { url: 'https://www.reddit.com/settings', citations: 99 },
+      ],
+    }));
 
-    const allUrls = await run(ONE_ENGINE);
+    const allUrls = await run();
     expect([...allUrls.keys()].sort()).to.deep.equal([YT_NORM, RD_URL].sort());
   });
 
-  it('drops off-host (domain: null) rows so nothing leaks into top-cited', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { url: 'https://example.org/page', citations: 99 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
+  it('drops Owned rows from the cited bucket', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 99, contentType: 'Owned' }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+  });
 
-    const allUrls = await run(ONE_ENGINE);
-    expect([...allUrls.keys()]).to.not.include('https://example.org/page');
-    expect(allUrls.has(YT_NORM)).to.equal(true);
+  it('drops TOP_CITED_EXCLUDED_DOMAINS (e.g. wikipedia.org) from the cited bucket', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: 'https://en.wikipedia.org/wiki/Foo', citations: 99 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('drops social/search excluded-domain lookalikes (isExcludedCitedHost) from the cited bucket', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: 'https://www.facebook.com/somepage', citations: 99 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('drops brand-token lookalikes from the cited bucket', async () => {
+    const brandSite = {
+      ...site,
+      getConfig: () => ({ getBrandKeywords: () => ['lovesac'] }),
+    };
+    fetchStub.resolves(okJson({
+      urls: [{ url: 'https://lovedbylovesac.com/page', citations: 99 }],
+    }));
+    const allUrls = await mod.loadCitedUrlsFromSemrush({
+      site: brandSite, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), siteHostname: 'lovesac.com',
+    });
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('drops opaque-scheme rows (mailto:/tel:/data:/javascript:) via the scheme allowlist', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'mailto:foo@bar.com', citations: 99 },
+        { url: 'tel:+123456789', citations: 99 },
+        { url: 'data:text/plain;base64,SGVsbG8=', citations: 99 },
+        { url: 'javascript:alert(1)', citations: 99 }, // eslint-disable-line no-script-url -- test data, never executed
+        { url: CITED_URL, citations: 5 },
+      ],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
+  });
+
+  it('drops non-http(s) schemes that reparse cleanly (ftp:/ws:) via the scheme allowlist', async () => {
+    // These don't throw on reparse (unlike opaque schemes) — the allowlist is what catches
+    // them, not an incidental parse failure.
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'ftp://example.com/file.txt', citations: 99 },
+        { url: 'ws://example.com/socket', citations: 99 },
+        { url: CITED_URL, citations: 5 },
+      ],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
+  });
+
+  it('drops a row whose url is not a valid URL at all', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: 'not a url', citations: 99 }, { url: CITED_URL, citations: 5 }],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
   });
 
   it('filters owned URLs (siteHostname) and rows without a url', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 10 }, { citations: 3 }] }) // 2nd: no url
-      : okJson({ urls: [{ url: 'https://www.lovesac.com/owned', citations: 99 }] }))); // owned
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: YT_URL, citations: 10 },
+        { citations: 3 }, // no url
+        { url: 'https://www.lovesac.com/owned', citations: 99 }, // site's own host
+      ],
+    }));
 
     const allUrls = await mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(ONE_ENGINE), siteHostname: 'lovesac.com',
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), siteHostname: 'lovesac.com',
     });
     expect([...allUrls.keys()]).to.deep.equal([YT_NORM]);
+  });
+
+  it('tolerates a site with no getConfig()/getBrandKeywords()', async () => {
+    fetchStub.resolves(okJson({ urls: [{ url: YT_URL, citations: 10 }] }));
+    const bareSite = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
+    const allUrls = await mod.loadCitedUrlsFromSemrush({
+      site: bareSite, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
+    });
+    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 10, domain: 'youtube.com' });
   });
 
   // --- citation clamping ----------------------------------------------------
 
   it('drops a URL whose citations are negative (clamped to 0 -> dropped)', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: -5 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
-    const allUrls = await run(ONE_ENGINE);
+    fetchStub.resolves(okJson({
+      urls: [{ url: YT_URL, citations: -5 }, { url: RD_URL, citations: 7 }],
+    }));
+    const allUrls = await run();
     expect(allUrls.has(YT_NORM)).to.equal(false);
     expect(allUrls.get(RD_URL).count).to.equal(7);
   });
 
   it('drops a URL whose citations are non-numeric or missing (0 -> dropped)', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 'abc' }] }) // NaN -> 0
-      : okJson({ urls: [{ url: RD_URL }] }))); // missing -> 0
-    const allUrls = await run(ONE_ENGINE);
+    fetchStub.resolves(okJson({
+      urls: [{ url: YT_URL, citations: 'abc' }, { url: RD_URL }],
+    }));
+    const allUrls = await run();
     expect(allUrls.size).to.equal(0);
   });
 
-  it('keeps a URL when one engine reports 0 but another reports a positive count', async () => {
-    stubByHostname((hostname, platform) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: platform === 'google-ai-mode' ? 5 : 0 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
-    const allUrls = await run(TWO_ENGINES);
-    expect(allUrls.get(YT_NORM)).to.deep.equal({ count: 5, domain: 'youtube.com' });
+  it('sums duplicate URLs within the single page', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: YT_URL, citations: 3 }, { url: YT_URL, citations: 4 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(YT_NORM).count).to.equal(7);
   });
 
-  it('sums duplicate URLs within a single page', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 3 }, { url: YT_URL, citations: 4 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
-    const allUrls = await run(ONE_ENGINE);
-    expect(allUrls.get(YT_NORM).count).to.equal(7);
+  it('sums duplicate URLs within the cited bucket too', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 3 }, { url: CITED_URL, citations: 4 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 7, domain: null });
+  });
+
+  it('counts the cited bucket correctly (not mis-keyed) when only cited URLs are present', async () => {
+    const CITED_URL_2 = 'https://another.example/page';
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5 }, { url: CITED_URL_2, citations: 3 }],
+    }));
+    const onProgress = sandbox.stub().resolves();
+    const allUrls = await run({}, {}, onProgress);
+    expect(allUrls.size).to.equal(2);
+    const messages = onProgress.getCalls().map((c) => c.args[0]);
+    expect(messages.some((m) => /Loaded 0 `youtube\.com`, 0 `reddit\.com`, and 2 cited/.test(m))).to.equal(true);
   });
 
   // --- body / truncation ----------------------------------------------------
@@ -231,142 +320,91 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.size).to.equal(0);
   });
 
-  it('warns and hard-caps at PAGE_SIZE when a full page is returned', async () => {
-    const rows = Array.from({ length: 101 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: rows })
-      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
-    const allUrls = await run(ONE_ENGINE);
+  it('warns, sets diagnostics.truncated, and hard-caps at PAGE_SIZE when a full page is returned', async () => {
+    const rows = Array.from({ length: mod.PAGE_SIZE + 1 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    fetchStub.resolves(okJson({ urls: rows }));
+    const diagnostics = {};
+    const allUrls = await run({}, {}, undefined, diagnostics);
     expect(warnedWith(/full page/)).to.equal(true);
-    expect([...allUrls.keys()].filter((k) => k.startsWith('https://youtu.be/')).length).to.equal(100);
+    expect(allUrls.size).to.equal(mod.PAGE_SIZE);
+    expect(diagnostics.truncated).to.equal(true);
   });
 
-  it('does not warn on a 99-row page (truncation off-by-one)', async () => {
-    const rows = Array.from({ length: 99 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: rows })
-      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
-    await run(ONE_ENGINE);
+  it('does not warn and sets diagnostics.truncated to false on a page one row under PAGE_SIZE', async () => {
+    const rows = Array.from({ length: mod.PAGE_SIZE - 1 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    fetchStub.resolves(okJson({ urls: rows }));
+    const diagnostics = {};
+    await run({}, {}, undefined, diagnostics);
     expect(warnedWith(/full page/)).to.equal(false);
+    expect(diagnostics.truncated).to.equal(false);
   });
 
-  it('warns on an exactly-PAGE_SIZE (100-row) page (>= boundary, not >)', async () => {
-    const rows = Array.from({ length: 100 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: rows })
-      : okJson({ urls: [{ url: RD_URL, citations: 1 }] })));
-    await run(ONE_ENGINE);
+  it('warns on an exactly-PAGE_SIZE page (>= boundary, not >)', async () => {
+    const rows = Array.from({ length: mod.PAGE_SIZE }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    fetchStub.resolves(okJson({ urls: rows }));
+    await run();
     expect(warnedWith(/full page/)).to.equal(true);
   });
 
-  // --- surface-level fallback (returns null) --------------------------------
+  // --- request-level fallback (returns null) --------------------------------
 
-  it('falls back (null) when a whole hostname has no successful response — reject', async () => {
-    stubByHostname((hostname) => {
-      if (hostname === 'reddit.com') {
-        return Promise.reject(new Error('network down'));
-      }
-      return okJson({ urls: [{ url: YT_URL, citations: 10 }] });
-    });
-    const result = await run(ONE_ENGINE);
+  it('falls back (null) on a network error', async () => {
+    fetchStub.rejects(new Error('network down'));
+    const diagnostics = {};
+    const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(warnedWith(/No successful Semrush response for reddit\.com/)).to.equal(true);
+    expect(diagnostics.fallbackReason).to.equal('domain-urls-failed');
   });
 
-  it('falls back (null) on a non-2xx surface', async () => {
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? { ok: false, status: 500 }
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    expect(await run(ONE_ENGINE)).to.equal(null);
+  it('falls back (null) on a non-2xx response', async () => {
+    fetchStub.resolves({ ok: false, status: 500 });
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('domain-urls-failed');
   });
 
-  it('logs a distinct rejection with the response body on a 401 surface', async () => {
+  it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 401', async () => {
+    fetchStub.resolves({ ok: false, status: 401 });
+    const diagnostics = {};
+    const result = await run({}, {}, undefined, diagnostics);
+    expect(result).to.equal(null);
+    expect(erroredWith(/Service token rejected/)).to.equal(true);
+    expect(diagnostics.fallbackReason).to.equal('domain-urls-auth-failed');
+  });
+
+  it('logs the response body on a 401 so the rejecter (api-service vs Semrush) is identifiable', async () => {
     const proxyMsg = 'Elements proxy requires IMS authentication; send the x-promise-token header instead';
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? { ok: false, status: 401, text: async () => proxyMsg }
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    const result = await run(ONE_ENGINE);
+    fetchStub.resolves({ ok: false, status: 401, text: async () => proxyMsg });
+    const result = await run();
     expect(result).to.equal(null);
     expect(erroredWith(/Service token rejected/)).to.equal(true);
     // The captured body identifies the rejecter (api-service vs Semrush) — LLMO-6709.
     expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === proxyMsg)).to.equal(true);
   });
 
-  it('handles an empty error body on a non-2xx surface', async () => {
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? { ok: false, status: 500, text: async () => '' }
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    const result = await run(ONE_ENGINE);
+  it('handles an empty/unreadable error body on a non-2xx response', async () => {
+    fetchStub.resolves({ ok: false, status: 500, text: async () => '' });
+    const result = await run();
     expect(result).to.equal(null);
     expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === '')).to.equal(true);
   });
 
-  it('logs a distinct rejection and falls back on a 403 surface', async () => {
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? { ok: false, status: 403 }
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    const result = await run(ONE_ENGINE);
+  it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 403', async () => {
+    fetchStub.resolves({ ok: false, status: 403 });
+    const diagnostics = {};
+    const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
     expect(erroredWith(/Service token rejected/)).to.equal(true);
+    expect(diagnostics.fallbackReason).to.equal('domain-urls-auth-failed');
   });
 
-  it('falls back (null) when a surface body fails to parse', async () => {
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? { ok: true, status: 200, json: async () => { throw new Error('bad json'); } }
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    expect(await run(ONE_ENGINE)).to.equal(null);
-  });
-
-  it('tolerates a single failed engine when the surface still has a successful response', async () => {
-    stubByHostname((hostname, platform) => {
-      if (hostname === 'youtube.com' && platform === 'search-gpt') {
-        return Promise.reject(new Error('flaky engine'));
-      }
-      return hostname === 'youtube.com'
-        ? okJson({ urls: [{ url: YT_URL, citations: 5 }] })
-        : okJson({ urls: [{ url: RD_URL, citations: 7 }] });
+  it('falls back (null) when the response body fails to parse', async () => {
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: async () => { throw new Error('bad json'); },
     });
-    const allUrls = await run(TWO_ENGINES);
-    expect(allUrls).to.not.equal(null);
-    expect(allUrls.get(YT_NORM).count).to.equal(5);
-    expect(allUrls.get(RD_URL).count).to.equal(14); // reddit ok on both engines
-  });
-
-  // --- diagnostics out-param --------------------------------------------------
-
-  it('reports a specific fallbackReason for a fully-failed surface, distinct from other null causes', async () => {
-    stubByHostname((hostname) => (hostname === 'reddit.com'
-      ? Promise.reject(new Error('network down'))
-      : okJson({ urls: [{ url: YT_URL, citations: 10 }] })));
-    const diagnostics = {};
-    expect(await run(ONE_ENGINE, {}, undefined, diagnostics)).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('surface-failed:reddit.com');
-  });
-
-  it('reports engineFailureCount/degradedHosts/authFailureDetected on a successful but degraded run', async () => {
-    stubByHostname((hostname, platform) => {
-      if (hostname === 'youtube.com' && platform === 'search-gpt') {
-        return { ok: false, status: 401 };
-      }
-      return hostname === 'youtube.com'
-        ? okJson({ urls: [{ url: YT_URL, citations: 5 }] })
-        : okJson({ urls: [{ url: RD_URL, citations: 7 }] });
-    });
-    const diagnostics = {};
-    const allUrls = await run(TWO_ENGINES, {}, undefined, diagnostics);
-    expect(allUrls).to.not.equal(null);
-    expect(diagnostics.engineFailureCount).to.equal(1);
-    expect(diagnostics.degradedHosts).to.deep.equal(['youtube.com']);
-    expect(diagnostics.authFailureDetected).to.equal(true);
-  });
-
-  it('reports no degradation on a fully clean run', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
-    const diagnostics = {};
-    await run(ONE_ENGINE, {}, undefined, diagnostics);
-    expect(diagnostics.engineFailureCount).to.equal(0);
-    expect(diagnostics.degradedHosts).to.deep.equal([]);
-    expect(diagnostics.authFailureDetected).to.equal(false);
+    expect(await run()).to.equal(null);
   });
 
   // --- precondition guards (return null) -----------------------------------
@@ -418,42 +456,37 @@ describe('offsite-brand-presence-semrush', function () {
   // --- progress notifications (onProgress) -----------------------------------
 
   it('invokes onProgress at each stage of a successful attempt', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 10 }] })
-      : okJson({ urls: [{ url: RD_URL, citations: 7 }] })));
+    fetchStub.resolves(okJson({
+      urls: [{ url: YT_URL, citations: 10 }, { url: RD_URL, citations: 7 }],
+    }));
     const onProgress = sandbox.stub().resolves();
 
-    const allUrls = await run(ONE_ENGINE, {}, onProgress);
+    const allUrls = await run({}, {}, onProgress);
 
     expect(allUrls.size).to.equal(2);
     expect(onProgress).to.have.been.called;
     const messages = onProgress.getCalls().map((c) => c.args[0]);
     expect(messages.some((m) => /Starting Semrush/.test(m))).to.equal(true);
-    expect(messages.some((m) => /Querying/.test(m))).to.equal(true);
-    expect(messages.some((m) => /youtube\.com.*engine requests succeeded/.test(m))).to.equal(true);
-    expect(messages.some((m) => /reddit\.com.*engine requests succeeded/.test(m))).to.equal(true);
-    expect(messages.some((m) => /Loaded 1 URL\(s\) from `youtube\.com`/.test(m))).to.equal(true);
-    expect(messages.some((m) => /Loaded 1 URL\(s\) from `reddit\.com`/.test(m))).to.equal(true);
+    expect(messages.some((m) => /Querying.*single request/.test(m))).to.equal(true);
+    expect(messages.some((m) => /Loaded 1 `youtube\.com`, 1 `reddit\.com`, and 0 cited/.test(m))).to.equal(true);
     expect(messages.some((m) => /total cited URL/.test(m))).to.equal(true);
   });
 
-  it('invokes onProgress with a failure notice on the surface that triggers fallback', async () => {
-    stubByHostname((hostname) => (hostname === 'youtube.com'
-      ? okJson({ urls: [{ url: YT_URL, citations: 10 }] })
-      : { ok: false, status: 500, json: async () => ({}) }));
+  it('invokes onProgress with a failure notice when the request fails', async () => {
+    fetchStub.resolves({ ok: false, status: 500 });
     const onProgress = sandbox.stub().resolves();
 
-    expect(await run(ONE_ENGINE, {}, onProgress)).to.equal(null);
+    expect(await run({}, {}, onProgress)).to.equal(null);
 
     const messages = onProgress.getCalls().map((c) => c.args[0]);
-    expect(messages.some((m) => /reddit\.com.*0\/1 engine requests succeeded/.test(m))).to.equal(true);
+    expect(messages.some((m) => /domain-urls.*request failed/.test(m))).to.equal(true);
   });
 
   it('logs a warning and does not throw when onProgress rejects', async () => {
     fetchStub.resolves(okJson({ urls: [] }));
     const onProgress = sandbox.stub().rejects(new Error('slack down'));
 
-    const allUrls = await run(ONE_ENGINE, {}, onProgress);
+    const allUrls = await run({}, {}, onProgress);
 
     expect(allUrls).to.not.equal(null);
     expect(warnedWith(/Failed to post Semrush progress update/)).to.equal(true);
@@ -461,36 +494,25 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- pure helpers ---------------------------------------------------------
 
-  describe('getSemrushPlatforms', () => {
-    it('defaults to the confirmed engine list', () => {
-      expect(mod.getSemrushPlatforms(undefined)).to.deep.equal(DEFAULT_PLATFORMS);
-      expect(mod.getSemrushPlatforms({})).to.deep.equal(DEFAULT_PLATFORMS);
-      expect(mod.getSemrushPlatforms({ OFFSITE_SEMRUSH_PLATFORMS: '   ' })).to.deep.equal(DEFAULT_PLATFORMS);
-      // separators-only must NOT disable all requests
-      expect(mod.getSemrushPlatforms({ OFFSITE_SEMRUSH_PLATFORMS: ' , , ' })).to.deep.equal(DEFAULT_PLATFORMS);
-    });
-
-    it('parses a comma-separated override, trimming and dropping empties', () => {
-      expect(mod.getSemrushPlatforms({ OFFSITE_SEMRUSH_PLATFORMS: 'search-gpt, ,google-ai-mode ' }))
-        .to.deep.equal(['search-gpt', 'google-ai-mode']);
-    });
-  });
-
   describe('buildDomainUrlsUrl', () => {
     const baseArgs = {
-      baseUrl: 'https://h/api', spaceCatId: 'o', brandId: 'b', hostname: 'reddit.com', startDate: '2026-07-06', endDate: '2026-08-02',
+      baseUrl: 'https://h/api', spaceCatId: 'o', brandId: 'b', startDate: '2026-07-06', endDate: '2026-08-02', pageSize: 500,
     };
 
-    it('omits platform when not provided and encodes path segments', () => {
+    it('encodes path segments and never includes hostname', () => {
       const url = mod.buildDomainUrlsUrl({ ...baseArgs, spaceCatId: 'o/x', brandId: 'b?y' });
       expect(url).to.contain('/v2/orgs/o%2Fx/brands/b%3Fy/serenity/brand-presence/url-inspector/domain-urls?');
-      expect(new URL(url).searchParams.has('platform')).to.equal(false);
-      expect(new URL(url).searchParams.get('hostname')).to.equal('reddit.com');
+      expect(new URL(url).searchParams.has('hostname')).to.equal(false);
     });
 
-    it('includes platform when provided', () => {
-      const url = mod.buildDomainUrlsUrl({ ...baseArgs, platform: 'search-gpt' });
-      expect(new URL(url).searchParams.get('platform')).to.equal('search-gpt');
+    it('always sends platform=all', () => {
+      const url = mod.buildDomainUrlsUrl(baseArgs);
+      expect(new URL(url).searchParams.get('platform')).to.equal('all');
+    });
+
+    it('sends the requested pageSize', () => {
+      const url = mod.buildDomainUrlsUrl({ ...baseArgs, pageSize: 777 });
+      expect(new URL(url).searchParams.get('pageSize')).to.equal('777');
     });
   });
 });

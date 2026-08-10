@@ -980,21 +980,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         allUrls.set(url, info);
       }
       usedSemrush = true;
-      // Surfaced even on success: a run that tolerated partial engine/auth failures
-      // reports the same dataSource: 'semrush' as a clean run otherwise, which is
-      // exactly the signal LLMO-6711's shadow-run parity work needs to avoid grepping
-      // logs, and the one auth-rejection signal that matters most pre-LLMO-6709.
-      if (semrushDiagnostics.authFailureDetected) {
-        log.warn(`${LOG_PREFIX} Semrush succeeded but at least one engine request returned 401/403 — possible auth/token issue during the pre-LLMO-6709 verification window`, {
-          siteId,
-          degradedHosts: semrushDiagnostics.degradedHosts,
-          engineFailureCount: semrushDiagnostics.engineFailureCount,
-        });
-      }
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
-  const semrushDegraded = usedSemrush && (semrushDiagnostics?.engineFailureCount ?? 0) > 0;
 
   // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
   // failed (fallback). An enableSemrush:true run that failed already hard-stopped
@@ -1106,10 +1094,6 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       weeks: previousWeeks,
       dataSource,
       ...(fallbackReason ? { fallbackReason } : {}),
-      ...(semrushDegraded ? {
-        semrushEngineFailureCount: semrushDiagnostics.engineFailureCount,
-        semrushDegradedHosts: semrushDiagnostics.degradedHosts,
-      } : {}),
     },
     fullAuditRef: finalUrl,
   };
