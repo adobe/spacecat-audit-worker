@@ -70,6 +70,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       save: sinon.stub().resolvesThis(),
       getId: sinon.stub().resolves('testId'),
@@ -124,6 +126,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),
@@ -154,6 +158,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),
@@ -192,6 +198,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),
@@ -256,6 +264,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setGuidance: sinon.stub(),
       addSuggestions: sinon.stub(),
       save: sinon.stub().resolvesThis(),

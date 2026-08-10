@@ -133,10 +133,10 @@ describe('Backlinks Tests', function () {
     brokenBacklinksOpportunity = {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
-      // SITES-49175 — convertToOpportunity's UPDATE branch self-heals
-      // legacy NULL-scope rows by stamping scope on every touch.
       setScopeType: sinon.stub(),
       setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub(),
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
@@ -1531,10 +1531,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
-      // SITES-49175 — convertToOpportunity's UPDATE branch self-heals
-      // legacy NULL-scope rows by stamping scope on every touch.
-      setScopeType: sinon.stub(),
-      setScopeId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
@@ -1611,10 +1611,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
-      // SITES-49175 — convertToOpportunity's UPDATE branch self-heals
-      // legacy NULL-scope rows by stamping scope on every touch.
-      setScopeType: sinon.stub(),
-      setScopeId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
@@ -1703,10 +1703,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
-      // SITES-49175 — convertToOpportunity's UPDATE branch self-heals
-      // legacy NULL-scope rows by stamping scope on every touch.
-      setScopeType: sinon.stub(),
-      setScopeId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),

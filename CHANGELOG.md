@@ -1,3 +1,38 @@
+## [1.516.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.3...v1.516.4) (2026-08-08)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2867](https://github.com/adobe/spacecat-audit-worker/issues/2867)) ([26efba4](https://github.com/adobe/spacecat-audit-worker/commit/26efba4d8d2596d95557629464c2ca128c81fb40))
+
+## [1.516.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.2...v1.516.3) (2026-08-07)
+
+
+### Performance Improvements
+
+* **preflight:** emit pfauditmetric marker for accessibility, form-accessibility, readability ([#2865](https://github.com/adobe/spacecat-audit-worker/issues/2865)) ([38de139](https://github.com/adobe/spacecat-audit-worker/commit/38de13922dbae1c3b0ad48425dcd327b88655345))
+
+## [1.516.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.1...v1.516.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* **opportunity:** prefer scoped row to avoid unique constraint collision (SITES-49175) ([#2863](https://github.com/adobe/spacecat-audit-worker/issues/2863)) ([98bd418](https://github.com/adobe/spacecat-audit-worker/commit/98bd418bfaac65f8a33610be1a128c5e383ea008)), closes [#2850](https://github.com/adobe/spacecat-audit-worker/issues/2850)
+
+## [1.516.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.0...v1.516.1) (2026-08-07)
+
+
+### Performance Improvements
+
+* **preflight:** add rare pfauditmetric marker to structured log line for Splunk ([#2864](https://github.com/adobe/spacecat-audit-worker/issues/2864)) ([40fc601](https://github.com/adobe/spacecat-audit-worker/commit/40fc60194e416dfd3de3f8388a309d9d25e83903)), closes [#2862](https://github.com/adobe/spacecat-audit-worker/issues/2862)
+
+# [1.516.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.6...v1.516.0) (2026-08-07)
+
+
+### Features
+
+* **preflight:** add structured audit=/status=/duration_ms= logging to check handlers ([#2862](https://github.com/adobe/spacecat-audit-worker/issues/2862)) ([173bb45](https://github.com/adobe/spacecat-audit-worker/commit/173bb4551bb52a924cd20499c2dfc6913496df7a))
+
 ## [1.515.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.515.5...v1.515.6) (2026-08-07)
 
 

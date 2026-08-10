@@ -18,7 +18,7 @@ import {
   HEADINGS_CHECKS,
 } from '../headings/handler.js';
 import { getBrandGuidelines } from '../headings/shared-utils.js';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
@@ -195,6 +195,8 @@ export default async function headings(context, auditContext) {
 
   const headingsStartTime = Date.now();
   const headingsStartTimestamp = new Date().toISOString();
+  let status = 'ok';
+  let errorMessage;
 
   // Create headings audit entries for all pages
   previewUrls.forEach((url) => {
@@ -298,13 +300,23 @@ export default async function headings(context, auditContext) {
       });
     });
   } catch (error) {
+    status = 'fail';
+    errorMessage = error.message;
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit failed: ${error.message}`);
   }
 
   const headingsEndTime = Date.now();
   const headingsEndTimestamp = new Date().toISOString();
   const headingsElapsed = ((headingsEndTime - headingsStartTime) / 1000).toFixed(2);
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds`);
+  const headingsStructured = formatStructuredAuditLog({
+    audit: PREFLIGHT_HEADINGS,
+    status,
+    durationMs: headingsEndTime - headingsStartTime,
+    error: errorMessage,
+  });
+  // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+  // the per-audit dashboard would have no headings data. Matches the DOM-based block's level.
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds.${headingsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'headings',

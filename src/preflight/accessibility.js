@@ -13,7 +13,7 @@
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
@@ -198,6 +198,12 @@ export async function processAccessibilityOpportunities(context, auditContext) {
 
   log.debug(`[preflight-audit] Processing individual accessibility result files for ${site.getBaseURL()}`);
 
+  // Track outcome so the structured completion line can report ok/fail: a preflight scrape that
+  // times out (SITES-49365/49491) leaves some/all result files missing, and per-page processing
+  // can throw - both mean the audit did not fully succeed.
+  let pagesWithData = 0;
+  let pageErrors = 0;
+
   for (const url of previewUrls) {
     try {
       // Generate the expected filename for this URL
@@ -214,6 +220,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
         log.warn(`[preflight-audit] No accessibility data found for ${url} at key: ${fileKey}`);
         // Skip to next URL if no data found
       } else {
+        pagesWithData += 1;
         log.debug(`[preflight-audit] Successfully loaded accessibility data for ${url}`);
 
         // Get the page result for this URL
@@ -279,6 +286,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
         }
       }
     } catch (error) {
+      pageErrors += 1;
       log.error(`[preflight-audit] Error processing accessibility file for ${url}: ${error.message}`, error);
 
       // Add error opportunity to the audit
@@ -303,10 +311,19 @@ export async function processAccessibilityOpportunities(context, auditContext) {
   const accessibilityElapsed = ((accessibilityEndTime - accessibilityStartTime) / 1000)
     .toFixed(2);
 
-  log.debug(
-    `[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}.
-Accessibility audit completed in ${accessibilityElapsed} seconds`,
-  );
+  // Structured completion line (info, so it reaches prod Splunk) with the pfauditmetric marker,
+  // so the SITES-49489 dashboard picks up accessibility alongside the other checks. fail =
+  // some/all pages returned no data (scrape timeout/partial) or a page threw during processing.
+  const failed = pageErrors > 0 || pagesWithData < previewUrls.length;
+  const structured = formatStructuredAuditLog({
+    audit: PREFLIGHT_ACCESSIBILITY,
+    status: failed ? 'fail' : 'ok',
+    durationMs: accessibilityEndTime - accessibilityStartTime,
+    error: failed
+      ? `${pagesWithData}/${previewUrls.length} pages returned data, ${pageErrors} processing error(s)`
+      : undefined,
+  });
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Accessibility audit completed in ${accessibilityElapsed} seconds.${structured}`);
 
   timeExecutionBreakdown.push({
     name: 'accessibility-processing',
