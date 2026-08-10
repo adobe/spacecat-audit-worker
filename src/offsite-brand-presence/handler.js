@@ -17,12 +17,15 @@ import DrsClient, {
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
+import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   computeBrandTokens,
   isExcludedCitedHost,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
+  resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
   createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
@@ -804,6 +807,13 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  * @param {boolean} [enableBrandProfile] - Forwarded so the analysis audits triggered once DRS
  *   scraping completes (see drs-status-handler.js) still resolve the flag originally
  *   requested on Slack, instead of losing it across the scrape round-trip.
+ * @param {number} [urlLimit] - Forwarded so the analysis audits triggered once DRS scraping
+ *   completes (see drs-status-handler.js) still resolve the urlLimit originally requested
+ *   on Slack, instead of losing it across the scrape round-trip.
+ * @param {boolean} [enableSemrush] - Forwarded so the analysis audits triggered once DRS
+ *   scraping completes (see drs-status-handler.js) still honor the same per-run Semrush
+ *   override originally requested on Slack, instead of silently reverting to the env var
+ *   across the scrape round-trip — mirrors enableBrandProfile/urlLimit exactly.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -814,6 +824,8 @@ async function scheduleDrsStatusPoll(
   threadTs,
   drsStartedAt,
   enableBrandProfile,
+  urlLimit,
+  enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
@@ -843,6 +855,8 @@ async function scheduleDrsStatusPoll(
       deadline: Date.now() + DRS_POLL_MAX_WAIT_SECONDS * 1000,
       drsStartedAt,
       ...(enableBrandProfile != null && { enableBrandProfile }),
+      ...(urlLimit != null && { urlLimit }),
+      ...(enableSemrush != null && { enableSemrush }),
     },
   }, null, pollIntervalSeconds);
 
@@ -879,6 +893,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
   // scraping completes, so a Slack-requested flag survives the scrape round-trip.
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const urlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
+  const enableSemrushOverride = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
@@ -915,14 +931,116 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
   const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
 
-  const brandPresenceData = await loadBrandPresenceData({
-    siteId, site, previousWeeks, context,
-  });
-
   const allUrls = new Map();
-  if (brandPresenceData) {
-    const topicMap = new Map();
-    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, olog, siteHostname, brandTokens);
+  let usedSemrush = false;
+  let semrushDiagnostics;
+  // Recorded on auditResult.dataSource / fallbackReason so shadow-run parity
+  // (LLMO-6711) can join on which source served each run.
+  let fallbackReason;
+  // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
+  // This is the mechanism for testing the Semrush path live on one site/run before
+  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR).
+  const semrushEnabled = enableSemrushOverride
+    ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
+  // Hard stop (NO legacy fallback) applies ONLY when a run EXPLICITLY opted into
+  // Semrush via the Slack override `enableSemrush:true` — a failure there must be
+  // visible, not masked by legacy. When Semrush was enabled by the env var (or the
+  // override is false/absent), a failure falls back to legacy so production can
+  // never be silently zeroed out.
+  const hardStopOnFailure = enableSemrushOverride === true;
+  // Logged unconditionally (including the off case) so a Splunk search on siteId
+  // alone shows whether this run even attempted Semrush and, if so, which knob
+  // decided that (Slack per-run override vs the env var) — the two can disagree.
+  log.info(`${HUMAN_PREFIX} Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
+    siteId,
+    semrushEnabled,
+    decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
+  });
+  if (semrushEnabled) {
+    // Semrush is the source when enabled. The loader returns the same allUrls
+    // shape (count = exact citations); everything downstream (selectTopUrls ->
+    // DRS) is unchanged. onProgress mirrors the attempt into the Slack thread
+    // (when one exists — postMessageOptional no-ops otherwise) for per-run testing.
+    semrushDiagnostics = {};
+    const semrushUrls = await loadCitedUrlsFromSemrush({
+      site,
+      previousWeeks,
+      context,
+      siteHostname,
+      diagnostics: semrushDiagnostics,
+      onProgress: (text) => postMessageOptional(
+        context,
+        channelId,
+        `*offsite-brand-presence* for *${baseURL}* — ${text}`,
+        { threadTs },
+      ),
+    });
+    // A `null` return means the Semrush source FAILED (auth / no-brand /
+    // no-date-window / outage / whole-surface-zero — see the loader's
+    // diagnostics.fallbackReason). A genuinely-empty-but-successful result (Map
+    // with size 0) is NOT a failure and continues as a normal zero-URL run.
+    if (semrushUrls === null) {
+      const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
+      if (hardStopOnFailure) {
+        // enableSemrush:true forced this run — surface the failure, no fallback.
+        log.error(`${HUMAN_PREFIX} Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
+          siteId, fallbackReason: reason,
+        });
+        await postMessageOptional(
+          context,
+          channelId,
+          `:x: *offsite-brand-presence* for *${baseURL}* — Semrush source failed (${reason}); stopping (enableSemrush:true, no fallback).`,
+          { threadTs },
+        );
+        return {
+          auditResult: {
+            success: false,
+            error: `Semrush source failed (${reason}); hard stop (enableSemrush:true)`,
+            dataSource: 'semrush',
+            fallbackReason: reason,
+          },
+          fullAuditRef: finalUrl,
+        };
+      }
+      // Enabled by the env var (or override not forced) — fall back to legacy so a
+      // Semrush problem never silently zeroes out offsite.
+      fallbackReason = reason;
+      log.warn(`${HUMAN_PREFIX} Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
+        siteId, fallbackReason: reason,
+      });
+    } else {
+      for (const [url, info] of semrushUrls) {
+        allUrls.set(url, info);
+      }
+      usedSemrush = true;
+      // Surfaced even on success: a run that tolerated partial engine/auth failures
+      // reports the same dataSource: 'semrush' as a clean run otherwise, which is
+      // exactly the signal LLMO-6711's shadow-run parity work needs to avoid grepping
+      // logs, and the one auth-rejection signal that matters most pre-LLMO-6709.
+      if (semrushDiagnostics.authFailureDetected) {
+        log.warn(`${HUMAN_PREFIX} Semrush succeeded but at least one engine request returned 401/403 — possible auth/token issue during the pre-LLMO-6709 verification window`, {
+          siteId,
+          degradedHosts: semrushDiagnostics.degradedHosts,
+          engineFailureCount: semrushDiagnostics.engineFailureCount,
+        });
+      }
+    }
+  }
+  const dataSource = usedSemrush ? 'semrush' : 'legacy';
+  const semrushDegraded = usedSemrush && (semrushDiagnostics?.engineFailureCount ?? 0) > 0;
+
+  // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
+  // failed (fallback). An enableSemrush:true run that failed already hard-stopped
+  // above — there is
+  // no legacy fallback on the Semrush path.
+  if (!usedSemrush) {
+    const brandPresenceData = await loadBrandPresenceData({
+      siteId, site, previousWeeks, context,
+    });
+    if (brandPresenceData) {
+      const topicMap = new Map();
+      extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, olog, siteHostname, brandTokens);
+    }
   }
 
   olog.success('url_extract', `Total unique source URLs found: ${allUrls.size}`, { count: allUrls.size });
@@ -951,6 +1069,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         success: true,
         urlCounts,
         weeks: previousWeeks,
+        dataSource,
+        ...(fallbackReason ? { fallbackReason } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -996,6 +1116,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         threadTs,
         drsStartedAt,
         enableBrandProfile,
+        urlLimit,
+        enableSemrushOverride,
       );
     } catch (err) {
       olog.failure('drs_poll_schedule', 'Failed to schedule DRS status poll', {
@@ -1019,6 +1141,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       urlCounts,
       drsJobs: drsResults,
       weeks: previousWeeks,
+      dataSource,
+      ...(fallbackReason ? { fallbackReason } : {}),
+      ...(semrushDegraded ? {
+        semrushEngineFailureCount: semrushDiagnostics.engineFailureCount,
+        semrushDegradedHosts: semrushDiagnostics.degradedHosts,
+      } : {}),
     },
     fullAuditRef: finalUrl,
   };

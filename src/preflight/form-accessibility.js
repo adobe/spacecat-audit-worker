@@ -12,16 +12,22 @@
 
 import { createHash } from 'crypto';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { load as cheerioLoad } from 'cheerio';
 
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import { sleep } from '../support/utils.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey, getObjectMetadataUsingPrefix } from '../utils/s3-utils.js';
 import { generateAccessibilityFilename } from './accessibility.js';
 import { getDomElementSelector } from './utils/dom-selector.js';
 
 export const PREFLIGHT_FORM_ACCESSIBILITY = 'form-accessibility';
+
+// Only accept a Mystique-written result file whose S3 LastModified is at least this old
+// relative to the run start, to avoid reading a stale leftover file from a previous run on the
+// same site+URL+selector (the result key is not run-scoped, and we no longer delete after read).
+// Set far larger than plausible audit-worker↔S3 clock skew and far smaller than a typical
+// inter-run gap; missing LastModified fails open (accept) so it can never introduce a new hang.
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
 
 /**
  * Generates a stable, unique filename for a single form's result file.
@@ -177,7 +183,16 @@ export async function detectFormAccessibility(context, auditContext) {
         time: new Date().toISOString(),
         data: {
           url: previewUrls[0], // M expects url in the data object for forms opportunity
-          opportunityId: siteId,
+          // Scope the opportunity to THIS preflight step+run, not the site. Mystique keys
+          // its shared `opportunities/{opportunityId}/opportunity.json` on this value
+          // (read-modify-written during detection). The MFE submits the identify and
+          // suggest steps concurrently as two separate jobs; when both sent
+          // opportunityId=siteId they collided on that one file (last-writer-wins), and a
+          // detection task could stall past the ~600s poll — SITES-49003 (race #2). The
+          // per-step jobId is unique per run, so each step gets its own opportunity file.
+          // The S3 result key we poll is unaffected (it is keyed on siteId+URL+formSource,
+          // not opportunityId), so this needs no Mystique change.
+          opportunityId: jobId,
           a11y: urlsToDetect,
         },
         options: {
@@ -212,7 +227,12 @@ export async function detectFormAccessibility(context, auditContext) {
 /**
  * Step 2: Process detected form accessibility issues and create opportunities
  */
-export async function processFormAccessibilityOpportunities(context, auditContext, formEntries) {
+export async function processFormAccessibilityOpportunities(
+  context,
+  auditContext,
+  formEntries,
+  freshnessThreshold,
+) {
   const {
     site, job, log, env, s3Client,
   } = context;
@@ -245,6 +265,36 @@ export async function processFormAccessibilityOpportunities(context, auditContex
     || previewUrls.map((url) => ({ form: url, formSource: 'form' }));
 
   try {
+    // When invoked from the main runner we get the freshness threshold the poll used.
+    // Build the set of result files that are fresh for THIS run, so that after a poll
+    // timeout we never read a stale leftover from a previous run: we no longer delete
+    // result files, and the key is not run-scoped, so a same-key file from an earlier
+    // run on the same site+URL+selector can otherwise linger and be served as if fresh
+    // (SITES-49003). Missing LastModified fails open (accept), consistent with the poll.
+    let freshKeys = null;
+    if (freshnessThreshold != null) {
+      const objects = await getObjectMetadataUsingPrefix(
+        s3Client,
+        bucketName,
+        `form-accessibility-preflight/${siteId}/`,
+        log,
+        100,
+        '.json',
+      );
+      freshKeys = new Set(
+        objects
+          .filter(({ LastModified }) => !LastModified
+            || new Date(LastModified).getTime() >= freshnessThreshold)
+          .map(({ Key }) => Key),
+      );
+    }
+
+    // Track outcome for the structured completion line: a Mystique round-trip that times out
+    // (SITES-49003) leaves the fresh result file(s) missing, and per-form processing can throw -
+    // both mean the audit did not fully succeed.
+    let formsWithData = 0;
+    let formErrors = 0;
+
     // Process each detected form's accessibility result file (a page can have
     // more than one entry when it has multiple forms)
     for (const { form: url, formSource } of resolvedFormEntries) {
@@ -255,14 +305,21 @@ export async function processFormAccessibilityOpportunities(context, auditContex
         const fileKey = `form-accessibility-preflight/${siteId}/${filename}`;
         log.info(`[preflight-audit] ${siteId}  Processing form accessibility file: ${fileKey}`);
 
-        // Get the accessibility result file from S3 using existing utility
-        // eslint-disable-next-line no-await-in-loop
-        const accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
+        // Only read a result file this run actually produced. On a poll timeout with no
+        // fresh file, skip rather than serve a previous run's stale result (SITES-49003).
+        let accessibilityData = null;
+        if (freshKeys && !freshKeys.has(fileKey)) {
+          log.warn(`[preflight-audit] ${siteId} Skipping stale/missing form accessibility file for ${url} at key: ${fileKey} (not written by this run)`);
+        } else {
+          // eslint-disable-next-line no-await-in-loop
+          accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
+        }
 
         if (!accessibilityData) {
           log.warn(`[preflight-audit] ${siteId} No form accessibility data found for ${url} at key: ${fileKey}`);
           // Skip to next URL if no data found
         } else {
+          formsWithData += 1;
           log.info(`[preflight-audit] ${siteId} Successfully loaded form accessibility data for ${url}`);
 
           // Get the page result for this URL
@@ -292,6 +349,7 @@ export async function processFormAccessibilityOpportunities(context, auditContex
           }
         }
       } catch (error) {
+        formErrors += 1;
         log.error(`[preflight-audit] Error processing accessibility file for ${url}: ${error.message}`, error);
 
         // Add error opportunity to the audit
@@ -316,10 +374,19 @@ export async function processFormAccessibilityOpportunities(context, auditContex
     const accessibilityElapsed = ((accessibilityEndTime - accessibilityStartTime) / 1000)
       .toFixed(2);
 
-    log.info(
-      `[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}.
-Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
-    );
+    // Structured completion line with the pfauditmetric marker so the SITES-49489 dashboard picks
+    // up form-accessibility. fail = the Mystique round-trip timed out (fresh result file(s)
+    // missing - the SITES-49003 signature) or a form threw during processing.
+    const failed = formErrors > 0 || formsWithData < resolvedFormEntries.length;
+    const structured = formatStructuredAuditLog({
+      audit: PREFLIGHT_FORM_ACCESSIBILITY,
+      status: failed ? 'fail' : 'ok',
+      durationMs: accessibilityEndTime - accessibilityStartTime,
+      error: failed
+        ? `${formsWithData}/${resolvedFormEntries.length} forms returned data, ${formErrors} processing error(s)`
+        : undefined,
+    });
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Form Accessibility audit completed in ${accessibilityElapsed} seconds.${structured}`);
 
     timeExecutionBreakdown.push({
       name: 'form-accessibility-processing',
@@ -330,31 +397,13 @@ Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
 
     await saveIntermediateResults(context, auditsResult, 'form accessibility audit');
 
-    // Clean up individual form accessibility files after processing
-    try {
-      const filesToDelete = resolvedFormEntries.map(({ form: url, formSource }) => {
-        const filename = generateFormAccessibilityFilename(url, formSource);
-        return `form-accessibility-preflight/${siteId}/${filename}`;
-      });
-
-      log.info(`[preflight-audit] Cleaning up ${filesToDelete.length} individual form accessibility files`);
-
-      const deleteCommand = new DeleteObjectsCommand({
-        Bucket: bucketName,
-        Delete: {
-          Objects: filesToDelete.map((Key) => ({ Key })),
-          Quiet: true,
-        },
-      });
-
-      await s3Client.send(deleteCommand);
-      log.info(`[preflight-audit] ${siteId} Successfully cleaned up ${filesToDelete.length} form accessibility files`);
-    } catch (cleanupError) {
-      log.warn(`[preflight-audit] ${siteId} Failed to clean up form accessibility files: ${cleanupError.message}`);
-      // Don't fail the entire audit if cleanup fails
-    }
+    // NOTE: individual form-accessibility result files are intentionally NOT deleted here.
+    // identify and suggest run concurrently and share this (non-run-scoped) result key; deleting
+    // after read starved whichever step read second, hanging the UI (SITES-49003). Files are
+    // overwritten in place on the next run for the same key; the poll's freshness gate prevents
+    // reading a stale leftover. Bulk lifecycle cleanup of the prefix is an infra follow-up.
   } catch (error) {
-    log.error(`[preflight-audit] ${siteId} not able to delete prefight files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
+    log.error(`[preflight-audit] ${siteId} error processing preflight form accessibility files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
   }
 }
 
@@ -414,8 +463,11 @@ export default async function formAccessibility(context, auditContext) {
     try {
       log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
-      // Check if form accessibility data files exist in S3 using helper function
-      const objectKeys = await getObjectKeysUsingPrefix(
+      // Check if form accessibility data files exist in S3 using helper function.
+      // We fetch LastModified so we only accept files freshly written by THIS run — the result
+      // key is not run-scoped and we no longer delete after read, so a stale leftover file from
+      // a previous run on the same site+URL+selector could otherwise be picked up.
+      const objects = await getObjectMetadataUsingPrefix(
         s3Client,
         bucketName,
         `form-accessibility-preflight/${siteId}/`,
@@ -424,15 +476,21 @@ export default async function formAccessibility(context, auditContext) {
         '.json',
       );
 
+      // Freshness gate: only accept a file written at/after this run started (minus a skew
+      // tolerance). Missing LastModified fails open (accept) so it can never add a new hang.
+      const freshnessThreshold = scrapeStartTime - CLOCK_SKEW_TOLERANCE_MS;
+
       // Check if we have the expected accessibility files
-      const foundFiles = objectKeys.filter((key) => {
+      const foundFiles = objects.filter(({ Key, LastModified }) => {
         // Extract filename from the S3 key
-        const pathParts = key.split('/');
+        const pathParts = Key.split('/');
         const filename = pathParts[pathParts.length - 1];
 
-        // Check if this is one of our expected files
-        return expectedFiles.includes(filename);
-      });
+        // Check if this is one of our expected files AND it is fresh for this run
+        const isExpected = expectedFiles.includes(filename);
+        const isFresh = !LastModified || new Date(LastModified).getTime() >= freshnessThreshold;
+        return isExpected && isFresh;
+      }).map(({ Key }) => Key);
 
       if (foundFiles && foundFiles.length >= expectedFiles.length) {
         log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, form accessibility processing complete`);
@@ -480,5 +538,10 @@ export default async function formAccessibility(context, auditContext) {
   log.info(`[preflight-audit] ${siteId} Polling completed, proceeding to process form accessibility data`);
 
   // Step 2: Process scraped data and create opportunities
-  await processFormAccessibilityOpportunities(context, auditContext, formEntries);
+  await processFormAccessibilityOpportunities(
+    context,
+    auditContext,
+    formEntries,
+    scrapeStartTime - CLOCK_SKEW_TOLERANCE_MS,
+  );
 }

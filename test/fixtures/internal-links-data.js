@@ -51,6 +51,8 @@ export const expectedOpportunity = {
     'Engagement',
   ],
   data: { projectedTrafficLost: 32, projectedTrafficValue: 32, dataSources: ['SEO', 'RUM', 'Site'] },
+  scopeType: 'site',
+  scopeId: 'site-id-1',
 };
 
 export const expectedSuggestions = [

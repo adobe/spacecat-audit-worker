@@ -42,3 +42,43 @@ export function getPrefixedPageAuthToken(site, token, options) {
     return `token ${token}`;
   }
 }
+
+/**
+ * Rare, breaker-free marker token that leads every structured completion suffix. Its whole job
+ * is Splunk query performance: `audit`/`status`/`duration_ms` are all common terms in the
+ * high-volume `dx_aem_sites_spacecat_backend_*` sourcetype, so a dashboard anchored on them has
+ * to intersect enormous postings lists across the whole time window (a 14-day search on that
+ * shared index hangs). `pfauditmetric` appears ONLY on these lines, so it is a single, rare
+ * indexed term (no Splunk breakers — all lowercase letters) with a tiny postings list; anchoring
+ * on it makes the search cost proportional to preflight volume alone, fast at any window.
+ * Keep it in sync with the SITES-49489 dashboard base search (`... "pfauditmetric" | rex ...`).
+ */
+export const PREFLIGHT_METRIC_MARKER = 'pfauditmetric';
+
+/**
+ * Builds the structured completion-log suffix: the `pfauditmetric` marker (query anchor) followed
+ * by logfmt-style `key=value` pairs (`audit`/`status`/`duration_ms`/`error`). Appended to the
+ * existing `[preflight-audit] site: ..., job: ...` message, never replacing it. The sourcetype is
+ * `KV_MODE=json`, so these live inside the JSON `message` string and are NOT auto-extracted — the
+ * dashboard `rex`-extracts them; the marker + logfmt shape is what makes that rex cheap and robust.
+ * @param {{ audit: string, status: 'ok'|'fail', durationMs: number, error?: string }} params
+ * @returns {string} A leading-space-prefixed suffix, e.g.
+ *   ` pfauditmetric audit=canonical status=ok duration_ms=120`
+ */
+export function formatStructuredAuditLog({
+  audit, status, durationMs, error,
+}) {
+  const parts = [PREFLIGHT_METRIC_MARKER, `audit=${audit}`, `status=${status}`, `duration_ms=${durationMs}`];
+  if (status === 'fail' && error) {
+    // Collapse newlines/CRs to spaces BEFORE quoting: a raw newline inside the quoted value
+    // would split the log entry into two lines and corrupt Splunk's per-line field extraction
+    // (error messages from stack traces / multi-line assertions commonly contain them).
+    const escaped = String(error)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/[\r\n]+/g, ' ')
+      .slice(0, 500);
+    parts.push(`error="${escaped}"`);
+  }
+  return ` ${parts.join(' ')}`;
+}

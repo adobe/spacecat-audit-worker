@@ -159,7 +159,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       maxPollAttempts: 250,
     },
   );
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, site.getId());
+  const reportConfigs = getConfigs(s3Config.bucket, site.getId());
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
   const referralReportConfig = reportConfigs.find((config) => config.name === 'referral');
 

@@ -428,6 +428,79 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(newData[0].seoImpact).to.be.undefined;
     });
 
+    it('should pass a mergeDataFunction that preserves edge/edited suggestions (LLMO-6537)', async () => {
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 1 readability issues',
+        readabilityIssues: [{
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Complex text here.',
+          rank: 26,
+        }],
+        urlsProcessed: 1,
+      });
+
+      const mockOpportunity = { getId: sandbox.stub().returns('opp-id') };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      await processReadabilityOpportunities(mockContext);
+
+      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+      expect(mergeDataFunction).to.be.a('function');
+
+      // edgeDeployed → existing returned unchanged
+      const deployed = mergeDataFunction(
+        { improvedText: 'Deployed.', edgeDeployed: true },
+        { improvedText: 'New.' },
+      );
+      expect(deployed.edgeDeployed).to.equal(true);
+      expect(deployed.improvedText).to.equal('Deployed.');
+
+      // isEdited → preserve edited text + original snapshot, refresh the rest,
+      // re-derive transformRules.value from preserved improvedText (LLMO-6537)
+      const edited = mergeDataFunction(
+        {
+          improvedText: 'Customer edited.',
+          originalImprovedText: 'System text.',
+          isEdited: true,
+          rank: 10,
+          transformRules: { value: 'System text.', op: 'replace', selector: 'p' },
+        },
+        { improvedText: 'Regenerated.', rank: 20 },
+      );
+      expect(edited.isEdited).to.equal(true);
+      expect(edited.improvedText).to.equal('Customer edited.');
+      expect(edited.originalImprovedText).to.equal('System text.');
+      expect(edited.rank).to.equal(20);
+      expect(edited.transformRules.value).to.equal('Customer edited.');
+      expect(edited.transformRules.op).to.equal('replace');
+
+      // isEdited without originalImprovedText → bootstrap from improvedText
+      const bootstrap = mergeDataFunction(
+        {
+          improvedText: 'Customer edited.',
+          isEdited: true,
+          rank: 5,
+          transformRules: { value: 'Old.', op: 'replace', selector: 'p' },
+        },
+        { improvedText: 'Regenerated.', rank: 30 },
+      );
+      expect(bootstrap.isEdited).to.equal(true);
+      expect(bootstrap.originalImprovedText).to.equal('Customer edited.');
+      expect(bootstrap.transformRules.value).to.equal('Customer edited.');
+
+      // neither flag → normal merge
+      const merged = mergeDataFunction(
+        { improvedText: 'Old.' },
+        { improvedText: 'New.' },
+      );
+      expect(merged.improvedText).to.equal('New.');
+    });
+
     it('should correctly call mapNewSuggestion callback', async () => {
       const mockReadabilityIssues = [
         {

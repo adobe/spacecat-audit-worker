@@ -34,6 +34,11 @@ describe('createLowConversionOpportunities handler method', () => {
       getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub(),
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
       setData: sinon.stub(),

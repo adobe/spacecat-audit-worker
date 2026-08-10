@@ -21,7 +21,9 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   requestOffsiteScrape,
   buildAnalysisScrapeStatusMessage,
   formatDrsExtras,
@@ -151,7 +153,7 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit, enableBrandProfile from Slack)
+ *   (e.g. urlLimit, enableBrandProfile, enableSemrush from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
@@ -167,6 +169,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   olog.debug('audit_start', `auditContext: ${JSON.stringify(auditContext)}`);
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -271,7 +275,16 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping YouTube URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile, olog);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'youtube.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+        enableSemrush,
+        olog,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -307,7 +320,16 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           + 'starting a DRS scrape for youtube.com, will analyze automatically when it finishes.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'youtube.com', slackContext, enableBrandProfile, olog);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'youtube.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+        enableSemrush,
+        olog,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,

@@ -1885,6 +1885,11 @@ describe('Canonical URL Tests', () => {
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
       };
 
       const fullMockContext = {
@@ -1947,6 +1952,11 @@ describe('Canonical URL Tests', () => {
         getStatus: sinon.stub().returns('NEW'),
         setData: sinon.stub(),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),
@@ -2017,6 +2027,11 @@ describe('Canonical URL Tests', () => {
         getId: sinon.stub().returns('new-oppty-789'),
         getSuggestions: sinon.stub().resolves([]),
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub().resolves(),
         addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
       };
@@ -3389,6 +3404,11 @@ describe('Canonical URL Tests', () => {
           getStatus: sinon.stub().returns('NEW'),
           setData: sinon.stub(),
           setAuditId: sinon.stub(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sinon.stub(),
+          setScopeId: sinon.stub(),
+          getScopeType: () => null,
+          getScopeId: () => null,
           setUpdatedBy: sinon.stub(),
           save: sinon.stub().resolves(),
           getSuggestions: sinon.stub().resolves([]),

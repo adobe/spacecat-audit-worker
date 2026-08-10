@@ -12,14 +12,30 @@
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import {
   validateCanonicalFormat,
   isSelfReferencing,
 } from '../canonical/handler.js';
 import { CANONICAL_CHECKS } from '../canonical/constants.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_CANONICAL = 'canonical';
+
+/**
+ * Checks whose fix is unambiguously "point the canonical at this page's own URL" -
+ * so authors see the correct value, not just the current (wrong) one. Excludes
+ * `CANONICAL_TAG_OUTSIDE_HEAD` (the href itself is already correct, only its placement is wrong)
+ * and the format checks (absolute/protocol/domain/lowercased — fixing those means transforming
+ * the existing href, not replacing it with the page's own URL).
+ */
+const CHECKS_SUGGESTING_OWN_URL = new Set([
+  CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+  CANONICAL_CHECKS.CANONICAL_TAG_NO_HREF.check,
+  CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
+  CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+  CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
+]);
 
 /**
  * Extracts canonical metadata from raw HTML as a fallback when scraper metadata is absent.
@@ -120,80 +136,112 @@ export default async function canonical(context, auditContext) {
 
   const startTime = Date.now();
   const startTimestamp = new Date().toISOString();
+  let status = 'ok';
+  let errorMessage;
 
-  previewUrls.forEach((url) => {
-    audits.get(url).audits.push({
-      name: PREFLIGHT_CANONICAL,
-      type: 'seo',
-      opportunities: [],
-    });
-  });
-
-  // Build URL → scraped data map
-  const scrapedByUrl = new Map();
-  scrapedObjects.forEach(({ data }) => {
-    if (data?.finalUrl) {
-      scrapedByUrl.set(stripTrailingSlash(data.finalUrl), data);
-    }
-  });
-
-  previewUrls.forEach((url) => {
-    const pageAudit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
-    const scrapedData = scrapedByUrl.get(url);
-
-    if (!scrapedData) {
-      log.warn(`[preflight-canonical] No scraped data found for ${url}`);
-      return;
-    }
-
-    // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
-    if (scrapedData.statusCode != null
-      && scrapedData.statusCode >= 400
-      && scrapedData.statusCode < 500) {
-      log.info(`[preflight-canonical] Skipping page with HTTP ${scrapedData.statusCode} for ${url}`);
-      return;
-    }
-
-    const { scrapeResult } = scrapedData;
-
-    // Prefer metadata injected by the scraper; fall back to HTML parsing when absent
-    const meta = scrapeResult?.canonical
-      ?? (scrapeResult?.rawBody ? extractCanonicalMetadataFromHtml(scrapeResult.rawBody) : null);
-
-    if (!meta) {
-      log.warn(`[preflight-canonical] No canonical metadata available for ${url}`);
-      pageAudit.opportunities.push({
-        check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-        issue: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
-        seoImpact: 'Moderate',
-        seoRecommendation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion,
-      });
-      return;
-    }
-
-    const failedChecks = runCanonicalChecks(url, meta, previewBaseURL, log);
-    failedChecks.forEach((checkConfig) => {
-      pageAudit.opportunities.push({
-        check: checkConfig.check,
-        issue: checkConfig.explanation,
-        seoImpact: 'Moderate',
-        seoRecommendation: checkConfig.suggestion,
+  try {
+    previewUrls.forEach((url) => {
+      audits.get(url).audits.push({
+        name: PREFLIGHT_CANONICAL,
+        type: 'seo',
+        opportunities: [],
       });
     });
-  });
 
-  const endTime = Date.now();
-  const endTimestamp = new Date().toISOString();
-  const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+    // Build URL → scraped data map
+    const scrapedByUrl = new Map();
+    scrapedObjects.forEach(({ data }) => {
+      if (data?.finalUrl) {
+        scrapedByUrl.set(stripTrailingSlash(data.finalUrl), data);
+      }
+    });
 
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${elapsed} seconds`);
+    previewUrls.forEach((url) => {
+      const pageAudit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
+      const scrapedData = scrapedByUrl.get(url);
 
-  timeExecutionBreakdown.push({
-    name: 'canonical',
-    duration: `${elapsed} seconds`,
-    startTime: startTimestamp,
-    endTime: endTimestamp,
-  });
+      if (!scrapedData) {
+        log.warn(`[preflight-canonical] No scraped data found for ${url}`);
+        return;
+      }
+
+      // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+      if (scrapedData.statusCode != null
+        && scrapedData.statusCode >= 400
+        && scrapedData.statusCode < 500) {
+        log.info(`[preflight-canonical] Skipping page with HTTP ${scrapedData.statusCode} for ${url}`);
+        return;
+      }
+
+      const { scrapeResult } = scrapedData;
+
+      // Prefer metadata injected by the scraper; fall back to HTML parsing when absent
+      const meta = scrapeResult?.canonical
+        ?? (scrapeResult?.rawBody ? extractCanonicalMetadataFromHtml(scrapeResult.rawBody) : null);
+
+      if (!meta) {
+        log.warn(`[preflight-canonical] No canonical metadata available for ${url}`);
+        pageAudit.opportunities.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+          issue: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+          seoImpact: 'Moderate',
+          seoRecommendation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion,
+          suggestion: url,
+        });
+        return;
+      }
+
+      // Points findings at the actual <link rel="canonical"> tag(s) so authors can see which
+      // element triggered the finding, not just an issue description.
+      // Collected as a list because CANONICAL_TAG_MULTIPLE's whole point is "there is more than
+      // one" — surfacing only one tag there would hide the rest.
+      const canonicalSelectors = scrapeResult?.rawBody
+        ? cheerioLoad(scrapeResult.rawBody)('link[rel="canonical"]')
+          .toArray()
+          .map((el) => getDomElementSelector(el))
+          .filter(Boolean)
+        : [];
+      const hasHrefValue = Boolean(meta.href && meta.href.trim());
+      const { check: multipleTagsCheck } = CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE;
+
+      const failedChecks = runCanonicalChecks(url, meta, previewBaseURL, log);
+      failedChecks.forEach((checkConfig) => {
+        const isMultipleTagsCheck = checkConfig.check === multipleTagsCheck;
+        pageAudit.opportunities.push({
+          check: checkConfig.check,
+          issue: checkConfig.explanation,
+          seoImpact: 'Moderate',
+          seoRecommendation: checkConfig.suggestion,
+          ...(hasHrefValue ? { url: meta.href } : {}),
+          ...(CHECKS_SUGGESTING_OWN_URL.has(checkConfig.check) ? { suggestion: url } : {}),
+          ...toElementTargets(isMultipleTagsCheck ? canonicalSelectors : canonicalSelectors[0]),
+        });
+      });
+    });
+  } catch (error) {
+    status = 'fail';
+    errorMessage = error.message;
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit failed: ${error.message}`);
+    throw error;
+  } finally {
+    const endTime = Date.now();
+    const endTimestamp = new Date().toISOString();
+    const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+    const structured = formatStructuredAuditLog({
+      audit: PREFLIGHT_CANONICAL, status, durationMs: endTime - startTime, error: errorMessage,
+    });
+
+    // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+    // the per-audit dashboard would have no canonical data. Matches the DOM-based block's level.
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${elapsed} seconds.${structured}`);
+
+    timeExecutionBreakdown.push({
+      name: 'canonical',
+      duration: `${elapsed} seconds`,
+      startTime: startTimestamp,
+      endTime: endTimestamp,
+    });
+  }
 
   await saveIntermediateResults(context, auditsResult, 'canonical audit');
 }

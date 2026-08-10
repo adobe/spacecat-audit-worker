@@ -12,7 +12,7 @@
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
@@ -23,7 +23,7 @@ export const PREFLIGHT_METATAGS = 'metatags';
  * Extract selectors for metatag elements from the scraped HTML
  * @param {string} rawBody - The HTML content (must be truthy - caller should validate)
  * @param {string} tagName - The tag name (title, description, h1)
- * @returns {string|string[]|null} Selector(s) for the tag
+ * @returns {string|Array<{selector: string, textContent: string}>|null} Selector(s) for the tag
  */
 function generateSelectorsForTag(rawBody, tagName) {
   const $ = cheerioLoad(rawBody);
@@ -42,8 +42,8 @@ function generateSelectorsForTag(rawBody, tagName) {
   if (tagName === 'h1') {
     const h1Elements = $('h1').toArray();
     return h1Elements
-      .map((h1) => getDomElementSelector(h1))
-      .filter(Boolean);
+      .map((h1) => ({ selector: getDomElementSelector(h1), textContent: $(h1).text().trim() }))
+      .filter((pair) => pair.selector);
   }
   /* c8 ignore next 2 - unreachable: only title/description/h1 tag names from metatags audit */
   return null;
@@ -64,6 +64,8 @@ export default async function metatags(context, auditContext) {
 
   const metatagsStartTime = Date.now();
   const metatagsStartTimestamp = new Date().toISOString();
+  let status = 'ok';
+  let errorMessage;
   // Create metatags audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
@@ -142,13 +144,23 @@ export default async function metatags(context, auditContext) {
       });
     });
   } catch (error) {
+    status = 'fail';
+    errorMessage = error.message;
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit failed: ${error.message}`);
   }
 
   const metatagsEndTime = Date.now();
   const metatagsEndTimestamp = new Date().toISOString();
   const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+  const metatagsStructured = formatStructuredAuditLog({
+    audit: PREFLIGHT_METATAGS,
+    status,
+    durationMs: metatagsEndTime - metatagsStartTime,
+    error: errorMessage,
+  });
+  // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+  // the per-audit dashboard would have no metatags data. Matches the DOM-based block's level.
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds.${metatagsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'metatags',

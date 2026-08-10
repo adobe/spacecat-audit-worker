@@ -5918,6 +5918,7 @@ describe('Prerender Audit', () => {
 
       const site = {
         getBaseURL: () => 'https://acme.com',
+        getId: () => 'site-acme',
         getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
       };
       const ctx = { log: { info: () => {} } };
@@ -6008,7 +6009,7 @@ describe('Prerender Audit', () => {
           extractSiteKeyFromBaseURL: () => 'adobe_com',
         },
       });
-      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
+      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com', getId: () => 'site-adobe' }, { });
       expect(cfg).to.be.an('object');
       expect(cfg).to.have.property('databaseName');
       expect(cfg).to.have.property('tableName');
@@ -6019,10 +6020,10 @@ describe('Prerender Audit', () => {
 
     it('should compute siteName correctly when site key starts with www', async () => {
       const shared = await esmock('../../../src/prerender/utils/shared.js', {});
-      const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, {});
+      const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com', getId: () => 'site-adobe' }, {});
       expect(cfg.siteName).to.equal('adobe');
-      expect(cfg.databaseName).to.equal('cdn_logs_adobe_com');
-      expect(cfg.tableName).to.equal('aggregated_logs_adobe_com_consolidated');
+      expect(cfg.databaseName).to.equal('cdn_logs_site_adobe');
+      expect(cfg.tableName).to.equal('aggregated_logs_site_adobe');
     });
   });
   describe('Edge Cases and Error Handling', () => {
@@ -7016,6 +7017,11 @@ describe('Prerender Audit', () => {
             scrapeForbidden: true, // Old value
           }),
           setAuditId: sinon.stub(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sinon.stub(),
+          setScopeId: sinon.stub(),
+          getScopeType: () => null,
+          getScopeId: () => null,
           setData: sinon.stub(),
           setUpdatedBy: sinon.stub(),
           save: sinon.stub().resolves(),

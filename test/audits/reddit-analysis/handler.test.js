@@ -314,6 +314,20 @@ describe('Reddit Analysis Handler', function () {
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableBrandProfile: true });
     });
 
+    it('forwards enableSemrush on the scoped scrape request when DRS has no available content yet', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'false' } },
+      );
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'reddit.com', enableSemrush: false });
+    });
+
     it('returns error without re-scraping when scrape was already requested', async () => {
       mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
 
