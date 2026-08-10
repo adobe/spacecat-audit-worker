@@ -215,7 +215,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Wikipedia] No suggestions found in analysis');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('No suggestions found in analysis'));
     });
 
     it('should return badRequest when no analysis data provided', async () => {
@@ -228,7 +228,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Wikipedia] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(sinon.match('No analysis data provided in message'));
     });
 
     it('should return notFound when site not found', async () => {

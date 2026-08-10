@@ -32,6 +32,7 @@ export const AUDIT = {
   CITED: 'cited',
   REDDIT: 'reddit',
   YOUTUBE: 'youtube',
+  WIKIPEDIA: 'wikipedia',
   BRAND_PRESENCE: 'brand-presence',
 };
 

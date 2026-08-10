@@ -47,7 +47,11 @@ describe('offsite-logging helper', () => {
     it('exposes the stable vocabulary', () => {
       expect(OFFSITE_DOMAIN).to.equal('offsite');
       expect(AUDIT).to.deep.equal({
-        CITED: 'cited', REDDIT: 'reddit', YOUTUBE: 'youtube', BRAND_PRESENCE: 'brand-presence',
+        CITED: 'cited',
+        REDDIT: 'reddit',
+        YOUTUBE: 'youtube',
+        WIKIPEDIA: 'wikipedia',
+        BRAND_PRESENCE: 'brand-presence',
       });
       expect(OUTCOME).to.deep.equal({
         START: 'start', SUCCESS: 'success', FAILURE: 'failure', SKIP: 'skip',

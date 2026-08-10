@@ -100,7 +100,7 @@ describe('Wikipedia Analysis Handler', () => {
     it('should have post processors configured', () => {
       expect(wikipediaAnalysisHandler).to.have.property('postProcessors');
       expect(wikipediaAnalysisHandler.postProcessors).to.be.an('array');
-      expect(wikipediaAnalysisHandler.postProcessors).to.have.lengthOf(1);
+      expect(wikipediaAnalysisHandler.postProcessors).to.have.lengthOf(2);
     });
   });
 
@@ -212,8 +212,8 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
-      expect(context.log.info).to.have.been.calledWith(
-        `[Wikipedia] Using Wikipedia URL override from audit message: ${override}`,
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(`Using Wikipedia URL override from audit message: ${override}`),
       );
     });
 
@@ -340,7 +340,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
       expect(context.log.warn).to.have.been.calledWith(
-        '[Wikipedia] Ignoring invalid wikipedia URL override: not-a-valid-url',
+        sinon.match('Ignoring invalid wikipedia URL override: not-a-valid-url'),
       );
     });
 
@@ -514,7 +514,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('[Wikipedia] Audit failed, skipping Mystique message');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -532,7 +532,7 @@ describe('Wikipedia Analysis Handler', () => {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Wikipedia] SQS or Mystique queue not configured, skipping message');
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -568,7 +568,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Wikipedia] Site not found, skipping Mystique message');
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -584,7 +584,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message'));
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
@@ -628,7 +628,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage.brandId).to.equal('brand-1');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-1/).and(sinon.match((v) => !/siteId=/.test(v))),
+        sinon.match(/brandId=brand-1/).and(sinon.match(/event=mystique_dispatch/)),
       );
     });
 
