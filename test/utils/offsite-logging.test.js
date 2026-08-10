@@ -62,6 +62,7 @@ describe('offsite-logging helper', () => {
       expect(PEER.S3).to.equal('s3');
       expect(PEER.POSTGRES).to.equal('postgres');
       expect(PEER.SHAREPOINT).to.equal('sharepoint');
+      expect(PEER.SEMRUSH).to.equal('semrush');
       expect(PEER.SLACK).to.equal('slack');
       expect(PEER.SQS).to.equal('sqs');
       expect(PEER.SPACECAT).to.equal('spacecat');

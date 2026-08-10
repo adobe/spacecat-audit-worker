@@ -50,6 +50,7 @@ export const PEER = {
   S3: 's3',
   POSTGRES: 'postgres',
   SHAREPOINT: 'sharepoint',
+  SEMRUSH: 'semrush',
   SLACK: 'slack',
   SQS: 'sqs',
   SPACECAT: 'spacecat',

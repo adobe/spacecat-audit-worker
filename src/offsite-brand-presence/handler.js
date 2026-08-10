@@ -951,8 +951,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Logged unconditionally (including the off case) so a Splunk search on siteId
   // alone shows whether this run even attempted Semrush and, if so, which knob
   // decided that (Slack per-run override vs the env var) — the two can disagree.
-  log.info(`${HUMAN_PREFIX} Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
-    siteId,
+  olog.success('data_source_select', `Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
+    source: 'semrush',
     semrushEnabled,
     decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
   });
@@ -983,8 +983,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
       if (hardStopOnFailure) {
         // enableSemrush:true forced this run — surface the failure, no fallback.
-        log.error(`${HUMAN_PREFIX} Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
-          siteId, fallbackReason: reason,
+        olog.failure('brand_data_load', `Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
+          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
         });
         await postMessageOptional(
           context,
@@ -1005,21 +1005,27 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // Enabled by the env var (or override not forced) — fall back to legacy so a
       // Semrush problem never silently zeroes out offsite.
       fallbackReason = reason;
-      log.warn(`${HUMAN_PREFIX} Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
-        siteId, fallbackReason: reason,
+      olog.warn('brand_data_load', `Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
+        peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
       });
     } else {
       for (const [url, info] of semrushUrls) {
         allUrls.set(url, info);
       }
       usedSemrush = true;
+      olog.success('brand_data_load', `Loaded ${semrushUrls.size} cited URL(s) from Semrush`, {
+        peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', count: semrushUrls.size,
+      });
       // Surfaced even on success: a run that tolerated partial engine/auth failures
       // reports the same dataSource: 'semrush' as a clean run otherwise, which is
       // exactly the signal LLMO-6711's shadow-run parity work needs to avoid grepping
       // logs, and the one auth-rejection signal that matters most pre-LLMO-6709.
       if (semrushDiagnostics.authFailureDetected) {
-        log.warn(`${HUMAN_PREFIX} Semrush succeeded but at least one engine request returned 401/403 — possible auth/token issue during the pre-LLMO-6709 verification window`, {
-          siteId,
+        olog.warn('brand_data_load', 'Semrush succeeded but at least one engine request returned 401/403 — possible auth/token issue during the pre-LLMO-6709 verification window', {
+          peer: PEER.SEMRUSH,
+          direction: 'inbound',
+          source: 'semrush',
+          outcome: OUTCOME.SUCCESS,
           degradedHosts: semrushDiagnostics.degradedHosts,
           engineFailureCount: semrushDiagnostics.engineFailureCount,
         });
