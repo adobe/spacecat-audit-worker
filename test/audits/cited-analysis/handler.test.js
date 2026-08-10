@@ -45,6 +45,7 @@ describe('Cited Analysis Handler', function () {
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
   let mockPostMessageOptional;
+  let mockLoadUrlPromptsFromSemrush;
   let citedAnalysisHandler;
   let StoreEmptyError;
 
@@ -110,6 +111,7 @@ describe('Cited Analysis Handler', function () {
       },
     }));
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+    mockLoadUrlPromptsFromSemrush = sandbox.stub().resolves(new Map());
 
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
@@ -150,6 +152,9 @@ describe('Cited Analysis Handler', function () {
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
+      },
+      '../../../src/utils/url-prompts-semrush.js': {
+        loadUrlPromptsFromSemrush: mockLoadUrlPromptsFromSemrush,
       },
     });
 
@@ -299,6 +304,58 @@ describe('Cited Analysis Handler', function () {
         sinon.match.object,
         '[Cited]',
       );
+    });
+
+    it('should not enrich with Semrush url-prompts when enableSemrush is not set', async () => {
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
+      expect(mockLoadUrlPromptsFromSemrush).to.not.have.been.called;
+    });
+
+    it('should tag URLs with isUrlFromSemrush and attach prompts when enableSemrush is true', async () => {
+      mockLoadUrlPromptsFromSemrush.resolves(new Map([
+        [mockUrls[0].url, ['prompt one', 'prompt two']],
+      ]));
+
+      const result = await citedAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'true' } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      const [first, second] = result.auditResult.storeData.urls;
+      expect(first.isUrlFromSemrush).to.be.true;
+      expect(first.prompts).to.deep.equal(['prompt one', 'prompt two']);
+      expect(second.isUrlFromSemrush).to.be.true;
+      expect(second.prompts).to.be.undefined;
+      expect(mockLoadUrlPromptsFromSemrush).to.have.been.calledWith({
+        site: mockSite, urls: mockUrls, context,
+      });
+    });
+
+    it('should only forward the first MYSTIQUE_URLS_LIMIT URLs to Semrush url-prompts enrichment', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
+        url: `https://industry-news.org/page-${i}`, type: 'cited-analysis', metadata: {},
+      }));
+      mockStoreClient.getUrls.resolves(manyUrls);
+
+      const result = await citedAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'true' } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      const forwardedUrls = mockLoadUrlPromptsFromSemrush.firstCall.args[0].urls;
+      expect(forwardedUrls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      const resultUrls = result.auditResult.storeData.urls;
+      expect(resultUrls.slice(0, MYSTIQUE_URLS_LIMIT).every((u) => u.isUrlFromSemrush)).to.be.true;
+      expect(resultUrls.slice(MYSTIQUE_URLS_LIMIT).some((u) => u.isUrlFromSemrush)).to.be.false;
     });
 
     it('should use empty guidelines when sentiment API omits guidelines', async () => {
