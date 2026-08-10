@@ -1,3 +1,10 @@
+## [1.517.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.0...v1.517.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **offsite-opportunities:** Populate youtube, reddit and top cited buckets using only one domain-urls request ([#2868](https://github.com/adobe/spacecat-audit-worker/issues/2868)) ([d02d645](https://github.com/adobe/spacecat-audit-worker/commit/d02d6454074cf1d8b376669061cd2ac97c835e09))
+
 # [1.517.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.5...v1.517.0) (2026-08-10)
 
 
