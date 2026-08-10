@@ -1,3 +1,10 @@
+## [1.517.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.1...v1.517.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* scope CWV audit RUM pages to site base path for subpath sites (SITES-49656) ([#2873](https://github.com/adobe/spacecat-audit-worker/issues/2873)) ([1f409de](https://github.com/adobe/spacecat-audit-worker/commit/1f409de90023fb20b48e4b45d6221e41da1c0aed))
+
 ## [1.517.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.0...v1.517.1) (2026-08-10)
 
 
