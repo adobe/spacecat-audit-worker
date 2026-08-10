@@ -632,7 +632,7 @@ describe('offsite-audit-utils', () => {
     });
 
     it('sends a scoped offsite-brand-presence message without enableBrandProfile by default', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' }, undefined, olog);
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' }, undefined, undefined, undefined, olog);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
@@ -653,7 +653,7 @@ describe('offsite-audit-utils', () => {
     });
 
     it('forwards enableBrandProfile in messageData when true', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, olog);
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, undefined, undefined, olog);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.slackContext).to.be.undefined;
@@ -661,7 +661,7 @@ describe('offsite-audit-utils', () => {
     });
 
     it('forwards explicit enableBrandProfile:false in messageData (distinct from absent)', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false, olog);
+      await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false, undefined, undefined, olog);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
@@ -707,7 +707,7 @@ describe('offsite-audit-utils', () => {
     it('swallows and logs a warning when the send fails', async () => {
       context.dataAccess.Configuration.findLatest.rejects(new Error('boom'));
 
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, olog);
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, olog);
 
       expect(olog.warn).to.have.been.calledWith(
         'scrape_request',
