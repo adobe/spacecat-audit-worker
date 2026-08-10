@@ -14,6 +14,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
+import { isWithinAuditScope } from '../internal-links/subpath-filter.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
@@ -115,10 +116,21 @@ export async function buildCWVAuditResult(context) {
   };
   const cwvData = await rumApiClient.query(Audit.AUDIT_TYPES.CWV, options);
 
+  // SITES-49656: subpath sites (a concrete path onboarded as its own site, e.g.
+  // https://oklahoma.gov/omes) share the domain-keyed RUM query with the whole
+  // domain, so cwvData carries sibling-site pages. Scope the per-URL entries to
+  // the site's base path — reusing the internal-links audit-scope filter — before
+  // top-N/threshold selection so the report and resulting opportunities don't
+  // bleed in unrelated pages. Root-domain sites (no base path) are unaffected;
+  // operator-configured `group` entries are left untouched.
+  const scopedCwvData = cwvData.filter(
+    (item) => item.type !== 'url' || isWithinAuditScope(item.url, baseURL),
+  );
+
   const stats = { homepage: false, topNCount: 0, thresholdCount: 0 };
 
   // Always include: homepage + top N pages + pages meeting threshold
-  const filteredCwvData = [...cwvData]
+  const filteredCwvData = [...scopedCwvData]
     .sort((a, b) => b.pageviews - a.pageviews)
     .reduce((list, item) => {
       // 1) Homepage
@@ -145,7 +157,7 @@ export async function buildCWVAuditResult(context) {
     }, []);
 
   log.info(
-    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
+    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Scoped=${scopedCwvData.length}, Reported=${filteredCwvData.length} | `
     + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
     + `Top${topPagesCount} pages: ${stats.topNCount} | `
     + `Pages above threshold: ${stats.thresholdCount}`,
