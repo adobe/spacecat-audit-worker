@@ -4,7 +4,7 @@
 **Author:** Andrei Paraschiv
 **Date:** 2026-08-05
 **Epic:** [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488) · **Story:** [LLMO-6709](https://jira.corp.adobe.com/browse/LLMO-6709)
-**Related:** ADR `docs/decisions/002-offsite-cited-urls-semrush-source.md` · migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847 · [LLMO-6844](https://jira.corp.adobe.com/browse/LLMO-6844) (optional `hostname`) · [LLMO-6818](https://jira.corp.adobe.com/browse/LLMO-6818) (`platform=all`)
+**Related:** ADR `docs/decisions/002-offsite-cited-urls-semrush-source.md` · migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847 (original per-hostname × per-engine design) · PR #2868 (single-request revision) · [LLMO-6844](https://jira.corp.adobe.com/browse/LLMO-6844) (optional `hostname`) · [LLMO-6818](https://jira.corp.adobe.com/browse/LLMO-6818) (`platform=all`)
 
 ---
 

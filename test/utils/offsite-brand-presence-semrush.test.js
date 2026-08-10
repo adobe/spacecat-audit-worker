@@ -50,11 +50,12 @@ describe('offsite-brand-presence-semrush', function () {
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
   const erroredWith = (re) => log.error.getCalls().some((c) => re.test(c.args[0]));
 
-  async function loadModule() {
+  async function loadModule(overrides = {}) {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
       '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
+      ...overrides,
     });
   }
 
@@ -200,6 +201,19 @@ describe('offsite-brand-presence-semrush', function () {
     }));
     const allUrls = await mod.loadCitedUrlsFromSemrush({
       site: brandSite, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), siteHostname: 'lovesac.com',
+    });
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('drops (does not throw on) a cited row whose classified URL fails re-parsing', async () => {
+    const modWithBadUrl = await loadModule({
+      '../../src/utils/offsite-brand-presence-enrichment.js': {
+        classifyAndNormalize: () => ({ url: 'not a valid url', domain: null }),
+      },
+    });
+    fetchStub.resolves(okJson({ urls: [{ url: CITED_URL, citations: 99 }] }));
+    const allUrls = await modWithBadUrl.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
     });
     expect(allUrls.size).to.equal(0);
   });

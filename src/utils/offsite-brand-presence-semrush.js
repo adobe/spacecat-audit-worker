@@ -170,7 +170,14 @@ function classifyRow(row, siteHostname, brandTokens) {
   if (row?.contentType === 'Owned') {
     return null;
   }
-  const host = new URL(classified.url).hostname.toLowerCase().replace(/^www\./, '');
+  let host;
+  try {
+    host = new URL(classified.url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    // classified.url already passed through classifyAndNormalize's own URL parse, so this
+    // should be unreachable — defensive only, in case that contract ever changes.
+    return null;
+  }
   if (TOP_CITED_EXCLUDED_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
     return null;
   }
@@ -203,14 +210,11 @@ function classifyRow(row, siteHostname, brandTokens) {
  *   each stage of the attempt. Kept generic (not a Slack import) so this module stays testable
  *   without a Slack dependency; a failure here is logged and swallowed, never thrown — a Slack
  *   outage must not affect the Semrush attempt itself.
- * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null return,
- *   set to `{ fallbackReason }` with a specific code (`no-organization-id`, `no-active-brand`,
- *   `brand-resolution-failed`, `no-date-window`, `ims-token-failed`, or `surface-failed:<host>`)
- *   instead of the single generic reason the handler used to report for every case. On a
- *   successful (non-null) return, set to
- *   `{ engineFailureCount, degradedHosts, authFailureDetected }` so a surface that tolerated
- *   partial engine failures is distinguishable from a clean run — both `dataSource` and
- *   `fallbackReason` alone report success/fail but not degradation.
+ * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null
+ *   return, set to `{ fallbackReason }` with a specific code (`no-organization-id`,
+ *   `no-active-brand`, `brand-resolution-failed`, `no-date-window`, `ims-token-failed`,
+ *   `domain-urls-auth-failed`, or `domain-urls-failed`). Left unset on a successful return —
+ *   with a single request there's no per-engine degradation to report.
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
@@ -361,6 +365,7 @@ export async function loadCitedUrlsFromSemrush({
     brandId: brand.brandId,
     receivedCount: result.rows.length,
     uniqueUrlCount: allUrls.size,
+    droppedCount: result.rows.length - allUrls.size,
     youtubeCount: bucketCounts['youtube.com'],
     redditCount: bucketCounts['reddit.com'],
     citedCount: bucketCounts.cited,
