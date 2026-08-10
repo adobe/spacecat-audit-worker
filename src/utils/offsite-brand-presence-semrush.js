@@ -95,9 +95,11 @@ export function buildDomainUrlsUrl({
 /**
  * Fetches the single `domain-urls` page (all hosts, all platforms).
  *
- * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean }>} `ok` is false
- *   on network error / timeout / non-2xx / unparseable body. `authFailure` distinguishes a
- *   401/403 (auth issue) from other failures.
+ * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean, truncated: boolean }>}
+ *   `ok` is false on network error / timeout / non-2xx / unparseable body. `authFailure`
+ *   distinguishes a 401/403 (auth issue) from other failures. `truncated` is true when a
+ *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
+ *   `diagnostics` without grepping logs).
  */
 async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
   const ctx = { siteId };
@@ -109,7 +111,9 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
     log.error(`${LOG_PREFIX} Fetch failed for domain-urls: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
-    return { rows: [], ok: false, authFailure: false };
+    return {
+      rows: [], ok: false, authFailure: false, truncated: false,
+    };
   }
 
   if (!response.ok) {
@@ -123,7 +127,9 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
         ...ctx, status: response.status, durationMs: Date.now() - startedAt,
       });
     }
-    return { rows: [], ok: false, authFailure };
+    return {
+      rows: [], ok: false, authFailure, truncated: false,
+    };
   }
 
   let body;
@@ -133,21 +139,32 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
     log.error(`${LOG_PREFIX} Could not parse domain-urls response: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
-    return { rows: [], ok: false, authFailure: false };
+    return {
+      rows: [], ok: false, authFailure: false, truncated: false,
+    };
   }
 
   const raw = Array.isArray(body?.urls) ? body.urls : [];
-  if (raw.length >= pageSize) {
+  const truncated = raw.length >= pageSize;
+  if (truncated) {
     log.warn(`${LOG_PREFIX} domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
       ...ctx, rowCount: raw.length, pageSize,
     });
   }
-  return { rows: raw.slice(0, pageSize), ok: true, authFailure: false };
+  return {
+    rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated,
+  };
 }
 
 /**
  * Classifies one `domain-urls` row into a bucket, or drops it.
  *
+ * - Non-`http(s)` schemes (`mailto:`, `tel:`, `data:`, `javascript:`, `ftp:`, `ws:`, ...) are
+ *   dropped upfront via an explicit allowlist on the raw `row.url`, rather than relying on
+ *   `classifyAndNormalize` happening to produce an unparseable value for some of them
+ *   (opaque schemes serialize `origin` to the literal string `"null"`) — that's incidental
+ *   for opaque schemes and doesn't catch a scheme that reparses cleanly (`ftp:`, `ws:`) but
+ *   is never a real citation source.
  * - `youtube.com` / `reddit.com` — matched via `classifyAndNormalize`, then the strict
  *   format regexes (drops non-thread Reddit URLs and lookalike YouTube hosts).
  * - Everything else is the third-party "cited" bucket (`domain: null`), unless it's
@@ -157,7 +174,20 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
  * @returns {{url: string, domain: string|null}|null} `null` when the row is dropped.
  */
 function classifyRow(row, siteHostname, brandTokens) {
-  const classified = row?.url ? classifyAndNormalize(row.url, siteHostname) : null;
+  if (!row?.url) {
+    return null;
+  }
+  let scheme;
+  try {
+    scheme = new URL(row.url).protocol;
+  } catch {
+    return null;
+  }
+  if (scheme !== 'http:' && scheme !== 'https:') {
+    return null;
+  }
+
+  const classified = classifyAndNormalize(row.url, siteHostname);
   if (!classified) {
     return null;
   }
@@ -167,17 +197,11 @@ function classifyRow(row, siteHostname, brandTokens) {
   if (classified.domain === 'reddit.com') {
     return REDDIT_URL_REGEX.test(row.url) ? { url: classified.url, domain: 'reddit.com' } : null;
   }
-  if (row?.contentType === 'Owned') {
+  if (row.contentType === 'Owned') {
     return null;
   }
-  let host;
-  try {
-    host = new URL(classified.url).hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    // classified.url already passed through classifyAndNormalize's own URL parse, so this
-    // should be unreachable — defensive only, in case that contract ever changes.
-    return null;
-  }
+  // The allowlist above guarantees classified.url is always a reparseable http(s) URL here.
+  const host = new URL(classified.url).hostname.toLowerCase().replace(/^www\./, '');
   if (TOP_CITED_EXCLUDED_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
     return null;
   }
@@ -213,8 +237,9 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null
  *   return, set to `{ fallbackReason }` with a specific code (`no-organization-id`,
  *   `no-active-brand`, `brand-resolution-failed`, `no-date-window`, `ims-token-failed`,
- *   `domain-urls-auth-failed`, or `domain-urls-failed`). Left unset on a successful return —
- *   with a single request there's no per-engine degradation to report.
+ *   `domain-urls-auth-failed`, or `domain-urls-failed`). On a successful return, set to
+ *   `{ truncated }` — true when the response came back at `PAGE_SIZE`, so a bucket may be
+ *   starved (LLMO-6711 shadow-run parity signal).
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
@@ -331,6 +356,7 @@ export async function loadCitedUrlsFromSemrush({
     setDiagnostics({ fallbackReason: result.authFailure ? 'domain-urls-auth-failed' : 'domain-urls-failed' });
     return null;
   }
+  setDiagnostics({ truncated: result.truncated });
 
   const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
   const brandTokens = computeBrandTokens(siteHostname, brandKeywords);

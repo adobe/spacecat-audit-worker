@@ -205,17 +205,40 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.size).to.equal(0);
   });
 
-  it('drops (does not throw on) a cited row whose classified URL fails re-parsing', async () => {
-    const modWithBadUrl = await loadModule({
-      '../../src/utils/offsite-brand-presence-enrichment.js': {
-        classifyAndNormalize: () => ({ url: 'not a valid url', domain: null }),
-      },
-    });
-    fetchStub.resolves(okJson({ urls: [{ url: CITED_URL, citations: 99 }] }));
-    const allUrls = await modWithBadUrl.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(),
-    });
-    expect(allUrls.size).to.equal(0);
+  it('drops opaque-scheme rows (mailto:/tel:/data:/javascript:) via the scheme allowlist', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'mailto:foo@bar.com', citations: 99 },
+        { url: 'tel:+123456789', citations: 99 },
+        { url: 'data:text/plain;base64,SGVsbG8=', citations: 99 },
+        { url: 'javascript:alert(1)', citations: 99 }, // eslint-disable-line no-script-url -- test data, never executed
+        { url: CITED_URL, citations: 5 },
+      ],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
+  });
+
+  it('drops non-http(s) schemes that reparse cleanly (ftp:/ws:) via the scheme allowlist', async () => {
+    // These don't throw on reparse (unlike opaque schemes) — the allowlist is what catches
+    // them, not an incidental parse failure.
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'ftp://example.com/file.txt', citations: 99 },
+        { url: 'ws://example.com/socket', citations: 99 },
+        { url: CITED_URL, citations: 5 },
+      ],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
+  });
+
+  it('drops a row whose url is not a valid URL at all', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: 'not a url', citations: 99 }, { url: CITED_URL, citations: 5 }],
+    }));
+    const allUrls = await run();
+    expect([...allUrls.keys()]).to.deep.equal([CITED_URL]);
   });
 
   it('filters owned URLs (siteHostname) and rows without a url', async () => {
@@ -269,6 +292,26 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.get(YT_NORM).count).to.equal(7);
   });
 
+  it('sums duplicate URLs within the cited bucket too', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 3 }, { url: CITED_URL, citations: 4 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 7, domain: null });
+  });
+
+  it('counts the cited bucket correctly (not mis-keyed) when only cited URLs are present', async () => {
+    const CITED_URL_2 = 'https://another.example/page';
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5 }, { url: CITED_URL_2, citations: 3 }],
+    }));
+    const onProgress = sandbox.stub().resolves();
+    const allUrls = await run({}, {}, onProgress);
+    expect(allUrls.size).to.equal(2);
+    const messages = onProgress.getCalls().map((c) => c.args[0]);
+    expect(messages.some((m) => /Loaded 0 `youtube\.com`, 0 `reddit\.com`, and 2 cited/.test(m))).to.equal(true);
+  });
+
   // --- body / truncation ----------------------------------------------------
 
   it('treats a non-array urls body as empty (no fallback)', async () => {
@@ -277,19 +320,23 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.size).to.equal(0);
   });
 
-  it('warns and hard-caps at PAGE_SIZE when a full page is returned', async () => {
+  it('warns, sets diagnostics.truncated, and hard-caps at PAGE_SIZE when a full page is returned', async () => {
     const rows = Array.from({ length: mod.PAGE_SIZE + 1 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
     fetchStub.resolves(okJson({ urls: rows }));
-    const allUrls = await run();
+    const diagnostics = {};
+    const allUrls = await run({}, {}, undefined, diagnostics);
     expect(warnedWith(/full page/)).to.equal(true);
     expect(allUrls.size).to.equal(mod.PAGE_SIZE);
+    expect(diagnostics.truncated).to.equal(true);
   });
 
-  it('does not warn on a page one row under PAGE_SIZE (truncation off-by-one)', async () => {
+  it('does not warn and sets diagnostics.truncated to false on a page one row under PAGE_SIZE', async () => {
     const rows = Array.from({ length: mod.PAGE_SIZE - 1 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
     fetchStub.resolves(okJson({ urls: rows }));
-    await run();
+    const diagnostics = {};
+    await run({}, {}, undefined, diagnostics);
     expect(warnedWith(/full page/)).to.equal(false);
+    expect(diagnostics.truncated).to.equal(false);
   });
 
   it('warns on an exactly-PAGE_SIZE page (>= boundary, not >)', async () => {

@@ -134,3 +134,9 @@ tracking ticket will be filed before this debt is resolved; not required to clos
   hostname-less, `platform=all` request now returns every host's URLs, already aggregated,
   in one citations-sorted page — producing the same exact-citation-count contract with 1
   request instead of up to 78, with no separate domain-discovery hop needed.
+- **Three requests (`hostname=youtube.com`, `hostname=reddit.com`, and one hostname-less
+  request for third-party), all `platform=all`.** Would preserve independent per-bucket
+  page sizing — closing the coverage-starvation risk in Consequences — while still cutting
+  request volume ~25x. Rejected in favor of the single request for simplicity (one fewer
+  moving part, one `fallbackReason` surface instead of three); revisit if shadow-run parity
+  (LLMO-6711) shows a bucket is actually being starved in practice.
