@@ -243,5 +243,83 @@ describe('CWV Audit Result', () => {
         expect(log.warn.calledWithMatch(/Failed to determine ASO tier/)).to.be.true;
       });
     });
+
+    describe('subpath-site base-path scoping (SITES-49656)', () => {
+      const subpathSite = {
+        getId: () => 'omes',
+        getBaseURL: () => 'https://www.example.gov/omes',
+        getConfig: () => ({ getGroupedURLs: () => [] }),
+      };
+
+      function buildForSubpath(cwvDataFromRum) {
+        return esmock('../../../src/cwv/cwv-audit-result.js', {
+          '@adobe/spacecat-shared-rum-api-client': {
+            default: {
+              createFrom: sandbox.stub().returns({
+                query: sandbox.stub().resolves(cwvDataFromRum),
+              }),
+            },
+          },
+        });
+      }
+
+      beforeEach(() => {
+        fetchStub.resolves({ status: 200 });
+      });
+
+      it('keeps only pages under the site base path and drops sibling-site pages', async () => {
+        const cwvDataFromRum = [
+          {
+            type: 'url', url: 'https://www.example.gov/omes', pageviews: 100000, organic: 0, metrics: [],
+          },
+          {
+            type: 'url', url: 'https://www.example.gov/omes/leadership.html', pageviews: 6000, organic: 0, metrics: [],
+          },
+          {
+            type: 'url', url: 'https://www.example.gov/okdhs.html', pageviews: 5900, organic: 0, metrics: [],
+          },
+          {
+            type: 'url', url: 'https://www.example.gov/omes-budget', pageviews: 5800, organic: 0, metrics: [],
+          },
+          {
+            type: 'group', pattern: '/omes/*', name: 'OMES pages', pageviews: 5000, organic: 0, metrics: [],
+          },
+        ];
+        const { buildCWVAuditResult: build } = await buildForSubpath(cwvDataFromRum);
+
+        const result = await build({
+          site: subpathSite, finalUrl: 'www.example.gov/omes', log, env: {},
+        });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.include('https://www.example.gov/omes');
+        expect(urls).to.include('https://www.example.gov/omes/leadership.html');
+        // sibling agency page on the same domain but outside /omes — must be dropped
+        expect(urls).to.not.include('https://www.example.gov/okdhs.html');
+        // directory-boundary safety: /omes-budget is a sibling, not under /omes/
+        expect(urls).to.not.include('https://www.example.gov/omes-budget');
+        // operator-configured group entries pass through untouched
+        expect(result.auditResult.cwv.find((e) => e.type === 'group')).to.exist;
+      });
+
+      it('drops url entries whose URL cannot be parsed', async () => {
+        const cwvDataFromRum = [
+          {
+            type: 'url', url: 'https://www.example.gov/omes', pageviews: 100000, organic: 0, metrics: [],
+          },
+          {
+            type: 'url', url: ':::not-a-url', pageviews: 6000, organic: 0, metrics: [],
+          },
+        ];
+        const { buildCWVAuditResult: build } = await buildForSubpath(cwvDataFromRum);
+
+        const result = await build({
+          site: subpathSite, finalUrl: 'www.example.gov/omes', log, env: {},
+        });
+
+        const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
+        expect(urls).to.deep.equal(['https://www.example.gov/omes']);
+      });
+    });
   });
 });

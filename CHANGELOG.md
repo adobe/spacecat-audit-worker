@@ -1,3 +1,31 @@
+## [1.517.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.1...v1.517.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* scope CWV audit RUM pages to site base path for subpath sites (SITES-49656) ([#2873](https://github.com/adobe/spacecat-audit-worker/issues/2873)) ([1f409de](https://github.com/adobe/spacecat-audit-worker/commit/1f409de90023fb20b48e4b45d6221e41da1c0aed))
+
+## [1.517.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.0...v1.517.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **offsite-opportunities:** Populate youtube, reddit and top cited buckets using only one domain-urls request ([#2868](https://github.com/adobe/spacecat-audit-worker/issues/2868)) ([d02d645](https://github.com/adobe/spacecat-audit-worker/commit/d02d6454074cf1d8b376669061cd2ac97c835e09))
+
+# [1.517.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.5...v1.517.0) (2026-08-10)
+
+
+### Features
+
+* **offsite:** log Semrush non-2xx response body to pinpoint the 401 rejecter (LLMO-6709) ([#2854](https://github.com/adobe/spacecat-audit-worker/issues/2854)) ([fca3d39](https://github.com/adobe/spacecat-audit-worker/commit/fca3d39c707b71a2535c84ef8e20aa47a13fc06f))
+
+## [1.516.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.4...v1.516.5) (2026-08-10)
+
+
+### Bug Fixes
+
+* resolve the organization's own brandalf flag row, not a brand's override ([#2870](https://github.com/adobe/spacecat-audit-worker/issues/2870)) ([1cc78ad](https://github.com/adobe/spacecat-audit-worker/commit/1cc78ad62b9817e10c6e50570acaa6b6ff11d680))
+
 ## [1.516.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.516.3...v1.516.4) (2026-08-08)
 
 

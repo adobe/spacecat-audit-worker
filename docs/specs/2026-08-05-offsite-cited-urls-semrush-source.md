@@ -4,7 +4,7 @@
 **Author:** Andrei Paraschiv
 **Date:** 2026-08-05
 **Epic:** [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488) · **Story:** [LLMO-6709](https://jira.corp.adobe.com/browse/LLMO-6709)
-**Related:** ADR `docs/decisions/002-offsite-cited-urls-semrush-source.md` · migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847
+**Related:** ADR `docs/decisions/002-offsite-cited-urls-semrush-source.md` · migration plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · PR #2847 (original per-hostname × per-engine design) · PR #2868 (single-request revision) · [LLMO-6844](https://jira.corp.adobe.com/browse/LLMO-6844) (optional `hostname`) · [LLMO-6818](https://jira.corp.adobe.com/browse/LLMO-6818) (`platform=all`)
 
 ---
 
@@ -25,14 +25,15 @@ selection.
 - Preserve today's selection semantics: `selectTopUrls` (per-surface top-70, ranked by
   citations) and the DRS scrape / poll / analysis path are **unchanged**.
 - Behavioral parity with the legacy path for the URL set it produces.
+- Source **all three buckets — youtube.com, reddit.com, and third-party "cited"** — from a
+  **single** `domain-urls` request per audit run (LLMO-6844 + LLMO-6818).
 
 **Non-goals (known gaps, tracked)**
-- The generic "cited" (top third-party) bucket — needs a `cited-domains` discovery hop;
-  tracked as a follow-up under LLMO-6709. This spec covers **YouTube + Reddit** only.
 - **Region scoping.** The legacy path spans `ACCEPTED_REGIONS` (six markets) while this loader
-  sends **no region param**. If the endpoint defaults to a single region, non-US orgs will
-  diverge from legacy. Deferred to LLMO-6710 (region + platform mapping) — must be closed
-  before non-US parity is claimed.
+  sends **no region param**. Deferred to LLMO-6710 — must be closed before non-US parity is
+  claimed.
+- **Per-domain diversity within the cited bucket.** The loader does not cap how many URLs a
+  single third-party domain contributes; `selectTopUrls` downstream ranks by citations only.
 - Changing ranking, bucketing, DRS, or the analysis audits.
 - Per-URL prompt attribution (LLMO-6712) and topic/category enrichment (LLMO-6708).
 
@@ -40,17 +41,25 @@ selection.
 
 ### 3.1 Endpoint (spacecat-api-service wrapper)
 
-`GET {SPACECAT_API_URI}/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/domain-urls?hostname={host}&startDate=&endDate=&pageSize=100`
+**One** `url-inspector` endpoint call, served by the api-service **Elements proxy**
+(`src/controllers/elements.js` → `listDomainUrls`, Semrush element `STATS_PER_URL`); path
+segments (`spaceCatId`, `brandId`) are URL-encoded:
 
-Served by the api-service **Elements proxy** (`src/controllers/elements.js` →
-`listDomainUrls`, Semrush element `STATS_PER_URL`). Response: `{ urls: [{ url, citations,
-promptsCited, categories, regions, contentType, urlId }] }`. `llmo.experiencecloud.live/api/v1`
-is an edge alias for the same service. Path segments (`spaceCatId`, `brandId`) are URL-encoded.
+```
+GET {SPACECAT_API_URI}/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence
+    /url-inspector/domain-urls?platform=all&startDate=&endDate=&pageSize=1000
+```
 
-`pageSize=100` covers the per-surface top-70 in one page. A server-side citations-descending
-sort is **assumed but not confirmed**; the loader logs a truncation warning on a full page so a
-capped/unsorted response is visible rather than silently dropping high-citation URLs. Each
-request carries a 10s timeout; requests run concurrently.
+No `hostname` is sent — LLMO-6844 made it optional, so the endpoint returns URLs across
+**every** source host instead of one. `platform=all` (LLMO-6818) aggregates citations across
+every AI engine **server-side**. Response:
+`{ urls: [{ url, citations, promptsCited, categories, regions, contentType, urlId }],
+totalCount }`, sorted by citations descending.
+
+The request carries a 10s timeout. `PAGE_SIZE` (1000, a fixed constant — §3.4) matches the
+`domain-urls` server-side `pageSize` clamp — the max we can actually get in one page. The
+loader logs a truncation warning on a full page, since the sort is global across every host
+and a low-citation bucket can be starved by too small a page.
 
 ### 3.2 Auth
 
@@ -69,14 +78,21 @@ flag stays off until verified (test one canary run via the `enableSemrush:true` 
 
 1. Resolve `spaceCatId = site.getOrganizationId()`, `brandId = resolveBrandForSite(...)`,
    `{ startDate, endDate } = getDateWindowForPreviousWeeks(previousWeeks)`.
-2. For each `OFFSITE_DOMAINS` hostname (`youtube.com`, `reddit.com`) × each configured platform,
-   call `domain-urls` and fold rows into `allUrls`:
+2. Make the single `domain-urls` request (§3.1) and classify each row (`classifyRow`):
    - normalize + classify via the shared `classifyAndNormalize` (owned-URL filtering, youtu.be
      canonicalization, domain assignment);
-   - **enforce `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`** (parity with `handler.js:199-204`) so
-     non-thread Reddit URLs and lookalike YouTube hosts are dropped, matching the legacy path;
-   - `count = row.citations` (exact); sum across platforms for the same URL.
-3. Handler branch: when `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true'` it tries Semrush
+   - every other row is the third-party "cited" bucket (`domain: null`), **unless**
+     `contentType: "Owned"`, the host is in `TOP_CITED_EXCLUDED_DOMAINS` (e.g.
+     `wikipedia.org`), or `isExcludedCitedHost` (social/search/brand-owned-lookalike + brand
+     tokens) flags it — the legacy top-cited gate, applied per URL row instead of per
+     domain-level rollup;
+   - `count = row.citations` (exact, already summed across every engine server-side); citations
+     are clamped (`Math.max(0, …)`) and a zero-citation URL is dropped; duplicate URLs within
+     the page are summed defensively.
+3. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
+   (matching the legacy `handler.js` classify) to `youtube.com` / `reddit.com` rows so
+   non-thread Reddit and lookalike YouTube hosts are dropped identically.
+4. Handler branch: when `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true'` it tries Semrush
    **first**; if the loader yields no usable URLs (auth failure, no brand, outage, empty result)
    it **falls back** to the legacy `loadBrandPresenceData` (PostgREST → SharePoint) +
    `extractUrlsAndTopics`, so a Semrush problem can never silently zero out offsite. Flag off =
@@ -84,27 +100,14 @@ flag stays off until verified (test one canary run via the `enableSemrush:true` 
    A Slack-triggered `offsite-brand-presence`/`cited-analysis`/`youtube-analysis`/`reddit-analysis`
    run can override this env var for that single run via the `enableSemrush` custom arg
    (`auditContext.messageData.enableSemrush`, resolved by `resolveEnableSemrush` — same
-   tri-state mechanism as `enableBrandProfile`); `cited-analysis`/`youtube-analysis`/
-   `reddit-analysis` forward it through `requestOffsiteScrape` so the override survives when
-   they trigger a scoped `offsite-brand-presence` re-scrape. See ADR-002 decision 6.
+   tri-state mechanism as `enableBrandProfile`). See ADR-002 decision 7.
 
-### 3.4 Platform aggregation
-
-Omitting `platform` does **not** aggregate across engines on `domain-urls`/`cited-domains` —
-the proxy resolves an absent value to a single default engine. So the loader queries an
-**explicit engine list** — the full offsite provider set mapped to serenity models via
-`SEMRUSH_PLATFORM_BY_PROVIDER` (offsite `constants.js`): `google-ai-mode`, `search-gpt`,
-`microsoft-copilot`, `gemini-2.5-flash`, `google-ai-overview`, `perplexity` — and **sums**
-citations per URL, mirroring the legacy multi-engine mix. `OFFSITE_SEMRUSH_PLATFORMS`
-(comma-separated) queries each engine and **sums citations per URL**. (LLMO-6710.)
-
-### 3.5 Config
+### 3.4 Config
 
 | Env | Default | Purpose |
 |---|---|---|
 | `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` | (off) | `"true"` switches source to Semrush |
 | `SPACECAT_API_URI` | `https://spacecat.experiencecloud.live/api/v1` | api-service base |
-| `OFFSITE_SEMRUSH_PLATFORMS` | full provider set (`SEMRUSH_PLATFORM_BY_PROVIDER`) | override: engines to query + sum |
 | `enableSemrush` (Slack custom arg, not an env var) | (unset — env var applies) | per-run override of `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` |
 
 ## 4. Alternatives considered
@@ -113,24 +116,32 @@ citations per URL, mirroring the legacy multi-engine mix. `OFFSITE_SEMRUSH_PLATF
   the migration plan) — superseded: the api-service wrapper already exists and is UI-validated.
 - **Route Semrush rows through the existing `extractUrlsAndTopics`** — rejected: it recounts by
   repetition and would discard the exact citation numbers.
+- **Per-hostname × per-engine fan-out, summing citations client-side, plus a two-hop
+  `cited-domains` → `domain-urls` discovery walk for the third-party bucket.** Superseded once
+  LLMO-6844 (optional `hostname`) and LLMO-6818 (`platform=all`) landed: the single
+  hostname-less, `platform=all` request already returns every host's URLs, aggregated, in one
+  citations-sorted page — the same exact-citation-count contract with 1 request instead of up
+  to 78, with no separate domain-discovery hop.
 
 ## 5. Behavioral-parity note (reviewer follow-up)
 
 There are two `classifyAndNormalize` functions: the enrichment one (hostname match +
 normalization) and the stricter `handler.js` one (adds `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
-+ `isExcludedCitedHost`). The loader normalizes with the former and **re-applies the two
-regexes** to match the legacy filter for its YouTube/Reddit scope. `isExcludedCitedHost` /
-brand-token filtering only affect the top-cited bucket and will be applied when that bucket is
-added.
++ `isExcludedCitedHost`). The loader normalizes with the former and re-creates the stricter
+filter itself in `classifyRow`: it **re-applies the two regexes** to the YouTube/Reddit rows,
+and applies `TOP_CITED_EXCLUDED_DOMAINS` + `isExcludedCitedHost` + brand tokens to the
+third-party "cited" rows — matching the legacy filter for each bucket.
 
 ## 6. Success criteria
 
 - Flag off ⇒ byte-for-byte today's behavior (no regression).
-- Flag on ⇒ YouTube/Reddit cited URLs come from Semrush with exact citation counts; strict
-  format filtering matches the legacy path.
-- Env-enabled + Semrush fails ⇒ automatic fallback to the legacy PostgREST → SharePoint
+- Flag on ⇒ YouTube/Reddit and top-cited third-party URLs come from Semrush with exact
+  citation counts (server-side-aggregated across engines via `platform=all`); strict format
+  filtering and the top-cited earned-host gate match the legacy path.
+- Flag on + Semrush unavailable ⇒ automatic fallback to the legacy PostgREST → SharePoint
   source (no offsite gap).
 - `enableSemrush:true` (Slack override) + Semrush fails ⇒ **hard stop** (`success:false`,
   `dataSource:'semrush'`, no fallback) so the failure is visible during LLMO-6709 testing.
-- Shadow-run (LLMO-6711) shows acceptable top-70 overlap per surface vs the legacy source.
+- Shadow-run (LLMO-6711) shows acceptable top-70 overlap per bucket vs the legacy source.
+- Exactly one `domain-urls` request per audit run when Semrush is enabled.
 - 100% test coverage on the new module; full suite green.

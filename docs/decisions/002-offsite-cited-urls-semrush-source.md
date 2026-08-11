@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-05
-- **Related:** spec `docs/specs/2026-08-05-offsite-cited-urls-semrush-source.md` · plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488) / [LLMO-6709](https://jira.corp.adobe.com/browse/LLMO-6709) / [LLMO-6710](https://jira.corp.adobe.com/browse/LLMO-6710)
+- **Related:** spec `docs/specs/2026-08-05-offsite-cited-urls-semrush-source.md` · plan `docs/plans/2026-07-17-offsite-cited-urls-semrush-migration.md` · [LLMO-6488](https://jira.corp.adobe.com/browse/LLMO-6488) / [LLMO-6709](https://jira.corp.adobe.com/browse/LLMO-6709) / [LLMO-6710](https://jira.corp.adobe.com/browse/LLMO-6710) / [LLMO-6844](https://jira.corp.adobe.com/browse/LLMO-6844) / [LLMO-6818](https://jira.corp.adobe.com/browse/LLMO-6818)
 
 ## Context
 
@@ -17,7 +17,7 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 
 1. **Source swap behind a flag, Semrush-first — failure handling depends on HOW it
    was enabled.** When Semrush is enabled (env var
-   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the per-run override in Decision 6),
+   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the per-run override in Decision 7),
    the runner uses the Semrush loader. On a Semrush **failure** (loader returns `null`):
    - **Env-enabled, or override `false`/absent →** fall back to the legacy
      `loadBrandPresenceData` (PostgREST → SharePoint), so production is never silently
@@ -28,41 +28,28 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
      masked by legacy.
    A genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as
    a normal zero-URL Semrush run in both modes. Flag off (no override) = legacy only.
-2. **What counts as a Semrush FAILURE (`null`), at the SURFACE granularity.** The loader
-   returns `null` on: no org/brand, transient
-   brand-resolution failure, no date window, IMS-token failure, or when a **whole
-   surface (hostname) produced zero successful responses**. Rationale: a dropped
-   *surface* (all YouTube or all Reddit engines failed) is indistinguishable from a
-   genuine zero and must fall back; a **single failed engine is a partial count**,
-   not a dropped surface, and is tolerated (the successful engines still contribute).
-   This keeps the strictness aligned with the "don't drop a surface" goal rather than
-   over-firing on any one of ~12 requests. **Follow-up:** a bounded retry on
-   retriable statuses (`RETRIABLE_STATUSES`) — as the legacy path does — would
-   further reduce transient surface-level fallbacks; not in this PR.
-2b. **`dataSource` on the audit result.** `auditResult.dataSource` = `'semrush'` |
-   `'legacy'`, plus one of two structured signals depending on outcome: a fully-failed
-   attempt sets `fallbackReason` to a specific code (`no-organization-id`,
+2. **A single `domain-urls` request — no `hostname`, `platform=all` — serves all three
+   buckets.** LLMO-6844 made `hostname` optional (returns URLs across every source host)
+   and LLMO-6818 added `platform=all` (aggregates citations across every AI engine
+   server-side). One request returns a citations-sorted page spanning every host and
+   engine; the worker classifies each row client-side into `youtube.com`, `reddit.com`, or
+   third-party "cited" (`domain: null`) — see `classifyRow` in the loader.
+3. **Failure is whole-request.** With one request, there's no per-engine partial
+   tolerance — the loader returns `null` on: no org/brand, transient brand-resolution
+   failure, no date window, IMS-token failure, or the `domain-urls` request itself failing
+   (network error, timeout, non-2xx, unparseable body). `auditResult.dataSource` =
+   `'semrush'` | `'legacy'`, plus `fallbackReason` on failure (`no-organization-id`,
    `no-active-brand`, `brand-resolution-failed`, `no-date-window`, `ims-token-failed`,
-   or `surface-failed:<hostname>`) instead of one generic string; a *succeeded* attempt
-   that still tolerated partial engine/auth failures (Decision 2 above) sets
-   `semrushEngineFailureCount` / `semrushDegradedHosts` so that degradation is visible
-   without going back to logs — `dataSource: 'semrush'` alone does not distinguish a
-   clean run from one where some engines failed. Any 401/403 among the tolerated
-   failures is also logged as a distinct WARN even on overall success, since an
-   intermittent auth rejection is the signal to watch for during the pre-LLMO-6709
-   window. All of this feeds shadow-run parity (LLMO-6711) without grepping logs.
-2c. **Scope + hygiene guards.** Off-host (`domain: null`) rows are dropped so nothing
-   leaks into the top-cited bucket / TOP_CITED scrape; citations are clamped
-   (`Math.max(0, …)`) and URLs with total count ≤ 0 are dropped so a negative/zero
-   value can't corrupt the citations-descending ranking.
-3. **Explicit multi-engine query, not an omitted `platform`.** Omitting `platform`
-   on `domain-urls`/`cited-domains` does **not** aggregate across engines (the
-   proxy resolves it to a single default engine). We query the full offsite provider
-   set mapped to serenity models — `SEMRUSH_PLATFORM_BY_PROVIDER` (`google-ai-mode`,
-   `search-gpt`, `microsoft-copilot`, `gemini-2.5-flash`, `google-ai-overview`,
-   `perplexity`) — and **sum** citations per URL. Validating this map upstream is
-   LLMO-6710.
-4. **Auth = IMS service bearer via v2 `getServiceAccessToken()` (`authorization_code`
+   `domain-urls-auth-failed` for a 401/403, or `domain-urls-failed` otherwise) — feeds
+   shadow-run parity (LLMO-6711) without grepping logs.
+4. **Per-row bucket + hygiene filters (`classifyRow`).** `youtube.com` / `reddit.com` rows
+   must additionally pass `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX` (drops non-thread Reddit
+   and lookalike YouTube hosts, matching the legacy classify). Third-party rows are dropped
+   when `contentType: "Owned"`, when the host is in `TOP_CITED_EXCLUDED_DOMAINS` (e.g.
+   `wikipedia.org`), or when `isExcludedCitedHost` flags a social/search/brand-lookalike
+   host — the legacy top-cited gate, now applied per URL rather than per domain rollup.
+   Citations are clamped (`Math.max(0, …)`) and zero-citation URLs are dropped.
+5. **Auth = IMS service bearer via v2 `getServiceAccessToken()` (`authorization_code`
    grant), default IMS client.** This is the same S2S path `commerce-product-enrichments`,
    `vulnerabilities` and `permissions` use. v3 `getServiceAccessTokenV3()`
    (`client_credentials`) was tried first but returns IMS **`400 unauthorized_client`** —
@@ -71,63 +58,60 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    The token is forwarded unchanged to Semrush; no `x-promise-token` for a service caller.
    **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so whether
    Semrush accepts the worker's *service* token is unverified — the flag stays off until
-   confirmed end-to-end (use `enableSemrush:true` on one canary run, per Decision 6, to test).
-5. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
-   (matching the legacy `handler.js` classify) so non-thread Reddit and lookalike
-   YouTube hosts are dropped identically.
-6. **Per-run override via Slack custom arg — how the first live runs get tested.**
+   confirmed end-to-end (use `enableSemrush:true` on one canary run, per Decision 7, to test).
+6. **`PAGE_SIZE` is a fixed constant (1000).** The response is sorted by
+   citations globally across every host, so a low-citation bucket can be starved by too
+   small a page — a generous page is cheap since it's one request either way. 1000 is the
+   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently.
+7. **Per-run override via Slack custom arg — how the first live runs get tested.**
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
    `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
    `true` forces the Semrush attempt on for that run **and makes a failure a hard stop with
    no legacy fallback** (Decision 1), `false` forces legacy even when the env var is on,
-   anything else (absent, empty, invalid) falls through to the env var unchanged. This is the intended mechanism for verifying LLMO-6709 against the real
-   Semrush proxy on one site at a time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED`
-   is flipped fleet-wide. Same tri-state mechanism as the existing `enableBrandProfile`
-   override. It is a **per-run** override only (one Slack invocation), not the persistent
-   **per-site** cutover tracked under LLMO-6711.
+   anything else (absent, empty, invalid) falls through to the env var unchanged. This is the
+   intended mechanism for verifying LLMO-6709 against the real Semrush proxy on one site at a
+   time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` is flipped fleet-wide. Same tri-state
+   mechanism as the existing `enableBrandProfile` override. It is a **per-run** override only
+   (one Slack invocation), not the persistent **per-site** cutover tracked under LLMO-6711.
 
 ## Consequences
 
-- Enabling the flag can never silently zero out offsite (fallback), but the
-  fallback **masks** Semrush failures — read `auditResult.dataSource` /
-  `fallbackReason` (and the `Service token rejected` / `No successful Semrush
-  response` logs) to know when Semrush is not actually serving.
-- `pageSize=100` assumes a server-side citations-descending sort (unconfirmed); the
-  loader logs a truncation warning on a full page so an unsorted/capped response is
-  visible rather than silently dropping high-citation URLs.
-- The flag is **environment-global** (not per-site); per-site cutover is LLMO-6711.
-  A per-run Slack override (`enableSemrush`, see Decision 6) exists for ad-hoc testing
-  of one run, but does not persist across runs or substitute for the per-site cutover.
+- Enabling the flag can never silently zero out offsite (fallback), but the fallback
+  **masks** Semrush failures — read `auditResult.dataSource` / `fallbackReason` (and the
+  `Service token rejected` / `domain-urls returned HTTP` logs) to know when Semrush is not
+  actually serving.
+- **Request volume dropped from ~12–78 requests to exactly 1** per audit run. The
+  trade-off is coverage risk at the tails: a bucket whose citation volume is
+  systematically lower than the others (e.g. `reddit.com` on a site where third-party
+  press coverage dominates) can be starved within one global-citations-sorted page —
+  mitigated, not eliminated, by the generous fixed `PAGE_SIZE`.
+- The flag is **environment-global** (not per-site); per-site cutover is LLMO-6711. The
+  per-run Slack override (Decision 7) exists for ad-hoc testing of one run only.
 
 ## Known gaps / non-goals (tracked)
 
-- **Region scoping** is not implemented; the legacy path spans `ACCEPTED_REGIONS`
-  (six markets) while this loader sends no region. Documented as a follow-up
-  (LLMO-6710) — must be closed before non-US parity can be claimed.
-- Generic "cited" (third-party) bucket — needs a `cited-domains` discovery hop
-  (LLMO-6709 follow-up).
+- **Region scoping** is not implemented; the legacy path spans `ACCEPTED_REGIONS` (six
+  markets) while this loader sends no region. Follow-up: LLMO-6710 — must close before
+  non-US parity can be claimed.
+- **Per-domain diversity within the cited bucket** is not enforced: the loader emits every
+  qualifying third-party row and relies on `selectTopUrls`'s top-N-by-citations logic
+  downstream, so a single very-high-citation domain can dominate the cited bucket.
 
 ## Enablement runbook (ordered gates before turning the flag on anywhere)
 
 The flag-off path is safe to merge now. Before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`
 fleet-wide in any environment, close these in order (LLMO-6709 → 6711). The per-run Slack
-override (`enableSemrush`, Decision 6) is the intended tool for step 1 below: use it to run a
-single live request against the real Semrush proxy on one site and confirm the auth path
-works end-to-end, before flipping the env var for the whole fleet.
+override (`enableSemrush`, Decision 7) is the intended tool for step 1: run a single live
+request against the real Semrush proxy on one site and confirm the auth path works
+end-to-end before flipping the env var fleet-wide.
 
 1. **Auth/authz verified (LLMO-6709).** Confirm the worker's **service** IMS token is
-   accepted by the Semrush proxy end-to-end (it is forwarded unchanged; the proxy is designed
-   around a *user* token). Confirm `tracingFetch` does **not** emit the `Authorization` header
-   into traces/spans (service-bearer leak). Confirm the token is org-scoped, or document that
-   tenant isolation is fully delegated to the proxy's per-caller org authz — the worker sends
-   `spaceCatId = site.getOrganizationId()` with a broad service token and asserts no boundary
-   itself (confused-deputy surface).
+   accepted by the Semrush proxy end-to-end. Confirm `tracingFetch` does not emit the
+   `Authorization` header into traces/spans (service-bearer leak).
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
-3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per surface vs legacy.
-4. **Fleet enable** per environment (the flag is environment-global) — **US markets only**
-   until region scoping (LLMO-6710, see Known gaps below) closes; non-US parity cannot be
-   claimed before then.
+3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per bucket vs legacy.
+4. **Fleet enable** per environment — **US markets only** until region scoping (LLMO-6710) closes.
 
 ## Configuration / client-convention debt (to resolve before the 3rd caller)
 
@@ -144,7 +128,15 @@ tracking ticket will be filed before this debt is resolved; not required to clos
 
 - **No fallback (Semrush-only when on).** Rejected: a Semrush outage would zero out
   offsite for every audited site with no safety net.
-- **Per-domain fallback** (fall back only for the failed surface). Deferred: more
-  complex; the full-run fallback is simpler and strictly safe.
-- **Omit `platform` and rely on server-side aggregation.** Rejected: not how these
-  two endpoints resolve an absent platform (single-engine narrowing).
+- **Per-hostname × per-engine fan-out, summing citations client-side, plus a two-hop
+  `cited-domains` → `domain-urls` discovery walk for the third-party bucket.** Superseded
+  once LLMO-6844 (optional `hostname`) and LLMO-6818 (`platform=all`) landed: a single
+  hostname-less, `platform=all` request now returns every host's URLs, already aggregated,
+  in one citations-sorted page — producing the same exact-citation-count contract with 1
+  request instead of up to 78, with no separate domain-discovery hop needed.
+- **Three requests (`hostname=youtube.com`, `hostname=reddit.com`, and one hostname-less
+  request for third-party), all `platform=all`.** Would preserve independent per-bucket
+  page sizing — closing the coverage-starvation risk in Consequences — while still cutting
+  request volume ~25x. Rejected in favor of the single request for simplicity (one fewer
+  moving part, one `fallbackReason` surface instead of three); revisit if shadow-run parity
+  (LLMO-6711) shows a bucket is actually being starved in practice.
