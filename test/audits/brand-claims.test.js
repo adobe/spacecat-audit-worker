@@ -49,7 +49,8 @@ describe('Brand Claims audit handler', function () {
         update: (payload) => { rec.update = payload; return builder; },
         eq: (col, val) => { rec.eqs.push([col, val]); return builder; },
         neq: (col, val) => { rec.neqs.push([col, val]); return builder; },
-        order: () => Promise.resolve(selectResult),
+        order: () => builder,
+        limit: (n) => { rec.limit = n; return Promise.resolve(selectResult); },
         maybeSingle: () => Promise.resolve(updateResult),
       };
       return builder;
