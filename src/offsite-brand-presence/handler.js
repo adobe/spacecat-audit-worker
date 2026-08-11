@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
+import { SEMRUSH_ENTITLEMENT_SKIP_REASONS } from '../utils/semrush-entitlement.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   computeBrandTokens,
@@ -107,12 +108,6 @@ const LOG_PREFIX = '[OffsiteBrandPresence]';
 const TOP_CITED_BUCKET = 'top-cited';
 // Valid values for messageData.domainScope on granular single-audit runs.
 const VALID_DOMAIN_SCOPES = new Set([...Object.keys(OFFSITE_DOMAINS), TOP_CITED_BUCKET]);
-
-// fallbackReason codes for a deliberate entitlement-based skip (brand not provisioned
-// in Semrush) — never a hard-stop, even under an explicit `enableSemrush:true` canary
-// run: the "no errors for non-entitled brands" contract must hold regardless of how
-// Semrush was enabled for this run.
-const ENTITLEMENT_SKIP_REASONS = new Set(['not-entitled', 'entitlement-check-failed']);
 
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
@@ -959,7 +954,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // errors" for a non-entitled brand must hold regardless of how Semrush was
       // enabled. Hard-stop stays reserved for genuine technical failures (auth,
       // outage, etc.) that a canary run wants surfaced, not for expected scoping.
-      const isEntitlementSkip = ENTITLEMENT_SKIP_REASONS.has(reason);
+      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
       if (hardStopOnFailure && !isEntitlementSkip) {
         // enableSemrush:true forced this run — surface the failure, no fallback.
         log.error(`${LOG_PREFIX} Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
@@ -1013,6 +1008,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
   const semrushDegraded = usedSemrush && (semrushDiagnostics?.engineFailureCount ?? 0) > 0;
+  // Granular cause behind an entitlement-based `fallbackReason` (`flag-disabled` |
+  // `no-workspace` | `no-client` | `check-failed`) — set only on the two entitlement
+  // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
+  // bug (`no-client`) stays distinguishable from a one-off transient blip
+  // (`check-failed`) without changing the coarse-grained hard-stop-exemption contract.
+  const entitlementReason = semrushDiagnostics?.entitlementReason;
 
   // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
   // failed (fallback). An enableSemrush:true run that failed already hard-stopped
@@ -1056,6 +1057,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         weeks: previousWeeks,
         dataSource,
         ...(fallbackReason ? { fallbackReason } : {}),
+        ...(entitlementReason ? { entitlementReason } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -1124,6 +1126,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       weeks: previousWeeks,
       dataSource,
       ...(fallbackReason ? { fallbackReason } : {}),
+      ...(entitlementReason ? { entitlementReason } : {}),
       ...(semrushDegraded ? {
         semrushEngineFailureCount: semrushDiagnostics.engineFailureCount,
         semrushDegradedHosts: semrushDiagnostics.degradedHosts,

@@ -126,6 +126,53 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `isBrandalfEnabled` (a different flag — `brandalf` — from a different cohort than
    Semrush/Serenity entitlement); and a net-new per-site allowlist (the workspace columns
    already are the authoritative provisioning signal, no new construct needed).
+7b. **`feature_flags` multi-row safety, and a shared reason-string contract (PR review).**
+   `isSerenityEnabledForOrg` mirrors `isBrandalfEnabled`'s wildcard-select +
+   `isOrgRow` pattern (`isOrgRow` exported from `brandalf-utils.js`, reused here) instead
+   of `.eq('flag_name', ...).maybeSingle()`: `feature_flags` rows can carry a brand-scoped
+   override (`brand_id` set) alongside the organization's own row (`brand_id` NULL) for the
+   *same* `organization_id`/`product`/`flag_name`, and `maybeSingle()` throws the moment two
+   rows match — which would silently and permanently disable Semrush for any org the moment
+   a brand-level `serenity` override exists. Separately, the `'not-entitled'` /
+   `'entitlement-check-failed'` reason strings are now exported as
+   `SEMRUSH_NOT_ENTITLED_REASON` / `SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON` (plus a bundled
+   `SEMRUSH_ENTITLEMENT_SKIP_REASONS` Set) from `semrush-entitlement.js`, imported by both
+   the loader (producer) and the handler's hard-stop-exemption check (consumer) — previously
+   independently-typed literals with no test tying them together. A granular
+   `entitlementReason` (`flag-disabled` | `no-workspace` | `no-client` | `check-failed`) is
+   now also threaded onto `diagnostics`/`auditResult` alongside the coarse `fallbackReason`,
+   so a systemic wiring bug (`no-client`) stays distinguishable from a one-off transient
+   blip (`check-failed`) without changing the coarse-grained hard-stop-exemption contract
+   itself.
+7c. **Resolved: `entitlement-check-failed` stays exempted from hard-stop; visibility is via
+   the existing thread notify() and logs only — no dedicated ops channel (PR review).**
+   Decided against making `entitlement-check-failed` hard-stop like `ims-token-failed` —
+   `enableSemrush:true` is a per-run canary override, so gating a fleet-wide outage signal
+   behind it would mean the signal only fires on whichever single site happens to be
+   canary-tested at that moment. A dedicated, unconditional ops-channel Slack alert
+   (`postMessageSafe` to a fixed channel, firing regardless of Slack context) was
+   considered and implemented, then explicitly rejected in favor of simplicity: the loader's
+   existing `notify()` call already posts `:warning: Could not verify Semrush
+   entitlement...` into the triggering thread via `onProgress` → `postMessageOptional`
+   whenever this happens — unchanged by this decision. Accepted trade-off:
+   `channelId`/`threadTs` are only populated when the audit was triggered manually from
+   Slack (scheduled/automatic runs have no thread — see `scheduleDrsStatusPoll`'s doc
+   comment), so a `entitlement-check-failed` outage during ordinary scheduled operation
+   produces **no Slack signal**, only the `log.info`/`log.warn` lines and
+   `auditResult.entitlementReason` (Decision 7b) for whoever is watching logs/dashboards.
+   If fleet-wide alerting on this specific failure mode becomes a real operational need,
+   revisit the dedicated-channel approach then rather than pre-building it now.
+7d. **Documented, not enforced: `resolveSemrushWorkspace` trusts caller-supplied org/brand
+   membership (PR review).** The shared `Brand` data-access model
+   (`@adobe/spacecat-shared-data-access`) has no `organizationId` getter at all — it is
+   deliberately minimal, scoped to only the fields the serenity provisioning flow reads/
+   writes — so there is no way to verify a resolved brand actually belongs to the given org
+   without a raw PostgREST query against `brands.organization_id`, which would reintroduce
+   the table-level dependency this module deliberately moved away from (Decision 7) for a
+   scenario the sole caller cannot hit today (`resolveBrandResultForSite` is already
+   server-side scoped by `organization_id`). Documented as an explicit contract in both
+   functions' JSDoc instead of enforced in code: a future caller resolving `orgId`/`brandId`
+   from independent sources must guarantee the pairing itself.
 
 ## Consequences
 

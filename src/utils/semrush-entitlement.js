@@ -38,22 +38,59 @@
  * from a confirmed non-entitlement so the caller can log/diagnose accordingly.
  */
 
+import { isOrgRow } from './brandalf-utils.js';
+
 const LOG_PREFIX = '[semrush-entitlement]';
 
 const SERENITY_FLAG_PRODUCT = 'LLMO';
 const SERENITY_FLAG_NAME = 'serenity';
 
 /**
- * Maximum milliseconds to wait for the combined flag + workspace PostgREST lookup
- * before failing closed. Mirrors `BRAND_RESOLUTION_TIMEOUT_MS` in `brand-resolver.js`
- * — kept short so a PostgREST outage never amplifies offsite-audit latency.
+ * Reason code the loader (`offsite-brand-presence-semrush.js`) sets on
+ * `diagnostics.fallbackReason` for a CONFIRMED non-entitlement (`resolved:true`).
+ * Exported so both the loader (producer) and the handler's hard-stop-exemption
+ * check (`offsite-brand-presence/handler.js`) share one literal instead of two
+ * independently-typed copies that could drift.
+ */
+export const SEMRUSH_NOT_ENTITLED_REASON = 'not-entitled';
+
+/**
+ * Reason code the loader sets on `diagnostics.fallbackReason` when the entitlement
+ * check itself could not complete (`resolved:false` — see `entitlementReason` on the
+ * same diagnostics object for the granular cause: `no-client` vs `check-failed`).
+ */
+export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement-check-failed';
+
+/**
+ * Both entitlement-based skip reasons — a deliberate skip (confirmed or
+ * inconclusive), never a Semrush/technical failure. Consumed directly by the
+ * handler's hard-stop-exemption check so it never has to know the literal values.
+ */
+export const SEMRUSH_ENTITLEMENT_SKIP_REASONS = Object.freeze(
+  new Set([SEMRUSH_NOT_ENTITLED_REASON, SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON]),
+);
+
+/**
+ * Maximum milliseconds to wait for the combined flag + workspace lookup before
+ * failing closed. Mirrors `BRAND_RESOLUTION_TIMEOUT_MS` in `brand-resolver.js`, whose
+ * budget covers a WORSE (more sequential) shape: up to two SEQUENTIAL PostgREST round
+ * trips (its Q2 only runs after Q1 misses). This check's three lookups (the flag read,
+ * `Organization.findById`, `Brand.findById`) all run CONCURRENTLY via `Promise.all`, so
+ * the critical path here is one round-trip deep, not two — the same budget is, if
+ * anything, more generous for this shape. Re-validate against real p99s post-rollout
+ * if `check-failed` volume looks high (a symptom the timeout is too tight for
+ * `Organization`/`Brand`'s data-access-layer overhead vs a raw PostgREST query).
  */
 export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
 
 /**
  * Checks the org-wide `serenity` feature flag — the same rollout switch
  * spacecat-api-service reads before serving any Serenity/Semrush route for an org.
- * Same query shape as `isBrandalfEnabled` in `brandalf-utils.js`, different flag name.
+ * Same query shape as `isBrandalfEnabled` in `brandalf-utils.js` (wildcard projection +
+ * `isOrgRow`, not `.eq('flag_name', ...).maybeSingle()`): `feature_flags` rows can carry
+ * a brand-scoped override (`brand_id` set) alongside the organization's own row
+ * (`brand_id` NULL) for the SAME `organization_id`/`product`/`flag_name` — a narrower,
+ * single-row-assuming query throws the moment a `serenity` override exists for any org.
  *
  * @param {string} organizationId - SpaceCat org UUID
  * @param {object} postgrestClient - mysticat PostgREST client (already validated by caller)
@@ -62,13 +99,13 @@ export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
  */
 async function isSerenityEnabledForOrg(organizationId, postgrestClient, log) {
   try {
+    // Wildcard projection is required — see `isOrgRow`.
     const { data, error } = await postgrestClient
       .from('feature_flags')
-      .select('flag_value')
+      .select('*')
       .eq('organization_id', organizationId)
       .eq('product', SERENITY_FLAG_PRODUCT)
-      .eq('flag_name', SERENITY_FLAG_NAME)
-      .maybeSingle();
+      .eq('flag_name', SERENITY_FLAG_NAME);
 
     if (error) {
       log?.warn(`${LOG_PREFIX} Failed to read serenity flag for org ${organizationId}: ${error.message}`);
@@ -76,7 +113,7 @@ async function isSerenityEnabledForOrg(organizationId, postgrestClient, log) {
     }
 
     // Absent row => flag not set => disabled.
-    return data?.flag_value === true;
+    return (data ?? []).find(isOrgRow)?.flag_value === true;
   } catch (error) {
     log?.warn(`${LOG_PREFIX} Error checking serenity flag for org ${organizationId}: ${error.message}`);
     return null;
@@ -89,6 +126,21 @@ async function isSerenityEnabledForOrg(organizationId, postgrestClient, log) {
  * spacecat-api-service's `workspace-resolver.js` reads (minus its caching; see the
  * file-level doc comment). Dual-mode: a brand's own sub-workspace takes precedence;
  * the org's flat workspace is the fallback.
+ *
+ * CONTRACT — `brandId` MUST already belong to `orgId`; this function does NOT verify
+ * that membership itself. The shared `Brand` data-access model
+ * (`@adobe/spacecat-shared-data-access`) is deliberately minimal — it does not declare
+ * `organizationId` at all (see `brand.schema.js` / `brand.model.js`: "columns this
+ * entity does not declare (organization_id, site_id, regions, …) are simply never
+ * touched by it") — so there is no getter here to check against. Verifying it would
+ * require a raw PostgREST query against `brands.organization_id`, reintroducing the
+ * table-level dependency this module deliberately moved away from (see the file-level
+ * doc comment) for a scenario the sole caller (`offsite-brand-presence-semrush.js`,
+ * via `resolveBrandResultForSite`) cannot hit today — that resolver is already
+ * server-side scoped by `organization_id`. A future caller that resolves `orgId` and
+ * `brandId` from independent sources MUST enforce this invariant itself before calling
+ * `resolveSemrushEntitlement` — passing a mismatched pair here can attribute a
+ * different org's Semrush provisioning to this one.
  *
  * @param {object} dataAccess - `context.dataAccess` (already validated by caller)
  * @param {{orgId: string, brandId: string}} params
@@ -116,6 +168,9 @@ async function resolveSemrushWorkspace(dataAccess, { orgId, brandId }) {
  * Resolves whether a brand is entitled to be queried against the Semrush-backed
  * Serenity API — i.e. whether calling it is expected to return real data rather
  * than an access-denied/empty response.
+ *
+ * CONTRACT — caller must guarantee `brandId` belongs to `orgId`; see
+ * `resolveSemrushWorkspace`'s doc comment for why this is not verified internally.
  *
  * @param {object} context - Lambda context (`dataAccess` incl. `.services.postgrestClient`, `log`)
  * @param {{orgId: string, brandId: string}} params

@@ -13,7 +13,11 @@
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { resolveBrandResultForSite } from './brand-resolver.js';
-import { resolveSemrushEntitlement } from './semrush-entitlement.js';
+import {
+  resolveSemrushEntitlement,
+  SEMRUSH_NOT_ENTITLED_REASON,
+  SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+} from './semrush-entitlement.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import {
@@ -231,7 +235,11 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
  *   set to `{ fallbackReason }` with a specific code (`no-organization-id`, `no-active-brand`,
  *   `brand-resolution-failed`, `not-entitled`, `entitlement-check-failed`, `no-date-window`,
  *   `ims-token-failed`, or `surface-failed:<host>`) instead of the single generic reason the
- *   handler used to report for every case. On a
+ *   handler used to report for every case. The two entitlement reasons additionally set
+ *   `entitlementReason` to the granular cause from `resolveSemrushEntitlement`
+ *   (`flag-disabled` | `no-workspace` | `no-client` | `check-failed`) — `fallbackReason` alone
+ *   cannot distinguish a confirmed non-entitlement from a wiring bug (`no-client`) vs a
+ *   transient blip (`check-failed`). On a
  *   successful (non-null) return, set to
  *   `{ engineFailureCount, degradedHosts, authFailureDetected }` so a surface that tolerated
  *   partial engine failures is distinguishable from a clean run — both `dataSource` and
@@ -315,13 +323,24 @@ export async function loadCitedUrlsFromSemrush({
         durationMs: elapsed(),
       });
       await notify(':information_source: Brand is not entitled for Semrush — falling back to the legacy source.');
-      setDiagnostics({ fallbackReason: 'not-entitled' });
+      // fallbackReason is the coarse, contract-level signal the handler's hard-stop
+      // exemption keys off (SEMRUSH_ENTITLEMENT_SKIP_REASONS); entitlementReason keeps
+      // the granular cause (`flag-disabled` | `no-workspace` | `no-client` |
+      // `check-failed`) visible in diagnostics/auditResult without changing that
+      // contract — see ADR 002, Decision 7.
+      setDiagnostics({
+        fallbackReason: SEMRUSH_NOT_ENTITLED_REASON,
+        entitlementReason: entitlement.reason,
+      });
     } else {
       log.warn(`${LOG_PREFIX} Semrush entitlement check failed (transient) for org ${spaceCatId}; using legacy fallback`, {
         siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
       });
       await notify(':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.');
-      setDiagnostics({ fallbackReason: 'entitlement-check-failed' });
+      setDiagnostics({
+        fallbackReason: SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+        entitlementReason: entitlement.reason,
+      });
     }
     return null;
   }

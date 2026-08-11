@@ -395,26 +395,36 @@ describe('offsite-brand-presence-semrush', function () {
   it('returns null and does not call Semrush when the brand is not entitled', async () => {
     resolveSemrushEntitlement.resolves({ entitled: false, resolved: true, reason: 'no-workspace' });
     const diagnostics = {};
+    const onProgress = sandbox.stub().resolves();
 
-    const result = await run({}, {}, undefined, diagnostics);
+    const result = await run({}, {}, onProgress, diagnostics);
 
     expect(result).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('not-entitled');
+    expect(diagnostics.entitlementReason).to.equal('no-workspace');
     expect(fetchStub).to.not.have.been.called;
     expect(getServiceAccessToken).to.not.have.been.called;
     expect(log.info).to.have.been.calledWithMatch(/not entitled for Semrush \(no-workspace\)/);
+    expect(onProgress).to.have.been.calledWith(
+      ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
+    );
   });
 
   it('returns null and warns (not entitled, transient) when the entitlement check itself fails', async () => {
     resolveSemrushEntitlement.resolves({ entitled: false, resolved: false, reason: 'check-failed' });
     const diagnostics = {};
+    const onProgress = sandbox.stub().resolves();
 
-    const result = await run({}, {}, undefined, diagnostics);
+    const result = await run({}, {}, onProgress, diagnostics);
 
     expect(result).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('entitlement-check-failed');
+    expect(diagnostics.entitlementReason).to.equal('check-failed');
     expect(fetchStub).to.not.have.been.called;
     expect(warnedWith(/entitlement check failed \(transient\)/)).to.equal(true);
+    expect(onProgress).to.have.been.calledWith(
+      ':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.',
+    );
   });
 
   it('passes the resolved orgId/brandId to the entitlement check and proceeds when entitled', async () => {

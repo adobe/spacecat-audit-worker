@@ -431,6 +431,26 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
     });
 
+    it('surfaces entitlementReason on the no-URLs-found path too, when legacy also yields nothing', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = 'not-entitled';
+          diagnostics.entitlementReason = 'flag-disabled';
+        }
+        return null;
+      });
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('not-entitled');
+      expect(result.auditResult.entitlementReason).to.equal('flag-disabled');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+    });
+
     it('surfaces the loader diagnostics fallbackReason code on hard stop', async () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
@@ -453,6 +473,7 @@ describe('Offsite Brand Presence Handler', () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
           diagnostics.fallbackReason = 'not-entitled';
+          diagnostics.entitlementReason = 'no-workspace';
         }
         return null;
       });
@@ -465,15 +486,21 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.dataSource).to.equal('legacy');
       expect(result.auditResult.fallbackReason).to.equal('not-entitled');
+      expect(result.auditResult.entitlementReason).to.equal('no-workspace');
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
+      // A deliberate entitlement skip must log at info, never warn — a regression
+      // that swaps these branches (or always warns) must fail this test.
+      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(not-entitled\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
     it('falls back to legacy (never hard-stops) when the entitlement check itself fails, even with enableSemrush:true', async () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
           diagnostics.fallbackReason = 'entitlement-check-failed';
+          diagnostics.entitlementReason = 'no-client';
         }
         return null;
       });
@@ -486,8 +513,23 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.dataSource).to.equal('legacy');
       expect(result.auditResult.fallbackReason).to.equal('entitlement-check-failed');
+      expect(result.auditResult.entitlementReason).to.equal('no-client');
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(entitlement-check-failed\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
+    });
+
+    it('does not surface entitlementReason on a non-entitlement Semrush failure', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null); // fallbackReason defaults to 'semrush-failed'
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.fallbackReason).to.equal('semrush-failed');
+      expect(result.auditResult).to.not.have.property('entitlementReason');
+      expect(log.warn).to.have.been.calledWithMatch(/Semrush source failed \(semrush-failed\); falling back to PostgREST\/SharePoint/);
     });
   });
 

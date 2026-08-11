@@ -25,6 +25,9 @@ describe('semrush-entitlement', () => {
   let log;
   let resolveSemrushEntitlement;
   let SEMRUSH_ENTITLEMENT_TIMEOUT_MS;
+  let SEMRUSH_NOT_ENTITLED_REASON;
+  let SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON;
+  let SEMRUSH_ENTITLEMENT_SKIP_REASONS;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -34,7 +37,12 @@ describe('semrush-entitlement', () => {
 
     const mod = await esmock('../../src/utils/semrush-entitlement.js', {});
     resolveSemrushEntitlement = mod.resolveSemrushEntitlement;
-    ({ SEMRUSH_ENTITLEMENT_TIMEOUT_MS } = mod);
+    ({
+      SEMRUSH_ENTITLEMENT_TIMEOUT_MS,
+      SEMRUSH_NOT_ENTITLED_REASON,
+      SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+      SEMRUSH_ENTITLEMENT_SKIP_REASONS,
+    } = mod);
   });
 
   afterEach(() => {
@@ -45,15 +53,21 @@ describe('semrush-entitlement', () => {
    * Builds a `feature_flags` PostgREST client stub — the only table
    * `resolveSemrushEntitlement` still queries directly (no shared-package helper
    * exists for reading a flag; the workspace half goes through the Organization/Brand
-   * models instead — see `makeDataAccess`).
+   * models instead — see `makeDataAccess`). The query builder is awaited directly
+   * (no terminal method), matching the real wildcard-select query in
+   * `isSerenityEnabledForOrg` / `isBrandalfEnabled` — `data` is an array of rows, not
+   * a single object, since more than one row (an org row plus a brand-scoped
+   * override) can match the same organization_id/product/flag_name.
    */
-  function makeFlagClient({ data = null, error = null, pending = false } = {}) {
+  function makeFlagClient({
+    data = null, error = null, pending = false, rejectsWith = null,
+  } = {}) {
     const flagQuery = {
       select: sandbox.stub().returnsThis(),
       eq: sandbox.stub().returnsThis(),
-      maybeSingle: pending
-        ? sandbox.stub().returns(new Promise(() => {}))
-        : sandbox.stub().resolves({ data, error }),
+      then: pending
+        ? () => { /* never settles */ }
+        : (resolve, reject) => (rejectsWith ? reject(rejectsWith) : resolve({ data, error })),
     };
     const from = sandbox.stub().callsFake((table) => {
       if (table === 'feature_flags') {
@@ -108,7 +122,7 @@ describe('semrush-entitlement', () => {
   // --- entitled (flag on + workspace resolvable) -----------------------------
 
   it('is entitled via a brand sub-workspace when the flag is on', async () => {
-    const { client, from } = makeFlagClient({ data: { flag_value: true } });
+    const { client, from } = makeFlagClient({ data: [{ flag_value: true, brand_id: null }] });
     const dataAccessOverrides = makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' });
 
     const result = await resolveSemrushEntitlement(
@@ -126,7 +140,7 @@ describe('semrush-entitlement', () => {
 
   it('is entitled via the org flat workspace when the brand has no sub-workspace', async () => {
     const result = await run({
-      flag: { data: { flag_value: true } },
+      flag: { data: [{ flag_value: true, brand_id: null }] },
       dataAccessOverrides: makeDataAccess({
         orgWorkspaceId: 'org-ws-1', brandSubWorkspaceId: null,
       }),
@@ -141,7 +155,7 @@ describe('semrush-entitlement', () => {
 
   it('is not entitled (no-workspace) when the flag is on but no workspace resolves', async () => {
     const result = await run({
-      flag: { data: { flag_value: true } },
+      flag: { data: [{ flag_value: true, brand_id: null }] },
       dataAccessOverrides: makeDataAccess({ orgWorkspaceId: null, brandSubWorkspaceId: null }),
     });
 
@@ -150,7 +164,7 @@ describe('semrush-entitlement', () => {
 
   it('is not entitled (no-workspace) when Organization/Brand rows do not exist at all', async () => {
     const result = await run({
-      flag: { data: { flag_value: true } },
+      flag: { data: [{ flag_value: true, brand_id: null }] },
       dataAccessOverrides: makeDataAccess(),
     });
 
@@ -159,7 +173,7 @@ describe('semrush-entitlement', () => {
 
   it('is not entitled (flag-disabled) even when a workspace exists — flag wins', async () => {
     const result = await run({
-      flag: { data: { flag_value: false } },
+      flag: { data: [{ flag_value: false, brand_id: null }] },
       dataAccessOverrides: makeDataAccess({
         orgWorkspaceId: 'org-ws-1', brandSubWorkspaceId: 'sub-ws-1',
       }),
@@ -180,7 +194,7 @@ describe('semrush-entitlement', () => {
   // --- missing input / missing client ----------------------------------------
 
   it('returns missing-input without querying when orgId is absent', async () => {
-    const { client, from } = makeFlagClient({ data: { flag_value: true } });
+    const { client, from } = makeFlagClient({ data: [{ flag_value: true, brand_id: null }] });
     const dataAccessOverrides = makeDataAccess();
 
     const result = await resolveSemrushEntitlement(
@@ -194,7 +208,7 @@ describe('semrush-entitlement', () => {
   });
 
   it('returns missing-input without querying when brandId is absent', async () => {
-    const { client, from } = makeFlagClient({ data: { flag_value: true } });
+    const { client, from } = makeFlagClient({ data: [{ flag_value: true, brand_id: null }] });
 
     const result = await resolveSemrushEntitlement(
       contextWith(client, makeDataAccess()),
@@ -231,7 +245,7 @@ describe('semrush-entitlement', () => {
   });
 
   it('returns no-client when the Organization/Brand collections are unavailable', async () => {
-    const { client } = makeFlagClient({ data: { flag_value: true } });
+    const { client } = makeFlagClient({ data: [{ flag_value: true, brand_id: null }] });
 
     const result = await resolveSemrushEntitlement(
       { log, dataAccess: { services: { postgrestClient: client } } },
@@ -253,8 +267,7 @@ describe('semrush-entitlement', () => {
   });
 
   it('fails closed (check-failed) and warns when the flag query throws', async () => {
-    const { client, flagQuery } = makeFlagClient({});
-    flagQuery.maybeSingle.rejects(new Error('connection reset'));
+    const { client } = makeFlagClient({ rejectsWith: new Error('connection reset') });
 
     const result = await resolveSemrushEntitlement(
       contextWith(client, makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' })),
@@ -265,9 +278,34 @@ describe('semrush-entitlement', () => {
     expect(log.warn).to.have.been.calledWithMatch(/Error checking serenity flag/);
   });
 
+  it("resolves the organization's own row, ignoring a brand-scoped override, when two rows match", async () => {
+    const result = await run({
+      flag: {
+        data: [
+          { flag_value: false, brand_id: 'some-other-brand' },
+          { flag_value: true, brand_id: null },
+        ],
+      },
+      dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
+    });
+
+    expect(result).to.deep.equal({
+      entitled: true, resolved: true, reason: 'entitled', mode: 'subworkspace',
+    });
+  });
+
+  it('is not entitled (flag-disabled) when only a brand-scoped override row matches, no org row', async () => {
+    const result = await run({
+      flag: { data: [{ flag_value: true, brand_id: 'some-other-brand' }] },
+      dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
+    });
+
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+  });
+
   it('fails closed (check-failed) and warns when Brand.findById throws', async () => {
     const result = await run({
-      flag: { data: { flag_value: true } },
+      flag: { data: [{ flag_value: true, brand_id: null }] },
       dataAccessOverrides: makeDataAccess({
         orgWorkspaceId: null,
         brandFindById: sandbox.stub().rejects(new Error('brand lookup failed')),
@@ -280,7 +318,7 @@ describe('semrush-entitlement', () => {
 
   it('fails closed (check-failed) when Organization.findById throws', async () => {
     const result = await run({
-      flag: { data: { flag_value: true } },
+      flag: { data: [{ flag_value: true, brand_id: null }] },
       dataAccessOverrides: makeDataAccess({
         brandSubWorkspaceId: null,
         orgFindById: sandbox.stub().rejects(new Error('org lookup failed')),
@@ -307,5 +345,29 @@ describe('semrush-entitlement', () => {
 
     expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
     expect(log.warn).to.have.been.calledWithMatch(/Semrush entitlement check failed.*timed out/);
+  });
+
+  // --- shared reason-string constants (single source of truth for the loader and
+  // the handler's hard-stop-exemption check) ---------------------------------
+
+  describe('exported reason-string constants', () => {
+    it('exposes the two skip-reason literals the loader sets on diagnostics.fallbackReason', () => {
+      expect(SEMRUSH_NOT_ENTITLED_REASON).to.equal('not-entitled');
+      expect(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON).to.equal('entitlement-check-failed');
+    });
+
+    it('bundles both reasons into SEMRUSH_ENTITLEMENT_SKIP_REASONS, and nothing else', () => {
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS).to.be.instanceOf(Set);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(SEMRUSH_NOT_ENTITLED_REASON)).to.equal(true);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON))
+        .to.equal(true);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.size).to.equal(2);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('semrush-failed')).to.equal(false);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('ims-token-failed')).to.equal(false);
+    });
+
+    it('is frozen (cannot be mutated by a caller)', () => {
+      expect(Object.isFrozen(SEMRUSH_ENTITLEMENT_SKIP_REASONS)).to.equal(true);
+    });
   });
 });
