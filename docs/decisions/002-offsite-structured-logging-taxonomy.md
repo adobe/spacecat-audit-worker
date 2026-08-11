@@ -25,10 +25,10 @@ silent-event gaps.
 ## Decision
 
 1. **A single taxonomy, emitted as `key=value` tokens in the message string.**
-   Every offsite log line carries `domain=offsite`, `audit=<cited|reddit|youtube|brand-presence>`,
+   Every offsite log line carries `domain=offsite`, `audit=<cited|reddit|youtube|wikipedia|brand-presence>`,
    `event=<snake_case>`, `outcome=<start|success|failure|skip>`; boundary lines add
-   `direction=<inbound|outbound>` and `peer=<drs|mystique|url_store|s3|postgres|sharepoint|slack|sqs|spacecat>`,
-   plus ids (`siteId`, `auditId`, `opportunityId`, `jobId`) when available. A thin
+   `direction=<inbound|outbound>` and `peer=<drs|mystique|url_store|s3|postgres|sharepoint|semrush|slack|sqs|spacecat>`,
+   plus ids (`siteId`, `auditId`, `opportunityId`, `drsJobId`) when available. A thin
    human prefix `[offsite:<audit>]` is kept for eyeball scanning.
 
 2. **Fields go in the message string, NOT a second-arg object.** The production

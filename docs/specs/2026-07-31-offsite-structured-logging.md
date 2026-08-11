@@ -25,9 +25,9 @@ change; changes to shared/generic utils used by non-offsite audits.
 ## Technical design
 
 ### Taxonomy
-`domain=offsite audit=<cited|reddit|youtube|brand-presence> event=<snake_case>
+`domain=offsite audit=<cited|reddit|youtube|wikipedia|brand-presence> event=<snake_case>
 outcome=<start|success|failure|skip>`, plus `direction`/`peer` on boundary lines
-and `siteId`/`auditId`/`opportunityId`/`jobId` when known. Human prefix
+and `siteId`/`auditId`/`opportunityId`/`drsJobId` when known. Human prefix
 `[offsite:<audit>]`. Emitted as `key=value` tokens in the message string (the log
 sink does not surface a second-arg object to Splunk — see ADR 002).
 
@@ -35,7 +35,7 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
 - `OFFSITE_DOMAIN`, `AUDIT`, `OUTCOME`, `PEER` enums.
 - `appendFields(message, fields)` — canonical order, drops null/empty, quotes
   values with whitespace/`=`/`"`.
-- `createOffsiteLogger(log, { audit, siteId, auditId, opportunityId, jobId })` →
+- `createOffsiteLogger(log, { audit, siteId, auditId, opportunityId })` →
   `start/success/skip/failure/warn/debug(event, message, extra)` (each emits one
   string arg) and `.with(moreIds)`.
 - `withAuditPersistLog(audit)` — an offsite-only AuditBuilder post-processor that
@@ -86,4 +86,4 @@ runId threading).
 - In Splunk (`service=audit-worker domain=offsite`): `stats count by audit, event,
   outcome, peer` returns rows; `event=opportunity_persist outcome=failure` and
   `event=drs_poll outcome=failure reason=budget_exceeded` are alertable;
-  `siteId`/`auditId`/`opportunityId`/`jobId` appear as extracted fields.
+  `siteId`/`auditId`/`opportunityId`/`drsJobId` appear as extracted fields.
