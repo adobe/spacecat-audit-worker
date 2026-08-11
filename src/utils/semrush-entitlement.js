@@ -38,7 +38,7 @@
  * from a confirmed non-entitlement so the caller can log/diagnose accordingly.
  */
 
-import { isOrgRow } from './brandalf-utils.js';
+import { readOrgFeatureFlag } from './feature-flags-utils.js';
 
 const LOG_PREFIX = '[semrush-entitlement]';
 
@@ -71,6 +71,22 @@ export const SEMRUSH_ENTITLEMENT_SKIP_REASONS = Object.freeze(
 );
 
 /**
+ * Granular causes behind `resolveSemrushEntitlement`'s `reason` field (and, for every
+ * value but `ENTITLED`, the `entitlementReason` it becomes downstream on
+ * `diagnostics`/`auditResult`). Exported as one frozen lookup — rather than one bare
+ * string literal per branch — so a future rename can't silently drift between this
+ * module and whatever reads `entitlementReason` off `auditResult` (PR review).
+ */
+export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
+  ENTITLED: 'entitled',
+  FLAG_DISABLED: 'flag-disabled',
+  NO_WORKSPACE: 'no-workspace',
+  MISSING_INPUT: 'missing-input',
+  NO_CLIENT: 'no-client',
+  CHECK_FAILED: 'check-failed',
+});
+
+/**
  * Maximum milliseconds to wait for the combined flag + workspace lookup before
  * failing closed. Mirrors `BRAND_RESOLUTION_TIMEOUT_MS` in `brand-resolver.js`, whose
  * budget covers a WORSE (more sequential) shape: up to two SEQUENTIAL PostgREST round
@@ -86,11 +102,10 @@ export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
 /**
  * Checks the org-wide `serenity` feature flag — the same rollout switch
  * spacecat-api-service reads before serving any Serenity/Semrush route for an org.
- * Same query shape as `isBrandalfEnabled` in `brandalf-utils.js` (wildcard projection +
- * `isOrgRow`, not `.eq('flag_name', ...).maybeSingle()`): `feature_flags` rows can carry
- * a brand-scoped override (`brand_id` set) alongside the organization's own row
- * (`brand_id` NULL) for the SAME `organization_id`/`product`/`flag_name` — a narrower,
- * single-row-assuming query throws the moment a `serenity` override exists for any org.
+ * Delegates to the shared `readOrgFeatureFlag` (`feature-flags-utils.js`), which reads
+ * the organization's own row and ignores any brand-scoped override for the same
+ * `organization_id`/`product`/`flag_name` — see that module for why a narrower,
+ * single-row-assuming query is unsafe against this table.
  *
  * @param {string} organizationId - SpaceCat org UUID
  * @param {object} postgrestClient - mysticat PostgREST client (already validated by caller)
@@ -98,26 +113,9 @@ export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
  * @returns {Promise<boolean|null>} true/false when known, null when the query itself failed
  */
 async function isSerenityEnabledForOrg(organizationId, postgrestClient, log) {
-  try {
-    // Wildcard projection is required — see `isOrgRow`.
-    const { data, error } = await postgrestClient
-      .from('feature_flags')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('product', SERENITY_FLAG_PRODUCT)
-      .eq('flag_name', SERENITY_FLAG_NAME);
-
-    if (error) {
-      log?.warn(`${LOG_PREFIX} Failed to read serenity flag for org ${organizationId}: ${error.message}`);
-      return null;
-    }
-
-    // Absent row => flag not set => disabled.
-    return (data ?? []).find(isOrgRow)?.flag_value === true;
-  } catch (error) {
-    log?.warn(`${LOG_PREFIX} Error checking serenity flag for org ${organizationId}: ${error.message}`);
-    return null;
-  }
+  return readOrgFeatureFlag(postgrestClient, {
+    organizationId, product: SERENITY_FLAG_PRODUCT, flagName: SERENITY_FLAG_NAME, log,
+  });
 }
 
 /**
@@ -177,9 +175,9 @@ async function resolveSemrushWorkspace(dataAccess, { orgId, brandId }) {
  * @returns {Promise<{
  *   entitled: boolean,
  *   resolved: boolean,
- *   reason: 'entitled'|'flag-disabled'|'no-workspace'|'missing-input'|'no-client'|'check-failed',
+ *   reason: string,
  *   mode?: 'subworkspace'|'flat',
- * }>}
+ * }>} `reason` is one of `SEMRUSH_ENTITLEMENT_REASONS`'s values.
  *   `resolved:true` means the non-entitlement is CONFIRMED (flag off, or no workspace);
  *   `resolved:false` means the check itself could not complete (treat as a transient
  *   skip for this run, not a permanent verdict).
@@ -188,7 +186,7 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
   const { log, dataAccess } = context || {};
 
   if (!orgId || !brandId) {
-    return { entitled: false, resolved: false, reason: 'missing-input' };
+    return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.MISSING_INPUT };
   }
 
   const postgrestClient = dataAccess?.services?.postgrestClient;
@@ -198,7 +196,7 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     log?.warn(`${LOG_PREFIX} PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement`, {
       orgId, brandId,
     });
-    return { entitled: false, resolved: false, reason: 'no-client' };
+    return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT };
   }
 
   let timeoutHandle;
@@ -224,22 +222,25 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     // which resolves to `false`) — an inconclusive check must not read as
     // "confirmed disabled".
     if (flagEnabled === null) {
-      return { entitled: false, resolved: false, reason: 'check-failed' };
+      return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED };
     }
     if (flagEnabled === false) {
-      return { entitled: false, resolved: true, reason: 'flag-disabled' };
+      return { entitled: false, resolved: true, reason: SEMRUSH_ENTITLEMENT_REASONS.FLAG_DISABLED };
     }
     if (!workspace) {
-      return { entitled: false, resolved: true, reason: 'no-workspace' };
+      return { entitled: false, resolved: true, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE };
     }
     return {
-      entitled: true, resolved: true, reason: 'entitled', mode: workspace.mode,
+      entitled: true,
+      resolved: true,
+      reason: SEMRUSH_ENTITLEMENT_REASONS.ENTITLED,
+      mode: workspace.mode,
     };
   } catch (error) {
     clearTimeout(timeoutHandle);
     log?.warn(`${LOG_PREFIX} Semrush entitlement check failed for org ${orgId} / brand ${brandId}: ${error.message}`, {
       orgId, brandId, errorName: error.name,
     });
-    return { entitled: false, resolved: false, reason: 'check-failed' };
+    return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED };
   }
 }

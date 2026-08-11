@@ -15,6 +15,11 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import * as spacecatSharedUtils from '@adobe/spacecat-shared-utils';
+import {
+  SEMRUSH_NOT_ENTITLED_REASON,
+  SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+  SEMRUSH_ENTITLEMENT_REASONS,
+} from '../../src/utils/semrush-entitlement.js';
 
 use(sinonChai);
 
@@ -80,7 +85,10 @@ describe('offsite-brand-presence-semrush', function () {
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
     resolveSemrushEntitlement = sandbox.stub()
       .resolves({
-        entitled: true, resolved: true, reason: 'entitled', mode: 'subworkspace',
+        entitled: true,
+        resolved: true,
+        reason: SEMRUSH_ENTITLEMENT_REASONS.ENTITLED,
+        mode: 'subworkspace',
       });
     getServiceAccessToken = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
     imsCreateFrom = sandbox.stub().returns({ getServiceAccessToken });
@@ -443,15 +451,17 @@ describe('offsite-brand-presence-semrush', function () {
   // --- entitlement gate (before any Semrush HTTP call) -----------------------
 
   it('returns null and does not call Semrush when the brand is not entitled', async () => {
-    resolveSemrushEntitlement.resolves({ entitled: false, resolved: true, reason: 'no-workspace' });
+    resolveSemrushEntitlement.resolves({
+      entitled: false, resolved: true, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE,
+    });
     const diagnostics = {};
     const onProgress = sandbox.stub().resolves();
 
     const result = await run({}, {}, onProgress, diagnostics);
 
     expect(result).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('not-entitled');
-    expect(diagnostics.entitlementReason).to.equal('no-workspace');
+    expect(diagnostics.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+    expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
     expect(getServiceAccessToken).to.not.have.been.called;
     expect(log.info).to.have.been.calledWithMatch(/not entitled for Semrush \(no-workspace\)/);
@@ -461,15 +471,17 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('returns null and warns (not entitled, transient) when the entitlement check itself fails', async () => {
-    resolveSemrushEntitlement.resolves({ entitled: false, resolved: false, reason: 'check-failed' });
+    resolveSemrushEntitlement.resolves({
+      entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED,
+    });
     const diagnostics = {};
     const onProgress = sandbox.stub().resolves();
 
     const result = await run({}, {}, onProgress, diagnostics);
 
     expect(result).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('entitlement-check-failed');
-    expect(diagnostics.entitlementReason).to.equal('check-failed');
+    expect(diagnostics.fallbackReason).to.equal(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON);
+    expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED);
     expect(fetchStub).to.not.have.been.called;
     expect(warnedWith(/entitlement check failed \(transient\)/)).to.equal(true);
     expect(onProgress).to.have.been.calledWith(

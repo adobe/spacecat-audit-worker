@@ -28,6 +28,7 @@ describe('semrush-entitlement', () => {
   let SEMRUSH_NOT_ENTITLED_REASON;
   let SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON;
   let SEMRUSH_ENTITLEMENT_SKIP_REASONS;
+  let SEMRUSH_ENTITLEMENT_REASONS;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -42,6 +43,7 @@ describe('semrush-entitlement', () => {
       SEMRUSH_NOT_ENTITLED_REASON,
       SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
       SEMRUSH_ENTITLEMENT_SKIP_REASONS,
+      SEMRUSH_ENTITLEMENT_REASONS,
     } = mod);
   });
 
@@ -303,6 +305,20 @@ describe('semrush-entitlement', () => {
     expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
   });
 
+  it('is not entitled (flag-disabled) when the org row is off, even with a true brand override', async () => {
+    const result = await run({
+      flag: {
+        data: [
+          { flag_value: true, brand_id: 'some-other-brand' },
+          { flag_value: false, brand_id: null },
+        ],
+      },
+      dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
+    });
+
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+  });
+
   it('fails closed (check-failed) and warns when Brand.findById throws', async () => {
     const result = await run({
       flag: { data: [{ flag_value: true, brand_id: null }] },
@@ -368,6 +384,18 @@ describe('semrush-entitlement', () => {
 
     it('is frozen (cannot be mutated by a caller)', () => {
       expect(Object.isFrozen(SEMRUSH_ENTITLEMENT_SKIP_REASONS)).to.equal(true);
+    });
+
+    it('exposes the granular reason values resolveSemrushEntitlement returns', () => {
+      expect(SEMRUSH_ENTITLEMENT_REASONS).to.deep.equal({
+        ENTITLED: 'entitled',
+        FLAG_DISABLED: 'flag-disabled',
+        NO_WORKSPACE: 'no-workspace',
+        MISSING_INPUT: 'missing-input',
+        NO_CLIENT: 'no-client',
+        CHECK_FAILED: 'check-failed',
+      });
+      expect(Object.isFrozen(SEMRUSH_ENTITLEMENT_REASONS)).to.equal(true);
     });
   });
 });

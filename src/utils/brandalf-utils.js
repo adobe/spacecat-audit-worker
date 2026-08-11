@@ -10,34 +10,19 @@
  * governing permissions and limitations under the License.
  */
 
+import { readOrgFeatureFlag } from './feature-flags-utils.js';
+
 const BRANDALF_FLAG_NAME = 'brandalf';
 const FEATURE_FLAG_PRODUCT = 'LLMO';
-
-/**
- * The organization's own row, not a brand's override of it. `brand_id` is absent
- * from every row before the brand-scope migration and NULL on the organization's
- * row after it, so this selects correctly under both schemas.
- *
- * The query feeding this predicate must keep selecting the full row. Naming
- * `brand_id` in a projection — or filtering on it — fails against the current
- * schema, where the column does not exist yet; narrowing the projection once it
- * does exist makes every override row arrive with `brand_id: undefined` and read
- * as the organization's own.
- *
- * Exported so other `feature_flags` readers (e.g. `semrush-entitlement.js`) share
- * this exact predicate instead of re-deriving it.
- *
- * @param {object} row - Raw PostgREST `feature_flags` row.
- * @returns {boolean} `true` for the organization-level row.
- */
-export const isOrgRow = (row) => (row.brand_id ?? null) === null;
 
 /**
  * Checks whether the brandalf feature flag is enabled for an organization by
  * reading the `feature_flags` table directly via the mysticat PostgREST client
  * (available at `context.dataAccess.services.postgrestClient`).
  *
- * Resolves the organization's own value, ignoring any brand's override of it.
+ * Resolves the organization's own value, ignoring any brand's override of it —
+ * see `readOrgFeatureFlag` (`feature-flags-utils.js`) for the shared query/
+ * fail-closed shape every `feature_flags` reader in this worker uses.
  *
  * @param {string} organizationId - SpaceCat org UUID
  * @param {object} postgrestClient - mysticat PostgREST client (dataAccess.services.postgrestClient)
@@ -45,35 +30,9 @@ export const isOrgRow = (row) => (row.brand_id ?? null) === null;
  * @returns {Promise<boolean|null>} true/false when the flag state is known, null when unknown
  */
 export async function isBrandalfEnabled(organizationId, postgrestClient, log) {
-  if (!organizationId) {
-    return false;
-  }
-  if (!postgrestClient?.from) {
-    log?.warn('PostgREST client not available; cannot check brandalf flag');
-    return null;
-  }
-
-  try {
-    // Wildcard projection is required — see `isOrgRow`.
-    const { data, error } = await postgrestClient
-      .from('feature_flags')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('product', FEATURE_FLAG_PRODUCT)
-      .eq('flag_name', BRANDALF_FLAG_NAME);
-
-    if (error) {
-      log?.warn(`Failed to read brandalf flag for org ${organizationId}: ${error.message}`);
-      return null;
-    }
-
-    // Absent row => flag not set => disabled, matching the previous behaviour
-    // where a missing flag resolved to `false`.
-    return (data ?? []).find(isOrgRow)?.flag_value === true;
-  } catch (error) {
-    log?.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
-    return null;
-  }
+  return readOrgFeatureFlag(postgrestClient, {
+    organizationId, product: FEATURE_FLAG_PRODUCT, flagName: BRANDALF_FLAG_NAME, log,
+  });
 }
 
 /**

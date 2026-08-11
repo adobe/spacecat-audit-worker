@@ -116,8 +116,9 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    already are the authoritative provisioning signal, no new construct needed).
 8b. **`feature_flags` multi-row safety, and a shared reason-string contract (PR review).**
    `isSerenityEnabledForOrg` mirrors `isBrandalfEnabled`'s wildcard-select +
-   `isOrgRow` pattern (`isOrgRow` exported from `brandalf-utils.js`, reused here) instead
-   of `.eq('flag_name', ...).maybeSingle()`: `feature_flags` rows can carry a brand-scoped
+   `isOrgRow` pattern (`isOrgRow` exported from `brandalf-utils.js` at the time; relocated
+   to `feature-flags-utils.js` by Decision 8e) instead of `.eq('flag_name', ...).maybeSingle()`:
+   `feature_flags` rows can carry a brand-scoped
    override (`brand_id` set) alongside the organization's own row (`brand_id` NULL) for the
    *same* `organization_id`/`product`/`flag_name`, and `maybeSingle()` throws the moment two
    rows match — which would silently and permanently disable Semrush for any org the moment
@@ -161,6 +162,33 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    server-side scoped by `organization_id`). Documented as an explicit contract in both
    functions' JSDoc instead of enforced in code: a future caller resolving `orgId`/`brandId`
    from independent sources must guarantee the pairing itself.
+8e. **`isOrgRow` relocated to a neutral `feature-flags-utils.js`; reason literals promoted
+   to constants; brand-override "revoke" semantics confirmed moot (2nd round PR review).**
+   `isOrgRow` moved out of `brandalf-utils.js` (which admitted in its own JSDoc that it was
+   already a second consumer) into `src/utils/feature-flags-utils.js`, alongside a new
+   shared `readOrgFeatureFlag(postgrestClient, { organizationId, product, flagName, log })`
+   that both `isBrandalfEnabled` and `isSerenityEnabledForOrg` now delegate to — the
+   previously copy-pasted wildcard-select/error-handling/`isOrgRow`-filter block lives in
+   exactly one place. Separately, `resolveSemrushEntitlement`'s internal `reason` values
+   (`entitled`/`flag-disabled`/`no-workspace`/`missing-input`/`no-client`/`check-failed`)
+   are now a frozen `SEMRUSH_ENTITLEMENT_REASONS` lookup instead of bare literals, matching
+   the treatment `SEMRUSH_NOT_ENTITLED_REASON`/`SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON`
+   already got (Decision 8b); consuming tests now assert against the constants too, not
+   copies of the string.
+   On the open question from Decision 8's "ignores brand-scoped override" gap: checked
+   directly against `spacecat-api-service` rather than leaving it unconfirmed.
+   `feature-flags-storage.js`'s `readFeatureFlag()` — which backs `isSerenityActiveForOrg`
+   in `serenity-active.js`, the exact org-wide gate this module mirrors — queries only
+   `organization_id`/`product`/`flag_name`, with no `brand_id` awareness at all, and no file
+   in that repo ever combines `brand_id` with the `feature_flags` table. Brand-scoped
+   feature-flag overrides (grant or revoke direction) are not a feature that exists in
+   production today, in either codebase — so `isOrgRow` reading only the org's own row and
+   ignoring any override is correct under the current schema by construction, not an
+   unverified assumption. Regression tests pinning "org row `false` + brand-override row
+   `true` still resolves not-entitled" were added to both `isBrandalfEnabled` and
+   `isSerenityEnabledForOrg` to make this explicit rather than only covering the inverse
+   (Decision 8b's original multi-row fix tested override-wins-false, not override-cannot-
+   grant-true).
 
 ## Consequences
 
