@@ -1,3 +1,10 @@
+# [1.518.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.3...v1.518.0) (2026-08-11)
+
+
+### Features
+
+* **semrush-offsite:** implement entitlement check for Semrush data access and update fallback logic for offsite audits (LLMO-6841) ([#2871](https://github.com/adobe/spacecat-audit-worker/issues/2871)) ([7944dcb](https://github.com/adobe/spacecat-audit-worker/commit/7944dcb9c08efafa2edeab6d92c59a07adadcb69))
+
 ## [1.517.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.2...v1.517.3) (2026-08-11)
 
 
