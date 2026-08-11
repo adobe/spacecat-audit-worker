@@ -275,16 +275,16 @@ describe('Brand Claims audit handler', function () {
         Contents: [
           // no LastModified -> lastModified 0, sets initial best (weekly)
           { Key: `${prefix}/2026/01/01/bp-w1-2026.xlsx` },
-          // newer partition -> replaces best
-          { Key: `${prefix}/2026/01/02/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-02T00:00:00Z') },
-          // same partition, newer LastModified, daily suffix -> replaces best (daily)
-          { Key: `${prefix}/2026/01/02/bp-w2-2026-030405.xlsx`, LastModified: new Date('2026-01-02T06:00:00Z') },
+          // newer partition (2026-01-05 is a Monday) -> replaces best
+          { Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') },
+          // same partition, newer LastModified, daily suffix, Monday -> replaces best (daily)
+          { Key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`, LastModified: new Date('2026-01-05T06:00:00Z') },
           // same partition, older LastModified -> no replace
-          { Key: `${prefix}/2026/01/02/bp-w2-2026-010101.xlsx`, LastModified: new Date('2026-01-02T01:00:00Z') },
+          { Key: `${prefix}/2026/01/05/bp-w2-2026-010101.xlsx`, LastModified: new Date('2026-01-05T01:00:00Z') },
           // filename does not match the sheet pattern -> skipped
-          { Key: `${prefix}/2026/01/03/notes.txt`, LastModified: new Date('2026-01-03T00:00:00Z') },
+          { Key: `${prefix}/2026/01/06/notes.txt`, LastModified: new Date('2026-01-06T00:00:00Z') },
           // filename matches but no date partition in key -> skipped
-          { Key: `bp-w9-2026.xlsx`, LastModified: new Date('2026-01-04T00:00:00Z') },
+          { Key: `bp-w9-2026.xlsx`, LastModified: new Date('2026-01-07T00:00:00Z') },
         ],
         IsTruncated: false,
       });
@@ -308,13 +308,36 @@ describe('Brand Claims audit handler', function () {
         week: 2,
         year: 2026,
         cadence: 'daily',
-        sheet_date: '2026-01-02',
+        sheet_date: '2026-01-05',
         platform: 'chatgpt_free',
         s3_bucket: 'drs-bp-bucket',
-        s3_key: `${prefix}/2026/01/02/bp-w2-2026-030405.xlsx`,
+        s3_key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`,
         parent_job_id: null,
         batch_id: null,
       });
+    });
+
+    it('skips a mid-week daily sheet and picks the latest Monday daily sheet', async () => {
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      // Daily-cadence site with a Monday (2026-01-05) and a newer Tuesday
+      // (2026-01-06) sheet. The consumer only runs daily sheets on a Monday, so
+      // the newer Tuesday sheet must be skipped for Monday's. (LLMO-6877)
+      s3Client.send.resolves({
+        Contents: [
+          { Key: `${prefix}/2026/01/05/bp-w2-2026-050126.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') },
+          { Key: `${prefix}/2026/01/06/bp-w2-2026-060126.xlsx`, LastModified: new Date('2026-01-06T00:00:00Z') },
+        ],
+        IsTruncated: false,
+      });
+
+      const res = await brandClaimsHandler(message, buildContext());
+
+      expect(res.status).to.equal(200);
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.cadence).to.equal('daily');
+      expect(event.sheet_date).to.equal('2026-01-05');
+      expect(event.s3_key).to.equal(`${prefix}/2026/01/05/bp-w2-2026-050126.xlsx`);
     });
 
     it('queries and writes the brands table with the expected filters and payload', async () => {
