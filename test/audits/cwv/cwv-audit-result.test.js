@@ -302,6 +302,24 @@ describe('CWV Audit Result', () => {
         expect(result.auditResult.cwv.find((e) => e.type === 'group')).to.exist;
       });
 
+      it('queries RUM by hostname (not the sub-path) so the domainkey resolves', async () => {
+        const queryStub = sandbox.stub().resolves([]);
+        const { buildCWVAuditResult: build } = await esmock('../../../src/cwv/cwv-audit-result.js', {
+          '@adobe/spacecat-shared-rum-api-client': {
+            default: { createFrom: sandbox.stub().returns({ query: queryStub }) },
+          },
+        });
+
+        await build({
+          site: subpathSite, finalUrl: 'www.example.gov/omes', log, env: {},
+        });
+
+        // Sub-path finalUrl (www.example.gov/omes) must be stripped to the hostname for
+        // the RUM query — the per-URL results are scoped to /omes separately.
+        expect(queryStub.getCalls().some((c) => c.args[1]?.domain === 'www.example.gov'))
+          .to.equal(true);
+      });
+
       it('drops url entries whose URL cannot be parsed', async () => {
         const cwvDataFromRum = [
           {

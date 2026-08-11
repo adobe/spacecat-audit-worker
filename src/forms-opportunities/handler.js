@@ -21,7 +21,8 @@ import {
   getUrlsDataForAccessibilityAudit,
   sendMessageToMystiqueForGuidance,
 } from './utils.js';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import { getScrapedDataForSiteId, getRUMDomain } from '../support/utils.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
@@ -35,16 +36,20 @@ const FORMS_OPPTY_QUERIES = [
 ];
 
 export async function formsAuditRunner(auditUrl, context) {
+  const { site, log } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
-    domain: auditUrl,
+    // RUM is keyed per hostname; a sub-path site's auditUrl carries a path
+    // (e.g. oklahoma.gov/omes) with no domainkey. Query by hostname, then scope
+    // the returned per-URL form vitals to the site's base path.
+    domain: getRUMDomain(auditUrl),
     interval: FORMS_AUDIT_INTERVAL,
     granularity: 'hourly',
   };
 
   const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
   const auditResult = {
-    formVitals: queryResults['form-vitals'],
+    formVitals: filterByAuditScope(queryResults['form-vitals'], site?.getBaseURL?.(), {}, log),
     auditContext: {
       interval: FORMS_AUDIT_INTERVAL,
     },

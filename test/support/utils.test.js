@@ -181,6 +181,41 @@ describe('getRUMUrl', () => {
   });
 });
 
+describe('getRUMDomain', () => {
+  let utils;
+
+  beforeEach(async () => {
+    sinon.restore();
+    utils = await esmock('../../src/support/utils.js', {
+      '@adobe/spacecat-shared-utils': {
+        hasText: (str) => typeof str === 'string' && str.trim().length > 0,
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        isNonEmptyObject: (obj) => obj && typeof obj === 'object' && Object.keys(obj).length > 0,
+        prependSchema: (url) => (url.startsWith('http') ? url : `https://${url}`),
+        tracingFetch: sinon.stub(),
+      },
+    });
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('returns the hostname for a sub-path URL (RUM is keyed per hostname)', () => {
+    expect(utils.getRUMDomain('https://oklahoma.gov/omes')).to.equal('oklahoma.gov');
+    expect(utils.getRUMDomain('oklahoma.gov/omes')).to.equal('oklahoma.gov');
+  });
+
+  it('is a no-op for a bare hostname (root sites)', () => {
+    expect(utils.getRUMDomain('example.com')).to.equal('example.com');
+    expect(utils.getRUMDomain('https://www.example.com')).to.equal('www.example.com');
+  });
+
+  it('returns the input when it cannot be parsed', () => {
+    expect(utils.getRUMDomain('')).to.equal('');
+  });
+});
+
 describe('getBaseUrlPagesFromSitemapContents', () => {
   it('should return an empty array when the sitemap content is empty', () => {
     const result = getBaseUrlPagesFromSitemapContents('https://my-site.adbe', undefined);

@@ -15,6 +15,7 @@ import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
 import { isWithinAuditScope } from '../internal-links/subpath-filter.js';
+import { getRUMDomain } from '../support/utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
@@ -109,7 +110,10 @@ export async function buildCWVAuditResult(context) {
   const rumApiClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
-    domain: auditUrl,
+    // RUM is keyed per hostname; a sub-path site's auditUrl carries a path
+    // (e.g. oklahoma.gov/omes) with no domainkey. Query by hostname, then the
+    // per-URL results below are scoped to the site's base path.
+    domain: getRUMDomain(auditUrl),
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,

@@ -13,6 +13,7 @@
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
 import { isCrossLocalePDP404RumPair } from './scope-utils.js';
+import { getRUMDomain } from '../support/utils.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
@@ -69,7 +70,10 @@ export function createInternalLinksRumSteps({
     try {
       const rumAPIClient = context.rumApiClient || createRUMAPIClient(context);
       const options = {
-        domain: finalUrl,
+        // RUM is keyed per hostname; a sub-path site's finalUrl carries a path
+        // (e.g. oklahoma.gov/omes) with no domainkey. Query by hostname, then the
+        // 404 pairs are scoped to the site's base path below.
+        domain: getRUMDomain(finalUrl),
         interval,
         granularity: 'hourly',
       };

@@ -88,6 +88,26 @@ export async function getRUMUrl(url) {
 }
 
 /**
+ * Resolves the RUM query domain (hostname) from a resolved audit/final URL.
+ *
+ * RUM data is keyed per hostname; a sub-path site's resolved URL carries a path
+ * (e.g. "oklahoma.gov/omes"), which has no RUM domainkey and 404s the domainkey
+ * exchange. Strip to the hostname so the domain-wide RUM data can be fetched, then
+ * the per-URL results are filtered to the site's base path by the caller. No-op for
+ * bare-hostname / root URLs.
+ *
+ * @param {string} url - The resolved audit/final URL (scheme and path optional).
+ * @returns {string} The hostname, or the original value if it cannot be parsed.
+ */
+export function getRUMDomain(url) {
+  try {
+    return new URL(prependSchema(url)).hostname;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Checks if a given URL contains a domain with a non-www subdomain.
  *
  * @param {string} baseUrl - The URL to check for the presence of a domain with a non-www subdomain.
