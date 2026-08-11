@@ -20,11 +20,11 @@ import {
 } from './semrush-entitlement.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
+import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
-  OFFSITE_DOMAINS,
+  TOP_CITED_EXCLUDED_DOMAINS,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
-  SEMRUSH_PLATFORM_BY_PROVIDER,
 } from '../offsite-brand-presence/constants.js';
 
 const LOG_PREFIX = '[offsite-brand-presence][semrush]';
@@ -39,53 +39,40 @@ const LOG_PREFIX = '[offsite-brand-presence][semrush]';
 export const SPACECAT_API_DEFAULT_BASE_URL = 'https://spacecat.experiencecloud.live/api/v1';
 
 /**
- * Rows requested per url-inspector page — covers the per-surface top-70
- * (`DRS_URLS_LIMIT`) in a single page. NOTE: a server-side citations-descending
- * sort is *assumed but not confirmed* for `domain-urls`; `fetchRows` logs a
- * truncation warning when a full page comes back and hard-caps the array at
- * `PAGE_SIZE` as defence against a malfunctioning upstream.
+ * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
+ * buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally, so
+ * this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
+ * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
  */
-const PAGE_SIZE = 100;
+export const PAGE_SIZE = 1000;
 
 /**
- * Per-request timeout. A hung upstream must never stall the audit, or the whole
- * Semrush attempt (and therefore the legacy fallback in the handler) would never
- * resolve and the Lambda would run to its own timeout — worse than legacy-only.
- * (Unit tests stub the fetch; actual abort behaviour is a shadow-run integration
- * concern, not covered here.)
+ * Per-request timeout so a hung upstream can't stall the whole audit past the Lambda's
+ * own timeout.
  */
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Default engine (serenity `platform`) values to query — the full offsite
- * provider set mapped to serenity models (`SEMRUSH_PLATFORM_BY_PROVIDER`).
- *
- * IMPORTANT: omitting `platform` does NOT aggregate across engines on the
- * `domain-urls` / `cited-domains` endpoints — the proxy resolves an absent value
- * to a single default engine. To mirror the legacy multi-engine mix we query each
- * engine explicitly and SUM citations per URL.
+ * Max chars of a non-2xx response body to log. The body of a rejected
+ * serenity/Semrush call identifies the rejecter — api-service `requireImsBearer`
+ * ("...send the x-promise-token header instead") vs a Semrush upstream error —
+ * which decides who owns the LLMO-6709 auth fix. Capped defensively.
  */
-export const DEFAULT_SEMRUSH_PLATFORMS = Object.freeze(
-  Object.values(SEMRUSH_PLATFORM_BY_PROVIDER),
-);
+const ERROR_BODY_SNIPPET_MAX = 500;
 
 /**
- * Resolves which engine platform values to query. `OFFSITE_SEMRUSH_PLATFORMS`
- * (comma-separated) overrides the default list; a blank / separators-only value
- * falls back to the default rather than disabling all requests.
+ * Reads a non-2xx response body as a short diagnostic snippet. Never throws.
  *
- * @param {object} env - Lambda env.
- * @returns {string[]} platform values (always at least one).
+ * @param {Response} response
+ * @returns {Promise<string>} the body (trimmed + capped), or '' if empty/unreadable.
  */
-export function getSemrushPlatforms(env) {
-  const raw = env?.OFFSITE_SEMRUSH_PLATFORMS;
-  if (typeof raw === 'string' && raw.trim()) {
-    const parsed = raw.split(',').map((p) => p.trim()).filter(Boolean);
-    if (parsed.length > 0) {
-      return parsed;
-    }
+async function readErrorBodySnippet(response) {
+  try {
+    const text = await response.text();
+    return text ? text.slice(0, ERROR_BODY_SNIPPET_MAX) : '';
+  } catch {
+    return '';
   }
-  return [...DEFAULT_SEMRUSH_PLATFORMS];
 }
 
 /**
@@ -115,71 +102,66 @@ async function getAuthorizationHeader(context) {
 }
 
 /**
- * Builds a url-inspector `domain-urls` request URL. Path segments are
- * URL-encoded (matching `brand-resolver.js`); `platform` is included only when
- * provided.
+ * Builds the single `domain-urls` request URL: no `hostname` (returns every source host)
+ * and `platform=all` (Semrush aggregates citations across every AI engine server-side).
  *
  * @returns {string}
  */
 export function buildDomainUrlsUrl({
-  baseUrl, spaceCatId, brandId, hostname, startDate, endDate, platform,
+  baseUrl, spaceCatId, brandId, startDate, endDate, pageSize,
 }) {
   const params = new URLSearchParams({
     startDate,
     endDate,
-    hostname,
-    pageSize: String(PAGE_SIZE),
+    platform: 'all',
+    pageSize: String(pageSize),
   });
-  if (platform) {
-    params.set('platform', platform);
-  }
   return `${baseUrl}/v2/orgs/${encodeURIComponent(spaceCatId)}/brands/${encodeURIComponent(brandId)}`
     + `/serenity/brand-presence/url-inspector/domain-urls?${params.toString()}`;
 }
 
 /**
- * Fetches one (hostname, platform) page. Every log call carries `siteId`/`hostname`/
- * `platform` as structured fields (in addition to the human-readable message) so a
- * Splunk query can isolate which site/surface/engine combination failed and why,
- * without parsing the message string.
+ * Fetches the single `domain-urls` page (all hosts, all platforms).
  *
- * @returns {Promise<{ hostname: string, rows: object[], ok: boolean, authFailure: boolean }>}
- *   `ok` is false on network error / timeout / non-2xx / unparseable body. `authFailure` is
- *   true specifically for a 401/403 (distinct from other failure causes, since an
- *   intermittent auth/token rejection is the signal to watch during the pre-LLMO-6709
- *   verification window even when tolerated as a partial engine failure). The rows array is
- *   hard-capped at `PAGE_SIZE`.
+ * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean, truncated: boolean }>}
+ *   `ok` is false on network error / timeout / non-2xx / unparseable body. `authFailure`
+ *   distinguishes a 401/403 (auth issue) from other failures. `truncated` is true when a
+ *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
+ *   `diagnostics` without grepping logs).
  */
-async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
-  const ctx = { siteId, hostname, platform };
+async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
+  const ctx = { siteId };
   let response;
   const startedAt = Date.now();
   try {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
-    log.error(`${LOG_PREFIX} Fetch failed for ${hostname}: ${error.message}`, {
+    log.error(`${LOG_PREFIX} Fetch failed for domain-urls: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
     return {
-      hostname, rows: [], ok: false, authFailure: false,
+      rows: [], ok: false, authFailure: false, truncated: false,
     };
   }
 
   if (!response.ok) {
+    const durationMs = Date.now() - startedAt;
     const authFailure = response.status === 401 || response.status === 403;
+    // Capture the body so the rejecter is identifiable (api-service requireImsBearer
+    // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
+    const responseBody = await readErrorBodySnippet(response);
+    const logCtx = {
+      ...ctx, status: response.status, responseBody, durationMs,
+    };
     if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      log.error(`${LOG_PREFIX} Service token rejected for ${hostname} (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, {
-        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
-      });
+      log.error(`${LOG_PREFIX} Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, logCtx);
     } else {
-      log.error(`${LOG_PREFIX} ${hostname} returned HTTP ${response.status}`, {
-        ...ctx, status: response.status, durationMs: Date.now() - startedAt,
-      });
+      log.error(`${LOG_PREFIX} domain-urls returned HTTP ${response.status}`, logCtx);
     }
     return {
-      hostname, rows: [], ok: false, authFailure,
+      rows: [], ok: false, authFailure, truncated: false,
     };
   }
 
@@ -187,39 +169,93 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
   try {
     body = await response.json();
   } catch (error) {
-    log.error(`${LOG_PREFIX} Could not parse ${hostname} response: ${error.message}`, {
+    log.error(`${LOG_PREFIX} Could not parse domain-urls response: ${error.message}`, {
       ...ctx, error: error.message, durationMs: Date.now() - startedAt,
     });
     return {
-      hostname, rows: [], ok: false, authFailure: false,
+      rows: [], ok: false, authFailure: false, truncated: false,
     };
   }
 
   const raw = Array.isArray(body?.urls) ? body.urls : [];
-  if (raw.length >= PAGE_SIZE) {
-    log.warn(`${LOG_PREFIX} ${hostname} returned a full page (${raw.length} >= ${PAGE_SIZE}); response may be truncated — top URLs by citations could be missing`, {
-      ...ctx, rowCount: raw.length, pageSize: PAGE_SIZE,
+  const truncated = raw.length >= pageSize;
+  if (truncated) {
+    log.warn(`${LOG_PREFIX} domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
+      ...ctx, rowCount: raw.length, pageSize,
     });
   }
   return {
-    hostname, rows: raw.slice(0, PAGE_SIZE), ok: true, authFailure: false,
+    rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated,
   };
 }
 
 /**
- * Loads the offsite cited URLs from the Semrush-backed Serenity URL-Inspector
- * endpoints (via the spacecat-api-service Elements proxy), producing the exact
- * `allUrls: Map<url, { count, domain }>` shape the existing `selectTopUrls` -> DRS
- * pipeline consumes. `count` = exact citation volume (summed across engines).
+ * Classifies one `domain-urls` row into a bucket, or drops it.
  *
- * Returns `null` (so the handler falls back to the legacy source) when a usable
- * result cannot be produced: no org/brand, transient brand-resolution failure,
- * no date window, auth failure, or when a whole surface (hostname) produced zero
- * successful responses. A single failed engine is tolerated as a partial count.
+ * - Non-`http(s)` schemes (`mailto:`, `tel:`, `data:`, `javascript:`, `ftp:`, `ws:`, ...) are
+ *   dropped upfront via an explicit allowlist on the raw `row.url`, rather than relying on
+ *   `classifyAndNormalize` happening to produce an unparseable value for some of them
+ *   (opaque schemes serialize `origin` to the literal string `"null"`) — that's incidental
+ *   for opaque schemes and doesn't catch a scheme that reparses cleanly (`ftp:`, `ws:`) but
+ *   is never a real citation source.
+ * - `youtube.com` / `reddit.com` — matched via `classifyAndNormalize`, then the strict
+ *   format regexes (drops non-thread Reddit URLs and lookalike YouTube hosts).
+ * - Everything else is the third-party "cited" bucket (`domain: null`), unless it's
+ *   `contentType: 'Owned'`, in `TOP_CITED_EXCLUDED_DOMAINS` (e.g. `wikipedia.org`), or a
+ *   social/search/brand-lookalike host per `isExcludedCitedHost`.
  *
- * Scope: youtube.com + reddit.com only — off-host rows are dropped so nothing
- * leaks into the top-cited bucket. Region scoping and the generic cited bucket
- * are follow-ups (LLMO-6709 / LLMO-6710).
+ * @returns {{url: string, domain: string|null}|null} `null` when the row is dropped.
+ */
+function classifyRow(row, siteHostname, brandTokens) {
+  if (!row?.url) {
+    return null;
+  }
+  let scheme;
+  try {
+    scheme = new URL(row.url).protocol;
+  } catch {
+    return null;
+  }
+  if (scheme !== 'http:' && scheme !== 'https:') {
+    return null;
+  }
+
+  const classified = classifyAndNormalize(row.url, siteHostname);
+  if (!classified) {
+    return null;
+  }
+  if (classified.domain === 'youtube.com') {
+    return YOUTUBE_URL_REGEX.test(row.url) ? { url: classified.url, domain: 'youtube.com' } : null;
+  }
+  if (classified.domain === 'reddit.com') {
+    return REDDIT_URL_REGEX.test(row.url) ? { url: classified.url, domain: 'reddit.com' } : null;
+  }
+  if (row.contentType === 'Owned') {
+    return null;
+  }
+  // The allowlist above guarantees classified.url is always a reparseable http(s) URL here.
+  const host = new URL(classified.url).hostname.toLowerCase().replace(/^www\./, '');
+  if (TOP_CITED_EXCLUDED_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
+    return null;
+  }
+  if (isExcludedCitedHost(host, brandTokens)) {
+    return null;
+  }
+  return { url: classified.url, domain: null };
+}
+
+/**
+ * Loads the offsite cited URLs from the Semrush-backed `domain-urls` endpoint (via the
+ * spacecat-api-service Elements proxy) in a single request — no `hostname`, `platform=all`
+ * — producing the `allUrls: Map<url, { count, domain }>` shape `selectTopUrls` -> DRS
+ * consumes. `count` = exact citations, aggregated across every AI engine by Semrush.
+ *
+ * Returns `null` (so the handler falls back to the legacy source) when no usable result can be
+ * produced: no org/brand, transient brand-resolution failure, no date window, IMS token
+ * failure, or the `domain-urls` request itself failed.
+ *
+ * The response is split client-side into three buckets: `youtube.com`, `reddit.com`, and
+ * third-party "cited" — see `classifyRow`. Region scoping remains a follow-up (LLMO-6710).
  *
  * @param {object} params
  * @param {object} params.site - Site model (`getOrganizationId()`).
@@ -231,19 +267,16 @@ async function fetchRows({ hostname, platform, url }, headers, log, siteId) {
  *   each stage of the attempt. Kept generic (not a Slack import) so this module stays testable
  *   without a Slack dependency; a failure here is logged and swallowed, never thrown — a Slack
  *   outage must not affect the Semrush attempt itself.
- * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null return,
- *   set to `{ fallbackReason }` with a specific code (`no-organization-id`, `no-active-brand`,
- *   `brand-resolution-failed`, `not-entitled`, `entitlement-check-failed`, `no-date-window`,
- *   `ims-token-failed`, or `surface-failed:<host>`) instead of the single generic reason the
- *   handler used to report for every case. The two entitlement reasons additionally set
- *   `entitlementReason` to the granular cause from `resolveSemrushEntitlement`
- *   (`flag-disabled` | `no-workspace` | `no-client` | `check-failed`) — `fallbackReason` alone
- *   cannot distinguish a confirmed non-entitlement from a wiring bug (`no-client`) vs a
- *   transient blip (`check-failed`). On a
- *   successful (non-null) return, set to
- *   `{ engineFailureCount, degradedHosts, authFailureDetected }` so a surface that tolerated
- *   partial engine failures is distinguishable from a clean run — both `dataSource` and
- *   `fallbackReason` alone report success/fail but not degradation.
+ * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null
+ *   return, set to `{ fallbackReason }` with a specific code (`no-organization-id`,
+ *   `no-active-brand`, `brand-resolution-failed`, `not-entitled`, `entitlement-check-failed`,
+ *   `no-date-window`, `ims-token-failed`, `domain-urls-auth-failed`, or `domain-urls-failed`).
+ *   The two entitlement reasons additionally set `entitlementReason` to the granular cause
+ *   from `resolveSemrushEntitlement` (`flag-disabled` | `no-workspace` | `no-client` |
+ *   `check-failed`) — `fallbackReason` alone cannot distinguish a confirmed non-entitlement
+ *   from a wiring bug (`no-client`) vs a transient blip (`check-failed`). On a successful
+ *   return, set to `{ truncated }` — true when the response came back at `PAGE_SIZE`, so a
+ *   bucket may be starved (LLMO-6711 shadow-run parity signal).
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
@@ -384,144 +417,64 @@ export async function loadCitedUrlsFromSemrush({
     ...(context.promiseToken ? { 'x-promise-token': context.promiseToken } : {}),
   };
 
-  const platforms = getSemrushPlatforms(env);
-  const requests = [];
-  for (const hostname of Object.keys(OFFSITE_DOMAINS)) {
-    for (const platform of platforms) {
-      requests.push({
-        hostname,
-        platform,
-        url: buildDomainUrlsUrl({
-          baseUrl, spaceCatId, brandId: brand.brandId, hostname, startDate, endDate, platform,
-        }),
-      });
-    }
-  }
-  const hostnames = Object.keys(OFFSITE_DOMAINS);
-  log.info(`${LOG_PREFIX} Querying ${hostnames.length} hostnames x ${platforms.length} platforms (${requests.length} requests)`, {
-    siteId, orgId: spaceCatId, brandId: brand.brandId, hostnames, platforms,
+  const url = buildDomainUrlsUrl({
+    baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
   });
-  await notify(`:satellite: Querying ${hostnames.length} surface(s) x ${platforms.length} engine(s) (${requests.length} requests)...`);
+  log.info(`${LOG_PREFIX} Querying domain-urls (all hosts, all platforms)`, {
+    siteId, orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+  });
+  await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const results = await Promise.all(requests.map((r) => fetchRows(r, headers, log, siteId)));
-
-  // Group by surface (hostname). Fall back to legacy only when a whole surface
-  // produced ZERO successful responses (that surface would be dropped) — a single
-  // failed engine is a partial count, not a dropped surface, and is tolerated.
-  const byHost = new Map();
-  for (const hostname of Object.keys(OFFSITE_DOMAINS)) {
-    byHost.set(hostname, {
-      anyOk: false, okCount: 0, failCount: 0, authFailureCount: 0, rows: [],
+  const result = await fetchDomainUrls(url, headers, log, siteId, PAGE_SIZE);
+  if (!result.ok) {
+    log.warn(`${LOG_PREFIX} domain-urls request failed; using legacy fallback`, {
+      siteId, orgId: spaceCatId, durationMs: elapsed(),
     });
+    await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
+    setDiagnostics({ fallbackReason: result.authFailure ? 'domain-urls-auth-failed' : 'domain-urls-failed' });
+    return null;
   }
-  for (const result of results) {
-    const entry = byHost.get(result.hostname);
-    if (result.ok) {
-      entry.anyOk = true;
-      entry.okCount += 1;
-      entry.rows.push(...result.rows);
-    } else {
-      entry.failCount += 1;
-      if (result.authFailure) {
-        entry.authFailureCount += 1;
-      }
-    }
-  }
-  for (const [hostname, entry] of byHost) {
-    // One summary line per hostname (not per-request) — enough to see partial engine
-    // degradation in Splunk without a log line per one of the ~12 concurrent requests.
-    log.info(`${LOG_PREFIX} ${hostname}: ${entry.okCount}/${entry.okCount + entry.failCount} engine requests succeeded`, {
-      siteId, hostname, okCount: entry.okCount, failCount: entry.failCount,
-    });
-    if (!entry.anyOk) {
-      log.warn(`${LOG_PREFIX} No successful Semrush response for ${hostname}; using legacy fallback`, {
-        siteId, orgId: spaceCatId, hostname, platformsQueried: platforms, durationMs: elapsed(),
-      });
-      // Sequential, not Promise.all: these post to a Slack thread where message
-      // order is the whole point (a readable narrative), not a perf-sensitive loop.
-      // eslint-disable-next-line no-await-in-loop
-      await notify(`:x: \`${hostname}\`: 0/${entry.okCount + entry.failCount} engine requests succeeded — falling back to the legacy source.`);
-      setDiagnostics({ fallbackReason: `surface-failed:${hostname}` });
-      return null;
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await notify(`:white_check_mark: \`${hostname}\`: ${entry.okCount}/${entry.okCount + entry.failCount} engine requests succeeded.`);
-  }
+  setDiagnostics({ truncated: result.truncated });
 
-  // Partial-degradation signal for LLMO-6711 shadow-run parity: a surface that
-  // tolerated failed engines (see above) still reports dataSource: 'semrush' below
-  // with no fallbackReason, so this is the only structured way to tell "clean run"
-  // from "succeeded, but N engine requests failed" without going back to logs. Any
-  // 401/403 is called out distinctly since an intermittent auth rejection is the
-  // signal to watch for during the pre-LLMO-6709 verification window specifically.
-  const engineFailureCount = [...byHost.values()].reduce((sum, entry) => sum + entry.failCount, 0);
-  const degradedHosts = [...byHost.entries()]
-    .filter(([, entry]) => entry.failCount > 0)
-    .map(([hostname]) => hostname);
-  const authFailureDetected = [...byHost.values()].some((entry) => entry.authFailureCount > 0);
-  setDiagnostics({ engineFailureCount, degradedHosts, authFailureDetected });
+  const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
+  const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
 
   const allUrls = new Map();
-  for (const [, entry] of byHost) {
-    for (const row of entry.rows) {
-      const classified = row?.url ? classifyAndNormalize(row.url, siteHostname) : null;
-      if (!classified) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      // Enforce the youtube/reddit-only scope on the OUTPUT. A `domain: null`
-      // (off-host) row would otherwise pass both regex guards below and reach
-      // selectTopUrls' top-cited bucket -> live TOP_CITED scrape, bypassing the
-      // legacy isExcludedCitedHost / brand-token filtering this PR scopes out.
-      if (classified.domain !== 'youtube.com' && classified.domain !== 'reddit.com') {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      // Strict-format parity with the legacy handler path (non-thread Reddit,
-      // lookalike YouTube host).
-      if (classified.domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(row.url)) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      if (classified.domain === 'reddit.com' && !REDDIT_URL_REGEX.test(row.url)) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      // Clamp: a negative value would subtract when summed and corrupt the
-      // citations-descending ranking; NaN / non-numeric -> 0.
-      const citations = Math.max(0, Number(row.citations) || 0);
-      const existing = allUrls.get(classified.url);
-      if (existing) {
-        existing.count += citations;
-      } else {
-        allUrls.set(classified.url, { count: citations, domain: classified.domain });
-      }
+  const bucketCounts = { 'youtube.com': 0, 'reddit.com': 0, cited: 0 };
+  for (const row of result.rows) {
+    const bucketed = classifyRow(row, siteHostname, brandTokens);
+    if (!bucketed) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    // Clamp so a negative/non-numeric value can't corrupt the citations ranking; a
+    // zero-citation URL is dropped as not a real cited source.
+    const citations = Math.max(0, Number(row.citations) || 0);
+    if (citations === 0) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const existing = allUrls.get(bucketed.url);
+    if (existing) {
+      existing.count += citations;
+    } else {
+      allUrls.set(bucketed.url, { count: citations, domain: bucketed.domain });
+      bucketCounts[bucketed.domain ?? 'cited'] += 1;
     }
   }
 
-  // Drop URLs whose total citation volume is zero (malformed / all-zero rows): a
-  // zero-citation URL is not a real cited source and must not be scraped. count can
-  // never go negative here — each contribution is Math.max(0, ...)-clamped above, so
-  // a sum of non-negative values is always >= 0; the check is `=== 0`, not `<= 0`.
-  for (const [url, info] of allUrls) {
-    if (info.count === 0) {
-      allUrls.delete(url);
-    }
-  }
-
-  // Loaded-per-surface counts, for the "loaded N results from <hostname>" progress
-  // update — distinct from the engine-success-ratio message above, since a surface can
-  // have every engine succeed yet contribute zero URLs (e.g. all filtered as off-format).
-  const loadedByHostname = new Map(hostnames.map((hostname) => [hostname, 0]));
-  for (const [, info] of allUrls) {
-    // info.domain is always youtube.com/reddit.com here — the earlier scope guard
-    // already dropped any other domain, so loadedByHostname always has this key.
-    loadedByHostname.set(info.domain, loadedByHostname.get(info.domain) + 1);
-  }
-  for (const [hostname, count] of loadedByHostname) {
-    // eslint-disable-next-line no-await-in-loop
-    await notify(`:package: Loaded ${count} URL(s) from \`${hostname}\`.`);
-  }
+  log.info(`${LOG_PREFIX} Bucketed domain-urls response`, {
+    siteId,
+    orgId: spaceCatId,
+    brandId: brand.brandId,
+    receivedCount: result.rows.length,
+    uniqueUrlCount: allUrls.size,
+    droppedCount: result.rows.length - allUrls.size,
+    youtubeCount: bucketCounts['youtube.com'],
+    redditCount: bucketCounts['reddit.com'],
+    citedCount: bucketCounts.cited,
+  });
+  await notify(`:package: Loaded ${bucketCounts['youtube.com']} \`youtube.com\`, ${bucketCounts['reddit.com']} \`reddit.com\`, and ${bucketCounts.cited} cited (third-party) URL(s).`);
 
   log.info(`${LOG_PREFIX} Collected ${allUrls.size} cited URLs from Semrush`, {
     siteId,

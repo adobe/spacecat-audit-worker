@@ -268,37 +268,6 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
-    it('surfaces semrushEngineFailureCount/semrushDegradedHosts and warns when the loader reports degradation', async () => {
-      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
-      mockLoadCitedUrlsFromSemrush.callsFake(async (args) => {
-        Object.assign(args.diagnostics, {
-          engineFailureCount: 1,
-          degradedHosts: ['youtube.com'],
-          authFailureDetected: true,
-        });
-        return new Map([['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }]]);
-      });
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.dataSource).to.equal('semrush');
-      expect(result.auditResult.semrushEngineFailureCount).to.equal(1);
-      expect(result.auditResult.semrushDegradedHosts).to.deep.equal(['youtube.com']);
-      expect(log.warn).to.have.been.calledWithMatch(/possible auth\/token issue/);
-    });
-
-    it('does not surface degradation fields on a clean Semrush success', async () => {
-      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
-      mockLoadCitedUrlsFromSemrush.resolves(new Map([
-        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
-      ]));
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult).to.not.have.property('semrushEngineFailureCount');
-      expect(result.auditResult).to.not.have.property('semrushDegradedHosts');
-    });
-
     it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
