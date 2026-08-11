@@ -346,18 +346,9 @@ async function addSuggestions(
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
-      // Do not overwrite a customer-edited FAQ. isEdited is set only by the UI
-      // edit-save action (never inferred from updatedBy); preserve the edited
-      // question/answer and the write-once original snapshot (LLMO-6537).
-      if (existingData.isEdited) {
-        return {
-          ...existingData,
-          ...newData,
-          item: existingData.item,
-          originalItem: existingData.originalItem ?? existingData.item,
-          isEdited: true,
-        };
-      }
+      // Customer-edited FAQs (isEdited) never reach mergeDataFunction on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
       return { ...existingData, ...newData };
     },
   });

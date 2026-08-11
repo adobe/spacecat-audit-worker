@@ -64,20 +64,9 @@ async function addSuggestions(
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
-      // Do not overwrite a customer-edited summary. isEdited is set only by the UI
-      // edit-save action (never inferred from updatedBy); preserve the edited text and
-      // the write-once original snapshot while letting the rest of the data refresh
-      // (LLMO-6537).
-      if (existingData.isEdited) {
-        return {
-          ...existingData,
-          ...newData,
-          summarizationText: existingData.summarizationText,
-          originalSummarizationText: existingData.originalSummarizationText
-            ?? existingData.summarizationText,
-          isEdited: true,
-        };
-      }
+      // Customer-edited summaries (isEdited) never reach this function on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
       return { ...existingData, ...newData };
     },
     scrapedUrlsSet,

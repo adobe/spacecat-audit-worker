@@ -795,7 +795,7 @@ describe('summarization guidance handler', () => {
     expect(result.transformRules.selector).to.equal('h2');
   });
 
-  it('should preserve a customer-edited summary and original snapshot when isEdited is set', async () => {
+  it('should not opt in to protectEditedFromOutdated (buildKey has no editable content)', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(dummyOpportunity);
 
@@ -809,60 +809,10 @@ describe('summarization guidance handler', () => {
     await handler(message, context);
 
     const syncArgs = syncSuggestionsStub.getCall(0).args[0];
-    const { mergeDataFunction } = syncArgs;
-
-    const existingData = {
-      url: 'https://adobe.com/page1',
-      shouldOptimize: true,
-      isEdited: true,
-      summarizationText: 'Customer edited summary',
-      originalSummarizationText: 'System generated summary',
-      transformRules: { selector: 'h1', action: 'insertAfter' },
-    };
-    const newData = {
-      url: 'https://adobe.com/page1',
-      shouldOptimize: false,
-      summarizationText: 'Freshly regenerated summary',
-      transformRules: { selector: 'h2', action: 'replace' },
-    };
-
-    const result = mergeDataFunction(existingData, newData);
-
-    // Edited text + original snapshot preserved; other fields refresh
-    expect(result.isEdited).to.equal(true);
-    expect(result.summarizationText).to.equal('Customer edited summary');
-    expect(result.originalSummarizationText).to.equal('System generated summary');
-    expect(result.shouldOptimize).to.equal(false);
-    expect(result.transformRules.selector).to.equal('h2');
-  });
-
-  it('should bootstrap originalSummarizationText from summarizationText for pre-existing edited suggestions (LLMO-6537)', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(dummyOpportunity);
-
-    const message = {
-      auditId: 'audit-id',
-      siteId: 'site-id',
-      data: {
-        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
-      },
-    };
-    await handler(message, context);
-
-    const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
-
-    const result = mergeDataFunction(
-      {
-        summarizationText: 'Customer edited summary',
-        isEdited: true,
-        // originalSummarizationText intentionally absent (pre-existing suggestion)
-      },
-      { summarizationText: 'Regenerated.' },
-    );
-
-    expect(result.isEdited).to.equal(true);
-    expect(result.summarizationText).to.equal('Customer edited summary');
-    expect(result.originalSummarizationText).to.equal('Customer edited summary');
+    // Unlike FAQ, summarization's buildKey doesn't embed summarizationText, so an
+    // edit doesn't drift the key — no opt-in needed; edited suggestions clear
+    // normally to OUTDATED/FIXED when the issue disappears (LLMO-6761).
+    expect(syncArgs.protectEditedFromOutdated).to.be.undefined;
   });
 
 });
