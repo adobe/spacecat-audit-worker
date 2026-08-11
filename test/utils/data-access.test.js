@@ -3376,9 +3376,6 @@ describe('data-access', () => {
           allByOpportunityIdAndStatus: sinon.stub().resolves([]),
           saveMany: sinon.stub().resolves(),
         },
-        Suggestion: {
-          getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
-        },
       };
     });
 
@@ -3416,12 +3413,11 @@ describe('data-access', () => {
       expect(mockLogger.debug).to.have.been.calledWith('FixEntity APIs not available; skipping publish.');
     });
 
-    it('should handle fix entity with getSuggestionIds returning undefined', async () => {
+    it('should handle fix entity with getSuggestions returning undefined', async () => {
       const fixEntity = {
         getId: sinon.stub().returns('fix-undefined'),
-        getSuggestionIds: sinon.stub().returns(undefined),
+        getSuggestions: sinon.stub().resolves(undefined),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
@@ -3432,7 +3428,7 @@ describe('data-access', () => {
         isIssueResolvedOnProduction: sinon.stub().resolves(true),
       });
 
-      // Should not publish since suggestionIds is empty after || []
+      // Should not publish since suggestions is empty after || []
       expect(fixEntity.setStatus).to.not.have.been.called;
     });
 
@@ -3448,12 +3444,11 @@ describe('data-access', () => {
       expect(mockDataAccess.FixEntity.allByOpportunityIdAndStatus).to.have.been.called;
     });
 
-    it('should skip fix entity with empty suggestionIds', async () => {
+    it('should skip fix entity with empty suggestions', async () => {
       const fixEntity = {
         getId: sinon.stub().returns('fix-1'),
-        getSuggestionIds: sinon.stub().returns([]),
+        getSuggestions: sinon.stub().resolves([]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
@@ -3467,16 +3462,14 @@ describe('data-access', () => {
       expect(fixEntity.setStatus).to.not.have.been.called;
     });
 
-    it('should not publish when suggestion not found', async () => {
+    it('should not publish when a linked suggestion is missing', async () => {
       const fixEntity = {
         getId: sinon.stub().returns('fix-2'),
-        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        getSuggestions: sinon.stub().resolves([null]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
-      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [] });
 
       await publishDeployedFixEntities({
         opportunityId: 'opp-id',
@@ -3494,22 +3487,24 @@ describe('data-access', () => {
 
       const fixEntity = {
         getId: sinon.stub().returns('fix-3'),
-        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        getSuggestions: sinon.stub().resolves([suggestion]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
-      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
+
+      const isIssueResolvedOnProduction = sinon.stub().resolves(true);
 
       await publishDeployedFixEntities({
         opportunityId: 'opp-id',
         context: { dataAccess: mockDataAccess, log: mockLogger },
-        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+        isIssueResolvedOnProduction,
         currentAuditData: [{ key: 'existing-key' }],
         buildKey: (d) => d?.key,
       });
 
+      // Fast-path short-circuits before any HTTP verification.
+      expect(isIssueResolvedOnProduction).to.not.have.been.called;
       expect(fixEntity.setStatus).to.not.have.been.called;
     });
 
@@ -3520,13 +3515,11 @@ describe('data-access', () => {
 
       const fixEntity = {
         getId: sinon.stub().returns('fix-4'),
-        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        getSuggestions: sinon.stub().resolves([suggestion]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
-      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
         opportunityId: 'opp-id',
@@ -3544,13 +3537,11 @@ describe('data-access', () => {
 
       const fixEntity = {
         getId: sinon.stub().returns('fix-5'),
-        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        getSuggestions: sinon.stub().resolves([suggestion]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
-      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
         opportunityId: 'opp-id',
@@ -3563,6 +3554,39 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-5');
     });
 
+    // Regression: publish detection must use the real data-access contract.
+    // A DEPLOYED FixEntity exposes its linked suggestions via the async M2M accessor
+    // `fixEntity.getSuggestions()` (returns an array of Suggestion models). There is no
+    // `FixEntity.getSuggestionIds()`, and `Suggestion.getFixEntitiesBySuggestionId()`
+    // returns FixEntities (not suggestions) as a bare array. Using those meant no deployed
+    // fix was ever promoted to PUBLISHED in production (first surfaced by jll.com).
+    it('publishes using the real fixEntity.getSuggestions() contract', async () => {
+      const suggestion = {
+        getData: sinon.stub().returns({ url_from: 'https://ref.example/a', url_to: 'https://jll.com/x' }),
+      };
+
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-real'),
+        getSuggestions: sinon.stub().resolves([suggestion]),
+        setStatus: sinon.stub(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+
+      const isIssueResolvedOnProduction = sinon.stub().resolves(true);
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction,
+      });
+
+      expect(isIssueResolvedOnProduction).to.have.been.calledOnceWith(suggestion);
+      expect(fixEntity.setStatus).to.have.been.calledWith('PUBLISHED');
+      expect(mockDataAccess.FixEntity.saveMany).to.have.been.calledWith([fixEntity]);
+      expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-real');
+    });
+
     it('should log debug when FixEntity.saveMany() throws', async () => {
       const suggestion = {
         getData: sinon.stub().returns({ key: 'resolved-key' }),
@@ -3570,14 +3594,12 @@ describe('data-access', () => {
 
       const fixEntity = {
         getId: sinon.stub().returns('fix-6'),
-        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        getSuggestions: sinon.stub().resolves([suggestion]),
         setStatus: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
       mockDataAccess.FixEntity.saveMany.rejects(new Error('Save error'));
-      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
         opportunityId: 'opp-id',
@@ -3630,7 +3652,6 @@ describe('data-access', () => {
           Suggestion: {
             bulkUpdateStatus: sinon.stub().resolves(),
             saveMany: sinon.stub().resolves(),
-            getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
           },
           FixEntity: {
             allByOpportunityIdAndStatus: sinon.stub().resolves([]),

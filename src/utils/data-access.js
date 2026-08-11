@@ -819,8 +819,8 @@ export async function publishDeployedFixEntities({
   }
   const { dataAccess, log } = context;
   try {
-    const { FixEntity, Suggestion } = dataAccess || {};
-    if (!FixEntity?.allByOpportunityIdAndStatus || !Suggestion?.getFixEntitiesBySuggestionId) {
+    const { FixEntity } = dataAccess || {};
+    if (!FixEntity?.allByOpportunityIdAndStatus) {
       log.debug('FixEntity APIs not available; skipping publish.');
       return;
     }
@@ -843,20 +843,14 @@ export async function publishDeployedFixEntities({
 
     // Helper to check a single fix entity with bounded HTTP calls
     const checkFixEntity = async (fixEntity) => {
-      const suggestionIds = fixEntity.getSuggestionIds?.() || [];
-      if (suggestionIds.length === 0) {
+      // A FixEntity exposes its linked suggestions via the async many-to-many accessor
+      // getSuggestions(), which resolves to an array of Suggestion models. (There is no
+      // getSuggestionIds() on FixEntity, and Suggestion.getFixEntitiesBySuggestionId()
+      // returns FixEntities — not suggestions — so neither can drive this check.)
+      const suggestionResults = (await fixEntity.getSuggestions?.()) || [];
+      if (suggestionResults.length === 0) {
         return { fixEntity, allResolved: false };
       }
-
-      // Fetch all suggestions first (DB calls)
-      const suggestionResults = await Promise.all(
-        suggestionIds.map(async (suggestionId) => {
-          const { data: suggestions = [] } = await Suggestion.getFixEntitiesBySuggestionId(
-            suggestionId,
-          );
-          return suggestions[0];
-        }),
-      );
 
       // Fast-path check using current audit data (no HTTP)
       for (const suggestion of suggestionResults) {
