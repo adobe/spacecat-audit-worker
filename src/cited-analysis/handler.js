@@ -35,6 +35,7 @@ import {
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
+import { loadUrlPromptsFromSemrush } from '../utils/url-prompts-semrush.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 
@@ -154,10 +155,12 @@ function partitionExcludedUrls(urls, brandTokens, log) {
  * Fetches all required data from stores for Cited analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
+ * @param {Object} site - The site being audited
+ * @param {boolean} [enableSemrush] - When true, enrich URLs with Semrush url-prompts data
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context, site) {
+async function fetchStoreData(siteId, context, site, enableSemrush) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
 
@@ -211,6 +214,24 @@ async function fetchStoreData(siteId, context, site) {
   );
   log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`);
 
+  // NOTE: there's currently no way to tell whether an individual URL actually came from
+  // the Semrush citations pipeline vs. the legacy brand-presence source — assume Semrush
+  // for every URL whenever the flag is on, until source-tracking exists on AuditUrl
+  // records (revisit later).
+  let semrushEnrichedUrls = urls;
+  if (enableSemrush) {
+    const semrushCandidates = urls.slice(0, MYSTIQUE_URLS_LIMIT);
+    const urlPromptsMap = await loadUrlPromptsFromSemrush({
+      site, urls: semrushCandidates, context,
+    });
+    const semrushCandidateSet = new Set(semrushCandidates.map((item) => item.url));
+    semrushEnrichedUrls = urls.map((item) => (semrushCandidateSet.has(item.url) ? {
+      ...item,
+      isUrlFromSemrush: true,
+      ...(urlPromptsMap.get(item.url)?.length > 0 && { prompts: urlPromptsMap.get(item.url) }),
+    } : item));
+  }
+
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
   log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
@@ -230,7 +251,7 @@ async function fetchStoreData(siteId, context, site) {
   log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
 
   return {
-    urls,
+    urls: semrushEnrichedUrls,
     sentimentConfig: { topics, guidelines },
     drsCounts: counts,
   };
@@ -282,7 +303,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       log.warn(`${LOG_PREFIX} No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`);
     }
 
-    const storeData = await fetchStoreData(siteId, context, site);
+    const storeData = await fetchStoreData(siteId, context, site, enableSemrush);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread

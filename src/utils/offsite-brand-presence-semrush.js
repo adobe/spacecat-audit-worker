@@ -87,7 +87,7 @@ async function readErrorBodySnippet(response) {
  * @returns {Promise<string>} e.g. "Bearer eyJ...".
  * @throws {Error} when the token response has no access_token.
  */
-async function getAuthorizationHeader(context) {
+export async function getAuthorizationHeader(context) {
   const imsClient = ImsClient.createFrom(context);
   const token = await imsClient.getServiceAccessToken();
   if (!token?.access_token) {
