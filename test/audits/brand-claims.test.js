@@ -126,8 +126,9 @@ describe('Brand Claims audit handler', function () {
     });
 
     it('falls back to a hash when only invalid chars remain', () => {
-      const result = sanitizePathComponent('!!!@@@');
-      expect(result).to.match(/^[a-f0-9]{16}$/);
+      // Pin the exact output: sha256('!!!@@@').slice(0,16). Must stay byte-for-byte in
+      // lockstep with DRS's sanitize_path_component — a format-only check would miss drift.
+      expect(sanitizePathComponent('!!!@@@')).to.equal('4f2705a107835dc0');
     });
 
     it('returns empty string for whitespace-only input', () => {
@@ -228,6 +229,22 @@ describe('Brand Claims audit handler', function () {
       updateResult = { data: null, error: { message: 'nope' } };
       await expect(brandClaimsHandler(message, buildContext()))
         .to.be.rejectedWith('Failed to update brand claims flag: nope');
+    });
+
+    it('throws (SQS retry) when the S3 listing fails', async () => {
+      s3Client.send.rejects(new Error('AccessDenied'));
+      await expect(brandClaimsHandler(message, buildContext()))
+        .to.be.rejectedWith('AccessDenied');
+    });
+
+    it('throws (SQS retry) when the SQS publish fails', async () => {
+      s3Client.send.resolves({
+        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      sqs.sendMessage.rejects(new Error('ServiceUnavailable'));
+      await expect(brandClaimsHandler(message, buildContext()))
+        .to.be.rejectedWith('ServiceUnavailable');
     });
   });
 
