@@ -721,6 +721,11 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       || existingSuggestion.edgeOptimizeStatus) {
       return { ...existingSuggestion };
     }
+    // Suggestions manually verified/updated by the LLMO team (data.isVerified) are frozen -
+    // never touched by subsequent audit runs, regardless of what changed upstream.
+    if (existingSuggestion.isVerified) {
+      return { ...existingSuggestion };
+    }
     const converted = { ...newSuggestion };
     if (converted.transformRules && Array.isArray(converted.transformRules.value)) {
       converted.transformRules = {
