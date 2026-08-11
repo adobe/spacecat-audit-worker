@@ -212,8 +212,8 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions for ${company}`, {
-      count: suggestions.length,
+    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions`, {
+      count: suggestions.length, company,
     });
 
     // Create guidance object (must be an object, not an array, per Opportunity schema)

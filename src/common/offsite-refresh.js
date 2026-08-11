@@ -86,7 +86,7 @@ export async function persistOffsiteOpportunity(
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
   const olog = createOffsiteLogger(log, {
-    audit: AUDIT_SLUG_BY_TYPE[auditType], siteId: auditData.siteId, auditId: auditData.id,
+    audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId: auditData.siteId, auditId: auditData.id,
   });
 
   const hasGoogleConnection = await checkGoogleConnection(auditUrl, context);
@@ -161,7 +161,7 @@ export async function resolveEvergreenOffsiteOpportunity({
   dataAccess, siteId, auditType, log,
 }) {
   const { Opportunity } = dataAccess;
-  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType], siteId });
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
   let opportunities;
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);

@@ -15,7 +15,7 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_TERMINAL_STATUSES,
@@ -336,8 +336,10 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   if (jobs.length === 0) {
-    olog.warn('drs_poll', `No jobs to poll, skipping (site ${siteId})`, {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, reason: 'no_jobs',
+    // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
+    // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
+    olog.skip('drs_poll', `No jobs to poll, skipping (site ${siteId})`, {
+      peer: PEER.DRS, reason: 'no_jobs',
     });
     return ok();
   }

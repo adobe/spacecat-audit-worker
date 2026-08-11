@@ -286,7 +286,13 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.dataSource).to.equal('semrush');
       expect(result.auditResult.semrushEngineFailureCount).to.equal(1);
       expect(result.auditResult.semrushDegradedHosts).to.deep.equal(['youtube.com']);
-      expect(log.warn).to.have.been.calledWithMatch(/possible auth\/token issue/);
+      // Degraded-but-successful: warn level, but taxonomy outcome stays success.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/possible auth\/token issue/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=semrush/)),
+      );
     });
 
     it('does not surface degradation fields on a clean Semrush success', async () => {
@@ -299,6 +305,14 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult).to.not.have.property('semrushEngineFailureCount');
       expect(result.auditResult).to.not.have.property('semrushDegradedHosts');
+      // The happy-path load emits a structured success with the loaded URL count.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Loaded 1 cited URL\(s\) from Semrush/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/count=1/)),
+      );
     });
 
     it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
@@ -338,6 +352,13 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.error).to.match(/hard stop/);
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
       expect(mockLoadBrandPresenceData).to.not.have.been.called; // no legacy fallback
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Semrush source failed/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush-failed/)),
+      );
     });
 
     it('falls back to legacy when an ENV-enabled Semrush run fails (no hard stop)', async () => {
@@ -352,6 +373,13 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.fallbackReason).to.equal('semrush-failed');
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/falling back to PostgREST\/SharePoint/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush-failed/)),
+      );
     });
 
     it('treats a genuinely-empty Semrush result as a zero-URL semrush run (no legacy)', async () => {
@@ -1854,8 +1882,10 @@ describe('Offsite Brand Presence Handler', function () {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(result.auditResult.success).to.be.true;
-      // P1-4: the schedule-poll failure is now loud (error level, structured).
-      expect(log.error).to.have.been.calledWith(
+      // Best-effort follow-up: the schedule-poll failure is structured and counted
+      // (outcome=failure) but logged at warn — the run already succeeded, so a
+      // transient SQS hiccup here must not page.
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to schedule DRS status poll/)
           .and(sinon.match(/event=drs_poll_schedule/))
           .and(sinon.match(/outcome=failure/)),

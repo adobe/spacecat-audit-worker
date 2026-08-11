@@ -470,7 +470,9 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Config: companyName=https://bmw.com, website=https://bmw.com, competitors=0'),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match('companyName=https://bmw.com'))
+          .and(sinon.match('website=https://bmw.com')),
       );
       expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
@@ -483,7 +485,9 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Config: companyName=https://test-company.com, website=https://test-company.com, competitors=0'),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match('companyName=https://test-company.com'))
+          .and(sinon.match('website=https://test-company.com')),
       );
       expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
       expect(result.auditResult.success).to.be.true;
@@ -496,7 +500,10 @@ describe('Cited Analysis Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`Config: companyName=Example Corp, website=${baseURL}, competitors=2`),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match(`website=${baseURL}`))
+          .and(sinon.match('competitors=2')),
       );
     });
 
@@ -794,7 +801,9 @@ describe('Cited Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Queued Cited analysis request to Mystique for Example Corp with 2 URLs'),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match('urls=2')),
       );
     });
 
@@ -889,7 +898,9 @@ describe('Cited Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`Queued Cited analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName=Test'))
+          .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
     });
 

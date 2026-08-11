@@ -19,11 +19,14 @@
  * eyeball scanning. Field names match the Mystique side so Splunk `stats ... by domain, audit,
  * event, outcome` works across both sourcetypes.
  *
- * Log-injection safety: values are control-char-sanitized and quoted (see renderField), and the
- * free-text message is control-char-sanitized (see appendFields), so externally-sourced content
- * (scraped URLs, upstream error text) cannot split a log line or forge a second `key=value`
- * token. Externally-sourced strings should still be routed through `fields` (quoted), not the
- * message, and errors through {@link errorField}.
+ * Log-injection safety: field VALUES are control-char-sanitized and, when they contain
+ * whitespace/`=`/`"`, quoted as a single token (see renderField) — so a value routed through
+ * `fields` can neither split a log line nor forge a second `key=value`. The free-text message is
+ * only control-char-sanitized (see appendFields): that stops line-splitting, but it does NOT
+ * quote `=`/`"`, so a raw value interpolated into the message could still forge a same-line
+ * `key=value`. Externally-sourced content (scraped URLs, upstream error text) must therefore be
+ * routed through `fields` (quoted), never interpolated into the message, and errors through
+ * {@link errorField}.
  */
 
 export const OFFSITE_DOMAIN = 'offsite';

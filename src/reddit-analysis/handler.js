@@ -188,8 +188,9 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.success('config_resolve', `Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`, {
+    olog.success('config_resolve', 'Resolved Reddit config', {
       companyName: redditConfig.companyName,
+      website: redditConfig.companyWebsite,
     });
 
     const storeData = await fetchStoreData(siteId, context, site);
@@ -429,11 +430,11 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
       'mystique_dispatch',
-      `Queued Reddit analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs`,
+      `Queued Reddit analysis request to Mystique with ${enrichedUrls.length} URLs`,
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
+        companyName: config.companyName,
         urls: enrichedUrls.length,
         ...(brand && { brandId: brand.brandId }),
       },

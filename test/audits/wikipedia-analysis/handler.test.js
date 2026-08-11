@@ -286,8 +286,8 @@ describe('Wikipedia Analysis Handler', () => {
       );
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/after Slack\/mrkdwn normalization/),
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/event=url_override/).and(sinon.match(/after Slack\/mrkdwn normalization/)),
       );
     });
 
@@ -405,12 +405,13 @@ describe('Wikipedia Analysis Handler', () => {
       );
 
       expect(result.auditResult.config.wikipediaUrl).to.equal(path);
-      expect(context.log.info).to.have.been.calledWith(
+      // The Slack-supplied override is emitted as a quoted key=value field (not raw
+      // in the message), so the long path appears verbatim as `wikiUrl=<path>`.
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(
           (msg) => typeof msg === 'string'
-            && msg.includes('Wikipedia URL override: messageData fields wikiUrl=')
-            && msg.includes(path)
-            && msg.includes('wikipediaUrl='),
+            && msg.includes('event=url_override')
+            && msg.includes(`wikiUrl=${path}`),
         ),
       );
     });
@@ -472,7 +473,9 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Queued Wikipedia analysis request to Mystique for companyName=Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match('wikipediaUrl=https://en.wikipedia.org/wiki/Example_Corp')),
       );
     });
 
@@ -496,7 +499,8 @@ describe('Wikipedia Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/wikipediaUrl=\(empty → auto-detect\)/),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('wikipediaUrl="(empty → auto-detect)"')),
       );
     });
 

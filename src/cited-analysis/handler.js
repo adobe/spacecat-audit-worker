@@ -301,8 +301,10 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.success('config_resolve', `Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}, competitors=${citedConfig.competitors.length}`, {
-      companyName: citedConfig.companyName, competitors: citedConfig.competitors.length,
+    olog.success('config_resolve', `Config: ${citedConfig.competitors.length} competitor(s)`, {
+      companyName: citedConfig.companyName,
+      website: citedConfig.companyWebsite,
+      competitors: citedConfig.competitors.length,
     });
     if (citedConfig.competitors.length === 0) {
       // Surfaces the misconfiguration before the SQS hop to Mystique. With an
@@ -607,11 +609,11 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
       'mystique_dispatch',
-      `Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${message.data.urls.length} URLs`,
+      `Queued Cited analysis request to Mystique with ${message.data.urls.length} URLs`,
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
+        companyName: config.companyName,
         urls: message.data.urls.length,
         ...(brand && { brandId: brand.brandId }),
       },

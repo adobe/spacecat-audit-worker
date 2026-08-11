@@ -130,8 +130,8 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions for ${companyName}`, {
-      count: suggestions.length,
+    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions`, {
+      count: suggestions.length, companyName,
     });
 
     // Use the handler-owned type; the payload may only confirm it.

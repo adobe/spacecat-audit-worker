@@ -20,7 +20,7 @@ import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../offsite-brand-presence/constants.js';
-import { PEER, errorField } from './offsite-logging.js';
+import { PEER, errorField, appendFields } from './offsite-logging.js';
 
 export const MYSTIQUE_URLS_LIMIT = 50;
 
@@ -564,10 +564,16 @@ function makeResolveOverride(fieldName) {
     if (raw === undefined || raw === null || raw === '') {
       return undefined;
     }
-    log?.warn(
-      `${prefix} Invalid ${fieldName} in auditContext (${JSON.stringify(raw).slice(0, 100)}), omitting`,
-      { raw },
-    );
+    // Route the Slack-controlled `raw` value through appendFields so renderField
+    // quotes/sanitizes it as a single token — a crafted value cannot split the line
+    // or forge a second key=value. (This helper is audit-agnostic, so it takes the
+    // platform `log`, not an `olog`; the value must still be field-rendered, never
+    // interpolated raw into the message.)
+    log?.warn(appendFields(`${prefix} Invalid ${fieldName} in auditContext, omitting`, {
+      reason: 'invalid_override',
+      field: fieldName,
+      raw: JSON.stringify(raw).slice(0, 100),
+    }));
     return undefined;
   };
 }

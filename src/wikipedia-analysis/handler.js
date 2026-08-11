@@ -19,11 +19,6 @@ import {
   createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, PEER,
 } from '../utils/offsite-logging.js';
 
-// Human prefix for the diagnostic URL-override breadcrumbs below (emitted before a bound
-// offsite logger exists) and for the shared brand-resolver utils. Boundary/state events go
-// through createOffsiteLogger, which emits the same prefix plus the key=value taxonomy.
-const HUMAN_PREFIX = `[offsite:${AUDIT.WIKIPEDIA}]`;
-
 // Long, unambiguous market suffixes. These are safe to strip even when fused
 // directly to the brand word (e.g. "landroverusa" -> "landrover",
 // "toyotaglobal" -> "toyota") because they almost never occur inside a real
@@ -93,60 +88,60 @@ function unwrapSlackMrkdwnLink(raw) {
  * `<https://…>` / `<https://…|label>`; those are normalized here. Invalid /
  * non-string values are ignored (see runner).
  *
+ * Diagnostics go through the bound offsite logger (`olog`) so the Slack-supplied
+ * `wikiUrl`/`wikipediaUrl` values are quoted/sanitized as `key=value` fields by
+ * appendFields rather than interpolated raw into the message — a crafted value
+ * (e.g. one containing a newline or a forged `key=value`) cannot split the line
+ * or inject a second token.
+ *
  * @param {object} [auditContext]
- * @param {{ debug?: Function, info?: Function }} [log]
+ * @param {object} [olog] bound offsite logger (see createOffsiteLogger)
  * @returns {{ url: string }|{ invalid: true, value: string }|undefined}
  */
-function resolveWikipediaUrlOverride(auditContext, log) {
+function resolveWikipediaUrlOverride(auditContext, olog) {
   const md = auditContext?.messageData;
   if (!md) {
-    log?.info?.(
-      `${HUMAN_PREFIX} Wikipedia URL override: no messageData`,
-    );
+    olog?.debug('url_override', 'No messageData on audit context', { reason: 'no_message_data' });
     return undefined;
   }
 
   const wikiVal = md.wikiUrl;
   const wikipediaVal = md.wikipediaUrl;
 
-  log?.info?.(
-    `${HUMAN_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${wikiVal} wikipediaUrl=${wikipediaVal}`,
-  );
+  olog?.debug('url_override', 'Resolving Wikipedia URL override from messageData', {
+    wikiUrl: wikiVal, wikipediaUrl: wikipediaVal,
+  });
 
   const rawOverride = wikiVal || wikipediaVal;
 
   if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
-    log?.info?.(
-      `${HUMAN_PREFIX} Wikipedia URL override: neither wikiUrl nor wikipediaUrl is a usable value`,
-    );
+    olog?.debug('url_override', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value' });
     return undefined;
   }
 
   if (typeof rawOverride !== 'string') {
-    log?.info?.(
-      `${HUMAN_PREFIX} Wikipedia URL override rejected: expected string from wikiUrl||wikipediaUrl, got ${typeof rawOverride}`,
-    );
+    olog?.debug('url_override', 'Override rejected: expected a string value', {
+      reason: 'non_string', valueType: typeof rawOverride,
+    });
     return undefined;
   }
 
   const normalized = unwrapSlackMrkdwnLink(rawOverride);
   if (!normalized) {
-    log?.info?.(
-      `${HUMAN_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after Slack/mrkdwn normalization`,
-    );
+    olog?.debug('url_override', 'Override rejected: empty after Slack/mrkdwn normalization', {
+      reason: 'empty_after_normalize',
+    });
     return undefined;
   }
 
   if (!isValidUrl(normalized)) {
-    log?.info?.(
-      `${HUMAN_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${normalized}"`,
-    );
+    olog?.debug('url_override', 'Override rejected: not a valid URL', {
+      reason: 'invalid_url', value: normalized,
+    });
     return { invalid: true, value: normalized };
   }
 
-  log?.info?.(
-    `${HUMAN_PREFIX} Wikipedia URL override accepted: "${normalized}"`,
-  );
+  olog?.debug('url_override', 'Override accepted', { url: normalized });
 
   return { url: normalized };
 }
@@ -245,7 +240,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
 
-    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, log);
+    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, olog);
     if (wikipediaUrlOverride?.invalid) {
       olog.warn('config_resolve', `Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`, { reason: 'invalid_url_override' });
     } else if (wikipediaUrlOverride?.url) {
@@ -265,10 +260,11 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       };
     }
 
-    const configMsg = `Config: companyName=${wikipediaConfig.companyName}, `
-      + `website=${wikipediaConfig.companyWebsite}, `
-      + `wikipediaUrl=${wikipediaConfig.wikipediaUrl}`;
-    olog.success('config_resolve', configMsg);
+    olog.success('config_resolve', 'Resolved Wikipedia config', {
+      companyName: wikipediaConfig.companyName,
+      website: wikipediaConfig.companyWebsite,
+      wikipediaUrl: wikipediaConfig.wikipediaUrl,
+    });
 
     const slackContext = auditContext?.slackContext;
 
@@ -363,8 +359,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     olog.success(
       'mystique_dispatch',
-      `Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
-      { peer: PEER.MYSTIQUE, direction: 'outbound', ...(brand ? { brandId: brand.brandId } : {}) },
+      'Queued Wikipedia analysis request to Mystique',
+      {
+        peer: PEER.MYSTIQUE,
+        direction: 'outbound',
+        companyName: config.companyName,
+        wikipediaUrl: wikipediaUrlForLog,
+        ...(brand ? { brandId: brand.brandId } : {}),
+      },
     );
   } catch (error) {
     olog.failure('mystique_dispatch', 'Failed to send Mystique message', { peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error) }, error);

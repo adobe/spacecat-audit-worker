@@ -483,7 +483,9 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Config: companyName=https://bmw.com, website=https://bmw.com'),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match('companyName=https://bmw.com'))
+          .and(sinon.match('website=https://bmw.com')),
       );
       expect(result.auditResult.success).to.be.true;
     });
@@ -495,7 +497,9 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Config: companyName=https://test-company.com, website=https://test-company.com'),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match('companyName=https://test-company.com'))
+          .and(sinon.match('website=https://test-company.com')),
       );
       expect(result.auditResult.success).to.be.true;
     });
@@ -616,7 +620,9 @@ describe('Reddit Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Queued Reddit analysis request to Mystique for Example Corp with 2 URLs'),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match('urls=2')),
       );
     });
 
@@ -664,7 +670,9 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Queued Reddit analysis request to Mystique for Test with 1 URLs'),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName=Test'))
+          .and(sinon.match('urls=1')),
       );
     });
 
@@ -691,7 +699,9 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName=Test'))
+          .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
     });
 
@@ -719,7 +729,9 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(4);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Queued Reddit analysis request to Mystique for Test with 4 URLs'),
+        sinon.match(/event=mystique_dispatch/)
+          .and(sinon.match('companyName=Test'))
+          .and(sinon.match('urls=4')),
       );
     });
 

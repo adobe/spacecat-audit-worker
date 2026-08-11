@@ -1126,7 +1126,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableSemrushOverride,
       );
     } catch (err) {
-      olog.failure('drs_poll_schedule', 'Failed to schedule DRS status poll', {
+      // Best-effort: warn, not failure. The run already submitted the DRS jobs and posted
+      // its notification, so a transient SQS/Configuration hiccup scheduling the follow-up
+      // poll is non-fatal and must not page. outcome=failure is retained (warn defaults to
+      // it) so Splunk still counts it, without the error/paging severity.
+      olog.warn('drs_poll_schedule', 'Failed to schedule DRS status poll', {
         peer: PEER.SQS, direction: 'outbound', ...errorField(err),
       });
     }
