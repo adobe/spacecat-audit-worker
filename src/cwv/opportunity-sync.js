@@ -265,6 +265,14 @@ export async function syncOpportunitiesAndSuggestions(context) {
     const fixEntities = await opportunity.getFixEntities();
     (fixEntities || []).forEach((fixEntity) => {
       if (ACTIVE_FIX_STATUSES.has(fixEntity.getStatus())) {
+        // Contract (cross-repo): the CWV fix→suggestion link is the denormalized
+        // changeDetails.suggestionId that spacecat-autofix-worker owns — its
+        // cwv/handler.js writes changeDetails = { suggestionId, issueId, issueTitle }
+        // and code-repo-manager.js reads it back. We deliberately key on that
+        // rather than the canonical FixEntitySuggestion join for an O(1) reverse
+        // lookup. If a future CWV fix writer ever lands without suggestionId, this
+        // guard misses it — but the 24h staleness window + fail-safe (fixFetchFailed)
+        // bound the blast radius, so a genuinely-live deploy is never reclaimed here.
         const suggestionId = fixEntity.getChangeDetails?.()?.suggestionId;
         if (suggestionId) {
           activeFixSuggestionIds.add(suggestionId);
