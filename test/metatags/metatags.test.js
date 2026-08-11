@@ -1454,6 +1454,32 @@ describe('Meta Tags', () => {
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
+      it('resolves absolute endpoints against the origin for a sub-path site — no /omes/omes (SITES-49656)', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        dataAccessStub.Site.findById = sinon.stub().resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({}), // no useHostnameOnly set — defaults to hostname-only
+        });
+        const auditDataSubpath = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'https://oklahoma.gov/omes',
+            detectedTags: {
+              '/omes/divisions/finance.html': {
+                title: { issue: 'Missing Title', seoImpact: 'High' },
+              },
+            },
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataSubpath, context);
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('https://oklahoma.gov/omes/divisions/finance.html');
+      });
+
       it('should handle case when config.useHostnameOnly is undefined', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         dataAccessStub.Site.findById = sinon.stub().resolves({
@@ -1473,8 +1499,8 @@ describe('Meta Tags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since useHostnameOnly is undefined
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        // Defaults to hostname-only when useHostnameOnly is undefined (endpoint is absolute)
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/page1');
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
@@ -1494,8 +1520,8 @@ describe('Meta Tags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since getSite returns undefined
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        // Defaults to hostname-only when getSite returns undefined
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/page1');
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
@@ -1515,8 +1541,8 @@ describe('Meta Tags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since getSite returns null
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        // Defaults to hostname-only when getSite returns null
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/page1');
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
@@ -1538,8 +1564,8 @@ describe('Meta Tags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since error caused useHostnameOnly to stay false
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        // Defaults to hostname-only when the site lookup errors
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/page1');
       });
     });
 

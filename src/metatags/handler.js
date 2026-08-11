@@ -52,11 +52,15 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
-  let useHostnameOnly = false;
+  // Default to hostname-only: the endpoint is the page's absolute pathname, so it must
+  // be appended to the origin. Appending to a base that already carries a path (a
+  // sub-path site, e.g. https://oklahoma.gov/omes) duplicated it (/omes/omes/...).
+  // For root-domain sites the base has no path, so this is a no-op.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const site = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
@@ -347,12 +351,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     },
   );
 
-  // Get useHostnameOnly setting
-  let useHostnameOnly = false;
+  // Get useHostnameOnly setting. Defaults to true so an absolute endpoint is appended
+  // to the origin, not to a base URL that already carries a path (sub-path sites would
+  // otherwise get a duplicated /omes/omes/... URL). No-op for root-domain sites.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const siteObj = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
