@@ -138,6 +138,20 @@ describe('offsite-refresh', () => {
       );
     });
 
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      const dataAccess = {
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
+      };
+
+      await expect(resolveEvergreenOffsiteOpportunity({
+        dataAccess, siteId: 'site-1', auditType: 'not-a-real-audit', log,
+      })).to.be.rejectedWith('DB down');
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/event=opportunity_resolve/).and(sinon.match(/audit=unknown/)),
+      );
+    });
+
     it('returns the single matching opportunity without touching it', async () => {
       const only = {
         getType: () => 'cited-analysis',

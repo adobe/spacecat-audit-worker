@@ -85,8 +85,10 @@ export async function persistOffsiteOpportunity(
   const mappedOpportunity = createOpportunityData(options);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
+  // auditType is guaranteed to be in OFFSITE_AUDIT_TYPES (and therefore mapped) by the
+  // guard above, so the slug is always defined here — no fallback needed.
   const olog = createOffsiteLogger(log, {
-    audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId: auditData.siteId, auditId: auditData.id,
+    audit: AUDIT_SLUG_BY_TYPE[auditType], siteId: auditData.siteId, auditId: auditData.id,
   });
 
   const hasGoogleConnection = await checkGoogleConnection(auditUrl, context);
