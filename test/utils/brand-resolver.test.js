@@ -472,6 +472,8 @@ describe('brand-resolver (PostgREST)', () => {
       mockOpportunity = {
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
       };
     });
 

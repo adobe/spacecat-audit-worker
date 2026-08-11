@@ -304,6 +304,11 @@ const productTestData = {
       projectedTrafficLost: 150,
       projectedTrafficValue: 75,
     },
+    // SITES-49175 — convertToOpportunity now stamps site scope on every
+    // new opportunity write so V1 audit-worker rows align with V2
+    // Mystique projector shape (both write to the same Postgres table).
+    scopeType: 'site',
+    scopeId: 'site-id',
   },
 };
 

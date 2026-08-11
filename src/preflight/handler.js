@@ -18,7 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
-  getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
+  getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults, formatStructuredAuditLog,
 } from './utils.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 import { PreflightError } from './error-constants.js';
@@ -266,120 +266,150 @@ export const preflightAudit = async (context) => {
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
-      previewUrls.forEach((url) => {
-        const pageResult = audits.get(url);
-        if (bodySizeEnabled) {
-          pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
-        }
-        if (loremIpsumEnabled) {
-          pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
-        }
-        if (h1CountEnabled) {
-          pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
-        }
-      });
+      let domStatus = 'ok';
+      let domErrorMessage;
 
-      scrapedObjects.forEach(({ data }) => {
-        const { finalUrl, scrapeResult: { rawBody } } = data;
-        const pageResult = audits.get(stripTrailingSlash(finalUrl));
-        const $ = cheerioLoad(rawBody);
-
-        const auditsByName = Object.fromEntries(
-          pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
-        );
-
-        const textContent = $('body').text().replace(/\n/g, '').trim();
-
-        if (bodySizeEnabled) {
-          if (textContent.length > 0 && textContent.length <= 100) {
-            auditsByName[AUDIT_BODY_SIZE].opportunities.push({
-              check: 'content-length',
-              issue: 'Body content length is below 100 characters',
-              seoImpact: 'Moderate',
-              seoRecommendation: 'Add more meaningful content to the page',
-              textContent,
-              ...toElementTargets(getDomElementSelector($('body').get(0))),
-            });
+      try {
+        previewUrls.forEach((url) => {
+          const pageResult = audits.get(url);
+          if (bodySizeEnabled) {
+            pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
           }
-        }
+          if (loremIpsumEnabled) {
+            pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
+          }
+          if (h1CountEnabled) {
+            pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
+          }
+        });
 
-        if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
-            .toArray()
-            .filter((el) => /lorem ipsum/i.test($(el).text()));
-          // Keep only innermost matches — discard ancestors whose text matched
-          // solely because a descendant contains "Lorem ipsum".
-          const loremElements = allLoremElements.filter(
-            (el) => !allLoremElements.some((other) => {
-              if (other === el) {
-                return false;
-              }
-              let cursor = other.parent;
-              while (cursor) {
-                if (cursor === el) {
-                  return true;
-                }
-                cursor = cursor.parent;
-              }
-              return false;
-            }),
+        scrapedObjects.forEach(({ data }) => {
+          const { finalUrl, scrapeResult: { rawBody } } = data;
+          const pageResult = audits.get(stripTrailingSlash(finalUrl));
+          const $ = cheerioLoad(rawBody);
+
+          const auditsByName = Object.fromEntries(
+            pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
           );
-          // Pair each element with its own text so multiple matches don't all show the first
-          // element's text once the MFE expands them into separate instances.
-          const loremPairs = loremElements
-            .map((el) => ({
-              selector: getDomElementSelector(el),
-              textContent: $(el).text().trim(),
-            }))
-            .filter((pair) => pair.selector);
-          auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
-            check: 'placeholder-text',
-            issue: 'Found Lorem ipsum placeholder text in the page content',
-            seoImpact: 'High',
-            seoRecommendation: 'Replace placeholder text with meaningful content',
-            ...toElementTargets(loremPairs),
-          });
-        }
 
-        if (h1CountEnabled) {
-          const headingCount = $('h1').length;
-          if (headingCount !== 1) {
-            const h1Elements = $('h1').toArray();
+          const textContent = $('body').text().replace(/\n/g, '').trim();
 
-            // Pair each H1 with its own text. When there are zero H1s, there is no
-            // offending element to point at, so no element is attached.
-            const h1Pairs = h1Elements
+          if (bodySizeEnabled) {
+            if (textContent.length > 0 && textContent.length <= 100) {
+              auditsByName[AUDIT_BODY_SIZE].opportunities.push({
+                check: 'content-length',
+                issue: 'Body content length is below 100 characters',
+                seoImpact: 'Moderate',
+                seoRecommendation: 'Add more meaningful content to the page',
+                ...toElementTargets({
+                  selector: getDomElementSelector($('body').get(0)),
+                  textContent,
+                }),
+              });
+            }
+          }
+
+          if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
+            const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+              .toArray()
+              .filter((el) => /lorem ipsum/i.test($(el).text()));
+            // Keep only innermost matches — discard ancestors whose text matched
+            // solely because a descendant contains "Lorem ipsum".
+            const loremElements = allLoremElements.filter(
+              (el) => !allLoremElements.some((other) => {
+                if (other === el) {
+                  return false;
+                }
+                let cursor = other.parent;
+                while (cursor) {
+                  if (cursor === el) {
+                    return true;
+                  }
+                  cursor = cursor.parent;
+                }
+                return false;
+              }),
+            );
+            // Pair each element with its own text so multiple matches don't all show the first
+            // element's text once the MFE expands them into separate instances.
+            const loremPairs = loremElements
               .map((el) => ({
                 selector: getDomElementSelector(el),
                 textContent: $(el).text().trim(),
               }))
               .filter((pair) => pair.selector);
+            auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
+              check: 'placeholder-text',
+              issue: 'Found Lorem ipsum placeholder text in the page content',
+              seoImpact: 'High',
+              seoRecommendation: 'Replace placeholder text with meaningful content',
+              ...toElementTargets(loremPairs),
+            });
+          }
 
-            auditsByName[AUDIT_H1_COUNT].opportunities.push({
-              check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-              issue:
+          if (h1CountEnabled) {
+            const headingCount = $('h1').length;
+            if (headingCount !== 1) {
+              const h1Elements = $('h1').toArray();
+
+              // Pair each H1 with its own text. When there are zero H1s, there is no
+              // offending element to point at, so no element is attached.
+              const h1Pairs = h1Elements
+                .map((el) => ({
+                  selector: getDomElementSelector(el),
+                  textContent: $(el).text().trim(),
+                }))
+                .filter((pair) => pair.selector);
+
+              auditsByName[AUDIT_H1_COUNT].opportunities.push({
+                check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
+                issue:
                 headingCount > 1
                   ? `Found ${headingCount} H1 tags`
                   : 'No H1 tag found on the page',
-              seoImpact: 'High',
-              seoRecommendation:
+                seoImpact: 'High',
+                seoRecommendation:
                 'Use exactly one H1 tag per page for better SEO structure',
-              ...toElementTargets(h1Pairs),
-            });
+                ...toElementTargets(h1Pairs),
+              });
+            }
           }
-        }
-      });
-      const domEndTime = Date.now();
-      const domEndTimestamp = new Date().toISOString();
-      const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
+        });
+      } catch (error) {
+        domStatus = 'fail';
+        domErrorMessage = error.message;
+        log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit failed: ${error.message}`);
+        throw error;
+      } finally {
+        const domEndTime = Date.now();
+        const domEndTimestamp = new Date().toISOString();
+        const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
+        const domDurationMs = domEndTime - domStartTime;
 
-      timeExecutionBreakdown.push({
-        name: 'dom',
-        duration: `${domElapsed} seconds`,
-        startTime: domStartTimestamp,
-        endTime: domEndTimestamp,
-      });
+        // One structured line per enabled DOM-based check — they share a single pass over the
+        // scraped HTML (and therefore a single duration/status), so a failure here can't be
+        // attributed to just one of the three; every enabled check gets the same status/error.
+        [
+          [AUDIT_BODY_SIZE, bodySizeEnabled],
+          [AUDIT_LOREM_IPSUM, loremIpsumEnabled],
+          [AUDIT_H1_COUNT, h1CountEnabled],
+        ].forEach(([auditName, enabled]) => {
+          if (!enabled) {
+            return;
+          }
+          const structured = formatStructuredAuditLog({
+            audit: auditName, status: domStatus, durationMs: domDurationMs, error: domErrorMessage,
+          });
+          log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit (${auditName}) completed in ${domElapsed} seconds.${structured}`);
+        });
+
+        timeExecutionBreakdown.push({
+          name: 'dom',
+          duration: `${domElapsed} seconds`,
+          startTime: domStartTimestamp,
+          endTime: domEndTimestamp,
+        });
+      }
 
       await saveIntermediateResults(context, auditsResult, 'DOM-based audit');
     }

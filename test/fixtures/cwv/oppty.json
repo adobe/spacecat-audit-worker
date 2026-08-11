@@ -26,5 +26,7 @@
       "RUM",
       "Site"
     ]
-  }
+  },
+  "scopeType": "site",
+  "scopeId": "site-id"
 }

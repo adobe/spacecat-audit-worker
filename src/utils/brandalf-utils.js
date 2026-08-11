@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { readOrgFeatureFlag } from './feature-flags-utils.js';
+
 const BRANDALF_FLAG_NAME = 'brandalf';
 const FEATURE_FLAG_PRODUCT = 'LLMO';
 
@@ -18,41 +20,19 @@ const FEATURE_FLAG_PRODUCT = 'LLMO';
  * reading the `feature_flags` table directly via the mysticat PostgREST client
  * (available at `context.dataAccess.services.postgrestClient`).
  *
+ * Resolves the organization's own value, ignoring any brand's override of it —
+ * see `readOrgFeatureFlag` (`feature-flags-utils.js`) for the shared query/
+ * fail-closed shape every `feature_flags` reader in this worker uses.
+ *
  * @param {string} organizationId - SpaceCat org UUID
  * @param {object} postgrestClient - mysticat PostgREST client (dataAccess.services.postgrestClient)
  * @param {object} log - Logger
  * @returns {Promise<boolean|null>} true/false when the flag state is known, null when unknown
  */
 export async function isBrandalfEnabled(organizationId, postgrestClient, log) {
-  if (!organizationId) {
-    return false;
-  }
-  if (!postgrestClient?.from) {
-    log?.warn('PostgREST client not available; cannot check brandalf flag');
-    return null;
-  }
-
-  try {
-    const { data, error } = await postgrestClient
-      .from('feature_flags')
-      .select('flag_value')
-      .eq('organization_id', organizationId)
-      .eq('product', FEATURE_FLAG_PRODUCT)
-      .eq('flag_name', BRANDALF_FLAG_NAME)
-      .maybeSingle();
-
-    if (error) {
-      log?.warn(`Failed to read brandalf flag for org ${organizationId}: ${error.message}`);
-      return null;
-    }
-
-    // Absent row => flag not set => disabled, matching the previous behaviour
-    // where a missing flag resolved to `false`.
-    return data?.flag_value === true;
-  } catch (error) {
-    log?.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
-    return null;
-  }
+  return readOrgFeatureFlag(postgrestClient, {
+    organizationId, product: FEATURE_FLAG_PRODUCT, flagName: BRANDALF_FLAG_NAME, log,
+  });
 }
 
 /**

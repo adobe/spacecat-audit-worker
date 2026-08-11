@@ -48,6 +48,11 @@ describe('Guidance Accessibility Handler', () => {
       },
       setUpdatedBy: sinon.spy(),
       setAuditId: sinon.spy(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.spy(),
+      setScopeId: sinon.spy(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub().resolves(),
     };
 

@@ -42,14 +42,17 @@ describe('brandalf-utils', () => {
   });
 
   /**
-   * Builds a chainable PostgREST client stub whose terminal `maybeSingle()`
-   * resolves to `{ data, error }`.
+   * Builds a chainable PostgREST client stub. The builder is awaited directly
+   * rather than through a terminal method, so the query object is a thenable
+   * resolving to `{ data, error }` — or rejecting with `rejectsWith`.
    */
-  function stubPostgrestClient({ data = null, error = null } = {}) {
+  function stubPostgrestClient({ data = null, error = null, rejectsWith = null } = {}) {
     const query = {
       select: sandbox.stub().returnsThis(),
       eq: sandbox.stub().returnsThis(),
-      maybeSingle: sandbox.stub().resolves({ data, error }),
+      then: (resolve, reject) => (
+        rejectsWith ? reject(rejectsWith) : resolve({ data, error })
+      ),
     };
     const from = sandbox.stub().returns(query);
     return { client: { from }, query, from };
@@ -57,20 +60,24 @@ describe('brandalf-utils', () => {
 
   describe('isBrandalfEnabled', () => {
     it('returns true when the brandalf flag is enabled', async () => {
-      const { client, from, query } = stubPostgrestClient({ data: { flag_value: true } });
+      const { client, from, query } = stubPostgrestClient({
+        data: [{ flag_value: true, brand_id: null }],
+      });
 
       const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(true);
       expect(from).to.have.been.calledWith('feature_flags');
-      expect(query.select).to.have.been.calledWith('flag_value');
+      // Wildcard projection is load-bearing — see `isOrgRow` for why.
+      expect(query.select).to.have.been.calledWith('*');
+      expect(query.eq).to.not.have.been.calledWithMatch('brand_id');
       expect(query.eq).to.have.been.calledWith('organization_id', 'org-123');
       expect(query.eq).to.have.been.calledWith('product', 'LLMO');
       expect(query.eq).to.have.been.calledWith('flag_name', 'brandalf');
     });
 
     it('returns false without querying when organizationId is missing', async () => {
-      const { client, from } = stubPostgrestClient({ data: { flag_value: true } });
+      const { client, from } = stubPostgrestClient({ data: [{ flag_value: true }] });
 
       const result = await isBrandalfEnabled(null, client, log);
 
@@ -94,6 +101,14 @@ describe('brandalf-utils', () => {
     });
 
     it('returns false when no flag row exists', async () => {
+      const { client } = stubPostgrestClient({ data: [] });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(false);
+    });
+
+    it('returns false when the query yields no rows at all', async () => {
       const { client } = stubPostgrestClient({ data: null });
 
       const result = await isBrandalfEnabled('org-123', client, log);
@@ -102,11 +117,57 @@ describe('brandalf-utils', () => {
     });
 
     it('returns false when the flag row is explicitly disabled', async () => {
-      const { client } = stubPostgrestClient({ data: { flag_value: false } });
+      const { client } = stubPostgrestClient({ data: [{ flag_value: false }] });
 
       const result = await isBrandalfEnabled('org-123', client, log);
 
       expect(result).to.equal(false);
+    });
+
+    it("resolves the organization's own row, not a brand's override of it", async () => {
+      const { client } = stubPostgrestClient({
+        data: [
+          { flag_value: false, brand_id: 'brand-a' },
+          { flag_value: true, brand_id: null },
+          { flag_value: false, brand_id: 'brand-b' },
+        ],
+      });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(true);
+      expect(log.warn).to.not.have.been.called;
+    });
+
+    it('ignores a brand override when the organization has no row of its own', async () => {
+      const { client } = stubPostgrestClient({
+        data: [{ flag_value: true, brand_id: 'brand-a' }],
+      });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(false);
+    });
+
+    it('stays disabled when the org row is off, even with a true brand override', async () => {
+      const { client } = stubPostgrestClient({
+        data: [
+          { flag_value: true, brand_id: 'brand-a' },
+          { flag_value: false, brand_id: null },
+        ],
+      });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(false);
+    });
+
+    it('treats a pre-migration row, which carries no brand_id, as the organization row', async () => {
+      const { client } = stubPostgrestClient({ data: [{ flag_value: true }] });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(true);
     });
 
     it('returns null and warns when the query returns an error', async () => {
@@ -121,12 +182,7 @@ describe('brandalf-utils', () => {
     });
 
     it('returns null and warns when the query throws', async () => {
-      const query = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        maybeSingle: sandbox.stub().rejects(new Error('connection reset')),
-      };
-      const client = { from: sandbox.stub().returns(query) };
+      const { client } = stubPostgrestClient({ rejectsWith: new Error('connection reset') });
 
       const result = await isBrandalfEnabled('org-123', client, log);
 

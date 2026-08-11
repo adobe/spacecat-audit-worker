@@ -2162,6 +2162,11 @@ describe('Sitemap Audit', () => {
         getType: () => 'sitemap',
         getId: () => 'oppty-id',
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),
         addSuggestions: sinon.stub().resolves({ createdItems: [] }),
@@ -2221,6 +2226,8 @@ describe('Sitemap Audit', () => {
           data: {
             dataSources: [DATA_SOURCES.SITE],
           },
+          scopeType: 'site',
+          scopeId: 'site-id',
         },
       );
     });
