@@ -1,3 +1,10 @@
+## [1.518.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.0...v1.518.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **cwv:** reclaim stale stuck IN_PROGRESS suggestions on re-audit ([#2866](https://github.com/adobe/spacecat-audit-worker/issues/2866)) ([3e33578](https://github.com/adobe/spacecat-audit-worker/commit/3e33578674b9fd24a3a44ce13b9e327019498cd9)), closes [#686](https://github.com/adobe/spacecat-audit-worker/issues/686)
+
 # [1.518.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.3...v1.518.0) (2026-08-11)
 
 
