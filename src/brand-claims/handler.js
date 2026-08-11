@@ -45,7 +45,10 @@ async function getBrandForSite(postgrestClient, organizationId, siteId, log) {
     .eq('organization_id', organizationId)
     .eq('status', 'active')
     .eq('site_id', siteId)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    // Only the first row is used (deterministic tiebreak below); cap the result set so a
+    // data-integrity violation can't return an unbounded list.
+    .limit(2);
 
   if (error) {
     throw new Error(`Failed to resolve brand for site: ${error.message}`);
@@ -140,7 +143,7 @@ export default async function brandClaimsHandler(message, context) {
   const { siteId } = message;
 
   if (!hasText(siteId)) {
-    log.error('brand-claims: message missing siteId');
+    log.warn('brand-claims: message missing siteId');
     return ok();
   }
 

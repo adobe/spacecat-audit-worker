@@ -138,7 +138,7 @@ describe('Brand Claims audit handler', function () {
     it('returns ok when siteId is missing', async () => {
       const res = await brandClaimsHandler({ type: 'brand-claims' }, buildContext());
       expect(res.status).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch('missing siteId');
+      expect(log.warn).to.have.been.calledWithMatch('missing siteId');
     });
 
     it('throws (SQS retry) when the queue URL is not configured', async () => {
