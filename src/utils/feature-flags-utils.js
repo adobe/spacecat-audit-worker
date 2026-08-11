@@ -15,9 +15,18 @@
  * PostgREST client (`context.dataAccess.services.postgrestClient`). A generic
  * `feature_flags` schema fact, not tied to any one flag/reader — every LLMO
  * feature-flag reader (`brandalf-utils.js`'s `isBrandalfEnabled`,
- * `semrush-entitlement.js`'s `isSerenityEnabledForOrg`, and whichever comes next)
+ * `semrush-entitlement.js`'s `isSerenityEnabledForBrand`, and whichever comes next)
  * shares this module instead of re-deriving its own copy (PR review, second
  * consumer moment).
+ *
+ * Two resolution shapes are exported because api-service's own `serenity-active.js`
+ * documents that its two are NOT interchangeable: `isSerenityActiveForOrg` ("use only
+ * where there is no brand to resolve against") vs `isSerenityActiveForBrand`
+ * ("everything that acts on an existing brand must use this instead"). A reader
+ * mirroring an org-only predicate for a check that resolves per-brand over-grants or
+ * under-grants the moment any brand-scoped override row exists — see ADR 002,
+ * Decision 8f, for why `readOrgFeatureFlag` is safe for `isBrandalfEnabled` (no known
+ * per-brand override mechanism for that flag) but was NOT safe for the serenity check.
  */
 
 /**
@@ -37,17 +46,9 @@
 export const isOrgRow = (row) => (row.brand_id ?? null) === null;
 
 /**
- * Reads one org-wide feature flag from the `feature_flags` table, ignoring any
- * brand-scoped override row for the same organization/product/flag_name (see
- * `isOrgRow`). No caller today writes a brand-scoped override for any flag this
- * reads (confirmed against spacecat-api-service's own `feature-flags-storage.js`,
- * which never combines `brand_id` with `feature_flags`), so this is defensive
- * against a schema state that can exist, not a documented revoke mechanism.
- *
- * Fails closed: a missing organization id resolves to `false` (nothing to look
- * up), an unavailable client/query error/thrown exception resolves to `null`
- * (the check itself could not complete — distinct from a confirmed-absent row,
- * which is `false`).
+ * Fetches every row of one flag for an organization — its own row and any
+ * brand-scoped overrides — the single place this query is built so both resolution
+ * shapes below stay byte-for-byte identical.
  *
  * @param {object} postgrestClient - mysticat PostgREST client (dataAccess.services.postgrestClient)
  * @param {object} params
@@ -55,14 +56,11 @@ export const isOrgRow = (row) => (row.brand_id ?? null) === null;
  * @param {string} params.product - `feature_flags.product` (e.g. `'LLMO'`)
  * @param {string} params.flagName - `feature_flags.flag_name` (e.g. `'brandalf'`, `'serenity'`)
  * @param {object} [params.log] - Logger
- * @returns {Promise<boolean|null>} true/false when the flag state is known, null when unknown
+ * @returns {Promise<object[]|null>} Raw rows, or `null` when the read could not complete
  */
-export async function readOrgFeatureFlag(postgrestClient, {
+async function fetchFeatureFlagRows(postgrestClient, {
   organizationId, product, flagName, log,
 } = {}) {
-  if (!organizationId) {
-    return false;
-  }
   if (!postgrestClient?.from) {
     log?.warn(`PostgREST client not available; cannot check ${flagName} flag`);
     return null;
@@ -82,11 +80,91 @@ export async function readOrgFeatureFlag(postgrestClient, {
       return null;
     }
 
-    // Absent row => flag not set => disabled, matching the previous behaviour
-    // where a missing flag resolved to `false`.
-    return (data ?? []).find(isOrgRow)?.flag_value === true;
+    return data ?? [];
   } catch (error) {
     log?.warn(`Error checking ${flagName} flag for org ${organizationId}: ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Reads one org-wide feature flag from the `feature_flags` table, ignoring any
+ * brand-scoped override row for the same organization/product/flag_name (see
+ * `isOrgRow`). Correct ONLY for a flag with no per-brand resolution mechanism — see
+ * the file-level doc comment; a flag whose brand-scoped row overrides the org's
+ * (like `serenity`) must use `resolveFeatureFlagForBrand` instead.
+ *
+ * Fails closed: a missing organization id resolves to `false` (nothing to look
+ * up), an unavailable client/query error/thrown exception resolves to `null`
+ * (the check itself could not complete — distinct from a confirmed-absent row,
+ * which is `false`).
+ *
+ * @param {object} postgrestClient - mysticat PostgREST client (dataAccess.services.postgrestClient)
+ * @param {object} params
+ * @param {string} params.organizationId - SpaceCat org UUID
+ * @param {string} params.product - `feature_flags.product` (e.g. `'LLMO'`)
+ * @param {string} params.flagName - `feature_flags.flag_name` (e.g. `'brandalf'`)
+ * @param {object} [params.log] - Logger
+ * @returns {Promise<boolean|null>} true/false when the flag state is known, null when unknown
+ */
+export async function readOrgFeatureFlag(postgrestClient, {
+  organizationId, product, flagName, log,
+} = {}) {
+  if (!organizationId) {
+    return false;
+  }
+  const rows = await fetchFeatureFlagRows(postgrestClient, {
+    organizationId, product, flagName, log,
+  });
+  if (rows === null) {
+    return null;
+  }
+
+  // Absent row => flag not set => disabled, matching the previous behaviour
+  // where a missing flag resolved to `false`.
+  return rows.find(isOrgRow)?.flag_value === true;
+}
+
+/**
+ * Resolves which row governs a flag for one brand — the brand's own override when
+ * it has one, otherwise the organization's row — mirroring api-service's
+ * `resolveFlagRowForBrand` (`feature-flags-storage.js`) exactly: the brand row is an
+ * override rather than a second condition ANDed with the organization's, so a brand
+ * can be on while its organization is off (a migration wave before the last one), and
+ * a brand row of `false` can hold one brand back from an organization that is on.
+ *
+ * Before the brand-scope migration no row carries a `brand_id`, so this always
+ * resolves to the organization's row for every brand — i.e. the same answer
+ * `readOrgFeatureFlag` gives today, under either schema.
+ *
+ * Fails closed: a missing organization id or brand id resolves to `false`, an
+ * unavailable client/query error/thrown exception resolves to `null` (the check
+ * itself could not complete — distinct from a confirmed-absent row, which is
+ * `false`).
+ *
+ * @param {object} postgrestClient - mysticat PostgREST client (dataAccess.services.postgrestClient)
+ * @param {object} params
+ * @param {string} params.organizationId - SpaceCat org UUID
+ * @param {string} params.brandId - SpaceCat brand UUID to resolve the override for
+ * @param {string} params.product - `feature_flags.product` (e.g. `'LLMO'`)
+ * @param {string} params.flagName - `feature_flags.flag_name` (e.g. `'serenity'`)
+ * @param {object} [params.log] - Logger
+ * @returns {Promise<boolean|null>} true/false when the flag state is known, null when unknown
+ */
+export async function resolveFeatureFlagForBrand(postgrestClient, {
+  organizationId, brandId, product, flagName, log,
+} = {}) {
+  if (!organizationId || !brandId) {
+    return false;
+  }
+  const rows = await fetchFeatureFlagRows(postgrestClient, {
+    organizationId, product, flagName, log,
+  });
+  if (rows === null) {
+    return null;
+  }
+
+  const brandRow = rows.find((row) => (row.brand_id ?? null) === brandId);
+  const row = brandRow ?? rows.find(isOrgRow) ?? null;
+  return row?.flag_value === true;
 }

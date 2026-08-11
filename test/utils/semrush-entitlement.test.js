@@ -280,7 +280,7 @@ describe('semrush-entitlement', () => {
     expect(log.warn).to.have.been.calledWithMatch(/Error checking serenity flag/);
   });
 
-  it("resolves the organization's own row, ignoring a brand-scoped override, when two rows match", async () => {
+  it("ignores a different brand's override and resolves the organization's own row, when two rows match", async () => {
     const result = await run({
       flag: {
         data: [
@@ -296,7 +296,7 @@ describe('semrush-entitlement', () => {
     });
   });
 
-  it('is not entitled (flag-disabled) when only a brand-scoped override row matches, no org row', async () => {
+  it("is not entitled (flag-disabled) when only a different brand's override row matches, no org row", async () => {
     const result = await run({
       flag: { data: [{ flag_value: true, brand_id: 'some-other-brand' }] },
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
@@ -305,12 +305,42 @@ describe('semrush-entitlement', () => {
     expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
   });
 
-  it('is not entitled (flag-disabled) when the org row is off, even with a true brand override', async () => {
+  it("is not entitled (flag-disabled) when the org row is off, even with a different brand's true override", async () => {
     const result = await run({
       flag: {
         data: [
           { flag_value: true, brand_id: 'some-other-brand' },
           { flag_value: false, brand_id: null },
+        ],
+      },
+      dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
+    });
+
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+  });
+
+  it("is entitled when THIS brand's own override is true, even though the org row is false", async () => {
+    const result = await run({
+      flag: {
+        data: [
+          { flag_value: false, brand_id: null },
+          { flag_value: true, brand_id: BRAND_ID },
+        ],
+      },
+      dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
+    });
+
+    expect(result).to.deep.equal({
+      entitled: true, resolved: true, reason: 'entitled', mode: 'subworkspace',
+    });
+  });
+
+  it("is not entitled (flag-disabled) when THIS brand's own override is false, even though the org row is true", async () => {
+    const result = await run({
+      flag: {
+        data: [
+          { flag_value: true, brand_id: null },
+          { flag_value: false, brand_id: BRAND_ID },
         ],
       },
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),

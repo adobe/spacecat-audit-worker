@@ -14,13 +14,16 @@
  * Semrush/Serenity entitlement check for the offsite-brand-presence Semrush loader.
  *
  * Mirrors the same "flag AND workspace" gate spacecat-api-service uses to decide
- * whether to serve ANY Serenity route for an org (see `serenity-active.js` +
+ * whether to serve the Serenity experience for one BRAND (see `serenity-active.js` +
  * `workspace-resolver.js`'s `resolveBrandWorkspace` there):
- * - the `serenity` feature flag must be on for the org — read the same way
- *   `isBrandalfEnabled` (`brandalf-utils.js`) reads its flag, directly via
- *   `context.dataAccess.services.postgrestClient` (no shared-package helper exists
- *   for this; api-service's own `readFeatureFlag` is private application code, not
- *   published), AND
+ * - the `serenity` feature flag must resolve `true` for the brand — a brand-scoped
+ *   override row wins over the organization's own row when one exists, exactly like
+ *   api-service's `isSerenityActiveForBrand` (NOT its org-only `isSerenityActiveForOrg`,
+ *   which that module's own doc reserves for brand-creation-time checks with no brand
+ *   to resolve against yet — this check always has one). Read directly via
+ *   `context.dataAccess.services.postgrestClient` (no shared-package helper exists for
+ *   this; api-service's own `readFeatureFlagScopes`/`resolveFlagRowForBrand` are private
+ *   application code, not published) — see ADR 002, Decision 8f, AND
  * - a Semrush workspace must be resolvable for the brand — via the SAME shared
  *   `@adobe/spacecat-shared-data-access` model layer api-service itself uses
  *   (`context.dataAccess.Organization`/`.Brand`, already wired into this worker's
@@ -38,7 +41,7 @@
  * from a confirmed non-entitlement so the caller can log/diagnose accordingly.
  */
 
-import { readOrgFeatureFlag } from './feature-flags-utils.js';
+import { resolveFeatureFlagForBrand } from './feature-flags-utils.js';
 
 const LOG_PREFIX = '[semrush-entitlement]';
 
@@ -100,21 +103,23 @@ export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
 export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
 
 /**
- * Checks the org-wide `serenity` feature flag — the same rollout switch
- * spacecat-api-service reads before serving any Serenity/Semrush route for an org.
- * Delegates to the shared `readOrgFeatureFlag` (`feature-flags-utils.js`), which reads
- * the organization's own row and ignores any brand-scoped override for the same
- * `organization_id`/`product`/`flag_name` — see that module for why a narrower,
- * single-row-assuming query is unsafe against this table.
+ * Checks the `serenity` feature flag for one brand — the same per-brand rollout
+ * switch spacecat-api-service's `isSerenityActiveForBrand` reads before serving the
+ * Serenity/Semrush experience for that brand. Delegates to the shared
+ * `resolveFeatureFlagForBrand` (`feature-flags-utils.js`), which resolves a
+ * brand-scoped override row over the organization's own row for the same
+ * `organization_id`/`product`/`flag_name` when one exists — see that module for why
+ * reading only the organization's row is unsafe for a check that resolves per brand.
  *
  * @param {string} organizationId - SpaceCat org UUID
+ * @param {string} brandId - SpaceCat brand UUID to resolve the override for
  * @param {object} postgrestClient - mysticat PostgREST client (already validated by caller)
  * @param {object} log - Logger
  * @returns {Promise<boolean|null>} true/false when known, null when the query itself failed
  */
-async function isSerenityEnabledForOrg(organizationId, postgrestClient, log) {
-  return readOrgFeatureFlag(postgrestClient, {
-    organizationId, product: SERENITY_FLAG_PRODUCT, flagName: SERENITY_FLAG_NAME, log,
+async function isSerenityEnabledForBrand(organizationId, brandId, postgrestClient, log) {
+  return resolveFeatureFlagForBrand(postgrestClient, {
+    organizationId, brandId, product: SERENITY_FLAG_PRODUCT, flagName: SERENITY_FLAG_NAME, log,
   });
 }
 
@@ -211,7 +216,7 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
 
     const [flagEnabled, workspace] = await Promise.race([
       Promise.all([
-        isSerenityEnabledForOrg(orgId, postgrestClient, log),
+        isSerenityEnabledForBrand(orgId, brandId, postgrestClient, log),
         resolveSemrushWorkspace(dataAccess, { orgId, brandId }),
       ]),
       timeoutPromise,

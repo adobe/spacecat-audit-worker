@@ -79,10 +79,12 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    calling the proxy for a non-entitled brand wastes a request on a paid, rate-limited
    product and reliably yields an error/empty response that just falls back anyway. The
    loader (`src/utils/semrush-entitlement.js`, `resolveSemrushEntitlement`) checks:
-   - the org-wide `serenity` feature flag (`feature_flags`, product `LLMO`) is `true` — read
-     directly via `postgrestClient`, the same mechanism `brandalf-utils.js`'s
-     `isBrandalfEnabled` already uses (no shared-package helper exists for this; api-service's
-     own `readFeatureFlag` is private, unpublished application code), **AND**
+   - the `serenity` feature flag (`feature_flags`, product `LLMO`) resolves `true` for the
+     BRAND (a brand-scoped override wins over the org row when one exists — corrected by
+     Decision 8f; this entry originally described an org-only read) — read directly via
+     `postgrestClient`, the same mechanism `brandalf-utils.js`'s `isBrandalfEnabled` uses
+     for its own, unrelated, org-only flag (no shared-package helper exists for this;
+     api-service's own equivalent is private, unpublished application code), **AND**
    - a Semrush workspace resolves for the brand — via the shared
      `@adobe/spacecat-shared-data-access` model layer (`dataAccess.Brand#getSemrushSubWorkspaceId()`,
      falling back to `dataAccess.Organization#getSemrushWorkspaceId()` — the flat org
@@ -163,19 +165,20 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    functions' JSDoc instead of enforced in code: a future caller resolving `orgId`/`brandId`
    from independent sources must guarantee the pairing itself.
 8e. **`isOrgRow` relocated to a neutral `feature-flags-utils.js`; reason literals promoted
-   to constants; brand-override "revoke" semantics confirmed moot (2nd round PR review).**
+   to constants; brand-override "revoke" semantics — CORRECTED by Decision 8f below, do
+   not rely on the "confirmed moot" claim in this entry (2nd round PR review).**
    `isOrgRow` moved out of `brandalf-utils.js` (which admitted in its own JSDoc that it was
    already a second consumer) into `src/utils/feature-flags-utils.js`, alongside a new
    shared `readOrgFeatureFlag(postgrestClient, { organizationId, product, flagName, log })`
    that both `isBrandalfEnabled` and `isSerenityEnabledForOrg` now delegate to — the
    previously copy-pasted wildcard-select/error-handling/`isOrgRow`-filter block lives in
-   exactly one place. Separately, `resolveSemrushEntitlement`'s internal `reason` values
-   (`entitled`/`flag-disabled`/`no-workspace`/`missing-input`/`no-client`/`check-failed`)
-   are now a frozen `SEMRUSH_ENTITLEMENT_REASONS` lookup instead of bare literals, matching
-   the treatment `SEMRUSH_NOT_ENTITLED_REASON`/`SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON`
-   already got (Decision 8b); consuming tests now assert against the constants too, not
-   copies of the string.
-   On the open question from Decision 8's "ignores brand-scoped override" gap: checked
+   exactly one place. This part stands. Separately, `resolveSemrushEntitlement`'s internal
+   `reason` values (`entitled`/`flag-disabled`/`no-workspace`/`missing-input`/`no-client`/
+   `check-failed`) are now a frozen `SEMRUSH_ENTITLEMENT_REASONS` lookup instead of bare
+   literals, matching the treatment `SEMRUSH_NOT_ENTITLED_REASON`/
+   `SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON` already got (Decision 8b); consuming tests now
+   assert against the constants too, not copies of the string. This part stands too.
+   ~~On the open question from Decision 8's "ignores brand-scoped override" gap: checked
    directly against `spacecat-api-service` rather than leaving it unconfirmed.
    `feature-flags-storage.js`'s `readFeatureFlag()` — which backs `isSerenityActiveForOrg`
    in `serenity-active.js`, the exact org-wide gate this module mirrors — queries only
@@ -184,11 +187,54 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    feature-flag overrides (grant or revoke direction) are not a feature that exists in
    production today, in either codebase — so `isOrgRow` reading only the org's own row and
    ignoring any override is correct under the current schema by construction, not an
-   unverified assumption. Regression tests pinning "org row `false` + brand-override row
-   `true` still resolves not-entitled" were added to both `isBrandalfEnabled` and
-   `isSerenityEnabledForOrg` to make this explicit rather than only covering the inverse
-   (Decision 8b's original multi-row fix tested override-wins-false, not override-cannot-
-   grant-true).
+   unverified assumption.~~ **This paragraph was true when written and false by the time it
+   was reviewed** — api-service shipped exactly this mechanism to its `main` in the
+   interim. See Decision 8f. The regression tests this entry describes adding (org row
+   `false` + brand-override row `true`) used a *different* brand's override id, not the
+   brand under test, so they did not actually exercise brand-overrides-org precedence in
+   either direction — see Decision 8f for the corrected tests.
+8f. **Corrected: `isSerenityEnabledForOrg` mirrored the wrong api-service gate — switched
+   to a brand-aware read matching `isSerenityActiveForBrand` (3rd round PR review).**
+   Decision 8e's claim that brand-scoped `feature_flags` overrides "are not a feature that
+   exists in production today" was independently re-verified against api-service's
+   `origin/main` for this entry and found to be **wrong at review time**, not fabricated —
+   the local api-service checkout used for Decision 8e's research was 24 commits stale;
+   `origin/main` had since shipped `feat(serenity): resolve the LLMO/serenity flag per
+   brand, so an org migrates in waves (#3024)`, adding exactly the mechanism Decision 8e
+   said didn't exist: `feature-flags-storage.js` now exports
+   `resolveFlagRowForBrand(scopes, brandId)` (`scopes.brandRows.get(brandId) ??
+   scopes.orgRow ?? null` — a brand override wins over the org row in both directions), and
+   `serenity-active.js` now exports `isSerenityActiveForBrand` alongside the org-only
+   `isSerenityActiveForOrg`, with its own doc comment stating plainly: "Everything that
+   acts on an existing brand must use `isSerenityActiveForBrand` instead[of
+   `isSerenityActiveForOrg`]." `resolveSemrushEntitlement` operates per-brand throughout
+   (takes `brandId`, resolves a per-brand Semrush sub-workspace) — exactly the case
+   api-service's own docs say requires the brand-aware predicate. Mirroring the org-only
+   one meant this worker would diverge from api-service in both directions the moment any
+   org used a brand-scoped `serenity` override: an org-enabled brand held back by a `false`
+   override would still get called (over-granting, the higher-severity direction — paid
+   Semrush calls against a brand not actually provisioned), and an org-disabled brand
+   opted in by a `true` override (the documented "migrate in waves" mechanism) would be
+   wrongly denied.
+   Fixed by adding `resolveFeatureFlagForBrand(postgrestClient, { organizationId, brandId,
+   product, flagName, log })` to `feature-flags-utils.js`, mirroring
+   `resolveFlagRowForBrand`'s exact precedence (brand row wins, else org row, else unset),
+   built on the same row-fetch `readOrgFeatureFlag` already used (factored into a shared
+   `fetchFeatureFlagRows` so the query itself has exactly one definition). Renamed the
+   internal `isSerenityEnabledForOrg` to `isSerenityEnabledForBrand(organizationId,
+   brandId, postgrestClient, log)`, now threading `brandId` through. `isBrandalfEnabled`
+   is unaffected and stays on `readOrgFeatureFlag` — confirmed api-service's `brandalf`/
+   `brandalf_migration` flags are read org-only everywhere
+   (`readBrandalfFlagOverride(organizationId, postgrestClient)`, no brand parameter) and
+   are unrelated to the per-brand serenity migration mechanism, so the org-only gate is the
+   *correct* mirror for that flag, not an oversight.
+   Added regression tests using the actual brand id under test (not a decoy) pinning both
+   directions: a `true` brand override entitles despite a `false` org row, and a `false`
+   brand override denies despite a `true` org row. Lesson for future ADR entries that cite
+   a specific function/behavior in a fast-moving sibling repo as evidence a scenario is
+   "not possible": that claim has a shelf life and should say what commit/date it was
+   checked against, since the sibling repo can ship the exact mechanism being ruled out
+   before the review round closes.
 
 ## Consequences
 
