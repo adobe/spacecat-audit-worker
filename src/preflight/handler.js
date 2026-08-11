@@ -301,8 +301,10 @@ export const preflightAudit = async (context) => {
                 issue: 'Body content length is below 100 characters',
                 seoImpact: 'Moderate',
                 seoRecommendation: 'Add more meaningful content to the page',
-                textContent,
-                ...toElementTargets(getDomElementSelector($('body').get(0))),
+                ...toElementTargets({
+                  selector: getDomElementSelector($('body').get(0)),
+                  textContent,
+                }),
               });
             }
           }
