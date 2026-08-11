@@ -2360,15 +2360,18 @@ describe('Preflight Audit', () => {
         });
 
         // Preflight-scoped nav tuning: loosen waitUntil so heavy pages don't
-        // 45s-timeout into empty results (SITES-49365). ASO scans are unaffected.
+        // 45s-timeout into empty results (SITES-49365), plus a bounded
+        // network-idle wait so axe doesn't under-report (SITES-49491). ASO
+        // scans are unaffected.
         expect(message.options.accessibilityScrapingParams).to.deep.equal({
           waitUntil: 'domcontentloaded',
+          networkIdleTimeout: 15000,
           additionalTimeout: 3000,
         });
 
         // Info-level marker must be emitted so prod Splunk can prove it is live.
         expect(log.info).to.have.been.calledWithMatch(
-          'Accessibility scrape nav tuned: waitUntil=domcontentloaded settleMs=3000',
+          'Accessibility scrape nav tuned: waitUntil=domcontentloaded networkIdleMs=15000 settleMs=3000',
         );
 
         expect(log.debug).to.have.been.calledWith(
@@ -5045,6 +5048,72 @@ describe('Preflight Audit', () => {
       });
       expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
       expect(jobEntity.save).to.have.been.called;
+    });
+
+    it('logs a structured failure line and rethrows when the DOM-based block throws', async () => {
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      // Scrape object is missing `scrapeResult` entirely, so destructuring `rawBody` from it
+      // inside the DOM-based block throws — exercises the catch/finally without extra mocking.
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [{ Key: 'scrapes/site-123/page1/scrape.json' }],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      const jobEntity = {
+        getMetadata: sinon.stub().returns(job.getMetadata()),
+        setMetadata: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      const context = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job,
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves(jobEntity);
+
+      let thrown;
+      try {
+        await preflightAuditFunction(context);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.exist;
+
+      const failCall = context.log.error.getCalls()
+        .find((c) => c.args[0].includes('DOM-based audit failed'));
+      expect(failCall).to.exist;
+
+      const completionCall = context.log.info.getCalls()
+        .find((c) => c.args[0].includes('DOM-based audit (body-size) completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=body-size status=fail duration_ms=\d+ error="/);
     });
   });
 });

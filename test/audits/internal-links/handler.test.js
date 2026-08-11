@@ -1135,6 +1135,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sandbox.stub().resolves(),
       setData: () => { },
       getData: () => { },
@@ -1522,6 +1527,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const existingOpportunity = {
       setStatus: sandbox.spy(sandbox.stub().resolves()),
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sandbox.spy(sandbox.stub().resolves()),
       getType: () => 'broken-internal-links',
       getSuggestions: sandbox.stub().resolves(mockSuggestions),

@@ -44,6 +44,11 @@ describe('offsite refresh handler composition', () => {
       getData: () => state.data,
       getUpdatedAt: () => '2026-07-01T00:00:00.000Z',
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sandbox.stub().callsFake((data) => {
         state.data = data;
       }),
