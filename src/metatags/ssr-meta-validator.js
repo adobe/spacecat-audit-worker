@@ -89,7 +89,11 @@ export async function validateDetectedIssues(detectedTags, baseUrl, log) {
   // Process endpoints sequentially to avoid overwhelming the server
   for (const endpoint of endpoints) {
     const tags = updatedDetectedTags[endpoint];
-    const fullUrl = `${baseUrl}${endpoint}`;
+    // Resolve the endpoint (an absolute path) against the base URL's origin rather
+    // than concatenating onto the full base URL, which for a subpath site (e.g.
+    // baseURL https://oklahoma.gov/omes) would double the path (/omes/omes/...).
+    // No-op for root-domain sites.
+    const fullUrl = new URL(endpoint, baseUrl).toString();
 
     // Check if any of the issues are related to missing tags
     const hasMissingIssues = ['title', 'description', 'h1'].some(

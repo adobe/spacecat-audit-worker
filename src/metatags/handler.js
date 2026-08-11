@@ -438,8 +438,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   });
 
-  // Build unique pageUrls from all suggestions
-  const pageUrls = [...new Set(suggestionMap.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
+  // Build unique pageUrls from all suggestions. Resolve each endpoint (an absolute
+  // path) against the base URL's origin rather than string-concatenating onto the
+  // full base URL: for a subpath site (e.g. baseURL https://oklahoma.gov/omes) the
+  // endpoint already carries the full path (/omes/...), so concatenation produced a
+  // malformed /omes/omes/... URL. No-op for root-domain sites.
+  const pageUrls = [
+    ...new Set(suggestionMap.map((s) => new URL(s.endpoint, site.getBaseURL()).toString())),
+  ];
 
   log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique (${pageUrls.length} unique pages)`);
 

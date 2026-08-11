@@ -1870,6 +1870,48 @@ describe('Meta Tags', () => {
         expect(sentMessage.data.pageUrls).to.have.lengthOf(2);
       });
 
+      it('builds absolute pageUrls for a subpath site without duplicating the base path (SITES-49656)', async () => {
+        site.getBaseURL.returns('https://oklahoma.gov/omes');
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resolves([
+          {
+            getId: sinon.stub().returns('sugg-omes-1'),
+            getData: sinon.stub().returns({
+              url: 'https://oklahoma.gov/omes/divisions/finance.html',
+              tagName: 'title',
+            }),
+          },
+          {
+            getId: sinon.stub().returns('sugg-omes-2'),
+            getData: sinon.stub().returns({
+              url: 'https://oklahoma.gov/omes/about-omes/contact.html',
+              tagName: 'description',
+            }),
+          },
+        ]);
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: sinon.stub().resolves('key'), calculateCPCValue: sinon.stub().resolves(5000) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: sinon.stub().resolves(metatagsOppty) },
+          '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: sinon.stub().callsFake(async (detectedTags) => detectedTags),
+          },
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+        // endpoint already carries /omes; must resolve against origin, not concatenate
+        // onto the full base URL (which produced the malformed /omes/omes/... URL).
+        expect(sentMessage.data.pageUrls).to.have.members([
+          'https://oklahoma.gov/omes/divisions/finance.html',
+          'https://oklahoma.gov/omes/about-omes/contact.html',
+        ]);
+        sentMessage.data.pageUrls.forEach((u) => expect(u).to.not.contain('/omes/omes/'));
+      });
+
       it('when site.requiresValidation is false, fetches suggestions only for NEW status', async () => {
         site.requiresValidation = false;
         dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resetHistory();
