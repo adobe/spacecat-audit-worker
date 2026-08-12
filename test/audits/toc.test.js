@@ -865,6 +865,9 @@ describe('TOC (Table of Contents) Audit', () => {
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.toc);
+      // TOC edited suggestions stay protected from the OUTDATED sweep — TOC is out
+      // of the LLMO-6761 scope, so its prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
 
     it('transforms TOC value to HAST in opportunityAndSuggestionsForToc', async () => {

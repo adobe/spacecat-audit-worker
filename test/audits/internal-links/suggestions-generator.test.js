@@ -1761,6 +1761,33 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     );
   });
 
+  it('protects edited missing suggestions from OUTDATED on rerun (LLMO-6761)', async () => {
+    // internal-links passes protectEditedFromOutdated:true, so a customer-edited
+    // suggestion whose key is absent from the new set stays put rather than being
+    // swept to OUTDATED (out of the LLMO-6761 scope, prior behavior preserved).
+    const editedMissingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/old-from',
+        urlTo: 'https://example.com/old-to',
+        isEdited: true,
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([editedMissingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+  });
+
   it('does not save REJECTED suggestions on rerun (frozen updatedAt, SITES-44646)', async () => {
     const existingSuggestion = {
       getData: testSandbox.stub().returns({

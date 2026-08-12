@@ -1099,6 +1099,112 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
     });
 
+    it('should skip edited suggestion on matched-key path (Scenario 1 — keep as-is)', async () => {
+      const editedData = { key: '1', title: 'customer edit', isEdited: true };
+      const existingSuggestions = [{
+        id: '1',
+        data: editedData,
+        getData: sinon.stub().returns(editedData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new audit suggestion' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        skipEditedOnMatch: true,
+      });
+
+      expect(existingSuggestions[0].setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping edited suggestion .* preserving customer edit/),
+      );
+    });
+
+    it('should call mergeDataFunction (not hard-skip) for an edited suggestion when skipEditedOnMatch is not set (default false, headings/toc-style per-field merge)', async () => {
+      const editedData = { key: '1', title: 'customer edit', isEdited: true };
+      const existingSuggestions = [{
+        id: '1',
+        data: editedData,
+        getData: sinon.stub().returns(editedData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new audit suggestion' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        // skipEditedOnMatch intentionally omitted (defaults to false)
+      });
+
+      // Without skipEditedOnMatch, mergeDataFunction (the default shallow merge here)
+      // still runs and updates the suggestion — isEdited alone does not hard-skip.
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+      expect(mockLogger.debug).to.not.have.been.calledWith(
+        sinon.match(/Skipping edited suggestion .* preserving customer edit/),
+      );
+    });
+
+    it('should overwrite non-edited suggestion on matched-key path (Scenario 1 — no edit)', async () => {
+      const existingData = { key: '1', title: 'old title' };
+      const existingSuggestions = [{
+        id: '1',
+        data: existingData,
+        getData: sinon.stub().returns(existingData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+    });
+
     it('should update suggestion when status changes but data does not', async () => {
       const suggestionsData = [
         { key: '1', title: 'same title', description: 'same description' },
@@ -1316,12 +1422,12 @@ describe('data-access', () => {
       expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
-    it('should not mark isEdited suggestions as OUTDATED when they do not appear in new audit data', async () => {
+    it('should mark isEdited suggestions as OUTDATED by default when issue disappears (LLMO-6537)', async () => {
       const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 
       // Existing customer-edited suggestion whose key drifted (e.g. FAQ question edit),
-      // so it matches nothing in the new audit. updatedBy is 'system' here to prove the
-      // data.isEdited flag alone keeps it alive (LLMO-4010).
+      // so it matches nothing in the new audit. Without protectEditedFromOutdated, the
+      // edited suggestion is also marked OUTDATED (issue no longer detected) (LLMO-6537).
       const existingSuggestions = [
         {
           id: '1',
@@ -1358,7 +1464,55 @@ describe('data-access', () => {
         scrapedUrlsSet,
       });
 
-      // Only the non-edited NEW suggestion is marked OUTDATED; the isEdited one survives
+      // Both suggestions are marked OUTDATED — isEdited does not protect by default
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        existingSuggestions,
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+    });
+
+    it('should protect isEdited suggestions from OUTDATED when protectEditedFromOutdated is true (LLMO-6537)', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'edited-key', isEdited: true },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'edited-key', isEdited: true }),
+          getStatus: sinon.stub().returns('NEW'),
+          getUpdatedBy: sinon.stub().returns('system'),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+          getUpdatedBy: sinon.stub().returns('system'),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+        protectEditedFromOutdated: true,
+      });
+
+      // Only the non-edited suggestion is OUTDATED; isEdited one survives (FAQs key-drift)
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
         [existingSuggestions[1]],
         'OUTDATED',
@@ -3016,7 +3170,10 @@ describe('data-access', () => {
 
     it('should skip customer-edited NEW suggestions (data.isEdited) even when updatedBy was cleared', async () => {
       // updatedBy is 'system' (cleared by a non-edit action), so only the durable
-      // data.isEdited flag protects it from being reconciled to FIXED (LLMO-6537).
+      // data.isEdited flag protects it from being reconciled to FIXED. Out of the
+      // FAQ/Summarization/Readability scope of LLMO-6761 — this function is only
+      // called from backlinks, where isEdited means an explicit customer redirect
+      // pick, so the pre-existing exemption is intentionally left unchanged.
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
         getData: sinon.stub().returns({ key: '1', isEdited: true }),
