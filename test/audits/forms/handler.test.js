@@ -72,6 +72,15 @@ describe('Forms Vitals audit', () => {
     );
     expect(result).to.deep.equal(expectedFormVitalsData);
   });
+
+  it('queries RUM by the bare hostname (not the sub-path) so the domainkey resolves', async () => {
+    const subpathSite = { getBaseURL: () => 'https://example.com/foo' };
+    await formsAuditRunner('https://example.com/foo', context, subpathSite);
+
+    // The RUM `domain` must be the hostname, not the sub-path audit URL.
+    const call = context.rumApiClient.queryMulti.getCalls().at(-1);
+    expect(call.args[1].domain).to.equal('example.com');
+  });
 });
 
 describe('audit and send scraping step', () => {

@@ -89,12 +89,8 @@ export async function getRUMUrl(url) {
 
 /**
  * Resolves the RUM query domain (hostname) from a resolved audit/final URL.
- *
- * RUM data is keyed per hostname; a sub-path site's resolved URL carries a path
- * (e.g. "oklahoma.gov/omes"), which has no RUM domainkey and 404s the domainkey
- * exchange. Strip to the hostname so the domain-wide RUM data can be fetched, then
- * the per-URL results are filtered to the site's base path by the caller. No-op for
- * bare-hostname / root URLs.
+ * RUM is keyed per hostname, so a sub-path URL (e.g. "example.com/foo") must be
+ * stripped to its hostname; the per-URL results are scoped by the caller. No-op for root.
  *
  * @param {string} url - The resolved audit/final URL (scheme and path optional).
  * @returns {string} The hostname, or the original value if it cannot be parsed.

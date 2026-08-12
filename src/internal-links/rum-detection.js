@@ -70,9 +70,8 @@ export function createInternalLinksRumSteps({
     try {
       const rumAPIClient = context.rumApiClient || createRUMAPIClient(context);
       const options = {
-        // RUM is keyed per hostname; a sub-path site's finalUrl carries a path
-        // (e.g. oklahoma.gov/omes) with no domainkey. Query by hostname, then the
-        // 404 pairs are scoped to the site's base path below.
+        // RUM is keyed per hostname; a sub-path finalUrl (e.g. example.com/foo) has no
+        // domainkey. Query by hostname; 404 pairs are scoped to the base path below.
         domain: getRUMDomain(finalUrl),
         interval,
         granularity: 'hourly',

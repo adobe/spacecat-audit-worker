@@ -72,8 +72,8 @@ export async function getTopPageUrls({
         baseUrls = results
           .sort((a, b) => (b.earned || 0) - (a.earned || 0))
           .map((r) => normalizeUrl(r.url));
-        // RUM data is domain-wide; scope to the site's base path so a sub-path site
-        // (e.g. oklahoma.gov/omes) doesn't inherit the whole domain. No-op for root.
+        // RUM data is domain-wide; scope to the base path so a sub-path site
+        // (e.g. example.com/foo) doesn't inherit the whole domain. No-op for root.
         baseUrls = filterByAuditScope(baseUrls, site.getBaseURL(), {}, log);
         log.info(`[${AUDIT_TYPE}]: Found ${baseUrls.length} URLs from RUM`);
       }

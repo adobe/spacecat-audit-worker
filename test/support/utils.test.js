@@ -202,8 +202,8 @@ describe('getRUMDomain', () => {
   });
 
   it('returns the hostname for a sub-path URL (RUM is keyed per hostname)', () => {
-    expect(utils.getRUMDomain('https://oklahoma.gov/omes')).to.equal('oklahoma.gov');
-    expect(utils.getRUMDomain('oklahoma.gov/omes')).to.equal('oklahoma.gov');
+    expect(utils.getRUMDomain('https://example.gov/us')).to.equal('example.gov');
+    expect(utils.getRUMDomain('example.gov/us')).to.equal('example.gov');
   });
 
   it('is a no-op for a bare hostname (root sites)', () => {

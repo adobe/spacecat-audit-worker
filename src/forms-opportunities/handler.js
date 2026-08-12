@@ -39,9 +39,8 @@ export async function formsAuditRunner(auditUrl, context) {
   const { site, log } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
-    // RUM is keyed per hostname; a sub-path site's auditUrl carries a path
-    // (e.g. oklahoma.gov/omes) with no domainkey. Query by hostname, then scope
-    // the returned per-URL form vitals to the site's base path.
+    // RUM is keyed per hostname; a sub-path auditUrl (e.g. example.com/foo) has no
+    // domainkey. Query by hostname; form vitals are scoped to the base path below.
     domain: getRUMDomain(auditUrl),
     interval: FORMS_AUDIT_INTERVAL,
     granularity: 'hourly',
