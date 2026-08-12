@@ -721,6 +721,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       || existingSuggestion.edgeOptimizeStatus) {
       return { ...existingSuggestion };
     }
+    if (existingSuggestion.isVerified) {
+      return { ...existingSuggestion };
+    }
     const converted = { ...newSuggestion };
     if (converted.transformRules && Array.isArray(converted.transformRules.value)) {
       converted.transformRules = {

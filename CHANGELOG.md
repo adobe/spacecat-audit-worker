@@ -1,3 +1,10 @@
+# [1.519.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.3...v1.519.0) (2026-08-12)
+
+
+### Features
+
+* **toc:** freeze suggestions with data.isVerified=true from re-audit… ([#2885](https://github.com/adobe/spacecat-audit-worker/issues/2885)) ([19ac0d0](https://github.com/adobe/spacecat-audit-worker/commit/19ac0d0136eae22191ef63a5a0092b66966ce809))
+
 ## [1.518.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.2...v1.518.3) (2026-08-12)
 
 
