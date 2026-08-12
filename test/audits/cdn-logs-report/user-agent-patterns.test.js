@@ -58,28 +58,46 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS.bing).to.include('Bingbot');
     });
 
-    it('excludes Adobe internal/proxied user agents from every provider pattern', () => {
+    it('keeps provider patterns free of the Adobe-internal exclusion (handled in the filter)', () => {
       const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
 
       Object.values(PROVIDER_USER_AGENT_PATTERNS).forEach((pattern) => {
-        expect(pattern).to.include('(?!.*(Tokowaka|Spacecat|AdobeEdgeOptimize))');
+        expect(pattern).to.not.include('Tokowaka');
+        expect(pattern).to.not.include('AdobeEdgeOptimize');
       });
     });
+  });
 
-    it('rejects O@E-proxied and internal-crawler user agents at match time', () => {
-      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+  describe('buildAdobeInternalUaExclusion', () => {
+    it('builds a full-string exclusion for Adobe-owned/proxied user agents', () => {
+      const { buildAdobeInternalUaExclusion } = userAgentPatterns;
+
+      expect(buildAdobeInternalUaExclusion()).to.equal(
+        "NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')",
+      );
+      expect(buildAdobeInternalUaExclusion('ua')).to.include('NOT REGEXP_LIKE(ua,');
+    });
+
+    it('rejects O@E-proxied and internal UAs in any position, matching the SQL semantics', () => {
+      const { ADOBE_INTERNAL_UA_PATTERN } = userAgentPatterns;
       // Athena '(?i)' inline flag -> JS 'i' flag for a functional check
-      const toRegExp = (p) => new RegExp(p.replace('(?i)', ''), 'i');
+      const re = new RegExp(ADOBE_INTERNAL_UA_PATTERN.replace('(?i)', ''), 'i');
 
-      const chatgpt = toRegExp(PROVIDER_USER_AGENT_PATTERNS.chatgpt);
-      // plain agentic UA still matches
-      expect(chatgpt.test('ChatGPT-User/1.0')).to.equal(true);
-      // O@E appends its marker as a suffix -> must be excluded
-      expect(chatgpt.test('Mozilla/5.0 ChatGPT-User/1.0; +https://openai.com/bot AdobeEdgeOptimize/1.0')).to.equal(false);
-      expect(chatgpt.test('ChatGPT-User/1.0 Spacecat/1.0')).to.equal(false);
+      // marker appended as suffix (O@E) and prepended (defensive) both caught
+      expect(re.test('ChatGPT-User/1.0; +https://openai.com/bot AdobeEdgeOptimize/1.0')).to.equal(true);
+      expect(re.test('Spacecat/1.0 ChatGPT-User/1.0')).to.equal(true);
+      expect(re.test('Mozilla/5.0 ... Tokowaka/1.0 AdobeEdgeOptimize/1.0')).to.equal(true);
+      // a genuine agentic UA is not excluded
+      expect(re.test('ChatGPT-User/1.0')).to.equal(false);
+    });
+  });
 
-      const claude = toRegExp(PROVIDER_USER_AGENT_PATTERNS.claude);
-      expect(claude.test('Claude-User/1.0 AdobeEdgeOptimize/1.0')).to.equal(false);
+  describe('buildUserAgentFilter exclusion', () => {
+    it('appends the Adobe-internal exclusion to the agentic filter', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      expect(buildUserAgentFilter()).to.include(
+        "AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')",
+      );
     });
   });
 

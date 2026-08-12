@@ -10,21 +10,33 @@
  * governing permissions and limitations under the License.
  */
 
-// Adobe-owned user agents that must never count as agentic traffic, even when
-// appended as a suffix to a real bot UA (e.g. the O@E proxy adds
-// `AdobeEdgeOptimize/1.0`, the internal crawler uses `Spacecat/1.0`).
-const ADOBE_INTERNAL_UA_EXCLUSION = '(?!.*(Tokowaka|Spacecat|AdobeEdgeOptimize))';
+// Adobe-owned user agents that must never count as agentic traffic. The O@E proxy
+// appends `AdobeEdgeOptimize/1.0` to the real bot UA, the internal crawler uses
+// `Spacecat/1.0`, and `Tokowaka/1.0` is Adobe's prerender client. Excluded as a
+// full-string match by the query filter builders (buildUserAgentFilter,
+// buildLlmUserAgentFilter) and, independently, at ingestion in
+// src/cdn-analysis/sql/*/insert-aggregated.sql (keep both lists in sync).
+export const ADOBE_INTERNAL_UA_PATTERN = '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)';
+
+/**
+ * Builds the SQL predicate that excludes Adobe-owned/proxied user agents. Matches
+ * the full UA string, so the marker is caught in any position regardless of the
+ * bot keyword (e.g. both `ChatGPT-User/1.0 AdobeEdgeOptimize/1.0` and the reverse).
+ */
+export function buildAdobeInternalUaExclusion(column = 'user_agent') {
+  return `NOT REGEXP_LIKE(${column}, '${ADOBE_INTERNAL_UA_PATTERN}')`;
+}
 
 export const PROVIDER_USER_AGENT_PATTERNS = {
-  chatgpt: `(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  perplexity: `(?i)Perplexity${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  claude: `(?i)Claude(?!-web)${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  googleai: `(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  google: `(?i)(Google-Extended|Googlebot)${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  mistralai: `(?i)MistralAI-User${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  copilot: `(?i)Copilot${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  bing: `(?i)Bingbot${ADOBE_INTERNAL_UA_EXCLUSION}`,
-  amazon: `(?i)Amzn-User${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)',
+  perplexity: '(?i)Perplexity',
+  claude: '(?i)Claude(?!-web)',
+  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',
+  google: '(?i)(Google-Extended|Googlebot)',
+  mistralai: '(?i)MistralAI-User',
+  copilot: '(?i)Copilot',
+  bing: '(?i)Bingbot',
+  amazon: '(?i)Amzn-User',
 };
 
 /**
