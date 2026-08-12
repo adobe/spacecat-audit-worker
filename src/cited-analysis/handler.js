@@ -37,8 +37,15 @@ import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import {
+  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+} from '../utils/offsite-logging.js';
 
-const LOG_PREFIX = '[Cited]';
+// Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
+// string (resolveEnableBrandProfile, shared with the offsite-brand-presence handler). All other
+// logging in this file goes through the bound offsite logger (createOffsiteLogger), which emits
+// the same `[offsite:<audit>]` prefix.
+const HUMAN_PREFIX = `[offsite:${AUDIT.CITED}]`;
 
 // SQS standard-queue maximum payload is 256 KB (262144 bytes). Stay under a
 // safety budget so worst-case serialisation doesn't hit the hard reject.
@@ -131,10 +138,10 @@ function partitionOwnedUrls(urls, brandBaseURL) {
  * diagnose over-eager matches for short/common-word brand tokens.
  * @param {Array<{url: string}>} urls
  * @param {Set<string>} brandTokens
- * @param {Object} log
+ * @param {Object} olog - bound offsite logger (see createOffsiteLogger)
  * @returns {{ kept: Array<{url: string}>, droppedCount: number }}
  */
-function partitionExcludedUrls(urls, brandTokens, log) {
+function partitionExcludedUrls(urls, brandTokens, olog) {
   const kept = [];
   let droppedCount = 0;
   for (const entry of urls) {
@@ -142,7 +149,9 @@ function partitionExcludedUrls(urls, brandTokens, log) {
     const reason = host && isExcludedCitedHost(host, brandTokens);
     if (reason) {
       droppedCount += 1;
-      log.debug(`${LOG_PREFIX} Excluding ${entry.url} (${reason})`);
+      olog.debug('url_store_read', 'Excluding URL', {
+        peer: PEER.URL_STORE, direction: 'inbound', url: entry.url, reason,
+      });
     } else {
       kept.push(entry);
     }
@@ -159,12 +168,17 @@ function partitionExcludedUrls(urls, brandTokens, log) {
  */
 async function fetchStoreData(siteId, context, site) {
   const { log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
+  olog.start('url_store_read', `Fetching data from stores for siteId: ${siteId}`, {
+    peer: PEER.URL_STORE, direction: 'inbound',
+  });
 
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
-  log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} cited URLs from URL Store`);
+  olog.success('url_store_read', `Retrieved ${rawUrls.length} cited URLs from URL Store`, {
+    peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
+  });
 
   // Drop URLs on the customer's own domain. Cited URLs represent 3rd-party
   // EARNED citations — pages on ``bmw.com`` for the BMW customer would
@@ -176,9 +190,10 @@ async function fetchStoreData(siteId, context, site) {
     baseURL,
   );
   if (ownedDroppedCount > 0) {
-    log.info(
-      `${LOG_PREFIX} Excluded ${ownedDroppedCount} owned-domain URLs `
-      + '(cited analysis is 3rd-party earned only)',
+    olog.debug(
+      'url_store_read',
+      `Excluded ${ownedDroppedCount} owned-domain URLs (cited analysis is 3rd-party earned only)`,
+      { peer: PEER.URL_STORE, direction: 'inbound', droppedOwned: ownedDroppedCount },
     );
   }
 
@@ -190,12 +205,14 @@ async function fetchStoreData(siteId, context, site) {
   const { kept: curatedUrls, droppedCount: nonEarnedDroppedCount } = partitionExcludedUrls(
     earnedUrls,
     brandTokens,
-    log,
+    olog,
   );
   if (nonEarnedDroppedCount > 0) {
-    log.info(
-      `${LOG_PREFIX} Excluded ${nonEarnedDroppedCount} non-earned/branded URLs `
+    olog.debug(
+      'url_store_read',
+      `Excluded ${nonEarnedDroppedCount} non-earned/branded URLs `
       + '(social, search, deal-aggregator, or brand-owned lookalike)',
+      { peer: PEER.URL_STORE, direction: 'inbound', droppedNonEarned: nonEarnedDroppedCount },
     );
   }
 
@@ -206,14 +223,17 @@ async function fetchStoreData(siteId, context, site) {
     datasetIds,
     siteId,
     drsClient,
-    log,
-    LOG_PREFIX,
+    olog,
   );
-  log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`);
+  olog.success('drs_availability', `${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`, {
+    peer: PEER.DRS, direction: 'outbound', available: urls.length,
+  });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
-  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
+  olog.debug('topics_load', `Computed ${topics.length} topics from brand presence data`, {
+    count: topics.length,
+  });
+  olog.debug('topics_load', `Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
   let guidelines = [];
   try {
@@ -221,13 +241,17 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.info(`${LOG_PREFIX} No guidelines configured for cited-analysis, proceeding without`);
+      olog.skip('guideline_read', 'No guidelines configured for cited-analysis, proceeding without', {
+        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines',
+      });
     } else {
       throw error;
     }
   }
 
-  log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
+  olog.success('guideline_read', `Retrieved ${guidelines.length} guidelines`, {
+    peer: PEER.URL_STORE, direction: 'inbound', count: guidelines.length,
+  });
 
   return {
     urls,
@@ -248,23 +272,26 @@ async function fetchStoreData(siteId, context, site) {
 async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
+  const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId });
   // Phase-timing anchor for the Mystique phase; combined with the DRS timings threaded in
   // via auditContext (from the offsite-brand-presence DRS status handler) in the guidance
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  log.info(`${LOG_PREFIX} Starting Cited analysis audit for site: ${siteId}`);
-  log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+  olog.start('audit_start', `Starting Cited analysis audit for site: ${siteId}`);
+  olog.debug('audit_start', `auditContext: ${JSON.stringify(auditContext)}`);
 
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
-  const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, LOG_PREFIX);
-  const enableSemrush = resolveEnableSemrush(auditContext, log, LOG_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
 
   try {
     const citedConfig = getCitedConfig(site);
 
     if (!citedConfig.companyName) {
-      log.warn(`${LOG_PREFIX} No company name configured for site, skipping audit`);
+      olog.warn('config_resolve', 'No company name configured for site, skipping audit', {
+        outcome: OUTCOME.SKIP, reason: 'no_company_name',
+      });
       return {
         auditResult: {
           success: false,
@@ -274,27 +301,34 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}, competitors=${citedConfig.competitors.length}`);
+    olog.success('config_resolve', `Config: ${citedConfig.competitors.length} competitor(s)`, {
+      companyName: citedConfig.companyName,
+      website: citedConfig.companyWebsite,
+      competitors: citedConfig.competitors.length,
+    });
     if (citedConfig.competitors.length === 0) {
       // Surfaces the misconfiguration before the SQS hop to Mystique. With an
       // empty list Mystique will only count the primary brand in Share of Voice
       // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
-      log.warn(`${LOG_PREFIX} No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`);
+      olog.warn('config_resolve', `No competitors configured for site ${siteId}; Share of Voice will only include the primary brand`, {
+        outcome: OUTCOME.SKIP, reason: 'no_competitors',
+      });
     }
 
     const storeData = await fetchStoreData(siteId, context, site);
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
-    log.info(
+    olog.success(
+      'store_fetch_complete',
       scrapedNow
-        ? `${LOG_PREFIX} DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
-        : `${LOG_PREFIX} Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
+        ? `DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
+        : `Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
+      { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
 
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
 
     const { slackContext } = auditContext;
 
@@ -337,7 +371,9 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // cited URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        log.error(`${LOG_PREFIX} URL store still empty after scrape: ${error.message}`);
+        olog.failure('url_store_read', 'URL store still empty after scrape', {
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
+        });
         await postMessageOptional(
           context,
           channelId,
@@ -352,7 +388,9 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      log.info(`${LOG_PREFIX} URL store empty, requesting a scoped scrape for top-cited`);
+      olog.skip('store_fetch_complete', 'URL store empty, requesting a scoped scrape for top-cited', {
+        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_store',
+      });
       await postMessageOptional(
         context,
         channelId,
@@ -368,6 +406,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        olog,
       );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
@@ -380,7 +419,9 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        olog.failure('drs_availability', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
+        });
         await postMessageOptional(
           context,
           channelId,
@@ -392,7 +433,9 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      log.info(`${LOG_PREFIX} URLs stored but not scraped in DRS yet, requesting a scrape for top-cited`);
+      olog.skip('store_fetch_complete', 'URLs stored but not scraped in DRS yet, requesting a scrape for top-cited', {
+        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'no_drs_content',
+      });
       await postMessageOptional(
         context,
         channelId,
@@ -408,6 +451,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        olog,
       );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
@@ -415,7 +459,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    log.error(`${LOG_PREFIX} Audit failed: ${error.message}`);
+    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -438,14 +482,19 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log, sqs, env, dataAccess, audit,
   } = context;
   const { siteId, auditResult } = auditData;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    log.info(`${LOG_PREFIX} Audit failed, skipping Mystique message`);
+    olog.skip('mystique_dispatch', 'Audit failed, skipping Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+    });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn(`${LOG_PREFIX} SQS or Mystique queue not configured, skipping message`);
+    olog.warn('mystique_dispatch', 'SQS or Mystique queue not configured, skipping message', {
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'not_configured',
+    });
     return auditData;
   }
 
@@ -453,13 +502,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      log.warn(`${LOG_PREFIX} Site not found, skipping Mystique message`);
+      olog.warn('mystique_dispatch', 'Site not found, skipping Mystique message', {
+        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found',
+      });
       return auditData;
     }
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
+    olog.success('url_limit_resolve', `urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
@@ -505,7 +556,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      });
     }
     const message = applyBrandScope(baseMessage, brand);
 
@@ -524,8 +577,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       }
       sentUrlCount -= 1;
       message.data.urls = enrichedUrls.slice(0, sentUrlCount);
-      log.warn(
-        `${LOG_PREFIX} Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
+      olog.warn(
+        'mystique_dispatch',
+        `Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
+        { peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget' },
       );
     }
 
@@ -534,8 +589,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     if (sentUrlCount === 1) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
       if (bytes > SQS_MAX_SAFE_BYTES) {
-        log.warn(
-          `${LOG_PREFIX} Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
+        olog.warn(
+          'mystique_dispatch',
+          `Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
+          { peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single' },
         );
         const [singleUrl] = message.data.urls;
         message.data.urls = [{
@@ -546,18 +603,26 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       }
     }
 
-    log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
+    olog.debug('mystique_dispatch', `Built Mystique message type ${message.type}`, {
+      peer: PEER.MYSTIQUE, direction: 'outbound',
+    });
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    const scopeForLog = brand
-      ? ` brandId=${brand.brandId}`
-      : '';
-    log.info(
-      `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${message.data.urls.length} URLs${scopeForLog}`,
+    olog.success(
+      'mystique_dispatch',
+      `Queued Cited analysis request to Mystique with ${message.data.urls.length} URLs`,
+      {
+        peer: PEER.MYSTIQUE,
+        direction: 'outbound',
+        companyName: config.companyName,
+        urls: message.data.urls.length,
+        ...(brand && { brandId: brand.brandId }),
+      },
     );
     return auditData;
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    olog.failure('mystique_dispatch', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
+    });
     // Notify the Slack thread that triggered this audit so the operator knows
     // Mystique was never reached and doesn't wait for results that won't come.
     const slackContext = auditResult?.slackContext;
@@ -578,5 +643,5 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runCitedAnalysisAudit)
-  .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withPostProcessors([sendMystiqueMessagePostProcessor, withAuditPersistLog(AUDIT.CITED)])
   .build();
