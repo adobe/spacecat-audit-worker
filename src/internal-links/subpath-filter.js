@@ -97,8 +97,9 @@ export function filterByAuditScope(items, baseURL, options = {}, log = console) 
   try {
     const baseURLWithSchema = prependSchema(baseURL);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
+    // Trim trailing slash(es) to stay consistent with isWithinAuditScope.
+    const basePath = parsedBaseURL.pathname.replace(/\/+$/, '');
+    const hasBasePath = basePath.length > 0;
 
     // If baseURL has no subpath, return all items
     if (!hasBasePath) {

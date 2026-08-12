@@ -290,6 +290,31 @@ describe('audit-input-urls', () => {
       expect(result.topPagesUrls).to.include('https://example.com/bar/out');
     });
 
+    it('logs a distinct message when scoping empties a non-empty top-pages set', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getBaseURL: () => 'https://example.com/foo',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      };
+      const infoLogs = [];
+      const log = { info: (msg) => infoLogs.push(msg), debug: () => {}, warn: () => {} };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'readability',
+        getAgenticUrls: async () => [],
+        scopeTopPagesToBasePath: true,
+        log,
+        topPages: [
+          { url: 'https://example.com/bar/a', traffic: 100, urlId: 't1' },
+          { url: 'https://example.com/bar/b', traffic: 90, urlId: 't2' },
+        ],
+      });
+
+      expect(result.topPagesUrls).to.deep.equal([]);
+      expect(infoLogs.some((m) => m.includes('outside the audit scope'))).to.equal(true);
+    });
+
     it('should use provided getTopPages callback without calling dataAccess', async () => {
       const site = {
         getId: () => 'site-123',

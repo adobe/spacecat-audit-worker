@@ -156,7 +156,18 @@ export async function getMergedAuditInputUrls({
   // domain (a low-traffic sub-path can otherwise rank entirely below the domain-wide cutoff).
   let topPagesUrls = topPagesToUrls(normalizedTopPages);
   if (scopeTopPagesToBasePath) {
+    const preScopeCount = topPagesUrls.length;
     topPagesUrls = filterByAuditScope(topPagesUrls, site?.getBaseURL?.(), {}, log);
+    // Distinguish "top pages exist but none are in the sub-path" (e.g. a newly onboarded
+    // sub-path site, or a top-pages import that hasn't caught up) from "no top pages at
+    // all" — a downstream empty-set throw is otherwise indistinguishable from a broken import.
+    if (preScopeCount > 0 && topPagesUrls.length === 0) {
+      log?.info?.(
+        `[audit-input-urls] All ${preScopeCount} top pages are outside the audit scope for `
+        + `${site?.getBaseURL?.()}; the sub-path may be newly onboarded or its top-pages import `
+        + 'may not yet cover it.',
+      );
+    }
   }
   if (Number.isInteger(topOrganicLimit)) {
     topPagesUrls = topPagesUrls.slice(0, topOrganicLimit);
