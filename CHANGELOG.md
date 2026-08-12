@@ -1,3 +1,10 @@
+## [1.520.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.2...v1.520.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* **sync:** split OUTDATED logic for isEdited + readability scrapedUrlsSet gap (LLMO-6761) ([#2846](https://github.com/adobe/spacecat-audit-worker/issues/2846)) ([2d6f769](https://github.com/adobe/spacecat-audit-worker/commit/2d6f7691c0d2cd4779646b324c1fc7c225bf84f4))
+
 ## [1.520.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.1...v1.520.2) (2026-08-12)
 
 
