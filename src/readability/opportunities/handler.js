@@ -32,6 +32,7 @@ async function getReadabilityUrlsToScrape(context) {
     site,
     dataAccess,
     auditType: AUDIT_TYPE,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, TOP_PAGES_LIMIT),
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(

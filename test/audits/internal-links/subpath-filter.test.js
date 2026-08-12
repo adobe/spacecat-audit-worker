@@ -56,6 +56,16 @@ describe('subpath-filter', () => {
       expect(isWithinAuditScope('/products', 'bulk.com/uk')).to.equal(false);
     });
 
+    it('should handle a baseURL with a trailing slash', () => {
+      // `bulk.com/uk/` must behave exactly like `bulk.com/uk` (not build `/uk//`).
+      expect(isWithinAuditScope('https://bulk.com/uk/page1', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/uk', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/uk.html', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/fr/page1', 'bulk.com/uk/')).to.equal(false);
+      // A bare host with a trailing slash is still root scope (everything included).
+      expect(isWithinAuditScope('https://bulk.com/anything', 'bulk.com/')).to.equal(true);
+    });
+
     it('should avoid false positives with trailing slash matching', () => {
       // /fr/ should not match /french/
       expect(isWithinAuditScope('https://bulk.com/french/page', 'bulk.com/fr')).to.equal(false);

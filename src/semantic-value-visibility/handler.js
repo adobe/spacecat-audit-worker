@@ -80,6 +80,7 @@ export async function auditRunner(auditUrl, context, site) {
     site,
     dataAccess,
     auditType: AUDIT_TYPE,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
     getTopPages: async () => {
       if (!dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo) {

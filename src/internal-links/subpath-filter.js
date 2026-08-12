@@ -29,11 +29,12 @@ export function isWithinAuditScope(url, baseURL) {
   }
 
   try {
-    // Parse baseURL to extract path
+    // Parse baseURL to extract path. Trim trailing slash(es) so a baseURL like
+    // `example.com/foo/` doesn't become `/foo//` and drop legit in-scope URLs.
     const baseURLWithSchema = prependSchema(baseURL);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
+    const basePath = parsedBaseURL.pathname.replace(/\/+$/, '');
+    const hasBasePath = basePath.length > 0;
 
     // If baseURL has no subpath, include all URLs
     if (!hasBasePath) {
@@ -96,8 +97,9 @@ export function filterByAuditScope(items, baseURL, options = {}, log = console) 
   try {
     const baseURLWithSchema = prependSchema(baseURL);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
+    // Trim trailing slash(es) to stay consistent with isWithinAuditScope.
+    const basePath = parsedBaseURL.pathname.replace(/\/+$/, '');
+    const hasBasePath = basePath.length > 0;
 
     // If baseURL has no subpath, return all items
     if (!hasBasePath) {

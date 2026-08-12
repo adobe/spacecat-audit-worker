@@ -507,6 +507,7 @@ export async function submitForScraping(context) {
     dataAccess,
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
+    scopeTopPagesToBasePath: true,
     log,
   });
   log.debug(`Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);

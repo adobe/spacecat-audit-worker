@@ -170,6 +170,7 @@ export async function submitForScraping(context) {
     dataAccess,
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
+    scopeTopPagesToBasePath: true,
     log,
   });
 
@@ -204,6 +205,7 @@ export async function runAuditAndGenerateSuggestions(context) {
       dataAccess,
       auditType,
       getAgenticUrls: () => Promise.resolve([]),
+      scopeTopPagesToBasePath: true,
       log,
     });
     let allPages = allUrls.map((url) => ({ url }));

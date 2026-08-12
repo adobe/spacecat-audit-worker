@@ -831,6 +831,7 @@ export async function submitForScraping(context) {
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
     topPages,
+    scopeTopPagesToBasePath: true,
     log,
   });
   log.info(`[PRODUCT-METATAGS] Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);

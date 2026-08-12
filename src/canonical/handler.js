@@ -89,6 +89,7 @@ export async function submitForScraping(context) {
     dataAccess,
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
+    scopeTopPagesToBasePath: true,
     log,
   });
 
