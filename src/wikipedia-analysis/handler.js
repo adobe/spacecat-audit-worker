@@ -242,10 +242,14 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
 
     const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, olog);
     if (wikipediaUrlOverride?.invalid) {
-      olog.warn('config_resolve', `Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`, { reason: 'invalid_url_override' });
+      olog.warn('config_resolve', 'Ignoring invalid wikipedia URL override', {
+        reason: 'invalid_url_override', value: wikipediaUrlOverride.value,
+      });
     } else if (wikipediaUrlOverride?.url) {
       wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
-      olog.debug('config_resolve', `Using Wikipedia URL override from audit message: ${wikipediaUrlOverride.url}`);
+      olog.debug('config_resolve', 'Using Wikipedia URL override from audit message', {
+        url: wikipediaUrlOverride.url,
+      });
     }
 
     // Validate that we have a company name

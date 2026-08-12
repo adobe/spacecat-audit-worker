@@ -213,7 +213,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`Using Wikipedia URL override from audit message: ${override}`),
+        sinon.match(/event=config_resolve/).and(sinon.match(`url=${override}`)),
       );
     });
 
@@ -340,7 +340,9 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match('Ignoring invalid wikipedia URL override: not-a-valid-url'),
+        sinon.match(/event=config_resolve/)
+          .and(sinon.match(/reason=invalid_url_override/))
+          .and(sinon.match('value=not-a-valid-url')),
       );
     });
 
