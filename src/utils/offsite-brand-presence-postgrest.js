@@ -11,11 +11,22 @@
  */
 
 import { getDateRanges } from '@adobe/spacecat-shared-utils';
+import {
+  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
+} from './offsite-logging.js';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
 export const MAX_EXECUTION_FETCH_PAGES = 50;
 const DEFAULT_REGION_CODE = 'US';
+
+// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
+// Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted.
+const LOG_PREFIX = '[offsite:brand-presence-postgrest]';
+const bp = (message, fields) => appendFields(
+  `${LOG_PREFIX} ${message}`,
+  { domain: OFFSITE_DOMAIN, ...fields },
+);
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
   'ai-mode': 'google-ai-mode',
@@ -82,7 +93,9 @@ async function fetchExecutionsWithSources(postgrestClient, {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
-      log.warn(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES}), processing ${rows.length} rows fetched so far`);
+      log.warn(bp(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES}), processing ${rows.length} rows fetched so far`, {
+        event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
+      }));
       break;
     }
 
@@ -117,7 +130,9 @@ async function fetchExecutionsWithSources(postgrestClient, {
 
     const batch = data || [];
     rows.push(...batch);
-    log?.info(`[BrandPresencePostgrest] Fetched batch: ${batch.length} rows (total: ${rows.length})`);
+    log?.info(bp(`Fetched batch: ${batch.length} rows (total: ${rows.length})`, {
+      event: 'brand_data_load', outcome: OUTCOME.START, peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length,
+    }));
 
     if (batch.length < EXECUTION_FETCH_BATCH_SIZE) {
       break;
@@ -180,20 +195,28 @@ export async function loadBrandPresenceDataFromPostgrest({
     });
 
     if (executions.length === 0) {
-      log?.info(`[BrandPresencePostgrest] No execution rows found for site ${siteId}`);
+      log?.info(bp(`No execution rows found for site ${siteId}`, {
+        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions',
+      }));
       return null;
     }
 
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
-      log?.info(`[BrandPresencePostgrest] No usable rows found for site ${siteId}`);
+      log?.info(bp(`No usable rows found for site ${siteId}`, {
+        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows',
+      }));
       return null;
     }
 
-    log?.info(`[BrandPresencePostgrest] Loaded ${rows.length} legacy-shaped rows from PostgREST for site ${siteId}`);
+    log?.info(bp(`Loaded ${rows.length} legacy-shaped rows from PostgREST for site ${siteId}`, {
+      event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', rows: rows.length,
+    }));
     return { data: rows };
   } catch (error) {
-    log?.warn(`[BrandPresencePostgrest] PostgREST query failed for site ${siteId}: ${error.message}`);
+    log?.warn(bp(`PostgREST query failed for site ${siteId}: ${error.message}`, {
+      event: 'brand_data_load', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', errorName: error.name,
+    }));
     return null;
   }
 }

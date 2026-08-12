@@ -420,7 +420,7 @@ describe('offsite-brand-presence-postgrest', () => {
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
-        '[BrandPresencePostgrest] PostgREST query failed for site site-123: Failed to fetch brand_presence_executions: query failed',
+        '[offsite:brand-presence-postgrest] PostgREST query failed for site site-123: Failed to fetch brand_presence_executions: query failed',
       );
     });
 

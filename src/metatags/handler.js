@@ -52,11 +52,14 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
-  let useHostnameOnly = false;
+  // Default hostname-only: the endpoint is an absolute pathname appended to the origin.
+  // A base that already carries a path (sub-path site, e.g. example.com/foo) duplicated
+  // it (/foo/foo/...). No-op for root-domain sites.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const site = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
@@ -347,12 +350,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     },
   );
 
-  // Get useHostnameOnly setting
-  let useHostnameOnly = false;
+  // Default hostname-only so an absolute endpoint is appended to the origin, not to a
+  // base URL that already carries a path (sub-path sites would otherwise get a duplicated
+  // /foo/foo/... URL). No-op for root-domain sites.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const siteObj = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
@@ -438,8 +443,12 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   });
 
-  // Build unique pageUrls from all suggestions
-  const pageUrls = [...new Set(suggestionMap.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
+  // Resolve each endpoint (an absolute path) against the base URL's origin. Concatenating
+  // onto a base that already carries a path (sub-path site, e.g. example.com/foo) produced
+  // a malformed /foo/foo/... URL. No-op for root-domain sites.
+  const pageUrls = [
+    ...new Set(suggestionMap.map((s) => new URL(s.endpoint, site.getBaseURL()).toString())),
+  ];
 
   log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique (${pageUrls.length} unique pages)`);
 
