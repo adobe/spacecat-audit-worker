@@ -1,3 +1,10 @@
+## [1.520.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.3...v1.520.4) (2026-08-12)
+
+
+### Bug Fixes
+
+* **audits:** scope domain-keyed top pages + experimentation opportunities to site sub-path ([#2886](https://github.com/adobe/spacecat-audit-worker/issues/2886)) ([be0754a](https://github.com/adobe/spacecat-audit-worker/commit/be0754ae03f1eeb6cb9c7ce743f639c184d3e37d))
+
 ## [1.520.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.2...v1.520.3) (2026-08-12)
 
 
