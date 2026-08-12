@@ -243,6 +243,31 @@ describe('audit-input-urls', () => {
       expect(result.urls).to.not.include('https://example.com/bar/out-of-scope');
     });
 
+    it('scopes to the sub-path before applying topOrganicLimit', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getBaseURL: () => 'https://example.com/foo',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      };
+
+      // Two higher-traffic out-of-scope pages rank above the in-scope one; with a
+      // limit of 2 a slice-then-scope order would drop the /foo page entirely.
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'readability',
+        getAgenticUrls: async () => [],
+        scopeTopPagesToBasePath: true,
+        topOrganicLimit: 2,
+        topPages: [
+          { url: 'https://example.com/bar/a', traffic: 100, urlId: 't1' },
+          { url: 'https://example.com/bar/b', traffic: 90, urlId: 't2' },
+          { url: 'https://example.com/foo/c', traffic: 10, urlId: 't3' },
+        ],
+      });
+
+      expect(result.topPagesUrls).to.deep.equal(['https://example.com/foo/c']);
+    });
+
     it('should use provided getTopPages callback without calling dataAccess', async () => {
       const site = {
         getId: () => 'site-123',

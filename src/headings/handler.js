@@ -388,6 +388,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
       auditType,
       getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context),
       topOrganicLimit: 200,
+      scopeTopPagesToBasePath: true,
       log,
     });
     const topPages = mergedInput.urls.map((url) => ({ url }));

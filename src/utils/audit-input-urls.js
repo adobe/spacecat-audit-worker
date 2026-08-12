@@ -150,14 +150,16 @@ export async function getMergedAuditInputUrls({
     site?.getConfig?.(),
   ]);
   const normalizedTopPages = topPages || [];
-  const limitedTopPages = Number.isInteger(topOrganicLimit)
-    ? normalizedTopPages.slice(0, topOrganicLimit)
-    : normalizedTopPages;
-  let topPagesUrls = topPagesToUrls(limitedTopPages);
   // Opt-in: scope domain-keyed top pages to the site sub-path (no-op for root-domain sites).
-  // Operator-included and agentic URLs stay explicit and are never filtered.
+  // Operator-included and agentic URLs stay explicit and are never filtered. Scope BEFORE
+  // applying topOrganicLimit so the "top N" is computed within the sub-path, not the whole
+  // domain (a low-traffic sub-path can otherwise rank entirely below the domain-wide cutoff).
+  let topPagesUrls = topPagesToUrls(normalizedTopPages);
   if (scopeTopPagesToBasePath) {
     topPagesUrls = filterByAuditScope(topPagesUrls, site?.getBaseURL?.(), {}, log);
+  }
+  if (Number.isInteger(topOrganicLimit)) {
+    topPagesUrls = topPagesUrls.slice(0, topOrganicLimit);
   }
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
   const auditTargetUrls = getAuditTargetUrls(site, log);
