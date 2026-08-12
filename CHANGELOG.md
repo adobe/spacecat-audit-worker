@@ -1,3 +1,12 @@
+## [1.518.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.2...v1.518.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* **audits:** query RUM by hostname for sub-path sites (cwv, internal-links, forms, alt-text) ([#2881](https://github.com/adobe/spacecat-audit-worker/issues/2881)) ([11236a5](https://github.com/adobe/spacecat-audit-worker/commit/11236a54b9d641b08e3aa75dac8e83e5b08e5df2))
+* **backlinks:** scope broken-backlink results to the site sub-path ([#2882](https://github.com/adobe/spacecat-audit-worker/issues/2882)) ([070abe5](https://github.com/adobe/spacecat-audit-worker/commit/070abe5f615ecbfd795bcdf2af7863096484d26e))
+* **metatags:** emit absolute suggestion/page URLs for sub-path sites (metatags + product-metatags) ([#2880](https://github.com/adobe/spacecat-audit-worker/issues/2880)) ([f663ea3](https://github.com/adobe/spacecat-audit-worker/commit/f663ea36f3d5f6211db051acc7d6799a7deec460))
+
 ## [1.518.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.1...v1.518.2) (2026-08-11)
 
 
