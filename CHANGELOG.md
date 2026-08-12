@@ -1,3 +1,10 @@
+## [1.520.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.0...v1.520.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** exclude Adobe internal user agents from agentic traffic (LLMO-6961) ([#2887](https://github.com/adobe/spacecat-audit-worker/issues/2887)) ([8aecb75](https://github.com/adobe/spacecat-audit-worker/commit/8aecb75605ed68ee66ef50c72e2a3ec904cfd142))
+
 # [1.520.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.519.0...v1.520.0) (2026-08-12)
 
 
