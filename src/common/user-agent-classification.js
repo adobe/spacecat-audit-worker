@@ -10,16 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
+// Adobe-owned user agents that must never count as agentic traffic, even when
+// appended as a suffix to a real bot UA (e.g. the O@E proxy adds
+// `AdobeEdgeOptimize/1.0`, the internal crawler uses `Spacecat/1.0`).
+const ADOBE_INTERNAL_UA_EXCLUSION = '(?!.*(Tokowaka|Spacecat|AdobeEdgeOptimize))';
+
 export const PROVIDER_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))',
-  perplexity: '(?i)Perplexity',
-  claude: '(?i)Claude(?!-web)',
-  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',
-  google: '(?i)(Google-Extended|Googlebot)',
-  mistralai: '(?i)MistralAI-User',
-  copilot: '(?i)Copilot',
-  bing: '(?i)Bingbot',
-  amazon: '(?i)Amzn-User',
+  chatgpt: `(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  perplexity: `(?i)Perplexity${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  claude: `(?i)Claude(?!-web)${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  googleai: `(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  google: `(?i)(Google-Extended|Googlebot)${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  mistralai: `(?i)MistralAI-User${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  copilot: `(?i)Copilot${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  bing: `(?i)Bingbot${ADOBE_INTERNAL_UA_EXCLUSION}`,
+  amazon: `(?i)Amzn-User${ADOBE_INTERNAL_UA_EXCLUSION}`,
 };
 
 /**

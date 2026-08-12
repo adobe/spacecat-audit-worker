@@ -235,7 +235,7 @@ describe('CDN Logs Query Builder', () => {
     }));
 
     expect(query).to.include('WHERE');
-    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
+    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat|AdobeEdgeOptimize))');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
 
