@@ -74,12 +74,41 @@ describe('Forms Vitals audit', () => {
   });
 
   it('queries RUM by the bare hostname (not the sub-path) so the domainkey resolves', async () => {
-    const subpathSite = { getBaseURL: () => 'https://example.com/foo' };
-    await formsAuditRunner('https://example.com/foo', context, subpathSite);
+    await formsAuditRunner('https://example.com/foo', context, site);
 
     // The RUM `domain` must be the hostname, not the sub-path audit URL.
     const call = context.rumApiClient.queryMulti.getCalls().at(-1);
     expect(call.args[1].domain).to.equal('example.com');
+  });
+
+  it('scopes form-vitals to the site base path, dropping out-of-scope forms', async () => {
+    const subpathContext = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: { getBaseURL: () => 'https://example.com/foo' },
+        rumApiClient: {
+          queryMulti: sinon.stub().resolves({
+            cwv: [],
+            'form-vitals': [
+              { url: 'https://example.com/foo/contact' },
+              { url: 'https://example.com/foo/signup' },
+              { url: 'https://example.com/other/contact' }, // sibling agency — out of scope
+              { url: 'https://example.com/foobar' }, // boundary sibling — out of scope
+            ],
+          }),
+        },
+      })
+      .build();
+
+    const result = await formsAuditRunner('https://example.com/foo', subpathContext);
+
+    const urls = result.auditResult.formVitals.map((v) => v.url);
+    expect(urls).to.deep.equal([
+      'https://example.com/foo/contact',
+      'https://example.com/foo/signup',
+    ]);
   });
 });
 
