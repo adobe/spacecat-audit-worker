@@ -52,10 +52,9 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
-  // Default to hostname-only: the endpoint is the page's absolute pathname, so it must
-  // be appended to the origin. Appending to a base that already carries a path (a
-  // sub-path site, e.g. https://oklahoma.gov/omes) duplicated it (/omes/omes/...).
-  // For root-domain sites the base has no path, so this is a no-op.
+  // Default hostname-only: the endpoint is an absolute pathname appended to the origin.
+  // A base that already carries a path (sub-path site, e.g. example.com/foo) duplicated
+  // it (/foo/foo/...). No-op for root-domain sites.
   let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
@@ -351,9 +350,9 @@ export async function runAuditAndGenerateSuggestions(context) {
     },
   );
 
-  // Get useHostnameOnly setting. Defaults to true so an absolute endpoint is appended
-  // to the origin, not to a base URL that already carries a path (sub-path sites would
-  // otherwise get a duplicated /omes/omes/... URL). No-op for root-domain sites.
+  // Default hostname-only so an absolute endpoint is appended to the origin, not to a
+  // base URL that already carries a path (sub-path sites would otherwise get a duplicated
+  // /foo/foo/... URL). No-op for root-domain sites.
   let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
@@ -444,11 +443,9 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   });
 
-  // Build unique pageUrls from all suggestions. Resolve each endpoint (an absolute
-  // path) against the base URL's origin rather than string-concatenating onto the
-  // full base URL: for a subpath site (e.g. baseURL https://oklahoma.gov/omes) the
-  // endpoint already carries the full path (/omes/...), so concatenation produced a
-  // malformed /omes/omes/... URL. No-op for root-domain sites.
+  // Resolve each endpoint (an absolute path) against the base URL's origin. Concatenating
+  // onto a base that already carries a path (sub-path site, e.g. example.com/foo) produced
+  // a malformed /foo/foo/... URL. No-op for root-domain sites.
   const pageUrls = [
     ...new Set(suggestionMap.map((s) => new URL(s.endpoint, site.getBaseURL()).toString())),
   ];

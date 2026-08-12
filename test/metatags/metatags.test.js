@@ -1454,7 +1454,7 @@ describe('Meta Tags', () => {
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
-      it('resolves absolute endpoints against the origin for a sub-path site — no /omes/omes (SITES-49656)', async () => {
+      it('resolves absolute endpoints against the origin for a sub-path site — no /foo/foo (SITES-49656)', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
@@ -1464,9 +1464,9 @@ describe('Meta Tags', () => {
           ...testData.auditData,
           auditResult: {
             ...testData.auditData.auditResult,
-            finalUrl: 'https://oklahoma.gov/omes',
+            finalUrl: 'https://example.com/foo',
             detectedTags: {
-              '/omes/divisions/finance.html': {
+              '/foo/divisions/finance.html': {
                 title: { issue: 'Missing Title', seoImpact: 'High' },
               },
             },
@@ -1477,7 +1477,7 @@ describe('Meta Tags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        expect(suggestions[0].data.url).to.equal('https://oklahoma.gov/omes/divisions/finance.html');
+        expect(suggestions[0].data.url).to.equal('https://example.com/foo/divisions/finance.html');
       });
 
       it('should handle case when config.useHostnameOnly is undefined', async () => {
@@ -1897,19 +1897,19 @@ describe('Meta Tags', () => {
       });
 
       it('builds absolute pageUrls for a subpath site without duplicating the base path (SITES-49656)', async () => {
-        site.getBaseURL.returns('https://oklahoma.gov/omes');
+        site.getBaseURL.returns('https://example.com/foo');
         dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resolves([
           {
-            getId: sinon.stub().returns('sugg-omes-1'),
+            getId: sinon.stub().returns('sugg-foo-1'),
             getData: sinon.stub().returns({
-              url: 'https://oklahoma.gov/omes/divisions/finance.html',
+              url: 'https://example.com/foo/divisions/finance.html',
               tagName: 'title',
             }),
           },
           {
-            getId: sinon.stub().returns('sugg-omes-2'),
+            getId: sinon.stub().returns('sugg-foo-2'),
             getData: sinon.stub().returns({
-              url: 'https://oklahoma.gov/omes/about-omes/contact.html',
+              url: 'https://example.com/foo/about-foo/contact.html',
               tagName: 'description',
             }),
           },
@@ -1929,13 +1929,45 @@ describe('Meta Tags', () => {
         await auditStub.runAuditAndGenerateSuggestions(context);
 
         const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-        // endpoint already carries /omes; must resolve against origin, not concatenate
-        // onto the full base URL (which produced the malformed /omes/omes/... URL).
+        // endpoint already carries /foo; must resolve against origin, not concatenate
+        // onto the full base URL (which produced the malformed /foo/foo/... URL).
         expect(sentMessage.data.pageUrls).to.have.members([
-          'https://oklahoma.gov/omes/divisions/finance.html',
-          'https://oklahoma.gov/omes/about-omes/contact.html',
+          'https://example.com/foo/divisions/finance.html',
+          'https://example.com/foo/about-foo/contact.html',
         ]);
-        sentMessage.data.pageUrls.forEach((u) => expect(u).to.not.contain('/omes/omes/'));
+        sentMessage.data.pageUrls.forEach((u) => expect(u).to.not.contain('/foo/foo/'));
+      });
+
+      it('hands syncSuggestions absolute suggestion data.url for a subpath site — no /foo/foo (SITES-49656)', async () => {
+        site.getBaseURL.returns('https://example.com/foo');
+        context.finalUrl = 'https://example.com/foo';
+        dataAccessStub.Site.findById.resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({}), // no useHostnameOnly set — defaults to hostname-only
+        });
+        const syncSuggestionsSpy = sinon.stub().resolves();
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: sinon.stub().resolves('key'), calculateCPCValue: sinon.stub().resolves(5000) },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: sinon.stub().resolves(metatagsOppty) },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsSpy },
+          '../../src/metatags/ssr-meta-validator.js': {
+            // endpoint already carries the /foo prefix — must resolve against the origin
+            validateDetectedIssues: sinon.stub().resolves({
+              '/foo/divisions/finance.html': {
+                title: { issue: 'Missing Title', seoImpact: 'High' },
+              },
+            }),
+          },
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        const { newData } = syncSuggestionsSpy.firstCall.args[0];
+        expect(newData[0].url).to.equal('https://example.com/foo/divisions/finance.html');
+        expect(newData[0].url).to.not.contain('/foo/foo/');
       });
 
       it('when site.requiresValidation is false, fetches suggestions only for NEW status', async () => {

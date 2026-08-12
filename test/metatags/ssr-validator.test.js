@@ -331,7 +331,7 @@ describe('SSR Meta Validator', () => {
 
     it('resolves subpath endpoints against the origin without duplicating the base path', async () => {
       const detectedTags = {
-        '/omes/page1': {
+        '/foo/page1': {
           title: { issue: 'Missing title tag' },
         },
       };
@@ -342,12 +342,12 @@ describe('SSR Meta Validator', () => {
         text: async () => '<html><head><title>Present</title></head></html>',
       });
 
-      await validateDetectedIssues(detectedTags, 'https://oklahoma.gov/omes', log);
+      await validateDetectedIssues(detectedTags, 'https://example.com/foo', log);
 
-      // The endpoint already carries the /omes path; it must be resolved against the
-      // origin (https://oklahoma.gov/omes/page1), not concatenated onto the base URL
-      // (which would produce https://oklahoma.gov/omes/omes/page1).
-      expect(fetchStub.firstCall.args[0]).to.equal('https://oklahoma.gov/omes/page1');
+      // The endpoint already carries the /foo path; it must be resolved against the
+      // origin (https://example.com/foo/page1), not concatenated onto the base URL
+      // (which would produce https://example.com/foo/foo/page1).
+      expect(fetchStub.firstCall.args[0]).to.equal('https://example.com/foo/page1');
     });
 
     it('should keep real issues when not found in SSR', async () => {
