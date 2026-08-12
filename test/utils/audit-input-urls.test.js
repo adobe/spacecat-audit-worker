@@ -268,6 +268,28 @@ describe('audit-input-urls', () => {
       expect(result.topPagesUrls).to.deep.equal(['https://example.com/foo/c']);
     });
 
+    it('does not scope top pages when scopeTopPagesToBasePath is off (default), even on a sub-path site', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getBaseURL: () => 'https://example.com/foo',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      };
+
+      // Flag omitted → defaults to false → out-of-scope top pages are retained.
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'readability',
+        getAgenticUrls: async () => [],
+        topPages: [
+          { url: 'https://example.com/foo/in', traffic: 100, urlId: 't1' },
+          { url: 'https://example.com/bar/out', traffic: 90, urlId: 't2' },
+        ],
+      });
+
+      expect(result.topPagesUrls).to.include('https://example.com/foo/in');
+      expect(result.topPagesUrls).to.include('https://example.com/bar/out');
+    });
+
     it('should use provided getTopPages callback without calling dataAccess', async () => {
       const site = {
         getId: () => 'site-123',
