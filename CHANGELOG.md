@@ -1,3 +1,10 @@
+# [1.520.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.519.0...v1.520.0) (2026-08-12)
+
+
+### Features
+
+* **offsite:** structured key=value logging for offsite-brand-presence ([#2837](https://github.com/adobe/spacecat-audit-worker/issues/2837)) ([61e9763](https://github.com/adobe/spacecat-audit-worker/commit/61e9763b06f8ef1725265a808ff79f254254aa82))
+
 # [1.519.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.3...v1.519.0) (2026-08-12)
 
 
