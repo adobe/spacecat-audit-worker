@@ -212,6 +212,36 @@ describe('audit-input-urls', () => {
       ]);
     });
 
+    it('scopes top pages to the site sub-path while keeping included/agentic URLs', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getBaseURL: () => 'https://example.com/foo',
+        getConfig: () => ({
+          getIncludedURLs: () => ['https://example.com/bar/included'],
+        }),
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'readability',
+        getAgenticUrls: async () => ['https://example.com/bar/agentic'],
+        topPages: [
+          { url: 'https://example.com/foo/in-scope', traffic: 100, urlId: 't1' },
+          { url: 'https://example.com/bar/out-of-scope', traffic: 90, urlId: 't2' },
+        ],
+      });
+
+      // Domain-keyed top pages are scoped to /foo; out-of-scope pages are dropped.
+      expect(result.topPagesUrls).to.deep.equal(['https://example.com/foo/in-scope']);
+      // Explicit included/agentic URLs are preserved even outside the sub-path.
+      expect(result.urls).to.include.members([
+        'https://example.com/foo/in-scope',
+        'https://example.com/bar/included',
+        'https://example.com/bar/agentic',
+      ]);
+      expect(result.urls).to.not.include('https://example.com/bar/out-of-scope');
+    });
+
     it('should use provided getTopPages callback without calling dataAccess', async () => {
       const site = {
         getId: () => 'site-123',

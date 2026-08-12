@@ -11,6 +11,7 @@
  */
 
 import { getAuditTargetUrls } from './data-access.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 
 /**
  * Common non-HTML file extensions that should be filtered out from scrape inputs.
@@ -148,7 +149,13 @@ export async function getMergedAuditInputUrls({
   const limitedTopPages = Number.isInteger(topOrganicLimit)
     ? normalizedTopPages.slice(0, topOrganicLimit)
     : normalizedTopPages;
-  const topPagesUrls = topPagesToUrls(limitedTopPages);
+  const allTopPagesUrls = topPagesToUrls(limitedTopPages);
+  // Scope domain-keyed top pages to the site sub-path (no-op for root-domain sites);
+  // operator-included and agentic URLs stay explicit and are not filtered.
+  const baseURL = site?.getBaseURL?.();
+  const topPagesUrls = baseURL
+    ? filterByAuditScope(allTopPagesUrls, baseURL, {}, log)
+    : allTopPagesUrls;
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
   const auditTargetUrls = getAuditTargetUrls(site, log);
   const { urls, filteredCount } = mergeAndGetUniqueHtmlUrls(
