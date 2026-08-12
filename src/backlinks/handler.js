@@ -24,7 +24,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
-import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
+import { filterByAuditScope, extractPathPrefix, isWithinAuditScope } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
   isHtmlContentType,
@@ -329,11 +329,27 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       return true;
     });
 
+    // Directory-boundary-safe sub-path scoping. The host-only subdomain filter above and the
+    // server-side `target_url LIKE '%host/path%'` filter (mysticat-shared-seo-client) are both
+    // coarse: the LIKE match also captures sibling paths (e.g. '%oklahoma.gov/omes%' matches
+    // '/omes-budget'). isWithinAuditScope enforces the trailing-slash directory boundary so a
+    // sub-path site keeps only '/omes/*' targets. It is a no-op for root sites (no base path),
+    // and honours the effective base (overrideBaseURL) the same way as the subdomain filter
+    // (SITES-49721).
+    const effectiveBaseURL = overrideBaseURL || siteBaseURL;
+    const scopedBacklinks = filteredBacklinks?.filter((backlink) => {
+      if (isWithinAuditScope(backlink.url_to, effectiveBaseURL)) {
+        return true;
+      }
+      log.debug(`Excluding backlink ${backlink.url_to}: outside audit sub-path scope ${effectiveBaseURL}`);
+      return false;
+    });
+
     return {
       fullAuditRef,
       auditResult: {
         finalUrl: auditUrl,
-        brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
+        brokenBacklinks: await filterOutValidBacklinks(scopedBacklinks, log),
       },
     };
   } catch (e) {

@@ -535,6 +535,123 @@ describe('Backlinks Tests', function () {
     });
   });
 
+  describe('sub-path (base-path) scoping (SITES-49721)', () => {
+    it('keeps only /omes/* targets for a sub-path site, dropping same-host and boundary paths', async () => {
+      const backlinks = [
+        {
+          title: 'in scope',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://foo.com/omes/procurement',
+          traffic_domain: 50,
+        },
+        {
+          title: 'same host, different agency — should be dropped',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://foo.com/other-agency',
+          traffic_domain: 40,
+        },
+        {
+          title: 'directory boundary sibling — should be dropped',
+          url_from: 'https://ref.com/c',
+          url_to: 'https://foo.com/omes-budget/report',
+          traffic_domain: 30,
+        },
+      ];
+
+      // Only the in-scope target should ever be fetched (others are filtered out first).
+      nock('https://foo.com')
+        .get('/omes/procurement')
+        .reply(404);
+
+      const subPathSite = {
+        getId: () => 'subpath-site',
+        getBaseURL: () => 'https://foo.com/omes',
+        getConfig: () => Config({}),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, subPathSite);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.deep.equal(['https://foo.com/omes/procurement']);
+    });
+
+    it('scopes to the sub-path of the configured overrideBaseURL', async () => {
+      const backlinks = [
+        {
+          title: 'in scope on override host',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://applyonline.hdfc.bank.in/omes/loan',
+          traffic_domain: 50,
+        },
+        {
+          title: 'boundary sibling on override host — should be dropped',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://applyonline.hdfc.bank.in/omes-budget',
+          traffic_domain: 40,
+        },
+      ];
+
+      nock('https://applyonline.hdfc.bank.in')
+        .get('/omes/loan')
+        .reply(404);
+
+      const siteWithOverride = {
+        getId: () => 'override-subpath-site',
+        getBaseURL: () => 'https://applyonline.hdfcbank.com',
+        getConfig: () => Config({
+          fetchConfig: { overrideBaseURL: 'https://applyonline.hdfc.bank.in/omes' },
+        }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(
+        'applyonline.hdfc.bank.in',
+        context,
+        siteWithOverride,
+      );
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.deep.equal(['https://applyonline.hdfc.bank.in/omes/loan']);
+    });
+
+    it('is a no-op for root-domain sites (all same-host paths kept)', async () => {
+      const backlinks = [
+        {
+          title: 'path a',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://foo.com/omes/procurement',
+          traffic_domain: 50,
+        },
+        {
+          title: 'path b',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://foo.com/other-agency',
+          traffic_domain: 40,
+        },
+      ];
+
+      nock('https://foo.com').get('/omes/procurement').reply(404);
+      nock('https://foo.com').get('/other-agency').reply(404);
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.include('https://foo.com/omes/procurement');
+      expect(resultUrls).to.include('https://foo.com/other-agency');
+    });
+  });
+
   describe('soft-404 detection', () => {
     it('should keep backlink when 200 response has X-Robots-Tag: noindex', async () => {
       nock('https://foo.com')
