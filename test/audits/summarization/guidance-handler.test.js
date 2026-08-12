@@ -823,6 +823,8 @@ describe('summarization guidance handler', () => {
     // edit doesn't drift the key — no opt-in needed; edited suggestions clear
     // normally to OUTDATED/FIXED when the issue disappears (LLMO-6761).
     expect(syncArgs.protectEditedFromOutdated).to.be.undefined;
+    // Scenario 1 (LLMO-6761): summarization opts in to the full-suggestion hard-skip.
+    expect(syncArgs.skipEditedOnMatch).to.equal(true);
   });
 
 });

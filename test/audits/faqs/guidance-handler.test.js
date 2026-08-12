@@ -1772,6 +1772,8 @@ describe('FAQs guidance handler', () => {
 
     const syncArgs = syncSuggestionsStub.getCall(0).args[0];
     expect(syncArgs.protectEditedFromOutdated).to.equal(true);
+    // Scenario 1 (LLMO-6761): FAQ opts in to the full-suggestion hard-skip.
+    expect(syncArgs.skipEditedOnMatch).to.equal(true);
 
     // Customer edited the question from "How to use Photoshop?" to "Best way to learn Photoshop?"
     const editedSuggestion = {

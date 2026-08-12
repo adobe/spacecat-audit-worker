@@ -1125,11 +1125,50 @@ describe('data-access', () => {
         newData,
         buildKey,
         mapNewSuggestion,
+        skipEditedOnMatch: true,
       });
 
       expect(existingSuggestions[0].setData).to.not.have.been.called;
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Skipping edited suggestion .* preserving customer edit/),
+      );
+    });
+
+    it('should call mergeDataFunction (not hard-skip) for an edited suggestion when skipEditedOnMatch is not set (default false, headings/toc-style per-field merge)', async () => {
+      const editedData = { key: '1', title: 'customer edit', isEdited: true };
+      const existingSuggestions = [{
+        id: '1',
+        data: editedData,
+        getData: sinon.stub().returns(editedData),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'new audit suggestion' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        // skipEditedOnMatch intentionally omitted (defaults to false)
+      });
+
+      // Without skipEditedOnMatch, mergeDataFunction (the default shallow merge here)
+      // still runs and updates the suggestion — isEdited alone does not hard-skip.
+      expect(existingSuggestions[0].setData).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+      expect(mockLogger.debug).to.not.have.been.calledWith(
         sinon.match(/Skipping edited suggestion .* preserving customer edit/),
       );
     });
@@ -3129,18 +3168,19 @@ describe('data-access', () => {
       expect(mockOpportunity.addFixEntities).to.have.been.called;
     });
 
-    it('should reconcile customer-edited NEW suggestions to FIXED when issue disappears (LLMO-6537)', async () => {
-      // isEdited no longer protects from reconcile-to-FIXED — if the issue is
-      // genuinely fixed, the edited suggestion should be cleared.
+    it('should skip customer-edited NEW suggestions (data.isEdited) even when updatedBy was cleared', async () => {
+      // updatedBy is 'system' (cleared by a non-edit action), so only the durable
+      // data.isEdited flag protects it from being reconciled to FIXED. Out of the
+      // FAQ/Summarization/Readability scope of LLMO-6761 — this function is only
+      // called from backlinks, where isEdited means an explicit customer redirect
+      // pick, so the pre-existing exemption is intentionally left unchanged.
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
         getData: sinon.stub().returns({ key: '1', isEdited: true }),
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         getUpdatedBy: sinon.stub().returns('system'),
-        getType: sinon.stub().returns('TEST_TYPE'),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       await reconcileDisappearedSuggestions({
@@ -3148,15 +3188,12 @@ describe('data-access', () => {
         disappearedSuggestions: [suggestion],
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
-        buildFixEntityPayload: (s, opp) => ({
-          opportunityId: opp.getId(),
-          status: 'PUBLISHED',
-          suggestions: [s.getId()],
-        }),
+        buildFixEntityPayload: sinon.stub(),
         Suggestion: mockSuggestionCollection,
       });
 
-      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
     });
 
     it('should still reconcile OUTDATED + isEdited suggestions (redirect-target attribution)', async () => {

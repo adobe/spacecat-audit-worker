@@ -283,6 +283,9 @@ export default async function handler(message, context) {
         ? SuggestionModel.STATUSES.SKIPPED
         : defaultMergeStatusFunction(existing, newDataItem, mergeCtx);
     },
+    // Scenario 1 (LLMO-6761): keep edited improvements as-is on re-detection
+    // instead of a per-field merge.
+    skipEditedOnMatch: true,
   });
 
   // Delete the S3 response file only after syncSuggestions succeeds

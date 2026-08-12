@@ -333,6 +333,9 @@ async function addSuggestions(
     // buildKey embeds the question text, so an edit drifts the key — protect edited
     // suggestions from being falsely swept to OUTDATED on key mismatch (LLMO-6537).
     protectEditedFromOutdated: true,
+    // Scenario 1 (LLMO-6761): keep edited FAQs as-is on re-detection instead of a
+    // per-field merge.
+    skipEditedOnMatch: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',

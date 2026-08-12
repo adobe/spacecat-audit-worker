@@ -449,8 +449,11 @@ describe('Readability Opportunities Handler Tests', () => {
 
       await processReadabilityOpportunities(mockContext);
 
-      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
       expect(mergeDataFunction).to.be.a('function');
+      // Scenario 1 (LLMO-6761): readability opts in to the full-suggestion hard-skip.
+      expect(syncArgs.skipEditedOnMatch).to.equal(true);
 
       // edgeDeployed → existing returned unchanged
       const deployed = mergeDataFunction(

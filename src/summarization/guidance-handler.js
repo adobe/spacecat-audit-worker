@@ -70,6 +70,9 @@ async function addSuggestions(
       return { ...existingData, ...newData };
     },
     scrapedUrlsSet,
+    // Scenario 1 (LLMO-6761): keep edited summaries as-is on re-detection instead
+    // of a per-field merge.
+    skipEditedOnMatch: true,
   });
 }
 

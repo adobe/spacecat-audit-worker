@@ -216,6 +216,8 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(mappedData.seoRecommendation).to.equal('Simplify language');
       expect(mappedData.aiRationale).to.equal('Use shorter sentences');
       expect(mappedData.suggestionStatus).to.equal('completed');
+      // Scenario 1 (LLMO-6761): readability opts in to the full-suggestion hard-skip.
+      expect(syncArgs.skipEditedOnMatch).to.equal(true);
     });
 
     it('should return badRequest when s3ResultsPath is missing', async () => {

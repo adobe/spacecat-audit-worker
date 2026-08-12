@@ -250,6 +250,9 @@ export async function processReadabilityOpportunities(context) {
         }
         return { ...existingData, ...newData };
       },
+      // Scenario 1 (LLMO-6761): keep edited improvements as-is on re-detection
+      // instead of a per-field merge.
+      skipEditedOnMatch: true,
     });
 
     // Send to Mystique for AI-powered readability improvements

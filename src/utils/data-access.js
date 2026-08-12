@@ -457,6 +457,14 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
  * @param {boolean} [params.protectEditedFromOutdated] - See
  *   {@link handleOutdatedSuggestions}.
+ * @param {boolean} [params.skipEditedOnMatch] - When true, a matched-key existing
+ *   suggestion with `data.isEdited === true` is hard-skipped entirely (Scenario 1,
+ *   LLMO-6761) — `mergeDataFunction` is never called for it, so nothing refreshes.
+ *   Defaults to false, preserving prior behavior: `mergeDataFunction` is always
+ *   called and decides per-field what to preserve vs. refresh (e.g. headings/toc,
+ *   which keep one edited field while refreshing the rest). Opt in only for
+ *   handlers designed around full-suggestion preserve-as-is semantics (FAQ,
+ *   Summarization, Readability).
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -474,6 +482,7 @@ export async function syncSuggestions({
   bypassValidationForPlg = false,
   outdateInProgress = false,
   protectEditedFromOutdated = false,
+  skipEditedOnMatch = false,
 }) {
   if (!context) {
     return;
@@ -558,7 +567,11 @@ export async function syncSuggestions({
     }
 
     // Scenario 1: same issue re-detected after customer edit → keep as-is (LLMO-6761).
-    if (existingData?.isEdited === true) {
+    // Opt-in only: handlers that pass their own isEdited-aware mergeDataFunction for
+    // partial field-level preservation (e.g. headings/toc, which refresh everything
+    // except one specific field) do NOT set this, so their existing per-field merge
+    // behavior is unaffected by this centralized guard.
+    if (skipEditedOnMatch && existingData?.isEdited === true) {
       log.debug(`Skipping edited suggestion ${existingKey} - preserving customer edit`);
       return;
     }
@@ -683,8 +696,7 @@ export function getDisappearedSuggestions(existingSuggestions, newDataKeys, buil
  * Reconciles disappeared suggestions by checking if issues were fixed externally.
  *
  * Candidates:
- *   - Suggestions in NEW status that disappeared from the fresh audit data
- *     (including customer-edited ones — if the issue is fixed, clear it).
+ *   - Suggestions in NEW status that disappeared from the fresh audit data.
  *   - Suggestions in OUTDATED status whose data has `isEdited === true` — these
  *     are second-chance candidates for customer-deployed fixes that landed after
  *     a prior audit swept them to OUTDATED. `isEdited: true` means the customer
@@ -721,17 +733,23 @@ export async function reconcileDisappearedSuggestions({
     // Accept NEW suggestions, plus OUTDATED suggestions with `isEdited: true`
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
-    // Include NEW suggestions (issue disappeared → candidate for FIXED reconciliation)
-    // and OUTDATED+isEdited suggestions (redirect-target attribution — see docstring).
-    // Edited NEW suggestions are no longer exempt: if the issue is genuinely fixed,
-    // the edited suggestion should be cleared too (LLMO-6537).
+    //
+    // Out of the FAQ/Summarization/Readability scope of LLMO-6761 — this function
+    // is only called from src/backlinks/handler.js, where `isEdited` means the
+    // customer explicitly picked a redirect target, not a generic content edit.
+    // Keep the pre-existing exemption unchanged here (no regression review/tests
+    // for backlinks in this PR).
     const candidates = disappearedSuggestions.filter((s) => {
       const status = s?.getStatus?.();
+      const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
-        return true;
+        // Never auto-reconcile a customer-edited NEW suggestion to FIXED — the durable
+        // data.isEdited flag protects it (the TOC pattern; updatedBy is not consulted).
+        // The OUTDATED+isEdited branch below is intentionally exempt (redirect-target
+        // attribution).
+        return !isEdited;
       }
-      if (outdatedStatus && status === outdatedStatus
-        && s?.getData?.()?.isEdited === true) {
+      if (outdatedStatus && status === outdatedStatus && isEdited) {
         return true;
       }
       return false;
