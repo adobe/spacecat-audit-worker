@@ -78,6 +78,17 @@ describe('subpath-filter', () => {
       expect(isWithinAuditScope('https://bulk.com/fr/page1', 'bulk.com/uk')).to.equal(false);
     });
 
+    it('should keep the section landing page (basePath.html) but not siblings', () => {
+      // The `${basePath}.html` landing page is in scope.
+      expect(isWithinAuditScope('https://example.com/foo.html', 'https://example.com/foo')).to.equal(true);
+      expect(isWithinAuditScope('/foo.html', 'https://example.com/foo')).to.equal(true);
+      // Boundary safety: siblings sharing the prefix must still be dropped.
+      expect(isWithinAuditScope('https://example.com/foobar', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('https://example.com/foo-x', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('/foobar', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('/foo-x', 'https://example.com/foo')).to.equal(false);
+    });
+
     it('should return false for invalid URLs', () => {
       // Invalid URLs cause parsing errors, which return false
       expect(isWithinAuditScope('not-a-url', 'bulk.com/uk')).to.equal(false);

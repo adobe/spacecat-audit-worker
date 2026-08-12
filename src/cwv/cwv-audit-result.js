@@ -15,6 +15,7 @@ import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
 import { isWithinAuditScope } from '../internal-links/subpath-filter.js';
+import { getRUMDomain } from '../support/utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
@@ -109,20 +110,18 @@ export async function buildCWVAuditResult(context) {
   const rumApiClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
-    domain: auditUrl,
+    // RUM is keyed per hostname; a sub-path auditUrl (e.g. example.com/foo) has no
+    // domainkey. Query by hostname; per-URL results are scoped to the base path below.
+    domain: getRUMDomain(auditUrl),
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
   };
   const cwvData = await rumApiClient.query(Audit.AUDIT_TYPES.CWV, options);
 
-  // SITES-49656: subpath sites (a concrete path onboarded as its own site, e.g.
-  // https://oklahoma.gov/omes) share the domain-keyed RUM query with the whole
-  // domain, so cwvData carries sibling-site pages. Scope the per-URL entries to
-  // the site's base path — reusing the internal-links audit-scope filter — before
-  // top-N/threshold selection so the report and resulting opportunities don't
-  // bleed in unrelated pages. Root-domain sites (no base path) are unaffected;
-  // operator-configured `group` entries are left untouched.
+  // SITES-49656: sub-path sites (e.g. example.com/foo) share the domain-keyed RUM
+  // query, so scope per-URL entries to the base path before top-N/threshold selection.
+  // Root-domain sites and operator-configured `group` entries are unaffected.
   const scopedCwvData = cwvData.filter(
     (item) => item.type !== 'url' || isWithinAuditScope(item.url, baseURL),
   );

@@ -246,8 +246,8 @@ describe('CWV Audit Result', () => {
 
     describe('subpath-site base-path scoping (SITES-49656)', () => {
       const subpathSite = {
-        getId: () => 'omes',
-        getBaseURL: () => 'https://www.example.gov/omes',
+        getId: () => 'us',
+        getBaseURL: () => 'https://www.example.gov/us',
         getConfig: () => ({ getGroupedURLs: () => [] }),
       };
 
@@ -270,42 +270,60 @@ describe('CWV Audit Result', () => {
       it('keeps only pages under the site base path and drops sibling-site pages', async () => {
         const cwvDataFromRum = [
           {
-            type: 'url', url: 'https://www.example.gov/omes', pageviews: 100000, organic: 0, metrics: [],
+            type: 'url', url: 'https://www.example.gov/us', pageviews: 100000, organic: 0, metrics: [],
           },
           {
-            type: 'url', url: 'https://www.example.gov/omes/leadership.html', pageviews: 6000, organic: 0, metrics: [],
+            type: 'url', url: 'https://www.example.gov/us/leadership.html', pageviews: 6000, organic: 0, metrics: [],
           },
           {
-            type: 'url', url: 'https://www.example.gov/okdhs.html', pageviews: 5900, organic: 0, metrics: [],
+            type: 'url', url: 'https://www.example.gov/other.html', pageviews: 5900, organic: 0, metrics: [],
           },
           {
-            type: 'url', url: 'https://www.example.gov/omes-budget', pageviews: 5800, organic: 0, metrics: [],
+            type: 'url', url: 'https://www.example.gov/us-budget', pageviews: 5800, organic: 0, metrics: [],
           },
           {
-            type: 'group', pattern: '/omes/*', name: 'OMES pages', pageviews: 5000, organic: 0, metrics: [],
+            type: 'group', pattern: '/us/*', name: 'US pages', pageviews: 5000, organic: 0, metrics: [],
           },
         ];
         const { buildCWVAuditResult: build } = await buildForSubpath(cwvDataFromRum);
 
         const result = await build({
-          site: subpathSite, finalUrl: 'www.example.gov/omes', log, env: {},
+          site: subpathSite, finalUrl: 'www.example.gov/us', log, env: {},
         });
 
         const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
-        expect(urls).to.include('https://www.example.gov/omes');
-        expect(urls).to.include('https://www.example.gov/omes/leadership.html');
-        // sibling agency page on the same domain but outside /omes — must be dropped
-        expect(urls).to.not.include('https://www.example.gov/okdhs.html');
-        // directory-boundary safety: /omes-budget is a sibling, not under /omes/
-        expect(urls).to.not.include('https://www.example.gov/omes-budget');
+        expect(urls).to.include('https://www.example.gov/us');
+        expect(urls).to.include('https://www.example.gov/us/leadership.html');
+        // sibling agency page on the same domain but outside /us — must be dropped
+        expect(urls).to.not.include('https://www.example.gov/other.html');
+        // directory-boundary safety: /us-budget is a sibling, not under /us/
+        expect(urls).to.not.include('https://www.example.gov/us-budget');
         // operator-configured group entries pass through untouched
         expect(result.auditResult.cwv.find((e) => e.type === 'group')).to.exist;
+      });
+
+      it('queries RUM by hostname (not the sub-path) so the domainkey resolves', async () => {
+        const queryStub = sandbox.stub().resolves([]);
+        const { buildCWVAuditResult: build } = await esmock('../../../src/cwv/cwv-audit-result.js', {
+          '@adobe/spacecat-shared-rum-api-client': {
+            default: { createFrom: sandbox.stub().returns({ query: queryStub }) },
+          },
+        });
+
+        await build({
+          site: subpathSite, finalUrl: 'www.example.gov/us', log, env: {},
+        });
+
+        // Sub-path finalUrl (www.example.gov/us) must be stripped to the hostname for
+        // the RUM query — the per-URL results are scoped to /us separately.
+        expect(queryStub.getCalls().some((c) => c.args[1]?.domain === 'www.example.gov'))
+          .to.equal(true);
       });
 
       it('drops url entries whose URL cannot be parsed', async () => {
         const cwvDataFromRum = [
           {
-            type: 'url', url: 'https://www.example.gov/omes', pageviews: 100000, organic: 0, metrics: [],
+            type: 'url', url: 'https://www.example.gov/us', pageviews: 100000, organic: 0, metrics: [],
           },
           {
             type: 'url', url: ':::not-a-url', pageviews: 6000, organic: 0, metrics: [],
@@ -314,11 +332,11 @@ describe('CWV Audit Result', () => {
         const { buildCWVAuditResult: build } = await buildForSubpath(cwvDataFromRum);
 
         const result = await build({
-          site: subpathSite, finalUrl: 'www.example.gov/omes', log, env: {},
+          site: subpathSite, finalUrl: 'www.example.gov/us', log, env: {},
         });
 
         const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
-        expect(urls).to.deep.equal(['https://www.example.gov/omes']);
+        expect(urls).to.deep.equal(['https://www.example.gov/us']);
       });
     });
   });
