@@ -10,8 +10,25 @@
  * governing permissions and limitations under the License.
  */
 
+// Adobe-owned user agents that must never count as agentic traffic. The O@E proxy
+// appends `AdobeEdgeOptimize/1.0` to the real bot UA, the internal crawler uses
+// `Spacecat/1.0`, and `Tokowaka/1.0` is Adobe's prerender client. Excluded as a
+// full-string match by the query filter builders (buildUserAgentFilter,
+// buildLlmUserAgentFilter) and, independently, at ingestion in
+// src/cdn-analysis/sql/*/insert-aggregated.sql (keep both lists in sync).
+export const ADOBE_INTERNAL_UA_PATTERN = '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)';
+
+/**
+ * Builds the SQL predicate that excludes Adobe-owned/proxied user agents. Matches
+ * the full UA string, so the marker is caught in any position regardless of the
+ * bot keyword (e.g. both `ChatGPT-User/1.0 AdobeEdgeOptimize/1.0` and the reverse).
+ */
+export function buildAdobeInternalUaExclusion(column = 'user_agent') {
+  return `NOT REGEXP_LIKE(${column}, '${ADOBE_INTERNAL_UA_PATTERN}')`;
+}
+
 export const PROVIDER_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))',
+  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
   googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',

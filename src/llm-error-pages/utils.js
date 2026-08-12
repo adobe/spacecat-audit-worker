@@ -11,7 +11,12 @@
  */
 
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
+import {
+  buildUserAgentDisplaySQL,
+  buildAgentTypeClassificationSQL,
+  PROVIDER_USER_AGENT_PATTERNS,
+  buildAdobeInternalUaExclusion,
+} from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 
@@ -61,7 +66,7 @@ export function buildLlmUserAgentFilter(providers = null) {
     return null;
   }
 
-  return `REGEXP_LIKE(user_agent, '${patterns.join('|')}')`;
+  return `REGEXP_LIKE(user_agent, '${patterns.join('|')}') AND ${buildAdobeInternalUaExclusion()}`;
 }
 
 export function normalizeUserAgentToProvider(rawUserAgent) {

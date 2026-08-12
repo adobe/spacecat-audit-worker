@@ -235,8 +235,9 @@ describe('CDN Logs Query Builder', () => {
     }));
 
     expect(query).to.include('WHERE');
-    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
+    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)');
     expect(query).to.include('(?i)Claude(?!-web)');
+    expect(query).to.include("NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
   });
 
   it('handles site filters correctly', async () => {
@@ -352,8 +353,8 @@ describe('CDN Logs Query Builder', () => {
 
       expect(query).to.be.a('string');
       expect(query).to.include('LIMIT 50');
-      // Should not have any exclusion filter when excludedUrlSuffixes is not provided
-      expect(query).to.not.include('AND NOT');
+      // Should not have any URL-suffix exclusion filter when excludedUrlSuffixes is not provided
+      expect(query).to.not.include('AND NOT regexp_like(url,');
     });
 
     it('creates query with excluded URL suffixes filter using regexp_like', async () => {
@@ -384,8 +385,8 @@ describe('CDN Logs Query Builder', () => {
 
       expect(query).to.be.a('string');
       expect(query).to.include('LIMIT 100');
-      // Should not have exclusion filter when array is empty
-      expect(query).to.not.include('AND NOT');
+      // Should not have URL-suffix exclusion filter when array is empty
+      expect(query).to.not.include('AND NOT regexp_like(url,');
     });
 
     it('escapes single quotes in excluded URL suffixes', async () => {

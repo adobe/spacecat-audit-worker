@@ -23,6 +23,9 @@ WHERE year  = '{{year}}'
    -- match known LLM-related user-agents
   AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
+  -- exclude Adobe internal/proxied user agents (O@E appends AdobeEdgeOptimize/*, internal crawler uses Spacecat/1.0, Tokowaka)
+  AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')
+
   -- prefer response content type when present, otherwise fall back to URL heuristics
   AND (
     (
