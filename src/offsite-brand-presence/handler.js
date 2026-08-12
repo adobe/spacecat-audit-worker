@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
+import { SEMRUSH_ENTITLEMENT_SKIP_REASONS } from '../utils/semrush-entitlement.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   computeBrandTokens,
@@ -981,7 +982,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
       const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
-      if (hardStopOnFailure) {
+      // A deliberate entitlement-based skip is never a hard stop, even when this run
+      // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
+      // errors" for a non-entitled brand must hold regardless of how Semrush was
+      // enabled. Hard-stop stays reserved for genuine technical failures (auth,
+      // outage, etc.) that a canary run wants surfaced, not for expected scoping.
+      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
+      if (hardStopOnFailure && !isEntitlementSkip) {
         // enableSemrush:true forced this run — surface the failure, no fallback.
         olog.failure('brand_data_load', `Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
           peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
@@ -1002,12 +1009,20 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
           fullAuditRef: finalUrl,
         };
       }
-      // Enabled by the env var (or override not forced) — fall back to legacy so a
-      // Semrush problem never silently zeroes out offsite.
+      // Enabled by the env var (or override not forced, or an entitlement skip) —
+      // fall back to legacy so a Semrush problem never silently zeroes out offsite.
       fallbackReason = reason;
-      olog.warn('brand_data_load', `Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
-        peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
-      });
+      // An entitlement-based skip is expected scoping, not a failure — log it at
+      // info/outcome=skip; a genuine technical failure stays warn/outcome=failure.
+      if (isEntitlementSkip) {
+        olog.skip('brand_data_load', `Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
+          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
+        });
+      } else {
+        olog.warn('brand_data_load', `Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
+          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
+        });
+      }
     } else {
       for (const [url, info] of semrushUrls) {
         allUrls.set(url, info);
@@ -1019,6 +1034,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
+  // Granular cause behind an entitlement-based `fallbackReason` (`flag-disabled` |
+  // `no-workspace` | `no-client` | `check-failed`) — set only on the two entitlement
+  // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
+  // bug (`no-client`) stays distinguishable from a one-off transient blip
+  // (`check-failed`) without changing the coarse-grained hard-stop-exemption contract.
+  const entitlementReason = semrushDiagnostics?.entitlementReason;
 
   // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
   // failed (fallback). An enableSemrush:true run that failed already hard-stopped
@@ -1062,6 +1083,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         weeks: previousWeeks,
         dataSource,
         ...(fallbackReason ? { fallbackReason } : {}),
+        ...(entitlementReason ? { entitlementReason } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -1138,6 +1160,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       weeks: previousWeeks,
       dataSource,
       ...(fallbackReason ? { fallbackReason } : {}),
+      ...(entitlementReason ? { entitlementReason } : {}),
     },
     fullAuditRef: finalUrl,
   };

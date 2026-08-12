@@ -1,3 +1,33 @@
+## [1.518.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.2...v1.518.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* **audits:** query RUM by hostname for sub-path sites (cwv, internal-links, forms, alt-text) ([#2881](https://github.com/adobe/spacecat-audit-worker/issues/2881)) ([11236a5](https://github.com/adobe/spacecat-audit-worker/commit/11236a54b9d641b08e3aa75dac8e83e5b08e5df2))
+* **backlinks:** scope broken-backlink results to the site sub-path ([#2882](https://github.com/adobe/spacecat-audit-worker/issues/2882)) ([070abe5](https://github.com/adobe/spacecat-audit-worker/commit/070abe5f615ecbfd795bcdf2af7863096484d26e))
+* **metatags:** emit absolute suggestion/page URLs for sub-path sites (metatags + product-metatags) ([#2880](https://github.com/adobe/spacecat-audit-worker/issues/2880)) ([f663ea3](https://github.com/adobe/spacecat-audit-worker/commit/f663ea36f3d5f6211db051acc7d6799a7deec460))
+
+## [1.518.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.1...v1.518.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2879](https://github.com/adobe/spacecat-audit-worker/issues/2879)) ([151c5e6](https://github.com/adobe/spacecat-audit-worker/commit/151c5e64a9232019dcf8d9f68082e71b73e20d17))
+
+## [1.518.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.518.0...v1.518.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **cwv:** reclaim stale stuck IN_PROGRESS suggestions on re-audit ([#2866](https://github.com/adobe/spacecat-audit-worker/issues/2866)) ([3e33578](https://github.com/adobe/spacecat-audit-worker/commit/3e33578674b9fd24a3a44ce13b9e327019498cd9)), closes [#686](https://github.com/adobe/spacecat-audit-worker/issues/686)
+
+# [1.518.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.3...v1.518.0) (2026-08-11)
+
+
+### Features
+
+* **semrush-offsite:** implement entitlement check for Semrush data access and update fallback logic for offsite audits (LLMO-6841) ([#2871](https://github.com/adobe/spacecat-audit-worker/issues/2871)) ([7944dcb](https://github.com/adobe/spacecat-audit-worker/commit/7944dcb9c08efafa2edeab6d92c59a07adadcb69))
+
 ## [1.517.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.517.2...v1.517.3) (2026-08-11)
 
 

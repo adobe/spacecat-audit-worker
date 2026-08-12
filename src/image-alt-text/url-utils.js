@@ -15,6 +15,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMUrl } from '../support/utils.js';
 import { RUM_INTERVAL } from './constants.js';
 import { getAuditTargetUrls } from '../utils/data-access.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -71,6 +72,9 @@ export async function getTopPageUrls({
         baseUrls = results
           .sort((a, b) => (b.earned || 0) - (a.earned || 0))
           .map((r) => normalizeUrl(r.url));
+        // RUM data is domain-wide; scope to the base path so a sub-path site
+        // (e.g. example.com/foo) doesn't inherit the whole domain. No-op for root.
+        baseUrls = filterByAuditScope(baseUrls, site.getBaseURL(), {}, log);
         log.info(`[${AUDIT_TYPE}]: Found ${baseUrls.length} URLs from RUM`);
       }
     } catch (err) {
