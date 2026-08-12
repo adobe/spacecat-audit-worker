@@ -329,16 +329,13 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       return true;
     });
 
-    // Directory-boundary-safe sub-path scoping. The host-only subdomain filter above and the
-    // server-side `target_url LIKE '%host/path%'` filter (mysticat-shared-seo-client) are both
-    // coarse: the LIKE match also captures sibling paths (e.g. '%oklahoma.gov/omes%' matches
-    // '/omes-budget'). isWithinAuditScope enforces the trailing-slash directory boundary so a
-    // sub-path site keeps only '/omes/*' targets. It is a no-op for root sites (no base path),
-    // and honours the effective base (overrideBaseURL) the same way as the subdomain filter
-    // (SITES-49721).
+    // Directory-boundary-safe sub-path scoping (SITES-49721). The host-only subdomain filter
+    // and the server-side `target_url LIKE '%host/path%'` filter are both coarse (the LIKE also
+    // matches siblings, e.g. '%example.com/foo%' matches '/foo-budget'). prependSchema keeps
+    // scheme-less Semrush target URLs from being treated as relative and dropped. No-op for root.
     const effectiveBaseURL = overrideBaseURL || siteBaseURL;
     const scopedBacklinks = filteredBacklinks?.filter((backlink) => {
-      if (isWithinAuditScope(backlink.url_to, effectiveBaseURL)) {
+      if (isWithinAuditScope(prependSchema(backlink.url_to), effectiveBaseURL)) {
         return true;
       }
       log.debug(`Excluding backlink ${backlink.url_to}: outside audit sub-path scope ${effectiveBaseURL}`);
