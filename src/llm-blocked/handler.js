@@ -78,6 +78,7 @@ export async function checkLLMBlocked(context) {
     dataAccess,
     auditType: 'llm-blocked',
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context),
+    scopeTopPagesToBasePath: true,
     log,
   });
 

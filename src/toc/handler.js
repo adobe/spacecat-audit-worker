@@ -73,6 +73,7 @@ async function getTocInputUrls(context, site) {
     site,
     dataAccess,
     auditType,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(

@@ -114,6 +114,9 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
  * when top pages should be loaded lazily or in parallel with other inputs.
  * @param {number} [options.topOrganicLimit] - Optional cap for SEO URLs
  * @param {Function} [options.topPagesToUrls] - Maps SEO page records to URL strings
+ * @param {boolean} [options.scopeTopPagesToBasePath] - When true, filters the domain-keyed top
+ * pages to the site base path (no-op for root-domain sites). Off by default; callers that do
+ * their own sub-path filtering (e.g. broken-backlinks) should leave it off.
  * @param {Object} [options.log] - Optional logger instance
  * @returns {Promise<Object>}
  */
@@ -126,6 +129,7 @@ export async function getMergedAuditInputUrls({
   getTopPages,
   topOrganicLimit,
   topPagesToUrls = defaultTopPagesToUrls,
+  scopeTopPagesToBasePath = false,
   log,
 }) {
   const { SiteTopPage } = dataAccess || {};
@@ -149,13 +153,12 @@ export async function getMergedAuditInputUrls({
   const limitedTopPages = Number.isInteger(topOrganicLimit)
     ? normalizedTopPages.slice(0, topOrganicLimit)
     : normalizedTopPages;
-  const allTopPagesUrls = topPagesToUrls(limitedTopPages);
-  // Scope domain-keyed top pages to the site sub-path (no-op for root-domain sites);
-  // operator-included and agentic URLs stay explicit and are not filtered.
-  const baseURL = site?.getBaseURL?.();
-  const topPagesUrls = baseURL
-    ? filterByAuditScope(allTopPagesUrls, baseURL, {}, log)
-    : allTopPagesUrls;
+  let topPagesUrls = topPagesToUrls(limitedTopPages);
+  // Opt-in: scope domain-keyed top pages to the site sub-path (no-op for root-domain sites).
+  // Operator-included and agentic URLs stay explicit and are never filtered.
+  if (scopeTopPagesToBasePath) {
+    topPagesUrls = filterByAuditScope(topPagesUrls, site?.getBaseURL?.(), {}, log);
+  }
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
   const auditTargetUrls = getAuditTargetUrls(site, log);
   const { urls, filteredCount } = mergeAndGetUniqueHtmlUrls(

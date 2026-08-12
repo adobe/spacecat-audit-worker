@@ -225,6 +225,7 @@ describe('audit-input-urls', () => {
         site,
         auditType: 'readability',
         getAgenticUrls: async () => ['https://example.com/bar/agentic'],
+        scopeTopPagesToBasePath: true,
         topPages: [
           { url: 'https://example.com/foo/in-scope', traffic: 100, urlId: 't1' },
           { url: 'https://example.com/bar/out-of-scope', traffic: 90, urlId: 't2' },
