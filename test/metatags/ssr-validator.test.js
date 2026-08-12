@@ -329,6 +329,27 @@ describe('SSR Meta Validator', () => {
       expect(log.info).to.have.been.calledWith('SSR validation complete. Removed 3 false positives from 2 endpoints');
     });
 
+    it('resolves subpath endpoints against the origin without duplicating the base path', async () => {
+      const detectedTags = {
+        '/foo/page1': {
+          title: { issue: 'Missing title tag' },
+        },
+      };
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => '<html><head><title>Present</title></head></html>',
+      });
+
+      await validateDetectedIssues(detectedTags, 'https://example.com/foo', log);
+
+      // The endpoint already carries the /foo path; it must be resolved against the
+      // origin (https://example.com/foo/page1), not concatenated onto the base URL
+      // (which would produce https://example.com/foo/foo/page1).
+      expect(fetchStub.firstCall.args[0]).to.equal('https://example.com/foo/page1');
+    });
+
     it('should keep real issues when not found in SSR', async () => {
       const detectedTags = {
         '/page1': {
