@@ -457,12 +457,12 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Text 1',
+                  elements: [{ textContent: 'Text 1' }],
                   fleschReadingEase: 20,
                   check: 'poor-readability',
                 },
                 {
-                  textContent: 'Text 2',
+                  elements: [{ textContent: 'Text 2' }],
                   fleschReadingEase: 15,
                   check: 'poor-readability',
                 },
@@ -521,7 +521,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Line to exclude.',
+                  elements: [{ textContent: 'Line to exclude.' }],
                   fleschReadingEase: 22,
                   check: 'poor-readability',
                 },
@@ -584,7 +584,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Solo line.',
+                  elements: [{ textContent: 'Solo line.' }],
                   fleschReadingEase: 30,
                   check: 'poor-readability',
                 },
@@ -638,7 +638,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Text 1',
+                  elements: [{ textContent: 'Text 1' }],
                   fleschReadingEase: 20,
                 },
               ],
@@ -825,8 +825,8 @@ describe('Guidance Readability Handler Tests', () => {
             {
               name: 'readability',
               opportunities: [
-                { textContent: 'Second text', fleschReadingEase: 25 },
-                { textContent: 'First text', fleschReadingEase: 20 },
+                { elements: [{ textContent: 'Second text' }], fleschReadingEase: 25 },
+                { elements: [{ textContent: 'First text' }], fleschReadingEase: 20 },
               ],
             },
           ],
@@ -874,8 +874,8 @@ describe('Guidance Readability Handler Tests', () => {
             {
               name: 'readability',
               opportunities: [
-                { textContent: 'Text 1', fleschReadingEase: 20 },
-                { textContent: 'Text 2', fleschReadingEase: 25 },
+                { elements: [{ textContent: 'Text 1' }], fleschReadingEase: 20 },
+                { elements: [{ textContent: 'Text 2' }], fleschReadingEase: 25 },
               ],
             },
           ],
@@ -933,7 +933,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Test content',
+                  elements: [{ textContent: 'Test content' }],
                   fleschReadingEase: 23.456,
                   check: 'poor-readability',
                 },
@@ -1001,7 +1001,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Test content',
+                  elements: [{ textContent: 'Test content' }],
                   fleschReadingEase: 25, // Should be used as fallback
                 },
               ],
@@ -1063,7 +1063,7 @@ describe('Guidance Readability Handler Tests', () => {
               name: 'readability',
               opportunities: [
                 {
-                  textContent: 'Unmatched content', // No matching suggestion
+                  elements: [{ textContent: 'Unmatched content' }], // No matching suggestion
                   fleschReadingEase: 25,
                 },
               ],
@@ -1113,7 +1113,7 @@ describe('Guidance Readability Handler Tests', () => {
           audits: [
             {
               name: 'readability',
-              opportunities: [{ textContent: 'Test', fleschReadingEase: 25 }],
+              opportunities: [{ elements: [{ textContent: 'Test' }], fleschReadingEase: 25 }],
             },
           ],
         },
@@ -1289,8 +1289,8 @@ describe('Guidance Readability Handler Tests', () => {
             {
               name: 'readability',
               opportunities: [
-                { textContent: 'Text B', fleschReadingEase: 25 },
-                { textContent: 'Text A', fleschReadingEase: 20 },
+                { elements: [{ textContent: 'Text B' }], fleschReadingEase: 25 },
+                { elements: [{ textContent: 'Text A' }], fleschReadingEase: 20 },
               ],
             },
           ],
@@ -1400,7 +1400,7 @@ describe('Guidance Readability Handler Tests', () => {
             },
             {
               name: 'readability',
-              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+              opportunities: [{ elements: [{ textContent: 'Test content' }], fleschReadingEase: 25 }],
             },
           ],
         },
@@ -1446,7 +1446,7 @@ describe('Guidance Readability Handler Tests', () => {
           audits: [
             {
               name: 'readability',
-              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+              opportunities: [{ elements: [{ textContent: 'Test content' }], fleschReadingEase: 25 }],
             },
           ],
         },

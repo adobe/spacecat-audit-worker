@@ -24,7 +24,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { sendLowSuggestionCountAlert } from '../support/plg-suggestion-alert.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
-import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
+import { filterByAuditScope, extractPathPrefix, isWithinAuditScope } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
   isHtmlContentType,
@@ -329,11 +329,24 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       return true;
     });
 
+    // Directory-boundary-safe sub-path scoping (SITES-49721). The host-only subdomain filter
+    // and the server-side `target_url LIKE '%host/path%'` filter are both coarse (the LIKE also
+    // matches siblings, e.g. '%example.com/foo%' matches '/foo-budget'). prependSchema keeps
+    // scheme-less Semrush target URLs from being treated as relative and dropped. No-op for root.
+    const effectiveBaseURL = overrideBaseURL || siteBaseURL;
+    const scopedBacklinks = filteredBacklinks?.filter((backlink) => {
+      if (isWithinAuditScope(prependSchema(backlink.url_to), effectiveBaseURL)) {
+        return true;
+      }
+      log.debug(`Excluding backlink ${backlink.url_to}: outside audit sub-path scope ${effectiveBaseURL}`);
+      return false;
+    });
+
     return {
       fullAuditRef,
       auditResult: {
         finalUrl: auditUrl,
-        brokenBacklinks: await filterOutValidBacklinks(filteredBacklinks, log),
+        brokenBacklinks: await filterOutValidBacklinks(scopedBacklinks, log),
       },
     };
   } catch (e) {

@@ -160,8 +160,11 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     return;
   }
 
-  // Fetch site configuration once for all suggestions
-  let useHostnameOnly = false;
+  // Fetch site configuration once for all suggestions.
+  // Default hostname-only: the endpoint is an absolute pathname, so it is appended to
+  // the origin. Appending to a base that already carries a path (a sub-path site, e.g.
+  // example.com/foo) duplicated it (/foo/foo/...). No-op for root-domain sites.
+  let useHostnameOnly = true;
   let site = null;
   let customConfig = null;
   let productUrlTemplate = null;
@@ -171,7 +174,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   try {
     const siteId = opportunity.getSiteId();
     site = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
 
     // Get handler configuration for locale extraction and commerce config
     customConfig = site?.getConfig?.()?.getHandlers?.()?.[auditType];
@@ -828,6 +831,7 @@ export async function submitForScraping(context) {
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
     topPages,
+    scopeTopPagesToBasePath: true,
     log,
   });
   log.info(`[PRODUCT-METATAGS] Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);

@@ -11,6 +11,7 @@
  */
 
 import { getAuditTargetUrls } from './data-access.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 
 /**
  * Common non-HTML file extensions that should be filtered out from scrape inputs.
@@ -113,6 +114,9 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
  * when top pages should be loaded lazily or in parallel with other inputs.
  * @param {number} [options.topOrganicLimit] - Optional cap for SEO URLs
  * @param {Function} [options.topPagesToUrls] - Maps SEO page records to URL strings
+ * @param {boolean} [options.scopeTopPagesToBasePath] - When true, filters the domain-keyed top
+ * pages to the site base path (no-op for root-domain sites). Off by default; callers that do
+ * their own sub-path filtering (e.g. broken-backlinks) should leave it off.
  * @param {Object} [options.log] - Optional logger instance
  * @returns {Promise<Object>}
  */
@@ -125,6 +129,7 @@ export async function getMergedAuditInputUrls({
   getTopPages,
   topOrganicLimit,
   topPagesToUrls = defaultTopPagesToUrls,
+  scopeTopPagesToBasePath = false,
   log,
 }) {
   const { SiteTopPage } = dataAccess || {};
@@ -145,10 +150,28 @@ export async function getMergedAuditInputUrls({
     site?.getConfig?.(),
   ]);
   const normalizedTopPages = topPages || [];
-  const limitedTopPages = Number.isInteger(topOrganicLimit)
-    ? normalizedTopPages.slice(0, topOrganicLimit)
-    : normalizedTopPages;
-  const topPagesUrls = topPagesToUrls(limitedTopPages);
+  // Opt-in: scope domain-keyed top pages to the site sub-path (no-op for root-domain sites).
+  // Operator-included and agentic URLs stay explicit and are never filtered. Scope BEFORE
+  // applying topOrganicLimit so the "top N" is computed within the sub-path, not the whole
+  // domain (a low-traffic sub-path can otherwise rank entirely below the domain-wide cutoff).
+  let topPagesUrls = topPagesToUrls(normalizedTopPages);
+  if (scopeTopPagesToBasePath) {
+    const preScopeCount = topPagesUrls.length;
+    topPagesUrls = filterByAuditScope(topPagesUrls, site?.getBaseURL?.(), {}, log);
+    // Distinguish "top pages exist but none are in the sub-path" (e.g. a newly onboarded
+    // sub-path site, or a top-pages import that hasn't caught up) from "no top pages at
+    // all" — a downstream empty-set throw is otherwise indistinguishable from a broken import.
+    if (preScopeCount > 0 && topPagesUrls.length === 0) {
+      log?.info?.(
+        `[audit-input-urls] All ${preScopeCount} top pages are outside the audit scope for `
+        + `${site?.getBaseURL?.()}; the sub-path may be newly onboarded or its top-pages import `
+        + 'may not yet cover it.',
+      );
+    }
+  }
+  if (Number.isInteger(topOrganicLimit)) {
+    topPagesUrls = topPagesUrls.slice(0, topOrganicLimit);
+  }
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
   const auditTargetUrls = getAuditTargetUrls(site, log);
   const { urls, filteredCount } = mergeAndGetUniqueHtmlUrls(

@@ -19,7 +19,7 @@ import {
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
+import { PROVIDER_USER_AGENT_PATTERNS, buildAdobeInternalUaExclusion } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -621,12 +621,12 @@ export function buildUserAgentFilter() {
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
-    REGEXP_LIKE(user_agent, '${chatgpt}') OR 
-    REGEXP_LIKE(user_agent, '${perplexity}') OR 
+    REGEXP_LIKE(user_agent, '${chatgpt}') OR
+    REGEXP_LIKE(user_agent, '${perplexity}') OR
     REGEXP_LIKE(user_agent, '${googleai}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
     REGEXP_LIKE(user_agent, '${amazon}')
-  )`;
+  ) AND ${buildAdobeInternalUaExclusion()}`;
 }
 /* c8 ignore end */

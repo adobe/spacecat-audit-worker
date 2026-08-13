@@ -12,6 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { AsyncJob } from '@adobe/spacecat-shared-data-access';
+import { toElementTargets } from '../../preflight/utils/dom-selector.js';
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -215,7 +216,9 @@ export default async function handler(message, context) {
                           .replace(/\n/g, ' '),
                         seoImpact: 'Moderate',
                         fleschReadingEase: suggestion.originalFleschScore || 0,
-                        textContent: suggestion.originalText,
+                        // Passage lives once in elements[].textContent (no top-level duplicate).
+                        // No selector — the suggest step reconstructs from AI output with no DOM.
+                        ...toElementTargets({ textContent: suggestion.originalText }),
                         seoRecommendation: 'Improve readability by using shorter sentences, '
                           + 'simpler words, and clearer structure',
                       };
@@ -244,14 +247,14 @@ export default async function handler(message, context) {
                   // Fallback: create from current order (may not match original identify order)
                   log.warn('[readability-suggest guidance]: No stored order mapping found, using current order as fallback');
                   originalOrder = opportunitiesToProcess.map((opp, index) => ({
-                    textContent: opp.textContent,
+                    textContent: opp.elements?.[0]?.textContent,
                     originalIndex: index,
                   }));
                 }
 
                 const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
                   log.debug('[readability-suggest guidance]: Looking for suggestion matching opportunity text: '
-                    + `"${opportunity.textContent?.substring(0, 80)}..."`);
+                    + `"${opportunity.elements?.[0]?.textContent?.substring(0, 80)}..."`);
                   log.debug(`[readability-suggest guidance]: Found ${allSuggestions.length} stored suggestions`);
 
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
@@ -261,8 +264,8 @@ export default async function handler(message, context) {
                     // Suggestions are stored directly as objects (not wrapped in .getData())
                     if (suggestion) {
                       log.debug(`[readability-suggest guidance]: Comparing "${suggestion.originalText?.substring(0, 80)}..."`
-                          + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
-                      return suggestion.originalText === opportunity.textContent;
+                          + ` vs "${opportunity.elements?.[0]?.textContent?.substring(0, 80)}..."`);
+                      return suggestion.originalText === opportunity.elements?.[0]?.textContent;
                     }
                     return false;
                   });
@@ -315,7 +318,7 @@ export default async function handler(message, context) {
 
                     return updatedOpportunity;
                   } else {
-                    log.warn(`[readability-suggest guidance]: No matching suggestion found for opportunity: "${opportunity.textContent?.substring(0, 80)}..."`);
+                    log.warn(`[readability-suggest guidance]: No matching suggestion found for opportunity: "${opportunity.elements?.[0]?.textContent?.substring(0, 80)}..."`);
                   }
 
                   return opportunity;
@@ -324,10 +327,10 @@ export default async function handler(message, context) {
                 // Sort updatedOpportunities back to original order based on textContent
                 const sortedOpportunities = updatedOpportunities.sort((a, b) => {
                   const aOriginalIndex = originalOrder.find(
-                    (item) => item.textContent === a.textContent,
+                    (item) => item.textContent === a.elements?.[0]?.textContent,
                   )?.originalIndex ?? Number.MAX_SAFE_INTEGER;
                   const bOriginalIndex = originalOrder.find(
-                    (item) => item.textContent === b.textContent,
+                    (item) => item.textContent === b.elements?.[0]?.textContent,
                   )?.originalIndex ?? Number.MAX_SAFE_INTEGER;
                   return aOriginalIndex - bOriginalIndex;
                 });

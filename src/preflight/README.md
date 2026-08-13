@@ -21,6 +21,8 @@ The Preflight Audit is an async job-based audit that:
 - Scrapes pages and analyzes their content for various SEO/accessibility issues
 - Returns structured results with opportunities for improvement
 
+> **Response schema:** For the complete response structure — every audit and check, with full `identify` and `suggest` example payloads and the `elements[]` contract — see [Preflight API response schema](../../docs/preflight-response-schema.md).
+
 ## Architecture
 
 The preflight audit follows a **handler-based architecture**:

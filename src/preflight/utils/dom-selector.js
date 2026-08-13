@@ -219,11 +219,16 @@ export function getDomElementSelector(element) {
  *
  * Accepts either plain selector strings or `{ selector, textContent }` pairs
  *
+ * Each emitted entry carries `selector` and/or `textContent`; at least one is always
+ * present. A selector-less entry (getDomElementSelector returned null) still surfaces
+ * the offending `textContent` rather than being dropped, so callers never silently
+ * lose the text when a locator can't be generated.
+ *
  * @param {string|string[]|ElementPair|ElementPair[]} selectors - a selector, selector array,
  *   `{selector, textContent}` pair, or array of pairs.
- * `ElementPair = {selector: string, textContent?: string}`.
+ * `ElementPair = {selector?: string, textContent?: string}`.
  * @param {number} [limit=Infinity]
- * @returns {{elements?: Array<{selector: string, textContent?: string}>}}
+ * @returns {{elements?: Array<{selector?: string, textContent?: string}>}}
  */
 export function toElementTargets(selectors, limit = Infinity) {
   if (!selectors) {
@@ -232,13 +237,20 @@ export function toElementTargets(selectors, limit = Infinity) {
   const raw = Array.isArray(selectors) ? selectors : [selectors];
   const normalized = raw
     .map((item) => (typeof item === 'string' ? { selector: item } : item))
-    .filter((item) => item && item.selector);
+    // Keep any entry that carries a locator or text.
+    .filter((item) => item && (item.selector || item.textContent));
 
   const seenSelectors = new Set();
   const unique = [];
   normalized.forEach((item) => {
-    if (!seenSelectors.has(item.selector)) {
-      seenSelectors.add(item.selector);
+    // Dedupe by selector when present; selector-less entries have no locator to
+    // compare on, so each is kept as a distinct occurrence.
+    if (item.selector) {
+      if (!seenSelectors.has(item.selector)) {
+        seenSelectors.add(item.selector);
+        unique.push(item);
+      }
+    } else {
       unique.push(item);
     }
   });
@@ -250,8 +262,9 @@ export function toElementTargets(selectors, limit = Infinity) {
   }
 
   return {
-    elements: limited.map(({ selector, textContent }) => (
-      textContent ? { selector, textContent } : { selector }
-    )),
+    elements: limited.map(({ selector, textContent }) => ({
+      ...(selector ? { selector } : {}),
+      ...(textContent ? { textContent } : {}),
+    })),
   };
 }

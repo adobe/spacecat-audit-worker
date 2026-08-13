@@ -217,7 +217,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Wikipedia] No suggestions found in analysis');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('No suggestions found in analysis'));
     });
 
     it('should return badRequest when no analysis data provided', async () => {
@@ -230,7 +230,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Wikipedia] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(sinon.match('No analysis data provided in message'));
     });
 
     it('should return notFound when site not found', async () => {
@@ -459,9 +459,44 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
+      // The outer catch folds the error into a structured guidance_complete failure line
+      // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
+      // purely for stack capture.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Wikipedia analysis/),
-        sinon.match.any,
+        sinon.match(/Error processing Wikipedia analysis/)
+          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      const outerCatchCall = context.log.error.getCalls().find(
+        (c) => /event=guidance_complete/.test(String(c.args[0])),
+      );
+      expect(outerCatchCall.args).to.have.lengthOf(2);
+      expect(outerCatchCall.args[1]).to.be.an('error');
+    });
+
+    it('logs the suggestion_sync failure and rethrows when syncSuggestions fails', async () => {
+      syncSuggestionsStub.rejects(new Error('suggestion write conflict'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            company: 'Example Corp',
+            suggestions: [
+              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      // Inner catch logs the failed sync event, then rethrows into the outer catch (badRequest).
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=suggestion_sync outcome=failure/),
       );
     });
 
@@ -738,7 +773,14 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(callText).to.include(':warning:');
       expect(callText).to.include("couldn't run");
       expect(callText).to.include('Wikipedia analysis failed');
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Mystique returned an error/));
+      // The upstream error text is routed to the quoted mystiqueError field, not the message.
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Mystique returned an error/)
+          .and(sinon.match(/mystiqueError="Wikipedia analysis failed"/))
+          .and(sinon.match(/event=guidance_receive/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=mystique/)),
+      );
     });
 
     it('reports a Mystique error without a parenthetical when no errorMessage is provided', async () => {

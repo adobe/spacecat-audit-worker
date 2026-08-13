@@ -88,6 +88,22 @@ export async function getRUMUrl(url) {
 }
 
 /**
+ * Resolves the RUM query domain (hostname) from a resolved audit/final URL.
+ * RUM is keyed per hostname, so a sub-path URL (e.g. "example.com/foo") must be
+ * stripped to its hostname; the per-URL results are scoped by the caller. No-op for root.
+ *
+ * @param {string} url - The resolved audit/final URL (scheme and path optional).
+ * @returns {string} The hostname, or the original value if it cannot be parsed.
+ */
+export function getRUMDomain(url) {
+  try {
+    return new URL(prependSchema(url)).hostname;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Checks if a given URL contains a domain with a non-www subdomain.
  *
  * @param {string} baseUrl - The URL to check for the presence of a domain with a non-www subdomain.

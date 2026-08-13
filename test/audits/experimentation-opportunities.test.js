@@ -414,6 +414,38 @@ describe('Experimentation Opportunities Tests', () => {
     });
   });
 
+  describe('sub-path scoping', () => {
+    it('filters whole-domain opportunities to the site sub-path', async () => {
+      context.data = null;
+      context.site = { ...site, getBaseURL: () => 'https://abc.com/foo' };
+      context.rumApiClient.queryMulti = sinon.stub().resolves({
+        'high-organic-low-ctr': [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/foo/in-scope' },
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/bar/out-of-scope' },
+        ],
+      });
+
+      const result = await experimentOpportunitiesAuditRunner('abc.com', context);
+      const pages = result.auditResult.experimentationOpportunities.map((o) => o.page);
+
+      expect(pages).to.deep.equal(['https://abc.com/foo/in-scope']);
+    });
+
+    it('passes opportunities through when the site has no base URL', async () => {
+      context.data = null;
+      context.site = undefined;
+      context.rumApiClient.queryMulti = sinon.stub().resolves({
+        'high-organic-low-ctr': [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/bar/anything' },
+        ],
+      });
+
+      const result = await experimentOpportunitiesAuditRunner('abc.com', context);
+
+      expect(result.auditResult.experimentationOpportunities).to.have.length(1);
+    });
+  });
+
   describe('Additional URLs Processing', () => {
     describe('Successfully process additional URLs', () => {
       it('should use custom URLs when provided and create opportunities for all URLs', async () => {

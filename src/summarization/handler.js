@@ -88,6 +88,7 @@ async function getSummarizationInputUrls(context) {
     site,
     dataAccess,
     auditType: AUDIT_TYPE,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
@@ -129,6 +130,7 @@ export async function importTopPages(context) {
       auditType: AUDIT_TYPE,
       getAgenticUrls: () => Promise.resolve([]),
       topOrganicLimit: MAX_TOP_PAGES,
+      scopeTopPagesToBasePath: true,
       log,
     });
 

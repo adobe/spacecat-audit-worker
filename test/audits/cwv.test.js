@@ -450,6 +450,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getAuditId: () => 'audit-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
+        getFixEntities: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
         setScopeType: sandbox.stub(),
         setScopeId: sandbox.stub(),
@@ -733,6 +734,126 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus)
         .to.have.been.calledOnceWith([resolved], 'OUTDATED');
+    });
+
+    it('reclaims a stale stuck IN_PROGRESS suggestion (no active fix) to NEW, but preserves one with an active fix (deploy-handoff self-heal)', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      const staleUpdatedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      const failing = [{ deviceType: 'mobile', lcp: 6000, cls: 1.2, inp: 800 }];
+
+      // Matched (key present in this run's failing set), stale, IN_PROGRESS, NOT
+      // covered by an active fix → reclaimed back to NEW.
+      const reclaimable = {
+        opportunityId: oppty.getId(),
+        getId: () => 's-reclaim',
+        getData: () => ({ type: 'url', url: 'https://www.aem.live/docs/', metrics: failing }),
+        getStatus: () => 'IN_PROGRESS',
+        getUpdatedAt: () => staleUpdatedAt,
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      // Matched, stale, IN_PROGRESS, but HAS an active (PENDING) fix → preserved.
+      const withActiveFix = {
+        opportunityId: oppty.getId(),
+        getId: () => 's-active',
+        getData: () => ({ type: 'group', pattern: 'https://www.aem.live/home/*', metrics: failing }),
+        getStatus: () => 'IN_PROGRESS',
+        getUpdatedAt: () => staleUpdatedAt,
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([reclaimable, withActiveFix]);
+      oppty.getFixEntities.resolves([
+        // active fix keyed to s-active → covered, must not be reclaimed
+        { getStatus: () => 'PENDING', getChangeDetails: () => ({ suggestionId: 's-active' }) },
+        // inactive fix → ignored (does not shield its suggestion)
+        { getStatus: () => 'FAILED', getChangeDetails: () => ({ suggestionId: 's-ignored' }) },
+        // active fix with no suggestionId → skipped when building the covered set
+        { getStatus: () => 'DEPLOYED', getChangeDetails: () => ({}) },
+      ]);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // reclaimable flipped IN_PROGRESS → NEW, stamped system
+      expect(reclaimable.setStatus).to.have.been.calledOnceWith('NEW');
+      expect(reclaimable.setUpdatedBy).to.have.been.calledWith('system');
+      // active-fix suggestion left alone (never reclaimed)
+      expect(withActiveFix.setStatus).to.not.have.been.called;
+    });
+
+    it('does NOT reclaim any IN_PROGRESS suggestion when the fix-entity fetch fails (fail safe)', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      const staleUpdatedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      const stale = {
+        opportunityId: oppty.getId(),
+        getId: () => 's-reclaim',
+        getData: () => ({
+          type: 'url',
+          url: 'https://www.aem.live/docs/',
+          metrics: [{ deviceType: 'mobile', lcp: 6000, cls: 1.2, inp: 800 }],
+        }),
+        getStatus: () => 'IN_PROGRESS',
+        getUpdatedAt: () => staleUpdatedAt,
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([stale]);
+      oppty.getFixEntities.rejects(new Error('boom'));
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Fetch failure → skip reclaim entirely; the stuck suggestion is left untouched.
+      expect(stale.setStatus).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/failed to fetch fix entities/);
+    });
+
+    it('treats a null fix-entities result as "no active fixes" and still reclaims a stale IN_PROGRESS suggestion', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      const staleUpdatedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      const stale = {
+        opportunityId: oppty.getId(),
+        getId: () => 's-reclaim',
+        getData: () => ({
+          type: 'url',
+          url: 'https://www.aem.live/docs/',
+          metrics: [{ deviceType: 'mobile', lcp: 6000, cls: 1.2, inp: 800 }],
+        }),
+        getStatus: () => 'IN_PROGRESS',
+        getUpdatedAt: () => staleUpdatedAt,
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([stale]);
+      oppty.getFixEntities.resolves(null);
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(stale.setStatus).to.have.been.calledOnceWith('NEW');
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
@@ -1315,5 +1436,79 @@ describe('Per-issue prune-on-resolve merge helpers', () => {
       // metrics overwritten by new data
       expect(result.metrics[0].lcp).to.equal(1800);
     });
+  });
+});
+
+describe('createMergeCwvStatus — reclaim stale stuck IN_PROGRESS suggestions', () => {
+  let createMergeCwvStatus;
+  let STALE_IN_PROGRESS_MS;
+
+  before(async () => {
+    ({ createMergeCwvStatus, STALE_IN_PROGRESS_MS } = await import('../../src/cwv/opportunity-sync.js'));
+  });
+
+  const twoDaysAgo = () => new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+  const nowIso = () => new Date().toISOString();
+
+  const makeSuggestion = ({ id, status, updatedAt }) => ({
+    getId: () => id,
+    getStatus: () => status,
+    getUpdatedAt: () => updatedAt,
+  });
+
+  const ctx = {
+    log: { warn: () => {}, info: () => {} },
+    site: { requiresValidation: false },
+    isTBYB: false,
+  };
+
+  it('exposes a 24h staleness window', () => {
+    expect(STALE_IN_PROGRESS_MS).to.equal(24 * 60 * 60 * 1000);
+  });
+
+  it('reclaims a stale IN_PROGRESS suggestion with no active fix back to NEW', () => {
+    const merge = createMergeCwvStatus(new Set(), false);
+    const s = makeSuggestion({ id: 's1', status: 'IN_PROGRESS', updatedAt: twoDaysAgo() });
+    expect(merge(s, {}, ctx)).to.equal(SuggestionModel.STATUSES.NEW);
+  });
+
+  it('preserves an IN_PROGRESS suggestion that has an active fix (not reclaimed)', () => {
+    const merge = createMergeCwvStatus(new Set(['s1']), false);
+    const s = makeSuggestion({ id: 's1', status: 'IN_PROGRESS', updatedAt: twoDaysAgo() });
+    expect(merge(s, {}, ctx)).to.equal(null);
+  });
+
+  it('preserves a fresh IN_PROGRESS suggestion that is not yet stale', () => {
+    const merge = createMergeCwvStatus(new Set(), false);
+    const s = makeSuggestion({ id: 's1', status: 'IN_PROGRESS', updatedAt: nowIso() });
+    expect(merge(s, {}, ctx)).to.equal(null);
+  });
+
+  it('does not reclaim when the fix-entity fetch failed (fail safe)', () => {
+    const merge = createMergeCwvStatus(new Set(), true);
+    const s = makeSuggestion({ id: 's1', status: 'IN_PROGRESS', updatedAt: twoDaysAgo() });
+    expect(merge(s, {}, ctx)).to.equal(null);
+  });
+
+  it('leaves a NEW suggestion unchanged (delegates to default)', () => {
+    const merge = createMergeCwvStatus(new Set(), false);
+    const s = makeSuggestion({ id: 's1', status: 'NEW', updatedAt: twoDaysAgo() });
+    expect(merge(s, {}, ctx)).to.equal(null);
+  });
+
+  it('preserves the default OUTDATED-regression handling (delegates to default)', () => {
+    const merge = createMergeCwvStatus(new Set(), false);
+    const s = makeSuggestion({ id: 's1', status: 'OUTDATED', updatedAt: twoDaysAgo() });
+    // requiresValidation=false → regression path returns NEW
+    expect(merge(s, {}, ctx)).to.equal(SuggestionModel.STATUSES.NEW);
+    // requiresValidation=true → PENDING_VALIDATION
+    const ctxRV = { ...ctx, site: { requiresValidation: true }, isTBYB: false };
+    expect(merge(s, {}, ctxRV)).to.equal(SuggestionModel.STATUSES.PENDING_VALIDATION);
+  });
+
+  it('transitions ERROR suggestions to NEW via the default (delegates to default)', () => {
+    const merge = createMergeCwvStatus(new Set(), false);
+    const s = makeSuggestion({ id: 's1', status: 'ERROR', updatedAt: twoDaysAgo() });
+    expect(merge(s, {}, ctx)).to.equal(SuggestionModel.STATUSES.NEW);
   });
 });
