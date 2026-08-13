@@ -32,6 +32,14 @@ describe('Readability preflight batch guidance handler', () => {
     { pageUrl: 'https://example.com/p1', audits: [{ name: 'readability', type: 'seo', opportunities }] },
   ]);
 
+  // Production readability opportunities carry the passage in elements[0].textContent (no
+  // top-level textContent), so fixtures must use that shape for suggestion matching to work.
+  const poorOpp = (textContent, fleschReadingEase = 20, selector = 'p.a') => ({
+    check: 'poor-readability',
+    fleschReadingEase,
+    elements: [{ selector, textContent }],
+  });
+
   const makeJob = (status, result) => ({
     getStatus: () => status,
     getMetadata: () => ({
@@ -64,9 +72,7 @@ describe('Readability preflight batch guidance handler', () => {
       }
       return {};
     });
-    job = makeJob('IN_PROGRESS', readabilityAudit([
-      { check: 'poor-readability', textContent: 'Hard to read one.', fleschReadingEase: 20 },
-    ]));
+    job = makeJob('IN_PROGRESS', readabilityAudit([poorOpp('Hard to read one.')]));
     findById = sinon.stub().resolves(job);
     context = {
       log,
@@ -188,8 +194,8 @@ describe('Readability preflight batch guidance handler', () => {
     const opps = job.setResult.getCall(0).args[0][0].audits[0].opportunities;
     expect(opps).to.have.lengthOf(2);
     // Ordered by originalOrderMapping (one before two), not by S3 result order.
-    expect(opps[0].textContent).to.equal('Hard to read one.');
-    expect(opps[1].textContent).to.equal('Hard to read two.');
+    expect(opps[0].elements[0].textContent).to.equal('Hard to read one.');
+    expect(opps[1].elements[0].textContent).to.equal('Hard to read two.');
     expect(opps[0].suggestionStatus).to.equal('completed');
   });
 
@@ -359,7 +365,7 @@ describe('Readability preflight batch guidance handler', () => {
         audits: [{
           name: 'readability',
           type: 'seo',
-          opportunities: [{ check: 'poor-readability', textContent: 'Hard to read one.', fleschReadingEase: 20 }],
+          opportunities: [poorOpp('Hard to read one.')],
         }],
       },
     ]);
@@ -385,9 +391,7 @@ describe('Readability preflight batch guidance handler', () => {
   });
 
   it('skips the write when the job is completed concurrently before the reload', async () => {
-    const inProgress = makeJob('IN_PROGRESS', readabilityAudit([
-      { check: 'poor-readability', textContent: 'Hard to read one.', fleschReadingEase: 20 },
-    ]));
+    const inProgress = makeJob('IN_PROGRESS', readabilityAudit([poorOpp('Hard to read one.')]));
     const completed = makeJob(COMPLETED, readabilityAudit([]));
     findById.onFirstCall().resolves(inProgress).onSecondCall().resolves(completed);
     batchResults = [{

@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { toElementTargets } from '../../preflight/utils/dom-selector.js';
 
 /**
  * Preflight batch guidance handler.
@@ -126,9 +127,10 @@ function reconstructOpportunities(suggestions, originalOrderMapping) {
     issue: `Text element is difficult to read: "${(suggestion.originalText || '').substring(0, 100)}..."`.replace(/\n/g, ' '),
     seoImpact: 'Moderate',
     fleschReadingEase: suggestion.originalFleschScore || 0,
-    textContent: suggestion.originalText,
+    // The passage lives in elements[].textContent (single source, same shape the identify/suggest
+    // step and the inline guidance handler emit) so the MFE renders it identically.
+    ...toElementTargets({ selector: suggestion.selector, textContent: suggestion.originalText }),
     seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-    ...(suggestion.selector ? { selector: suggestion.selector } : {}),
   }, suggestion));
 }
 
@@ -205,7 +207,12 @@ export default async function handler(message, context) {
   const readabilityMetadata = jobMetadata.payload?.readabilityMetadata || {};
   const { originalOrderMapping } = readabilityMetadata;
 
-  const findSuggestion = (textContent) => suggestions.find((s) => s.originalText === textContent);
+  // The readability opportunity carries its passage in elements[0].textContent (no top-level
+  // textContent), so match suggestions on that — mirroring the inline preflight guidance handler.
+  const findSuggestion = (opp) => {
+    const textContent = opp.elements?.[0]?.textContent;
+    return suggestions.find((s) => s.originalText === textContent);
+  };
 
   const currentResult = asyncJob.getResult() || [];
   const updatedResult = currentResult.map((pageResult) => {
@@ -220,7 +227,7 @@ export default async function handler(message, context) {
         && auditItem.opportunities.length > 0;
       const opportunities = hasOpportunities
         ? auditItem.opportunities.map(
-          (opp) => applySuggestionToOpportunity(opp, findSuggestion(opp.textContent)),
+          (opp) => applySuggestionToOpportunity(opp, findSuggestion(opp)),
         )
         : reconstructOpportunities(suggestions, originalOrderMapping);
       return { ...auditItem, opportunities };
