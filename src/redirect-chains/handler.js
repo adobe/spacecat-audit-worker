@@ -1054,11 +1054,13 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         (row.status === 418 // our internal HTTP error code for unexpected HTTP errors
          && row.error === 'unexpected end of file' // redirects could not be followed
          && row.fullSrc === row.fullFinal)
-        // Add any future conditions like: (currentConditionAbove) || (someNewCondition)
+        // WAF/bot-protection block: 4xx with zero redirects means the source URL itself is
+        // blocked (e.g. Cloudflare Managed Challenge returning 403), not a redirect chain issue.
+        || (row.status >= 400 && row.redirectCount === 0)
       );
       if (shouldSkipSuggestion) {
         skippedEntriesCount += 1;
-        log.debug(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: ${row.origSrc} -> ${row.origDest}`);
+        log.debug(`${AUDIT_LOGGING_NAME} - Skipping suggestion for blocked/inaccessible source: ${row.origSrc} -> ${row.origDest}`);
         // eslint-disable-next-line no-continue
         continue; // Skip this suggestion entirely
       }
