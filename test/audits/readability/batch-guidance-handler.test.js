@@ -238,4 +238,207 @@ describe('Readability preflight batch guidance handler', () => {
     expect(job.setStatus).to.not.have.been.called;
     expect(job.save).to.not.have.been.called;
   });
+
+  it('drops excluded items without an original paragraph and successes without an improved paragraph', async () => {
+    batchResults = [
+      { status: 'success', selector: 'p.a', data: { should_exclude: true } }, // missing original -> null
+      { status: 'success', selector: 'p.c', data: { should_exclude: true, original_paragraph: '   ' } }, // blank original -> null
+      { status: 'success', selector: 'p.d', data: { original_paragraph: 'x' } }, // no improved_paragraph -> null
+      { status: 'success', selector: 'p.b', data: { original_paragraph: 'Hard to read one.', improved_paragraph: '   ' } }, // blank improved -> null
+    ];
+
+    await batchGuidanceHandler(message(), context);
+
+    // No suggestion survived mapping, so the opportunity is marked error.
+    const opp = job.setResult.getCall(0).args[0][0].audits[0].opportunities[0];
+    expect(opp.suggestionStatus).to.equal('error');
+  });
+
+  it('uses the default message when an excluded item has no exclusion reason', async () => {
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        should_exclude: true,
+        // no exclusion_reason
+      },
+    }];
+
+    await batchGuidanceHandler(message(), context);
+
+    const opp = job.setResult.getCall(0).args[0][0].audits[0].opportunities[0];
+    expect(opp.suggestionStatus).to.equal('excluded');
+    expect(opp.suggestionMessage).to.equal('Excluded from AI readability improvement.');
+    expect(opp.exclusionReason).to.equal(undefined);
+  });
+
+  it('falls back to the opportunity flesch score when the suggestion omits the original score', async () => {
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        improved_paragraph: 'Easy one.',
+        improved_flesch_score: 50,
+        // no current_flesch_score -> falls back to opportunity.fleschReadingEase (20)
+      },
+    }];
+
+    await batchGuidanceHandler(message(), context);
+
+    const opp = job.setResult.getCall(0).args[0][0].audits[0].opportunities[0];
+    expect(opp.readabilityImprovement).to.equal(30);
+  });
+
+  it('reconstructs from suggestions that lack a selector, scores, and order-mapping matches', async () => {
+    job = makeJob('IN_PROGRESS', readabilityAudit([]));
+    findById.resolves(job);
+    // Neither suggestion carries original_paragraph/selector/score, and neither matches the
+    // originalOrderMapping — exercising the reconstruction fallbacks.
+    batchResults = [
+      { status: 'success', data: { improved_paragraph: 'Better A.', improved_flesch_score: 55 } },
+      { status: 'success', data: { improved_paragraph: 'Better B.', improved_flesch_score: 60 } },
+    ];
+
+    await batchGuidanceHandler(message(), context);
+
+    const opps = job.setResult.getCall(0).args[0][0].audits[0].opportunities;
+    expect(opps).to.have.lengthOf(2);
+    opps.forEach((o) => {
+      expect(o.suggestionStatus).to.equal('completed');
+      expect(o.selector).to.equal(undefined);
+      expect(o.fleschReadingEase).to.equal(0);
+    });
+  });
+
+  it('logs a warning but still completes when deleting the S3 results file fails', async () => {
+    s3Send.callsFake(async (cmd) => {
+      if (cmd?.constructor?.name === 'GetObjectCommand') {
+        return { Body: { transformToString: async () => JSON.stringify(batchResults) } };
+      }
+      if (cmd?.constructor?.name === 'DeleteObjectCommand') {
+        throw new Error('delete boom');
+      }
+      return {};
+    });
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        current_flesch_score: 20,
+        improved_paragraph: 'Easy one.',
+        improved_flesch_score: 65,
+      },
+    }];
+
+    const res = await batchGuidanceHandler(message(), context);
+
+    expect(res.status).to.equal(200);
+    expect(job.save).to.have.been.calledOnce;
+    expect(log.warn).to.have.been.calledWithMatch('Failed to delete S3 results file');
+  });
+
+  it('returns 400 when the batch results are not an array', async () => {
+    batchResults = { not: 'an array' };
+    const res = await batchGuidanceHandler(message(), context);
+    expect(res.status).to.equal(400);
+    expect(job.setStatus).to.not.have.been.called;
+  });
+
+  it('skips pages without audits and non-readability audits', async () => {
+    job = makeJob('IN_PROGRESS', [
+      { pageUrl: 'https://example.com/none' }, // no audits
+      { pageUrl: 'https://example.com/other', audits: [{ name: 'canonical', type: 'seo', opportunities: [] }] },
+      {
+        pageUrl: 'https://example.com/p1',
+        audits: [{
+          name: 'readability',
+          type: 'seo',
+          opportunities: [{ check: 'poor-readability', textContent: 'Hard to read one.', fleschReadingEase: 20 }],
+        }],
+      },
+    ]);
+    findById.resolves(job);
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        current_flesch_score: 20,
+        improved_paragraph: 'Easy one.',
+        improved_flesch_score: 65,
+      },
+    }];
+
+    await batchGuidanceHandler(message(), context);
+
+    const updated = job.setResult.getCall(0).args[0];
+    expect(updated[0]).to.deep.equal({ pageUrl: 'https://example.com/none' });
+    expect(updated[1].audits[0].name).to.equal('canonical');
+    expect(updated[2].audits[0].opportunities[0].suggestionStatus).to.equal('completed');
+  });
+
+  it('skips the write when the job is completed concurrently before the reload', async () => {
+    const inProgress = makeJob('IN_PROGRESS', readabilityAudit([
+      { check: 'poor-readability', textContent: 'Hard to read one.', fleschReadingEase: 20 },
+    ]));
+    const completed = makeJob(COMPLETED, readabilityAudit([]));
+    findById.onFirstCall().resolves(inProgress).onSecondCall().resolves(completed);
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        current_flesch_score: 20,
+        improved_paragraph: 'Easy one.',
+        improved_flesch_score: 65,
+      },
+    }];
+
+    const res = await batchGuidanceHandler(message(), context);
+
+    expect(res.status).to.equal(200);
+    expect(completed.setResult).to.not.have.been.called;
+    expect(completed.save).to.not.have.been.called;
+    const deletes = s3Send.getCalls().filter((c) => c.args[0]?.constructor?.name === 'DeleteObjectCommand');
+    expect(deletes).to.have.lengthOf(1);
+  });
+
+  it('handles a job with no metadata payload and no existing result', async () => {
+    job = {
+      getStatus: () => 'IN_PROGRESS',
+      getMetadata: () => undefined,
+      getResult: () => undefined,
+      setResult: sinon.stub(),
+      setStatus: sinon.stub(),
+      setEndedAt: sinon.stub(),
+      save: sinon.stub().resolves(),
+      getId: () => 'job-456',
+    };
+    findById.resolves(job);
+    batchResults = [{
+      status: 'success',
+      selector: 'p.a',
+      data: {
+        page_url: 'https://example.com/p1',
+        original_paragraph: 'Hard to read one.',
+        current_flesch_score: 20,
+        improved_paragraph: 'Easy one.',
+        improved_flesch_score: 65,
+      },
+    }];
+
+    const res = await batchGuidanceHandler(message(), context);
+
+    expect(res.status).to.equal(200);
+    expect(job.setResult).to.have.been.calledWith([]);
+    expect(job.setStatus).to.have.been.calledWith(COMPLETED);
+  });
 });

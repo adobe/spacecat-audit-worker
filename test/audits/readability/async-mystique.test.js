@@ -460,6 +460,50 @@ describe('async-mystique sendReadabilityToMystique', () => {
         ),
       ).to.be.rejectedWith('Missing s3Client for readability preflight batch');
     });
+
+    it('falls back to an empty payload when the job metadata has no payload property', async () => {
+      mockJobEntity.getMetadata.returns({}); // no payload property
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        [{
+          textContent: 'Only paragraph.', fleschReadingEase: 20, pageUrl: 'https://example.com/p1', selector: 'p.a',
+        }],
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight-batch',
+      );
+
+      const meta = mockJobEntity.setMetadata.getCall(0).args[0].payload.readabilityMetadata;
+      expect(meta.batch).to.equal(true);
+      expect(meta.mystiqueResponsesExpected).to.equal(1);
+    });
+
+    it('derives the selector from elements or falls back to empty string in the batch payload', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'From elements.', fleschReadingEase: 20, pageUrl: 'https://example.com/p1', elements: [{ selector: 'div > p' }],
+        },
+        {
+          textContent: 'No selector at all.', fleschReadingEase: 22, pageUrl: 'https://example.com/p2',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight-batch',
+      );
+
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload[0].selector).to.equal('div > p');
+      expect(s3Payload[1].selector).to.equal('');
+    });
   });
 
   describe('default mode', () => {

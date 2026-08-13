@@ -888,6 +888,31 @@ describe('Preflight Readability Audit', () => {
       expect(result.processing).to.be.true;
     });
 
+    it('uses preflight-batch mode when s3Client and bucket are configured', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + `words and intricate grammatical constructions, making it extremely difficult for ${
+          'the average reader to comprehend without considerable effort and concentration.'.repeat(3)}`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // S3 available → the handler should choose the batched request/response path.
+      context.s3Client = { send: sinon.stub().resolves() };
+      context.env = { S3_MYSTIQUE_BUCKET_NAME: 'test-bucket' };
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(mockSendReadabilityToMystique.getCall(0).args[5]).to.equal('preflight-batch');
+      expect(result.processing).to.be.true;
+    });
+
     it('should cover lines 44-61: no existing readability metadata found', async () => {
       const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
         + 'words and intricate grammatical constructions, making it extremely difficult for '
