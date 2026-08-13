@@ -11,10 +11,11 @@
  */
 
 import preflightGuidanceHandler from '../preflight/guidance-handler.js';
+import preflightBatchGuidanceHandler from '../preflight/batch-guidance-handler.js';
 import opportunityGuidanceHandler from '../opportunities/guidance-handler.js';
 
 /**
- * Determines whether this is a batch (opportunity) message by inspecting the payload.
+ * Determines whether this is a batch message by inspecting the payload.
  * A batch response always carries `data.s3ResultsPath`.
  */
 function isBatchMessage(message) {
@@ -22,14 +23,37 @@ function isBatchMessage(message) {
 }
 
 /**
+ * Distinguishes a batched *preflight* response from a batched *opportunity* response.
+ *
+ * A preflight run's `auditId` is an AsyncJob id; an opportunity run's `auditId` is an Audit
+ * id. Those id spaces don't overlap, so a batched response whose `auditId` resolves to an
+ * AsyncJob is a preflight batch. Deciding it here keeps routing on the spacecat side and
+ * avoids depending on Mystique echoing `mode` back on batch responses.
+ */
+async function isPreflightBatch(message, context) {
+  const { dataAccess } = context;
+  const { auditId } = message;
+  if (!auditId || !dataAccess?.AsyncJob?.findById) {
+    return false;
+  }
+  try {
+    const job = await dataAccess.AsyncJob.findById(auditId);
+    return Boolean(job);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Unified guidance handler for readability responses from Mystique.
  *
- * Routes incoming messages to the correct handler by inspecting the payload:
- * - If `data.s3ResultsPath` is present → S3-based batch opportunity handler
- * - Otherwise → inline single-item preflight handler
+ * Routes incoming messages by inspecting the payload:
+ * - `data.s3ResultsPath` + `auditId` is an AsyncJob → preflight batch handler (AsyncJob)
+ * - `data.s3ResultsPath` (otherwise) → opportunity batch handler (Audit + Opportunity)
+ * - no `s3ResultsPath` → inline single-item preflight handler
  *
- * The `mode` field is logged for observability but is NOT used for routing,
- * because Mystique may not echo it back in batch responses.
+ * The `mode` field is logged for observability but is NOT used for routing, because Mystique
+ * may not echo it back in batch responses.
  *
  * @param {Object} message - The Mystique callback message
  * @param {Object} context - The audit context
@@ -43,6 +67,10 @@ export default async function unifiedReadabilityGuidanceHandler(message, context
 
   try {
     if (isBatchMessage(message)) {
+      if (await isPreflightBatch(message, context)) {
+        log.info('[unified-readability-guidance] s3ResultsPath + preflight AsyncJob — routing to preflight batch handler');
+        return await preflightBatchGuidanceHandler(message, context);
+      }
       log.info('[unified-readability-guidance] Detected s3ResultsPath — routing to opportunity guidance handler');
       return await opportunityGuidanceHandler(message, context);
     }

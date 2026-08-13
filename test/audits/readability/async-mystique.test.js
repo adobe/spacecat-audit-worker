@@ -379,6 +379,89 @@ describe('async-mystique sendReadabilityToMystique', () => {
     });
   });
 
+  describe('preflight-batch mode', () => {
+    it('should write one S3 batch and send a single SQS message addressed to the AsyncJob', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'First paragraph.', fleschReadingEase: 20, pageUrl: 'https://example.com/p1', selector: 'p.a',
+        },
+        {
+          textContent: 'Second paragraph.', fleschReadingEase: 24, pageUrl: 'https://example.com/p2', selector: 'p.b',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight-batch',
+      );
+
+      // One S3 write with all issues, camelCase shape (same as opportunity batch)
+      expect(mockContext.s3Client.send).to.have.been.calledOnce;
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      expect(putCommand.input.Bucket).to.equal('test-bucket');
+      expect(putCommand.input.Key).to.equal('readability/batch-requests/site-123/job-456.json');
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload).to.have.lengthOf(2);
+      expect(s3Payload[0].originalParagraph).to.equal('First paragraph.');
+      expect(s3Payload[0].targetFleschScore).to.equal(30);
+
+      // Metadata: batch flag + expected 1 (single response) + identify-order mapping
+      expect(mockContext.dataAccess.AsyncJob.findById).to.have.been.calledWith('job-456');
+      const meta = mockJobEntity.setMetadata.getCall(0).args[0].payload.readabilityMetadata;
+      expect(meta.batch).to.equal(true);
+      expect(meta.mystiqueResponsesExpected).to.equal(1);
+      expect(meta.totalReadabilityIssues).to.equal(2);
+      expect(meta.originalOrderMapping).to.have.lengthOf(2);
+      expect(meta.originalOrderMapping[1]).to.deep.equal({ textContent: 'Second paragraph.', originalIndex: 1 });
+
+      // Exactly one SQS message, addressed to the AsyncJob, pointing at the S3 batch
+      expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
+      const sent = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sent.type).to.equal('guidance:readability');
+      expect(sent.mode).to.equal('preflight');
+      expect(sent.siteId).to.equal('site-123');
+      expect(sent.auditId).to.equal('job-456');
+      expect(sent.data.jobId).to.equal('job-456');
+      expect(sent.data.s3BatchPath).to.equal('readability/batch-requests/site-123/job-456.json');
+    });
+
+    it('should throw when S3_MYSTIQUE_BUCKET_NAME is missing', async () => {
+      mockContext.env.S3_MYSTIQUE_BUCKET_NAME = null;
+      await expect(
+        sendReadabilityToMystique(
+          'https://example.com',
+          [{
+            textContent: 'test', fleschReadingEase: 20, pageUrl: 'url', selector: 'p',
+          }],
+          'site-123',
+          'job-456',
+          mockContext,
+          'preflight-batch',
+        ),
+      ).to.be.rejectedWith('Missing S3_MYSTIQUE_BUCKET_NAME for readability preflight batch');
+    });
+
+    it('should throw when s3Client is missing', async () => {
+      mockContext.s3Client = null;
+      await expect(
+        sendReadabilityToMystique(
+          'https://example.com',
+          [{
+            textContent: 'test', fleschReadingEase: 20, pageUrl: 'url', selector: 'p',
+          }],
+          'site-123',
+          'job-456',
+          mockContext,
+          'preflight-batch',
+        ),
+      ).to.be.rejectedWith('Missing s3Client for readability preflight batch');
+    });
+  });
+
   describe('default mode', () => {
     it('should default to preflight mode when mode is not specified', async () => {
       const readabilityIssues = [

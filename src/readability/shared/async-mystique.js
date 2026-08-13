@@ -187,6 +187,101 @@ async function sendOpportunityBatch(
 }
 
 /**
+ * Preflight batch mode: writes all issues to S3 as a JSON array and sends a single SQS
+ * message with s3BatchPath, addressed to the preflight AsyncJob (auditId = jobId,
+ * mode = 'preflight'). This replaces the N per-paragraph messages of the inline preflight
+ * mode with one request and (via Mystique's batch flow) one response, so completion no
+ * longer waits on N callbacks and a single slow paragraph can't hang the run (SITES-49801).
+ */
+async function sendPreflightBatch(
+  readabilityIssues,
+  siteId,
+  jobId,
+  auditUrl,
+  site,
+  context,
+) {
+  const {
+    sqs, env, log, dataAccess, s3Client,
+  } = context;
+
+  const bucketName = env.S3_MYSTIQUE_BUCKET_NAME;
+  if (!bucketName) {
+    throw new Error('Missing S3_MYSTIQUE_BUCKET_NAME for readability preflight batch');
+  }
+  if (!s3Client) {
+    throw new Error('Missing s3Client for readability preflight batch');
+  }
+
+  // Persist metadata on the AsyncJob so the batch guidance handler can order and merge the
+  // results back into the job. A single batched response replaces the N per-paragraph
+  // callbacks, so mystiqueResponsesExpected is 1. `batch: true` lets the guidance path
+  // distinguish a batched run from the legacy inline run.
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
+  const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+    textContent: issue.textContent,
+    originalIndex: index,
+  }));
+
+  const jobEntity = await AsyncJobEntity.findById(jobId);
+  const currentPayload = jobEntity.getMetadata()?.payload || {};
+  const readabilityMetadata = {
+    batch: true,
+    mystiqueResponsesReceived: 0,
+    mystiqueResponsesExpected: 1,
+    totalReadabilityIssues: readabilityIssues.length,
+    lastMystiqueRequest: new Date().toISOString(),
+    originalOrderMapping,
+  };
+  jobEntity.setMetadata({
+    ...jobEntity.getMetadata(),
+    payload: {
+      ...currentPayload,
+      readabilityMetadata,
+    },
+  });
+  await jobEntity.save();
+  log.debug(`[readability-suggest async] Stored preflight batch metadata in job ${jobId}`);
+
+  // Write the batch request to S3 using the same item shape the opportunity batch uses,
+  // so Mystique's existing batch flow (dispatched on s3BatchPath) can process it unchanged.
+  const batchPayload = readabilityIssues.map((issue) => ({
+    originalParagraph: issue.textContent,
+    targetFleschScore: TARGET_READABILITY_SCORE,
+    currentFleschScore: issue.fleschReadingEase,
+    pageUrl: issue.pageUrl,
+    selector: issue.selector || issue.elements?.[0]?.selector || '',
+  }));
+  const s3Key = `${READABILITY_BATCH_PREFIX}/${siteId}/${jobId}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: s3Key,
+    Body: JSON.stringify(batchPayload),
+    ContentType: 'application/json',
+  }));
+  log.debug(`[readability-suggest async] Wrote ${readabilityIssues.length} preflight issues to S3: ${s3Key}`);
+
+  // One SQS message pointing at the S3 batch. auditId = jobId and mode = 'preflight' so the
+  // response echoes the AsyncJob id and the unified guidance handler routes it back here.
+  const mystiqueMessage = {
+    type: READABILITY_GUIDANCE_TYPE,
+    siteId,
+    auditId: jobId,
+    mode: 'preflight',
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    url: auditUrl,
+    observation: READABILITY_OBSERVATION,
+    data: {
+      jobId,
+      s3BatchPath: s3Key,
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.debug(`[readability-suggest async] Sent preflight batch message to Mystique for job ${jobId}`);
+}
+
+/**
  * Sends readability issues to Mystique for AI processing (asynchronous).
  *
  * @param {string} auditUrl - The base URL being audited
@@ -218,10 +313,18 @@ export async function sendReadabilityToMystique(
 
   try {
     const site = await dataAccess.Site.findById(siteId);
-    const isPreflight = mode === 'preflight';
 
-    if (isPreflight) {
+    if (mode === 'preflight') {
       await sendPreflightMessages(
+        readabilityIssues,
+        siteId,
+        jobId,
+        auditUrl,
+        site,
+        context,
+      );
+    } else if (mode === 'preflight-batch') {
+      await sendPreflightBatch(
         readabilityIssues,
         siteId,
         jobId,

@@ -22,8 +22,10 @@ use(chaiAsPromised);
 describe('Unified Readability Guidance Handler', () => {
   let unifiedHandler;
   let mockPreflightHandler;
+  let mockBatchHandler;
   let mockOpportunityHandler;
   let mockContext;
+  let asyncJobFindById;
   let log;
 
   beforeEach(async () => {
@@ -34,9 +36,13 @@ describe('Unified Readability Guidance Handler', () => {
       debug: sinon.stub(),
     };
 
-    mockContext = { log };
+    // Default: auditId does NOT resolve to an AsyncJob, so a batched response routes to the
+    // opportunity handler. Individual tests override this to exercise preflight-batch routing.
+    asyncJobFindById = sinon.stub().resolves(null);
+    mockContext = { log, dataAccess: { AsyncJob: { findById: asyncJobFindById } } };
 
     mockPreflightHandler = sinon.stub().resolves({ status: 200, body: 'preflight response' });
+    mockBatchHandler = sinon.stub().resolves({ status: 200, body: 'preflight batch response' });
     mockOpportunityHandler = sinon.stub().resolves({ status: 200, body: 'opportunity response' });
 
     const module = await esmock(
@@ -44,6 +50,9 @@ describe('Unified Readability Guidance Handler', () => {
       {
         '../../../src/readability/preflight/guidance-handler.js': {
           default: mockPreflightHandler,
+        },
+        '../../../src/readability/preflight/batch-guidance-handler.js': {
+          default: mockBatchHandler,
         },
         '../../../src/readability/opportunities/guidance-handler.js': {
           default: mockOpportunityHandler,
@@ -59,7 +68,7 @@ describe('Unified Readability Guidance Handler', () => {
   });
 
   describe('payload-based routing', () => {
-    it('should route to opportunity handler when data.s3ResultsPath is present', async () => {
+    it('should route to opportunity handler when s3ResultsPath is present and auditId is not an AsyncJob', async () => {
       const message = {
         siteId: 'site-123',
         auditId: 'audit-456',
@@ -70,8 +79,57 @@ describe('Unified Readability Guidance Handler', () => {
 
       expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
       expect(mockOpportunityHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockBatchHandler).to.not.have.been.called;
       expect(mockPreflightHandler).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Detected s3ResultsPath — routing to opportunity guidance handler');
+    });
+
+    it('should route to preflight batch handler when s3ResultsPath is present and auditId is an AsyncJob', async () => {
+      asyncJobFindById.resolves({ getId: () => 'job-456' });
+      const message = {
+        mode: 'preflight',
+        siteId: 'site-123',
+        auditId: 'job-456',
+        data: { s3ResultsPath: 'readability/batch-requests/site-123/job-456.json' },
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'preflight batch response' });
+      expect(mockBatchHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockOpportunityHandler).to.not.have.been.called;
+      expect(mockPreflightHandler).to.not.have.been.called;
+      expect(asyncJobFindById).to.have.been.calledOnceWith('job-456');
+    });
+
+    it('should fall back to opportunity handler when dataAccess.AsyncJob is unavailable', async () => {
+      const contextNoDataAccess = { log };
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        data: { s3ResultsPath: 'some/path.json' },
+      };
+
+      const result = await unifiedHandler(message, contextNoDataAccess);
+
+      expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
+      expect(mockOpportunityHandler).to.have.been.calledOnceWith(message, contextNoDataAccess);
+      expect(mockBatchHandler).to.not.have.been.called;
+    });
+
+    it('should route to opportunity handler when AsyncJob lookup throws', async () => {
+      asyncJobFindById.rejects(new Error('lookup failed'));
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        data: { s3ResultsPath: 'some/path.json' },
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
+      expect(mockOpportunityHandler).to.have.been.calledOnce;
+      expect(mockBatchHandler).to.not.have.been.called;
     });
 
     it('should route to opportunity handler even without mode field when s3ResultsPath is present', async () => {
@@ -116,6 +174,7 @@ describe('Unified Readability Guidance Handler', () => {
       expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
       expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
       expect(mockOpportunityHandler).to.not.have.been.called;
+      expect(mockBatchHandler).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Routing to preflight guidance handler');
     });
 
@@ -200,6 +259,7 @@ describe('Unified Readability Guidance Handler', () => {
       const message = {
         mode: 'opportunity',
         siteId: 'site-123',
+        auditId: 'audit-456',
         data: { s3ResultsPath: 'some/path.json' },
       };
 

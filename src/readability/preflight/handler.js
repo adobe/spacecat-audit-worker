@@ -419,14 +419,20 @@ export default async function readability(context, auditContext) {
             + 'to Mystique for async processing...',
           );
 
-          // Send to Mystique asynchronously (like alt-text and accessibility audits)
+          // Send to Mystique asynchronously (like alt-text and accessibility audits). Default to
+          // the single S3-batched request/response — the same proven pattern the readability
+          // Opportunity flow uses — so completion no longer waits on N per-paragraph callbacks and
+          // one slow paragraph can't hang the run past the client budget (SITES-49801). Fall back
+          // to the per-paragraph inline send only when S3 isn't available (e.g. an environment
+          // without S3_MYSTIQUE_BUCKET_NAME configured), which keeps the flow working there.
+          const canBatch = Boolean(context.s3Client && context.env?.S3_MYSTIQUE_BUCKET_NAME);
           await sendReadabilityToMystique(
             context.auditUrl || site.getBaseURL(),
             allReadabilityIssues,
             site.getId(),
             job.getId(),
             context,
-            'preflight',
+            canBatch ? 'preflight-batch' : 'preflight',
           );
 
           log.debug(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `

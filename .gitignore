@@ -35,3 +35,6 @@ credentials/
 
 # Git worktrees
 .worktrees/
+
+# Scout index/cache
+.scout/
