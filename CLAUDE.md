@@ -246,3 +246,5 @@ await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
 4. Add `test/audits/[audit-name].test.js` (or a sub-directory for complex audits).
 5. Add fixtures to `test/fixtures/[audit-name]/`.
 6. Ensure 100% coverage on all new source files.
+
+**Exception — plain operational handlers.** When the handler is not a traditional site audit (it performs an operational trigger rather than auditing a URL), register it in `HANDLERS` as a plain `async (message, context) => Response` function without `AuditBuilder`. Existing examples: `brand-claims`, `rum-config-refresh`, `offsite-brand-presence-drs-status`.
