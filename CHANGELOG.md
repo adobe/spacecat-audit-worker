@@ -1,3 +1,10 @@
+# [1.521.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.6...v1.521.0) (2026-08-14)
+
+
+### Features
+
+* **brand-claims:** brand-claims audit (enable + run) for scheduled Brand Claims trigger ([#2877](https://github.com/adobe/spacecat-audit-worker/issues/2877)) ([8666dd3](https://github.com/adobe/spacecat-audit-worker/commit/8666dd3b83af0c3707d4b780ae94385944b00821)), closes [adobe-rnd/llmo-data-retrieval-service#2910](https://github.com/adobe-rnd/llmo-data-retrieval-service/issues/2910)
+
 ## [1.520.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.520.5...v1.520.6) (2026-08-13)
 
 
