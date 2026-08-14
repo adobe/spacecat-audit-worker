@@ -35,22 +35,6 @@ export const suggestionData = [
         opportunities: [],
       },
       {
-        name: 'h1-count',
-        type: 'seo',
-        opportunities: [
-          {
-            check: 'multiple-h1',
-            issue: 'Found 2 H1 tags',
-            seoImpact: 'High',
-            seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
-            elements: [
-              { selector: 'body > h1:nth-of-type(1)', textContent: 'Page 1 H1' },
-              { selector: 'body > h1:nth-of-type(2)', textContent: 'Page 1 H1' },
-            ],
-          },
-        ],
-      },
-      {
         name: 'canonical',
         type: 'seo',
         opportunities: [

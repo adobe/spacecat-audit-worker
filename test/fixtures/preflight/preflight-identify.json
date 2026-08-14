@@ -40,18 +40,6 @@
         ]
       },
       {
-        "name": "h1-count",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "missing-h1",
-            "issue": "No H1 tag found on the page",
-            "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
-          }
-        ]
-      },
-      {
         "name": "canonical",
         "type": "seo",
         "opportunities": []

@@ -22,7 +22,7 @@ import { Site } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
-  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM,
   PREFLIGHT_META_TAGS_WAIT_MS,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
@@ -779,7 +779,6 @@ describe('Preflight Audit', () => {
           'headings-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
-          'h1-count-preflight': { productCodes: ['aem-sites'] },
           'form-accessibility-preflight': { productCodes: ['aem-sites'] },
         }),
       };
@@ -1732,7 +1731,6 @@ describe('Preflight Audit', () => {
 
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
-      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
@@ -1787,7 +1785,6 @@ describe('Preflight Audit', () => {
 
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
-      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
     it('lorem ipsum filter keeps only innermost elements when nested', async () => {
@@ -1845,61 +1842,6 @@ describe('Preflight Audit', () => {
       expect(elements).to.have.lengthOf(1);
       expect(elements[0].selector).to.include('p#inner');
       expect(elements[0].selector).to.not.match(/^(body > )?div#outer$/);
-    });
-
-    it('handles individual AUDIT_H1_COUNT check', async () => {
-      job.getMetadata = () => ({
-        payload: {
-          step: PREFLIGHT_STEP_IDENTIFY,
-          urls: ['https://main--example--page.aem.page/page1'],
-        },
-      });
-
-      // Mock S3 response with content that would trigger h1 count check
-      s3Client.send.callsFake((command) => {
-        if (command.input?.Prefix) {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'scrapes/site-123/page1/scrape.json' },
-            ],
-            IsTruncated: false,
-          });
-        } else {
-          return Promise.resolve({
-            ContentType: 'application/json',
-            Body: {
-              transformToString: sinon.stub().resolves(JSON.stringify({
-                scrapeResult: {
-                  rawBody: '<body><h1>First H1</h1><h1>Second H1</h1></body>',
-                },
-                finalUrl: 'https://main--example--page.aem.page/page1',
-              })),
-            },
-          });
-        }
-      });
-
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_H1_COUNT}-preflight`, site).returns(true);
-
-      await preflightAuditFunction(context);
-
-      // Get the final result
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-      const result = finalJobEntity.setResult.getCall(0).args[0];
-
-      // Verify that only h1 count check was performed
-      const { audits } = result[0];
-
-      // Check h1 count audit
-      const h1CountAudit = audits.find((a) => a.name === AUDIT_H1_COUNT);
-      expect(h1CountAudit).to.exist;
-      expect(h1CountAudit.opportunities).to.have.lengthOf(1);
-      expect(h1CountAudit.opportunities[0].check).to.equal('multiple-h1');
-
-      // Verify other checks were not performed
-      expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
-      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
     });
 
     it('should keep job in progress when audit handler returns processing: true', async () => {
@@ -2030,7 +1972,6 @@ describe('Preflight Audit', () => {
           'accessibility-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
-          'h1-count-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
@@ -4976,7 +4917,6 @@ describe('Preflight Audit', () => {
           'headings-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
-          'h1-count-preflight': { productCodes: ['aem-sites'] },
           'form-accessibility-preflight': { productCodes: ['aem-sites'] },
         }),
       };

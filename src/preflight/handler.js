@@ -59,7 +59,6 @@ export const AUDIT_LINKS = 'links';
 export const AUDIT_METATAGS = 'metatags';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
-export const AUDIT_H1_COUNT = 'h1-count';
 export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
@@ -71,7 +70,6 @@ const AVAILABLE_CHECKS = [
   AUDIT_METATAGS,
   AUDIT_BODY_SIZE,
   AUDIT_LOREM_IPSUM,
-  AUDIT_H1_COUNT,
   AUDIT_ACCESSIBILITY,
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
@@ -261,9 +259,8 @@ export const preflightAudit = async (context) => {
 
     const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
     const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
-    const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
-    // DOM-based checks: body size, lorem ipsum, h1 count
-    if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
+    // DOM-based checks: body size, lorem ipsum
+    if (bodySizeEnabled || loremIpsumEnabled) {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
       let domStatus = 'ok';
@@ -277,9 +274,6 @@ export const preflightAudit = async (context) => {
           }
           if (loremIpsumEnabled) {
             pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
-          }
-          if (h1CountEnabled) {
-            pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
           }
         });
 
@@ -346,34 +340,6 @@ export const preflightAudit = async (context) => {
               ...toElementTargets(loremPairs),
             });
           }
-
-          if (h1CountEnabled) {
-            const headingCount = $('h1').length;
-            if (headingCount !== 1) {
-              const h1Elements = $('h1').toArray();
-
-              // Pair each H1 with its own text. When there are zero H1s, there is no
-              // offending element to point at, so no element is attached.
-              const h1Pairs = h1Elements
-                .map((el) => ({
-                  selector: getDomElementSelector(el),
-                  textContent: $(el).text().trim(),
-                }))
-                .filter((pair) => pair.selector);
-
-              auditsByName[AUDIT_H1_COUNT].opportunities.push({
-                check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-                issue:
-                headingCount > 1
-                  ? `Found ${headingCount} H1 tags`
-                  : 'No H1 tag found on the page',
-                seoImpact: 'High',
-                seoRecommendation:
-                'Use exactly one H1 tag per page for better SEO structure',
-                ...toElementTargets(h1Pairs),
-              });
-            }
-          }
         });
       } catch (error) {
         domStatus = 'fail';
@@ -388,11 +354,10 @@ export const preflightAudit = async (context) => {
 
         // One structured line per enabled DOM-based check — they share a single pass over the
         // scraped HTML (and therefore a single duration/status), so a failure here can't be
-        // attributed to just one of the three; every enabled check gets the same status/error.
+        // attributed to just one of the two; every enabled check gets the same status/error.
         [
           [AUDIT_BODY_SIZE, bodySizeEnabled],
           [AUDIT_LOREM_IPSUM, loremIpsumEnabled],
-          [AUDIT_H1_COUNT, h1CountEnabled],
         ].forEach(([auditName, enabled]) => {
           if (!enabled) {
             return;

@@ -10,7 +10,7 @@
 ## Problem Statement
 
 Preflight runs a batch of per-page checks (`canonical`, `links`, `metatags`, `headings`,
-`body-size`, `lorem-ipsum`, `h1-count`, plus the Mystique-side `form-accessibility`). Each
+`body-size`, `lorem-ipsum`, plus the Mystique-side `form-accessibility`). Each
 check logs a free-text completion line with no machine-parseable audit-name or status field,
 so answering "which audit is failing, how often, and with what error" requires regex-parsing
 prose. Two checks (`canonical`, `links`) had no local `try/catch` at all, so their failures
@@ -98,11 +98,16 @@ rest were `debug`).
 
 ### DOM-based checks emit one line per check (by design)
 
-`body-size`, `lorem-ipsum`, and `h1-count` share a single pass over the scraped HTML, so they
+`body-size` and `lorem-ipsum` share a single pass over the scraped HTML, so they
 share one duration/status. They still emit **one structured line each** (same duration/status)
 rather than a single collapsed `audit=dom-checks` line, because the dashboard's per-audit
-breakdown needs each of the three as a distinct row. The shared duration is an accepted, minor
+breakdown needs each of the two as a distinct row. The shared duration is an accepted, minor
 imprecision documented here.
+
+> Note: this section originally covered three DOM-based checks (`body-size`, `lorem-ipsum`,
+> `h1-count`). `h1-count` was removed as a standalone preflight check (superseded by the
+> `headings` handler's `missing-h1`/`multiple-h1` checks); the structured-logging pattern
+> described here is unchanged for the remaining two.
 
 ### Files touched
 

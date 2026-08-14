@@ -44,22 +44,6 @@ The example below shows **every audit type** in a single response, each populate
         ]
       },
       {
-        "name": "h1-count",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "multiple-h1",
-            "issue": "Found 2 H1 tags",
-            "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
-            "elements": [
-              { "selector": "body > h1:nth-of-type(1)", "textContent": "Welcome" },
-              { "selector": "body > h1:nth-of-type(2)", "textContent": "Our Products" }
-            ]
-          }
-        ]
-      },
-      {
         "name": "canonical",
         "type": "seo",
         "opportunities": [
@@ -247,7 +231,7 @@ Same envelope and structure as `identify`, plus AI enrichment. **What changes vs
 - **metatags** — each opportunity gains `aiSuggestion` + `aiRationale`; tags that received no AI suggestion are dropped.
 - **links** (`broken-internal-links` / `broken-external-links`) — each finding gains `aiSuggestion` (a replacement URL) + `aiRationale`. `bad-links` is unchanged.
 - **readability** — opportunities are reconstructed from AI output with **no DOM**, so the element is selector-less (`"elements": [ { "textContent": "..." } ]`), and each gains `suggestionStatus`, `suggestionMessage`, `improvedFleschScore`, `readabilityImprovement`, `aiSuggestion` (the improved text), `aiRationale`, `mystiqueProcessingCompleted`. (Excluded rows instead carry `suggestionStatus: "excluded"`, `exclusionReason`, `shouldExclude`.)
-- **body-size, lorem-ipsum, h1-count, canonical, headings, accessibility, form-accessibility** — no AI enrichment; identical to `identify`.
+- **body-size, lorem-ipsum, canonical, headings, accessibility, form-accessibility** — no AI enrichment; identical to `identify`.
 
 ```jsonc
 [
@@ -280,22 +264,6 @@ Same envelope and structure as `identify`, plus AI enrichment. **What changes vs
             "elements": [
               { "selector": "body > div.hero > p",      "textContent": "Lorem ipsum dolor sit amet, consectetur..." },
               { "selector": "body > div.footer > span", "textContent": "...sed do eiusmod lorem ipsum tempor." }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "h1-count",
-        "type": "seo",
-        "opportunities": [
-          {
-            "check": "multiple-h1",
-            "issue": "Found 2 H1 tags",
-            "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
-            "elements": [
-              { "selector": "body > h1:nth-of-type(1)", "textContent": "Welcome" },
-              { "selector": "body > h1:nth-of-type(2)", "textContent": "Our Products" }
             ]
           }
         ]
@@ -484,7 +452,6 @@ Same envelope and structure as `identify`, plus AI enrichment. **What changes vs
 |----------------|--------|--------|
 | body-size | seo | `content-length` |
 | lorem-ipsum | seo | `placeholder-text` |
-| h1-count | seo | `missing-h1` (no `elements`), `multiple-h1` |
 | canonical | seo | `canonical-tag-missing`, `canonical-tag-no-href`, `canonical-tag-empty`, `canonical-tag-multiple`, `canonical-tag-outside-head`, `canonical-self-referenced`, format/status checks (`canonical-url-absolute`, protocol/domain/lowercased, `canonical-url-status-ok`, `canonical-url-no-redirect`, `canonical-url-4xx`, `canonical-url-5xx`) |
 | metatags | seo | keyed by `tagName`: `title`, `description`, `h1` |
 | links | seo | `broken-internal-links`, `broken-external-links`, `bad-links` (findings nested in an `issue[]` array) |

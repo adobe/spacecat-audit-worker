@@ -90,7 +90,6 @@ The handler executes checks in two phases:
 These checks run directly in the main handler:
 - **body-size**: Validates body content length (>100 chars)
 - **lorem-ipsum**: Detects placeholder text
-- **h1-count**: Ensures exactly one H1 tag per page
 
 #### Phase 2: Handler-Based Checks (Delegated)
 Each enabled check handler is invoked sequentially:
@@ -358,7 +357,6 @@ All handler functions must:
 | `accessibility` | A11Y | Runs axe-core accessibility checks | ❌ |
 | `body-size` | SEO | Ensures sufficient content (>100 chars) | ❌ |
 | `lorem-ipsum` | SEO | Detects placeholder text | ❌ |
-| `h1-count` | SEO | Ensures exactly one H1 per page | ❌ |
 
 ## Configuration
 
