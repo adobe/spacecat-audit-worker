@@ -175,23 +175,19 @@ export default async function brandClaimsHandler(message, context) {
     throw new Error(`brand-claims: brand storage (postgrestClient) is not available for site ${siteId}`);
   }
 
-  const { Site, Organization } = dataAccess;
+  const { Site } = dataAccess;
   const site = context.site || await Site.findById(siteId);
   if (!site) {
     log.warn(`brand-claims: site not found: ${siteId}`);
     return ok();
   }
 
-  // Use the canonical server-resolved id for the org lookup, brand query, and S3 prefix
-  // rather than trusting the raw message value.
+  // Use the canonical server-resolved ids for the brand query, event, and S3 prefix
+  // rather than trusting the raw message value. organizationId is the SpaceCat org
+  // UUID — the BP consumer feeds event.organization_id straight into the SpaceCat
+  // brand API (/v2/orgs/{spaceCatId}/...), which 400s on an IMS org id.
   const resolvedSiteId = site.getId();
   const organizationId = site.getOrganizationId();
-  const organization = await Organization.findById(organizationId);
-  const imsOrgId = organization?.getImsOrgId?.();
-  if (!hasText(imsOrgId)) {
-    log.warn(`brand-claims: could not resolve an IMS org for site ${resolvedSiteId}`);
-    return ok();
-  }
 
   const brand = await getBrandForSite(postgrestClient, organizationId, resolvedSiteId, log);
   if (!brand) {
@@ -224,7 +220,7 @@ export default async function brandClaimsHandler(message, context) {
   const event = {
     event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
     schema_version: 1,
-    organization_id: imsOrgId,
+    organization_id: organizationId,
     brand_id: brand.id,
     brand: brandSlug,
     site_id: resolvedSiteId,

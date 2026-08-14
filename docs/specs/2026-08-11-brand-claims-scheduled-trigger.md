@@ -45,7 +45,7 @@ New audit type `brand-claims`, registered in `src/index.js` `HANDLERS`. It is a 
 
 Flow (`src/brand-claims/handler.js`), for a message `{ type: 'brand-claims', siteId }`:
 
-1. Resolve the site (prefetched `context.site` or `Site.findById`) and its IMS org.
+1. Resolve the site (prefetched `context.site` or `Site.findById`) and its SpaceCat org UUID.
 2. Resolve the single active brand for the site via PostgREST (`brands` table;
    `organization_id` + `status='active'` + `site_id`, deterministic tiebreak, LLMO-4592).
    The read is inspection-only — the handler never writes the `brands` table (enable is
@@ -56,7 +56,8 @@ Flow (`src/brand-claims/handler.js`), for a message `{ type: 'brand-claims', sit
    via `sanitizePathComponent`, byte-for-byte with DRS) and select the latest sheet (max by
    S3 date partition, then `LastModified`).
 5. **Emit** — publish `BRAND_PRESENCE_SHEET_WRITTEN` to `SQS_BP_SHEET_READY_QUEUE_URL` with
-   the DRS-shaped event (`organization_id` = IMS org, `brand_id`, `brand` slug, `site_id`,
+   the DRS-shaped event (`organization_id` = SpaceCat org UUID — the BP consumer feeds it
+   into `/v2/orgs/{spaceCatId}/…`, which 400s on an IMS org id — `brand_id`, `brand` slug, `site_id`,
    `week`, `year`, `cadence: "weekly"`, `sheet_date`, `platform`, `s3_bucket`, `s3_key`).
 
 Env (from Vault): `SQS_BP_SHEET_READY_QUEUE_URL`, `DRS_BP_BUCKET`.

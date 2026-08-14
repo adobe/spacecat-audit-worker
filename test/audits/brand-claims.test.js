@@ -67,9 +67,6 @@ describe('Brand Claims audit handler', function () {
     },
     dataAccess: {
       Site: { findById: sandbox.stub().resolves(null) },
-      Organization: {
-        findById: sandbox.stub().resolves({ getImsOrgId: () => 'ims-org@AdobeOrg' }),
-      },
       services: { postgrestClient },
     },
     site: {
@@ -170,14 +167,6 @@ describe('Brand Claims audit handler', function () {
       const res = await brandClaimsHandler(message, ctx);
       expect(res.status).to.equal(200);
       expect(log.warn).to.have.been.calledWithMatch('site not found');
-    });
-
-    it('returns ok when the IMS org cannot be resolved', async () => {
-      const ctx = buildContext();
-      ctx.dataAccess.Organization.findById.resolves({ getImsOrgId: () => null });
-      const res = await brandClaimsHandler(message, ctx);
-      expect(res.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('IMS org');
     });
 
     it('returns ok when no active brand is found', async () => {
@@ -289,7 +278,7 @@ describe('Brand Claims audit handler', function () {
       expect(event).to.deep.equal({
         event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
         schema_version: 1,
-        organization_id: 'ims-org@AdobeOrg',
+        organization_id: ORG_ID,
         brand_id: BRAND_ID,
         brand: 'acmecorp',
         site_id: SITE_ID,
