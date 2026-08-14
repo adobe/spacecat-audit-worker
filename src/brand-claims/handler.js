@@ -67,21 +67,6 @@ async function getBrandForSite(postgrestClient, organizationId, siteId, log) {
   return data[0];
 }
 
-async function enableBrandClaims(postgrestClient, brandId, updatedBy) {
-  const { data, error } = await postgrestClient
-    .from('brands')
-    .update({ brand_claims_enabled: true, updated_by: updatedBy })
-    .eq('id', brandId)
-    .neq('status', 'deleted')
-    .select('id, name')
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to update brand claims flag: ${error.message}`);
-  }
-  return data || null;
-}
-
 /**
  * True if the S3 date partition (`YYYY`/`MM`/`DD`) falls on a Monday (UTC).
  *
@@ -159,7 +144,9 @@ async function findLatestSheet(s3Client, bucket, prefix, log) {
   return best;
 }
 
-// Enables the brand's claims gate, then re-publishes the ready-signal for its latest BP sheet.
+// Publishes the ready-signal for the brand's latest BP sheet, but only for brands whose
+// brand_claims_enabled gate is on. Enabling/disabling the gate is done out of band (the
+// api-service enable-brand-claims Slack command) and acts as the per-site opt-in list.
 export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
@@ -212,22 +199,18 @@ export default async function brandClaimsHandler(message, context) {
     return ok();
   }
 
-  if (brand.brand_claims_enabled) {
-    log.info(`brand-claims: already enabled for brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} — skipping enable`);
-  } else {
-    const updated = await enableBrandClaims(postgrestClient, brand.id, 'audit-worker:brand-claims');
-    if (!updated) {
-      // The brand was soft-deleted between the read and the write (.neq status guard);
-      // nothing was enabled, so publishing a ready-signal would be meaningless.
-      log.warn(`brand-claims: enable did not take for brand ${brand.id} on site ${resolvedSiteId} (brand missing or deleted) — skipping run`);
-      return ok();
-    }
-    log.info(`brand-claims: enabled for brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId}`);
+  // The brand_claims_enabled flag is the opt-in gate: it's set out of band (the api-service
+  // enable-brand-claims Slack command) for the sites we want weekly claims on. A disabled
+  // brand is skipped entirely — no ready-signal is published, so no claims are (re)generated
+  // for sites we don't want to touch.
+  if (!brand.brand_claims_enabled) {
+    log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not enabled for claims — skipping run`);
+    return ok();
   }
 
   const brandSlug = sanitizePathComponent(brand.name);
   if (!brandSlug) {
-    log.warn(`brand-claims: brand name "${brand.name}" (${brand.id}) sanitizes to an empty S3 path component — enabled but cannot look up its sheet`);
+    log.warn(`brand-claims: brand name "${brand.name}" (${brand.id}) sanitizes to an empty S3 path component — cannot look up its sheet`);
     return ok();
   }
 

@@ -89,7 +89,7 @@ describe('Brand Claims audit handler', function () {
     };
     sqs = { sendMessage: sandbox.stub().resolves() };
     s3Client = { send: sandbox.stub().resolves({ Contents: [], IsTruncated: false }) };
-    selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
+    selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true }], error: null };
     updateResult = { data: { id: BRAND_ID, name: 'Acme Corp' }, error: null };
     pgCalls = [];
     postgrestClient = makePostgrest();
@@ -187,33 +187,28 @@ describe('Brand Claims audit handler', function () {
       expect(log.warn).to.have.been.calledWithMatch('no active brand');
     });
 
-    it('enables but skips run when the brand name sanitizes to empty', async () => {
-      selectResult = { data: [{ id: BRAND_ID, name: '   ', brand_claims_enabled: false }], error: null };
-      updateResult = { data: { id: BRAND_ID, name: '   ' }, error: null };
+    it('skips run (no SQS) when the brand is not enabled for claims', async () => {
+      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
       const res = await brandClaimsHandler(message, buildContext());
       expect(res.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('enabled for brand');
+      expect(log.info).to.have.been.calledWithMatch('not enabled for claims');
+      expect(s3Client.send).to.not.have.been.called;
+      expect(sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('skips run when the brand name sanitizes to empty', async () => {
+      selectResult = { data: [{ id: BRAND_ID, name: '   ', brand_claims_enabled: true }], error: null };
+      const res = await brandClaimsHandler(message, buildContext());
+      expect(res.status).to.equal(200);
       expect(log.warn).to.have.been.calledWithMatch('empty S3 path component');
       expect(sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('enables but skips run when no sheet exists (listing has no Contents)', async () => {
+    it('skips run when no sheet exists (listing has no Contents)', async () => {
       s3Client.send.resolves({ IsTruncated: false });
       const res = await brandClaimsHandler(message, buildContext());
       expect(res.status).to.equal(200);
       expect(log.warn).to.have.been.calledWithMatch('no Brand Presence sheet');
-      expect(sqs.sendMessage).to.not.have.been.called;
-    });
-
-    it('skips the run when the enable write matches no row (brand deleted mid-flight)', async () => {
-      updateResult = { data: null, error: null };
-      s3Client.send.resolves({
-        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
-        IsTruncated: false,
-      });
-      const res = await brandClaimsHandler(message, buildContext());
-      expect(res.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('enable did not take');
       expect(sqs.sendMessage).to.not.have.been.called;
     });
   });
@@ -223,12 +218,6 @@ describe('Brand Claims audit handler', function () {
       selectResult = { data: null, error: { message: 'boom' } };
       await expect(brandClaimsHandler(message, buildContext()))
         .to.be.rejectedWith('Failed to resolve brand for site: boom');
-    });
-
-    it('throws when the enable update errors', async () => {
-      updateResult = { data: null, error: { message: 'nope' } };
-      await expect(brandClaimsHandler(message, buildContext()))
-        .to.be.rejectedWith('Failed to update brand claims flag: nope');
     });
 
     it('throws (SQS retry) when the S3 listing fails', async () => {
@@ -252,8 +241,8 @@ describe('Brand Claims audit handler', function () {
     it('picks the first brand deterministically and warns', async () => {
       selectResult = {
         data: [
-          { id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false },
-          { id: 'other', name: 'Acme Two', brand_claims_enabled: false },
+          { id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true },
+          { id: 'other', name: 'Acme Two', brand_claims_enabled: true },
         ],
         error: null,
       };
@@ -268,8 +257,8 @@ describe('Brand Claims audit handler', function () {
     });
   });
 
-  describe('happy path — enable + run', () => {
-    it('enables the gate and publishes the ready-signal for the latest sheet', async () => {
+  describe('happy path — run', () => {
+    it('publishes the ready-signal for the latest sheet', async () => {
       const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
       s3Client.send.resolves({
         Contents: [
@@ -293,7 +282,6 @@ describe('Brand Claims audit handler', function () {
       const res = await brandClaimsHandler(message, ctx);
 
       expect(res.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('enabled for brand');
       expect(sqs.sendMessage).to.have.been.calledOnce;
 
       const [queueUrl, event] = sqs.sendMessage.firstCall.args;
@@ -340,7 +328,7 @@ describe('Brand Claims audit handler', function () {
       expect(event.s3_key).to.equal(`${prefix}/2026/01/05/bp-w2-2026-050126.xlsx`);
     });
 
-    it('queries and writes the brands table with the expected filters and payload', async () => {
+    it('reads the brands table with the expected filters and never writes it', async () => {
       s3Client.send.resolves({
         Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
         IsTruncated: false,
@@ -356,29 +344,11 @@ describe('Brand Claims audit handler', function () {
         ['site_id', SITE_ID],
       ]);
 
-      const write = pgCalls[1];
-      expect(write.table).to.equal('brands');
-      expect(write.update).to.deep.equal({
-        brand_claims_enabled: true,
-        updated_by: 'audit-worker:brand-claims',
-      });
-      expect(write.eqs).to.deep.include(['id', BRAND_ID]);
-      expect(write.neqs).to.deep.include(['status', 'deleted']);
+      // Enable is handled separately now — the handler must never issue a brands update.
+      expect(pgCalls).to.have.lengthOf(1);
+      expect(pgCalls.some((c) => c.update !== undefined)).to.equal(false);
     });
 
-    it('skips the enable write when the gate is already on but still runs', async () => {
-      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true }], error: null };
-      // maybeSingle would only be hit by an update; make it throw so a stray write fails loudly
-      updateResult = { data: null, error: { message: 'should-not-update' } };
-      s3Client.send.resolves({
-        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],
-        IsTruncated: false,
-      });
-      const res = await brandClaimsHandler(message, buildContext());
-      expect(res.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('already enabled');
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-    });
 
     it('resolves the site via Site.findById when not pre-fetched', async () => {
       const ctx = buildContext({ site: null });
