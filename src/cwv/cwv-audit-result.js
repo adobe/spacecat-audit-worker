@@ -14,6 +14,8 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
+import { isWithinAuditScope } from '../internal-links/subpath-filter.js';
+import { getRUMDomain } from '../support/utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
@@ -108,17 +110,26 @@ export async function buildCWVAuditResult(context) {
   const rumApiClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
-    domain: auditUrl,
+    // RUM is keyed per hostname; a sub-path auditUrl (e.g. example.com/foo) has no
+    // domainkey. Query by hostname; per-URL results are scoped to the base path below.
+    domain: getRUMDomain(auditUrl),
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
   };
   const cwvData = await rumApiClient.query(Audit.AUDIT_TYPES.CWV, options);
 
+  // SITES-49656: sub-path sites (e.g. example.com/foo) share the domain-keyed RUM
+  // query, so scope per-URL entries to the base path before top-N/threshold selection.
+  // Root-domain sites and operator-configured `group` entries are unaffected.
+  const scopedCwvData = cwvData.filter(
+    (item) => item.type !== 'url' || isWithinAuditScope(item.url, baseURL),
+  );
+
   const stats = { homepage: false, topNCount: 0, thresholdCount: 0 };
 
   // Always include: homepage + top N pages + pages meeting threshold
-  const filteredCwvData = [...cwvData]
+  const filteredCwvData = [...scopedCwvData]
     .sort((a, b) => b.pageviews - a.pageviews)
     .reduce((list, item) => {
       // 1) Homepage
@@ -145,7 +156,7 @@ export async function buildCWVAuditResult(context) {
     }, []);
 
   log.info(
-    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
+    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Scoped=${scopedCwvData.length}, Reported=${filteredCwvData.length} | `
     + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
     + `Top${topPagesCount} pages: ${stats.topNCount} | `
     + `Pages above threshold: ${stats.thresholdCount}`,

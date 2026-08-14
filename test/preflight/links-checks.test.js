@@ -916,7 +916,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
       expect(fetchStub.callCount).to.equal(0);
     });
 
-    it('deduplicates multiple cq-LinkChecker images pointing to the same URL', async () => {
+    it('groups multiple cq-LinkChecker images for the same URL into one finding, keeping a selector per image', async () => {
       const html = `
         <img class="cq-LinkChecker cq-LinkChecker--prefix cq-LinkChecker--invalid"
              alt="invalid link: /content/site/en/missing.html">
@@ -926,8 +926,13 @@ describe('preflight/links-checks - runLinksChecks', () => {
              alt="invalid link: /content/site/en/missing.html">
       `;
       const result = await runLinksChecks([pageUrl], makeScrapedObjects(html), context);
+      // One finding per URL...
       expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
       expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/content/site/en/missing.html');
+      // ...but each image occurrence surfaces as its own element target (not deduped away to one).
+      const { elements } = result.auditResult.brokenInternalLinks[0];
+      expect(elements).to.have.lengthOf(3);
+      expect(new Set(elements.map((e) => e.selector)).size).to.equal(3);
       expect(fetchStub.callCount).to.equal(0);
     });
   });

@@ -15,6 +15,11 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import * as spacecatSharedUtils from '@adobe/spacecat-shared-utils';
+import {
+  SEMRUSH_NOT_ENTITLED_REASON,
+  SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+  SEMRUSH_ENTITLEMENT_REASONS,
+} from '../../src/utils/semrush-entitlement.js';
 
 use(sinonChai);
 
@@ -36,6 +41,7 @@ describe('offsite-brand-presence-semrush', function () {
   let log;
   let fetchStub;
   let resolveBrandResultForSite;
+  let resolveSemrushEntitlement;
   let getServiceAccessToken;
   let imsCreateFrom;
   let mod;
@@ -54,6 +60,7 @@ describe('offsite-brand-presence-semrush', function () {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
       '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
+      '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
       ...overrides,
     });
@@ -76,6 +83,13 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub = sandbox.stub();
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
+    resolveSemrushEntitlement = sandbox.stub()
+      .resolves({
+        entitled: true,
+        resolved: true,
+        reason: SEMRUSH_ENTITLEMENT_REASONS.ENTITLED,
+        mode: 'subworkspace',
+      });
     getServiceAccessToken = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
     imsCreateFrom = sandbox.stub().returns({ getServiceAccessToken });
     mod = await loadModule();
@@ -432,6 +446,58 @@ describe('offsite-brand-presence-semrush', function () {
     resolveBrandResultForSite.resolves({ brand: null, resolved: false });
     expect(await run()).to.equal(null);
     expect(warnedWith(/transient/)).to.equal(true);
+  });
+
+  // --- entitlement gate (before any Semrush HTTP call) -----------------------
+
+  it('returns null and does not call Semrush when the brand is not entitled', async () => {
+    resolveSemrushEntitlement.resolves({
+      entitled: false, resolved: true, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE,
+    });
+    const diagnostics = {};
+    const onProgress = sandbox.stub().resolves();
+
+    const result = await run({}, {}, onProgress, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+    expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
+    expect(fetchStub).to.not.have.been.called;
+    expect(getServiceAccessToken).to.not.have.been.called;
+    expect(log.info).to.have.been.calledWithMatch(/not entitled for Semrush \(no-workspace\)/);
+    expect(onProgress).to.have.been.calledWith(
+      ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
+    );
+  });
+
+  it('returns null and warns (not entitled, transient) when the entitlement check itself fails', async () => {
+    resolveSemrushEntitlement.resolves({
+      entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED,
+    });
+    const diagnostics = {};
+    const onProgress = sandbox.stub().resolves();
+
+    const result = await run({}, {}, onProgress, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON);
+    expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED);
+    expect(fetchStub).to.not.have.been.called;
+    expect(warnedWith(/entitlement check failed \(transient\)/)).to.equal(true);
+    expect(onProgress).to.have.been.calledWith(
+      ':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.',
+    );
+  });
+
+  it('passes the resolved orgId/brandId to the entitlement check and proceeds when entitled', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+
+    await run();
+
+    expect(resolveSemrushEntitlement).to.have.been.calledOnce;
+    expect(resolveSemrushEntitlement.firstCall.args[1]).to.deep.equal({
+      orgId: ORG_ID, brandId: BRAND_ID,
+    });
   });
 
   it('returns null when no date window can be derived', async () => {

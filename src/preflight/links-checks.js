@@ -349,7 +349,10 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // before the HTML is served, removing the anchor entirely. The broken URL is
         // preserved in the alt attribute as "invalid link: <url>". Extract these directly
         // without HTTP probing — AEM has already validated them as broken (404).
-        const seenCqUrls = new Set();
+        // Group cq-LinkChecker images by URL so each rewritten-image occurrence
+        // surfaces as its own element target (mirroring the anchor path), instead of
+        // dropping duplicate occurrences of the same URL. Map<url, {origin, selectors}>.
+        const cqLinks = new Map();
         $('img.cq-LinkChecker--prefix.cq-LinkChecker--invalid').each((i, img) => {
           const alt = $(img).attr('alt') || '';
           const match = alt.match(/^invalid link:\s*(.+)$/);
@@ -363,28 +366,35 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
             if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
               return;
             }
-            const abs = parsed.toString();
-            // Deduplicate: same URL may appear in multiple cq-LinkChecker images.
-            if (seenCqUrls.has(abs)) {
-              return;
-            }
-            seenCqUrls.add(abs);
             const selector = getDomElementSelector(img);
-            const result = {
-              urlTo: abs,
-              href: pageUrl,
-              status: 404,
-              // No textContent here: the anchor was already rewritten server-side to an
-              // <img>, so there is no visible link text left to surface.
-              ...toElementTargets([selector].filter(Boolean)),
-            };
-            if (parsed.origin === pageOrigin) {
-              brokenInternalLinks.push(result);
-            } else {
-              brokenExternalLinks.push(result);
+            const abs = parsed.toString();
+            if (!cqLinks.has(abs)) {
+              cqLinks.set(abs, { origin: parsed.origin, selectors: [] });
+            }
+            const entry = cqLinks.get(abs);
+            // Dedupe by selector so the same image isn't listed twice; toElementTargets
+            // drops any null selector, so an undetectable locator still reports the URL.
+            if (!entry.selectors.includes(selector)) {
+              entry.selectors.push(selector);
             }
           } catch {
             // skip unparseable URLs
+          }
+        });
+
+        cqLinks.forEach(({ origin, selectors: cqSelectors }, abs) => {
+          const result = {
+            urlTo: abs,
+            href: pageUrl,
+            status: 404,
+            // No textContent: the anchor was rewritten server-side to an <img>, so
+            // there is no visible link text left — only the element location(s).
+            ...toElementTargets(cqSelectors),
+          };
+          if (origin === pageOrigin) {
+            brokenInternalLinks.push(result);
+          } else {
+            brokenExternalLinks.push(result);
           }
         });
 

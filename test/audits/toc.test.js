@@ -865,6 +865,9 @@ describe('TOC (Table of Contents) Audit', () => {
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.toc);
+      // TOC edited suggestions stay protected from the OUTDATED sweep — TOC is out
+      // of the LLMO-6761 scope, so its prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
 
     it('transforms TOC value to HAST in opportunityAndSuggestionsForToc', async () => {
@@ -2653,6 +2656,61 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(merged.edgeOptimizeStatus).to.equal('EXPERIMENT_COMPLETE');
       expect(merged.transformRules.value).to.deep.equal([{ text: 'Experiment Title', level: 1 }]);
       expect(merged.isEdited).to.equal(true);
+    });
+
+    it('returns existing suggestion unchanged when isVerified is true', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isVerified: true,
+        transformRules: {
+          value: [{ text: 'LLMO-Verified Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — suggestions manually verified/updated by the
+      // LLMO team must never be touched by subsequent audit runs.
+      expect(merged.isVerified).to.equal(true);
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'LLMO-Verified Title', level: 1 }]);
     });
 
     it('preserves Mystique-persisted prompts across re-audits when the new suggestion has none', async () => {

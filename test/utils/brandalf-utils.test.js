@@ -149,6 +149,19 @@ describe('brandalf-utils', () => {
       expect(result).to.equal(false);
     });
 
+    it('stays disabled when the org row is off, even with a true brand override', async () => {
+      const { client } = stubPostgrestClient({
+        data: [
+          { flag_value: true, brand_id: 'brand-a' },
+          { flag_value: false, brand_id: null },
+        ],
+      });
+
+      const result = await isBrandalfEnabled('org-123', client, log);
+
+      expect(result).to.equal(false);
+    });
+
     it('treats a pre-migration row, which carries no brand_id, as the organization row', async () => {
       const { client } = stubPostgrestClient({ data: [{ flag_value: true }] });
 

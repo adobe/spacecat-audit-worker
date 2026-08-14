@@ -495,6 +495,21 @@ describe('dom-selector.js', () => {
       });
     });
 
+    it('should keep a selector-less entry that carries textContent (never drops the text)', () => {
+      const selectors = [
+        { selector: 'div.test1', textContent: 'located text' },
+        { textContent: 'orphaned text' },
+        { selector: null, textContent: 'null-selector text' },
+      ];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'div.test1', textContent: 'located text' },
+          { textContent: 'orphaned text' },
+          { textContent: 'null-selector text' },
+        ],
+      });
+    });
+
     it('should apply limit correctly', () => {
       const selectors = ['div.test1', 'span.test2', 'p.test3'];
       expect(toElementTargets(selectors, 2)).to.deep.equal({

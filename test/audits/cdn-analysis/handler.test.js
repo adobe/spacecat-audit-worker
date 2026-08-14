@@ -757,6 +757,8 @@ describe('CDN Analysis Handler', () => {
       expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
       expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
       expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
+      // Adobe internal/proxied user agents must be filtered out at ingestion
+      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
 
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");

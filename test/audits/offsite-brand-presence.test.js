@@ -16,6 +16,11 @@ import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import {
+  SEMRUSH_NOT_ENTITLED_REASON,
+  SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+  SEMRUSH_ENTITLEMENT_REASONS,
+} from '../../src/utils/semrush-entitlement.js';
 
 const {
   DRS_URLS_LIMIT,
@@ -27,7 +32,9 @@ const DEFAULT_WEEK = 7;
 const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
 
-describe('Offsite Brand Presence Handler', () => {
+describe('Offsite Brand Presence Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let mockLoadBrandPresenceData;
   let mockLoadCitedUrlsFromSemrush;
@@ -268,6 +275,24 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
     });
 
+    it('emits a structured success with the loaded URL count on a clean Semrush run', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      // The happy-path load emits a structured success with the loaded URL count.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Loaded 1 cited URL\(s\) from Semrush/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/count=1/)),
+      );
+    });
+
     it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.resolves(new Map([
@@ -305,6 +330,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.error).to.match(/hard stop/);
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
       expect(mockLoadBrandPresenceData).to.not.have.been.called; // no legacy fallback
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Semrush source failed/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush-failed/)),
+      );
     });
 
     it('falls back to legacy when an ENV-enabled Semrush run fails (no hard stop)', async () => {
@@ -319,6 +351,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.fallbackReason).to.equal('semrush-failed');
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/falling back to PostgREST\/SharePoint/)
+          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush-failed/)),
+      );
     });
 
     it('treats a genuinely-empty Semrush result as a zero-URL semrush run (no legacy)', async () => {
@@ -400,6 +439,26 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
     });
 
+    it('surfaces entitlementReason on the no-URLs-found path too, when legacy also yields nothing', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_NOT_ENTITLED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.FLAG_DISABLED;
+        }
+        return null;
+      });
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.FLAG_DISABLED);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+    });
+
     it('surfaces the loader diagnostics fallbackReason code on hard stop', async () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
@@ -416,6 +475,69 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.dataSource).to.equal('semrush');
       expect(result.auditResult.fallbackReason).to.equal('ims-token-failed');
       expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('falls back to legacy (never hard-stops) on a not-entitled brand, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_NOT_ENTITLED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE;
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+      // A deliberate entitlement skip must log at info, never warn — a regression
+      // that swaps these branches (or always warns) must fail this test.
+      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(not-entitled\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
+    });
+
+    it('falls back to legacy (never hard-stops) when the entitlement check itself fails, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT;
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(entitlement-check-failed\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
+    });
+
+    it('does not surface entitlementReason on a non-entitlement Semrush failure', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null); // fallbackReason defaults to 'semrush-failed'
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.fallbackReason).to.equal('semrush-failed');
+      expect(result.auditResult).to.not.have.property('entitlementReason');
+      expect(log.warn).to.have.been.calledWithMatch(/Semrush source failed \(semrush-failed\); falling back to PostgREST\/SharePoint/);
     });
   });
 
@@ -1514,8 +1636,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
+      // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
+      // level (outcome=failure) rather than a warn/skip — see Fix C.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
+          .and(sinon.match(/event=drs_submit/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=not_configured/)),
       );
     });
 
@@ -1800,6 +1927,12 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      // P1-4: the previously-silent empty-jobs early return now logs a structured skip.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=drs_poll_schedule/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/reason=no_jobs/)),
+      );
     });
 
     it('does not fail the run when scheduling the poll throws', async () => {
@@ -1810,7 +1943,14 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+      // Best-effort follow-up: the schedule-poll failure is structured and counted
+      // (outcome=failure) but logged at warn — the run already succeeded, so a
+      // transient SQS hiccup here must not page.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to schedule DRS status poll/)
+          .and(sinon.match(/event=drs_poll_schedule/))
+          .and(sinon.match(/outcome=failure/)),
+      );
     });
 
     it('forwards enableBrandProfile to the poll message auditContext when set on Slack', async () => {

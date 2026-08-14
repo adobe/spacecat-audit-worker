@@ -1456,6 +1456,37 @@ describe('Product MetaTags', () => {
         expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
+      it('builds absolute suggestion data.url for a subpath site — no /foo/foo (SITES-49656)', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSuggestions.returns([]);
+        // Default hostname-only (getDeliveryConfig returns {}): the endpoint already
+        // carries the /foo prefix, so it must resolve against the origin, not the base URL.
+        const subpathAuditData = {
+          siteId: 'site-id',
+          auditId: 'audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com/foo',
+            detectedTags: {
+              '/foo/product1': {
+                title: {
+                  tagContent: 'Amazing Product - Buy Now',
+                  seoRecommendation: 'Unique across pages',
+                  issue: 'Duplicate Title',
+                  issueDetails: '3 pages share same title',
+                  seoImpact: 'High',
+                },
+              },
+            },
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, subpathAuditData, context);
+
+        const newSuggestions = opportunity.addSuggestions.getCall(0).args[0];
+        expect(newSuggestions[0].data.url).to.equal('https://example.com/foo/product1');
+        expect(newSuggestions[0].data.url).to.not.contain('/foo/foo/');
+      });
+
       it('should throw error if fetching opportunity fails', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
         try {
@@ -1738,8 +1769,8 @@ describe('Product MetaTags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since useHostnameOnly is undefined
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
+        // Defaults to hostname-only when useHostnameOnly is undefined (endpoint is absolute)
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/product1');
         expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
@@ -1759,8 +1790,8 @@ describe('Product MetaTags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since getSite returns undefined
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
+        // Defaults to hostname-only when the site lookup returns the default config
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/product1');
         expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
@@ -1780,8 +1811,8 @@ describe('Product MetaTags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since getSite returns null
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
+        // Defaults to hostname-only when the site lookup returns the default config
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/product1');
         expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
@@ -1804,8 +1835,8 @@ describe('Product MetaTags', () => {
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        // Should preserve full URL path since error caused useHostnameOnly to stay false
-        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
+        // Defaults to hostname-only when the site lookup errors
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/product1');
       });
 
       it('should include product tags in suggestions when available', async () => {

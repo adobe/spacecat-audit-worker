@@ -32,6 +32,7 @@ async function getReadabilityUrlsToScrape(context) {
     site,
     dataAccess,
     auditType: AUDIT_TYPE,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, TOP_PAGES_LIMIT),
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
@@ -175,7 +176,9 @@ export async function processReadabilityOpportunities(context) {
       };
     }
 
-    const { readabilityIssues: allIssues, urlsProcessed } = readabilityAnalysisResult;
+    const {
+      readabilityIssues: allIssues, urlsProcessed, scrapedUrls = [],
+    } = readabilityAnalysisResult;
 
     // Filter out issues without a selector — they cannot be uniquely identified
     const readabilityIssues = allIssues.filter((issue) => Boolean(issue.selector));
@@ -203,6 +206,9 @@ export async function processReadabilityOpportunities(context) {
 
       return {
         ...data,
+        // url mirrors pageUrl so handleOutdatedSuggestions' scrapedUrlsSet check
+        // (which reads data.url) can scope OUTDATED eligibility below.
+        url: issue.pageUrl,
         scrapedAt: new Date(issue.scrapedAt).toISOString(),
         id: `readability-${siteId}-${index}`,
         textPreview: textContent?.substring(0, 500),
@@ -212,11 +218,23 @@ export async function processReadabilityOpportunities(context) {
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
     const buildKey = (data) => `${data.pageUrl}-${data.selector}`;
 
+    // Readability only audits a top-N-by-traffic sample of pages each run (not the
+    // whole site), and that sample shifts over time. Scope OUTDATED eligibility to
+    // pages actually scraped THIS run so a page merely falling out of this cycle's
+    // sample doesn't get its suggestion wrongly cleared as "issue disappeared"
+    // (LLMO-6537). Include both the requested scrape URLs (scrapeResultPaths keys —
+    // keeps pages that failed to read protected) and the resolved finalUrls the
+    // analysis recorded, because a suggestion's data.url is `finalUrl || url`; on a
+    // redirect the two diverge and a request-URL-only set would never age out a
+    // genuinely-fixed page (LLMO-6761).
+    const scrapedUrlsSet = new Set([...scrapeResultPaths.keys(), ...scrapedUrls]);
+
     await syncSuggestions({
       opportunity,
       newData: suggestionsData,
       context,
       buildKey,
+      scrapedUrlsSet,
       mapNewSuggestion: (data) => ({
         opportunityId: opportunity.getId(),
         type: SuggestionModel.TYPES.CONTENT_UPDATE,
@@ -224,30 +242,18 @@ export async function processReadabilityOpportunities(context) {
         data,
       }),
       mergeDataFunction: (existingData, newData) => {
-        // Preserve deployed / mid-IVE-experiment suggestions, and customer-edited
-        // improvements. isEdited is set only by the UI edit-save action (never inferred
-        // from updatedBy) (LLMO-6537, LLMO-6168).
+        // Preserve deployed / mid-IVE-experiment suggestions (LLMO-6168). Customer-edited
+        // improvements (isEdited) never reach this function on the matched-key path —
+        // syncSuggestions' centralized guard hard-skips them before merge is called
+        // (LLMO-6761).
         if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
           return { ...existingData };
         }
-        if (existingData.isEdited) {
-          const merged = {
-            ...existingData,
-            ...newData,
-            improvedText: existingData.improvedText,
-            originalImprovedText: existingData.originalImprovedText
-              ?? existingData.improvedText,
-            isEdited: true,
-          };
-          // Re-derive transformRules.value from preserved improvedText so it stays
-          // consistent with the edit (parity with guidance-handler) (LLMO-6537).
-          if (merged.improvedText && merged.transformRules) {
-            merged.transformRules = { ...merged.transformRules, value: merged.improvedText };
-          }
-          return merged;
-        }
         return { ...existingData, ...newData };
       },
+      // Scenario 1 (LLMO-6761): keep edited improvements as-is on re-detection
+      // instead of a per-field merge.
+      skipEditedOnMatch: true,
     });
 
     // Send to Mystique for AI-powered readability improvements

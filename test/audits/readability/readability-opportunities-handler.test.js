@@ -428,7 +428,7 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(newData[0].seoImpact).to.be.undefined;
     });
 
-    it('should pass a mergeDataFunction that preserves edge/edited suggestions (LLMO-6537)', async () => {
+    it('should pass a mergeDataFunction that preserves edge-deployed suggestions (LLMO-6537)', async () => {
       analyzePageReadabilityStub.resolves({
         success: true,
         message: 'Found 1 readability issues',
@@ -449,8 +449,11 @@ describe('Readability Opportunities Handler Tests', () => {
 
       await processReadabilityOpportunities(mockContext);
 
-      const { mergeDataFunction } = syncSuggestionsStub.getCall(0).args[0];
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction } = syncArgs;
       expect(mergeDataFunction).to.be.a('function');
+      // Scenario 1 (LLMO-6761): readability opts in to the full-suggestion hard-skip.
+      expect(syncArgs.skipEditedOnMatch).to.equal(true);
 
       // edgeDeployed → existing returned unchanged
       const deployed = mergeDataFunction(
@@ -460,40 +463,11 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(deployed.edgeDeployed).to.equal(true);
       expect(deployed.improvedText).to.equal('Deployed.');
 
-      // isEdited → preserve edited text + original snapshot, refresh the rest,
-      // re-derive transformRules.value from preserved improvedText (LLMO-6537)
-      const edited = mergeDataFunction(
-        {
-          improvedText: 'Customer edited.',
-          originalImprovedText: 'System text.',
-          isEdited: true,
-          rank: 10,
-          transformRules: { value: 'System text.', op: 'replace', selector: 'p' },
-        },
-        { improvedText: 'Regenerated.', rank: 20 },
-      );
-      expect(edited.isEdited).to.equal(true);
-      expect(edited.improvedText).to.equal('Customer edited.');
-      expect(edited.originalImprovedText).to.equal('System text.');
-      expect(edited.rank).to.equal(20);
-      expect(edited.transformRules.value).to.equal('Customer edited.');
-      expect(edited.transformRules.op).to.equal('replace');
+      // Customer-edited suggestions (isEdited) never reach mergeDataFunction on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
 
-      // isEdited without originalImprovedText → bootstrap from improvedText
-      const bootstrap = mergeDataFunction(
-        {
-          improvedText: 'Customer edited.',
-          isEdited: true,
-          rank: 5,
-          transformRules: { value: 'Old.', op: 'replace', selector: 'p' },
-        },
-        { improvedText: 'Regenerated.', rank: 30 },
-      );
-      expect(bootstrap.isEdited).to.equal(true);
-      expect(bootstrap.originalImprovedText).to.equal('Customer edited.');
-      expect(bootstrap.transformRules.value).to.equal('Customer edited.');
-
-      // neither flag → normal merge
+      // no edge/edit flag → normal merge
       const merged = mergeDataFunction(
         { improvedText: 'Old.' },
         { improvedText: 'New.' },
@@ -681,6 +655,103 @@ describe('Readability Opportunities Handler Tests', () => {
         scrapeResultPaths,
         mockContext.log,
       );
+    });
+
+    it('should scope syncSuggestions scrapedUrlsSet to pages scraped this run (LLMO-6537)', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+        ['https://example.com/page2', 'scraped/page2.json'],
+      ]);
+      mockContext.scrapeResultPaths = scrapeResultPaths;
+
+      const mockReadabilityIssues = [
+        {
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Complex epistemological ramifications necessitate comprehensive analysis.',
+          fleschReadingEase: 15.5,
+          traffic: 1000,
+          rank: 26,
+        },
+      ];
+
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 1 readability issues',
+        readabilityIssues: mockReadabilityIssues,
+        scrapedUrls: [
+          'https://example.com/page1',
+          'https://example.com/page2',
+        ],
+        urlsProcessed: 2,
+      });
+
+      const mockOpportunity = { getId: sandbox.stub().returns('opp-id') };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      await processReadabilityOpportunities(mockContext);
+
+      const syncCallArgs = syncSuggestionsStub.getCall(0).args[0];
+      expect(syncCallArgs.scrapedUrlsSet).to.be.instanceOf(Set);
+      expect(Array.from(syncCallArgs.scrapedUrlsSet)).to.have.members([
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+      // suggestion data carries url (mirrors pageUrl) so the scrapedUrlsSet check
+      // in handleOutdatedSuggestions (which reads data.url) actually matches
+      expect(syncCallArgs.newData[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should include redirect-resolved finalUrls in scrapedUrlsSet so a suggestion whose data.url is the finalUrl still ages out (LLMO-6761)', async () => {
+      // page1 was requested at /page1 but the scraper resolved it to /page1-final
+      // (redirect). The resulting suggestion's data.url is the finalUrl. The
+      // scrapedUrlsSet must contain BOTH forms, otherwise a genuinely-fixed page
+      // keyed on the finalUrl would never become OUTDATED-eligible.
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+      mockContext.scrapeResultPaths = scrapeResultPaths;
+
+      const mockReadabilityIssues = [
+        {
+          pageUrl: 'https://example.com/page1-final',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Complex epistemological ramifications necessitate comprehensive analysis.',
+          fleschReadingEase: 15.5,
+          traffic: 1000,
+          rank: 26,
+        },
+      ];
+
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 1 readability issues',
+        readabilityIssues: mockReadabilityIssues,
+        // analysis surfaces both the requested URL and the resolved finalUrl
+        scrapedUrls: [
+          'https://example.com/page1',
+          'https://example.com/page1-final',
+        ],
+        urlsProcessed: 1,
+      });
+
+      const mockOpportunity = { getId: sandbox.stub().returns('opp-id') };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      await processReadabilityOpportunities(mockContext);
+
+      const syncCallArgs = syncSuggestionsStub.getCall(0).args[0];
+      // data.url is the finalUrl (mirrors pageUrl) ...
+      expect(syncCallArgs.newData[0].url).to.equal('https://example.com/page1-final');
+      // ... and the set contains it, so handleOutdatedSuggestions' data.url check matches
+      expect(syncCallArgs.scrapedUrlsSet.has('https://example.com/page1-final')).to.equal(true);
+      expect(syncCallArgs.scrapedUrlsSet.has('https://example.com/page1')).to.equal(true);
     });
   });
 });

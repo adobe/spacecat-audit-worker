@@ -23,9 +23,8 @@ export const suggestionData = [
             issue: 'Body content length is below 100 characters',
             seoImpact: 'Moderate',
             seoRecommendation: 'Add more meaningful content to the page',
-            textContent: 'Page 1 H1Page 1 H1',
             elements: [
-              { selector: 'body' },
+              { selector: 'body', textContent: 'Page 1 H1Page 1 H1' },
             ],
           },
         ],
