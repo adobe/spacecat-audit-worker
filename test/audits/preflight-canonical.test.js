@@ -348,10 +348,11 @@ describe('Preflight Canonical Audit', () => {
       await canonicalHandler(ctx, auditCtx);
 
       const [opp] = getCanonicalAudit(auditCtx.auditsResult).opportunities;
-      expect(opp).to.have.all.keys('check', 'issue', 'seoImpact', 'seoRecommendation', 'suggestion');
+      expect(opp).to.have.all.keys('check', 'issue', 'seoImpact', 'seoRecommendation');
       expect(opp.seoImpact).to.equal('Moderate');
-      // A missing canonical tag's fix is unambiguous: point it at the page's own URL.
-      expect(opp.suggestion).to.equal(PAGE_URL);
+      // No `suggestion` URL is emitted: the page's own URL is the editor host for
+      // author pages, so suggesting it as the canonical would be wrong.
+      expect(opp).to.not.have.property('suggestion');
     });
   });
 
