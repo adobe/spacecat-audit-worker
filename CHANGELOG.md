@@ -1,3 +1,10 @@
+## [1.521.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.1...v1.521.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** publish detection never promoted DEPLOYED fixes to PUBLISHED ([#2878](https://github.com/adobe/spacecat-audit-worker/issues/2878)) ([540a78c](https://github.com/adobe/spacecat-audit-worker/commit/540a78c27aaafd1f9cb68f7a593a4a3729c11477)), closes [#1999](https://github.com/adobe/spacecat-audit-worker/issues/1999)
+
 ## [1.521.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.0...v1.521.1) (2026-08-14)
 
 
