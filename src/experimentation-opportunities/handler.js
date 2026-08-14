@@ -17,6 +17,7 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 import {
   getObjectFromKey,
 } from '../utils/s3-utils.js';
@@ -159,16 +160,22 @@ export async function processCustomUrls(customUrls, rumAPIClient, options, conte
  * @returns
  */
 export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
-  const { log } = context;
+  const { log, site } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
+    // auditUrl resolves via wwwUrlResolver (already a bare hostname), so no strip needed here.
     domain: auditUrl,
     interval: DAYS,
     granularity: 'hourly',
   };
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
-  const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
+  const rawOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
+  // Scope whole-domain RUM opportunities to the site sub-path (no-op for root-domain sites).
+  const baseURL = site?.getBaseURL?.();
+  const experimentationOpportunities = baseURL
+    ? filterByAuditScope(rawOpportunities, baseURL, { urlProperty: 'page' }, log)
+    : rawOpportunities;
   processRageClickOpportunities(experimentationOpportunities);
   log.debug(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 

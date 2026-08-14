@@ -15,6 +15,9 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
+import {
   DRS_TERMINAL_STATUSES,
   DRS_SUCCESS_STATUSES,
   OFFSITE_DOMAINS,
@@ -22,7 +25,6 @@ import {
   AUDIT_TRIGGER_COOLDOWN_MS,
 } from './constants.js';
 
-const LOG_PREFIX = '[offsite-brand-presence][drs-status]';
 const SQS_MAX_DELAY_SECONDS = 900;
 // The top-cited bucket is keyed by this domain in the scrape jobs (see the runner's
 // addUrlsToUrlStore). All other buckets are keyed by their OFFSITE_DOMAINS domain.
@@ -55,6 +57,7 @@ function resolveAnalysisAuditType(domain) {
  * @returns {Promise<boolean>}
  */
 async function hasRecentAudit(siteId, auditType, dataAccess, log) {
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   try {
     const { LatestAudit } = dataAccess;
     const latest = await LatestAudit.findBySiteIdAndAuditType(siteId, auditType);
@@ -72,7 +75,9 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
-    log.warn(`${LOG_PREFIX} Failed to check recent ${auditType} audit for site ${siteId}: ${err.message}`);
+    olog.warn('cooldown_check', `Failed to check recent ${auditType} audit for site ${siteId}`, {
+      peer: PEER.SPACECAT, direction: 'inbound', auditType, ...errorField(err),
+    });
     return false;
   }
 }
@@ -127,6 +132,52 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
 }
 
 /**
+ * Groups the per-job statuses by analysis audit type and returns the types being dropped
+ * on the final poll: those whose bucket never reached a DRS success status. This surfaces
+ * the previously-silent "source dropped at the 3h budget" failure mode (P1-6) — without
+ * this, a bucket that timed out or wholly failed its scrape was omitted with only a Slack
+ * summary line and no structured, alertable log.
+ *
+ * `reason=scrape_failed` when every feeding job is terminal-without-success (FAILED/CANCELLED);
+ * `reason=budget_exceeded` when at least one job was still non-terminal when the deadline hit.
+ * Types already dispatched on this or a prior poll are excluded (they succeeded).
+ *
+ * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
+ * @param {Set<string>} triggered - Audit types already dispatched (this + prior polls)
+ * @returns {Array<{auditType: string, reason: string}>} Dropped audit types with a reason
+ */
+function computeDroppedAuditTypes(statuses, triggered) {
+  const groups = new Map();
+  for (const s of statuses) {
+    const auditType = resolveAnalysisAuditType(s.domain);
+    if (!auditType) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    if (!groups.has(auditType)) {
+      groups.set(auditType, []);
+    }
+    groups.get(auditType).push(s);
+  }
+
+  const dropped = [];
+  for (const [auditType, groupJobs] of groups) {
+    if (triggered.has(auditType)) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const anySuccess = groupJobs.some((s) => DRS_SUCCESS_STATUSES.has(s.status));
+    if (anySuccess) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const allGroupTerminal = groupJobs.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
+    dropped.push({ auditType, reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded' });
+  }
+  return dropped;
+}
+
+/**
  * Triggers the given downstream analysis audit types, forwarding the originating Slack
  * context so each posts its results to the same thread.
  *
@@ -163,6 +214,7 @@ async function triggerAnalysisAudits(
   enableSemrush,
 ) {
   const { sqs, dataAccess, log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const handled = [];
   if (auditTypes.length === 0) {
@@ -178,7 +230,9 @@ async function triggerAnalysisAudits(
     try {
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-        log.info(`${LOG_PREFIX} Skipping ${type} for site ${siteId} — recent audit exists`);
+        olog.skip('analysis_dispatch', `Skipping ${type} for site ${siteId} — recent audit exists`, {
+          peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
+        });
         handled.push(type);
         // eslint-disable-next-line no-continue
         continue;
@@ -202,10 +256,14 @@ async function triggerAnalysisAudits(
           ...(Object.keys(messageData).length > 0 && { messageData }),
         },
       });
-      log.info(`${LOG_PREFIX} Triggered ${type} for site ${siteId}`);
+      olog.success('analysis_dispatch', `Triggered ${type} for site ${siteId}`, {
+        peer: PEER.SQS, direction: 'outbound', auditType: type,
+      });
       handled.push(type);
     } catch (err) {
-      log.warn(`${LOG_PREFIX} Failed to trigger ${type} analysis audit for site ${siteId}: ${err.message}`);
+      olog.warn('analysis_dispatch', `Failed to trigger ${type} analysis audit for site ${siteId}`, {
+        peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
+      });
     }
   }
   return handled;
@@ -275,9 +333,14 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     enableBrandProfile, urlLimit, enableSemrush,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   if (jobs.length === 0) {
-    log.warn(`${LOG_PREFIX} No jobs to poll, skipping (site ${siteId})`);
+    // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
+    // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
+    olog.skip('drs_poll', `No jobs to poll, skipping (site ${siteId})`, {
+      peer: PEER.DRS, reason: 'no_jobs',
+    });
     return ok();
   }
 
@@ -293,7 +356,9 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
-      log.warn(`${LOG_PREFIX} getJob failed for ${job.jobId}: ${err.message}`);
+      olog.warn('drs_poll', `getJob failed for ${job.jobId}`, {
+        peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
+      });
       return { ...job, status: undefined, error: undefined };
     }
   }));
@@ -302,6 +367,12 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const allTerminal = terminalCount === statuses.length;
   const now = Date.now();
   const deadlineReached = now >= deadline;
+
+  // P1-7: per-poll visibility. Emit a snapshot of terminal/total after resolving statuses
+  // so the wait is observable in Splunk (previously nothing was logged on a normal poll).
+  olog.start('drs_poll', `DRS poll for ${baseURL}: ${terminalCount}/${statuses.length} jobs terminal`, {
+    peer: PEER.DRS, terminal: terminalCount, total: statuses.length,
+  });
 
   // Dispatch the analysis audits for any buckets that just became ready, so early-finishing
   // datasets go to Mystique immediately instead of waiting for the slowest job. Best-effort:
@@ -321,7 +392,9 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableSemrush,
     );
   } catch (err) {
-    log.warn(`${LOG_PREFIX} Failed to trigger analysis audits for ${baseURL}: ${err.message}`);
+    olog.warn('analysis_dispatch', `Failed to trigger analysis audits for ${baseURL}`, {
+      peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+    });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
 
@@ -343,8 +416,20 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
         triggeredAuditTypes: nextTriggered,
       },
     };
-    await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
-    log.info(`${LOG_PREFIX} ${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`);
+    // P1-5 ("wait dies partway"): the re-poll send was unguarded — a failure here silently
+    // ended the poll lifecycle. Log it loudly, then re-throw to preserve the existing
+    // SQS-redelivery behavior (the message is redelivered and the poll retried).
+    try {
+      await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
+    } catch (err) {
+      olog.failure('drs_poll_reschedule', `Failed to re-enqueue DRS status poll for ${baseURL}`, {
+        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+      });
+      throw err;
+    }
+    olog.success('drs_poll_reschedule', `${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`, {
+      peer: PEER.SQS, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds,
+    });
     return ok();
   }
 
@@ -355,9 +440,21 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // before the message is deleted could redeliver and post the summary twice. There is
   // no idempotency key; a duplicate Slack summary is preferable to the complexity of
   // deduplication for a best-effort notification.
+  // P1-6 ("source dropped at the 3h budget"): any audit type whose bucket never produced a
+  // DRS success is dropped here with no dispatch. Emit one structured, alertable failure per
+  // dropped source (was previously visible only as prose in the Slack summary).
+  const dropped = computeDroppedAuditTypes(statuses, new Set(nextTriggered));
+  for (const { auditType, reason } of dropped) {
+    olog.failure('drs_poll', `Dropping ${auditType} for ${baseURL}: no DRS success (${reason})`, {
+      peer: PEER.DRS, reason, auditType,
+    });
+  }
+
   const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
-  log.info(`${LOG_PREFIX} Posted completion summary for ${baseURL} (${statuses.length} jobs)`);
+  olog.success('poll_summary', `Posted completion summary for ${baseURL} (${statuses.length} jobs)`, {
+    peer: PEER.SLACK, direction: 'outbound', jobs: statuses.length,
+  });
 
   return ok();
 }

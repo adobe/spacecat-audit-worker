@@ -176,6 +176,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       auditType,
       getAgenticUrls: () => Promise.resolve([]),
       topOrganicLimit: 200,
+      scopeTopPagesToBasePath: true,
       log,
     });
     const topPages = mergedInput.urls.map((url) => ({ url }));

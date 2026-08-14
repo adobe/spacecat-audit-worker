@@ -20,9 +20,29 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
-const LOG_PREFIX = '[Wikipedia]';
+// Human prefix for the two shared, untouched utils that still log via a passed-in prefix
+// string (applyScopeToOpportunity + fetchAnalysisFromPresignedUrl). All other logging in this
+// file goes through the bound offsite logger (createOffsiteLogger), which emits the same prefix.
+const HUMAN_PREFIX = `[offsite:${AUDIT.WIKIPEDIA}]`;
+
+/**
+ * Classifies a presigned-analysis-fetch failure for the `analysis_fetch` reason token:
+ * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
+ * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
+ *
+ * @param {Error} error
+ * @returns {'validation'|'fetch'}
+ */
+function classifyFetchFailure(error) {
+  return /presignedUrl|not JSON|too large|content-type/i.test(error.message)
+    ? 'validation'
+    : 'fetch';
+}
 
 /**
  * Creates an opportunity for Wikipedia analysis
@@ -91,7 +111,8 @@ async function postWikipediaOutcomeToSlack(context, auditId, text) {
     const { channelId, threadTs } = slackContext;
     await postMessageOptional(context, channelId, text, { threadTs });
   } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to post outcome to Slack: ${e.message}`);
+    createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, auditId })
+      .warn('slack_notify', 'Failed to post outcome to Slack', { peer: PEER.SLACK, ...errorField(e) });
   }
 }
 
@@ -109,11 +130,15 @@ export default async function handler(message, context) {
   // value would let a tampered message re-attribute the opportunity.
   const { siteId, auditId, data } = message;
 
-  log.info(`${LOG_PREFIX} Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
+
+  olog.start('guidance_receive', `Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+    peer: PEER.MYSTIQUE, direction: 'inbound',
+  });
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[Wikipedia] Site not found for siteId: ${siteId}`);
+    olog.failure('guidance_complete', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
     return notFound('Site not found');
   }
   const baseUrl = site.getBaseURL();
@@ -121,7 +146,9 @@ export default async function handler(message, context) {
   // Mystique couldn't complete the analysis (e.g. an upstream producer/service
   // failure). Report it to the Slack thread instead of failing silently, then stop.
   if (data?.error) {
-    log.error(`${LOG_PREFIX} Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
+    });
     await postWikipediaOutcomeToSlack(
       context,
       auditId,
@@ -138,17 +165,22 @@ export default async function handler(message, context) {
     try {
       analysisData = await fetchAnalysisFromPresignedUrl(data.presignedUrl, {
         log,
-        prefix: LOG_PREFIX,
+        prefix: HUMAN_PREFIX,
+      });
+      olog.success('analysis_fetch', 'Fetched analysis from presigned URL', {
+        peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      log.error(`${LOG_PREFIX} Error fetching from presigned URL: ${error.message}`);
+      olog.failure('analysis_fetch', 'Error fetching from presigned URL', {
+        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
+      });
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
   }
 
   // Validate analysis data
   if (!analysisData) {
-    log.error('[Wikipedia] No analysis data provided in message');
+    olog.failure('guidance_complete', 'No analysis data provided in message', { reason: 'no_analysis_data' });
     return badRequest('Analysis data is required');
   }
 
@@ -156,7 +188,7 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      log.error(`[Wikipedia] Audit not found for auditId: ${auditId}`);
+      olog.failure('guidance_complete', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -171,7 +203,7 @@ export default async function handler(message, context) {
     // was analyzed but had nothing to improve. Report the outcome to Slack — this
     // path used to return silently, so a Slack-triggered run showed only the trigger.
     if (suggestions.length === 0) {
-      log.info(`${LOG_PREFIX} No suggestions found in analysis`);
+      olog.skip('guidance_complete', 'No suggestions found in analysis', { reason: 'no_suggestions' });
       const outcomeMessage = wikipediaUrl
         ? `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
           + '• Wikipedia page analyzed — no improvement suggestions found'
@@ -180,7 +212,9 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    log.info(`${LOG_PREFIX} Processing ${suggestions.length} suggestions for ${company}`);
+    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions`, {
+      count: suggestions.length, company,
+    });
 
     // Create guidance object (must be an object, not an array, per Opportunity schema)
     const guidance = {
@@ -201,29 +235,46 @@ export default async function handler(message, context) {
       context,
     );
 
+    const ologOpp = olog.with({ opportunityId: opportunity.getId() });
+
     // Persist the opportunity (with scope) BEFORE syncing suggestions; see
     // cited-analysis/guidance-handler.js for the same reordering rationale.
-    applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
+    applyScopeToOpportunity(opportunity, brandResult, log, HUMAN_PREFIX);
     opportunity.setData({
       ...opportunity.getData(),
       fullAnalysis: analysisData,
     });
     await opportunity.save();
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData: suggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
-      mapNewSuggestion: (suggestion) => ({
-        opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: getRankFromPriority(suggestion.priority),
-        data: suggestion,
-      }),
+    ologOpp.success('opportunity_persist', 'Opportunity persisted', {
+      peer: PEER.POSTGRES, direction: 'outbound',
     });
 
-    log.info(`${LOG_PREFIX} Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    try {
+      await syncSuggestions({
+        context,
+        opportunity,
+        newData: suggestions,
+        buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
+        mapNewSuggestion: (suggestion) => ({
+          opportunityId: opportunity.getId(),
+          type: 'CONTENT_UPDATE',
+          rank: getRankFromPriority(suggestion.priority),
+          data: suggestion,
+        }),
+      });
+      ologOpp.success('suggestion_sync', `Synced ${suggestions.length} suggestions`, {
+        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
+      });
+    } catch (error) {
+      ologOpp.failure('suggestion_sync', 'Failed to sync suggestions', {
+        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      });
+      throw error;
+    }
+
+    ologOpp.success('guidance_complete', `Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`, {
+      count: suggestions.length,
+    });
 
     await postWikipediaOutcomeToSlack(
       context,
@@ -234,7 +285,9 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    log.error(`[Wikipedia] Error processing Wikipedia analysis: ${error.message}`, error);
+    // Intentional drill-down: a failure already logged by an inner event (e.g. suggestion_sync)
+    // will also surface here as guidance_complete outcome=failure — the terminal, per-run marker.
+    olog.failure('guidance_complete', 'Error processing Wikipedia analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

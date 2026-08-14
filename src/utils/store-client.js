@@ -30,9 +30,21 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import {
+  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
+} from './offsite-logging.js';
 
 // Page size for cursor-based pagination over the url-store and sentiment collections.
 const STORE_PAGE_SIZE = 500;
+
+// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
+// Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted
+// (see the offsite structured-logging convention in ./offsite-logging.js).
+const LOG_PREFIX = '[offsite:store-client]';
+const sc = (message, fields) => appendFields(
+  `${LOG_PREFIX} ${message}`,
+  { domain: OFFSITE_DOMAIN, ...fields },
+);
 
 /**
  * Error thrown when a store returns empty results
@@ -203,25 +215,41 @@ export default class StoreClient {
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
 
-    this.log.info(`[StoreClient] Fetching ${auditType} URLs for siteId: ${siteId}`);
+    this.log.info(sc(`Fetching ${auditType} URLs for siteId: ${siteId}`, {
+      event: 'url_store_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
+    }));
 
-    const items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
-      siteId,
-      auditType,
-      {
-        limit: STORE_PAGE_SIZE,
-        cursor,
-        sortBy,
-        sortOrder,
-      },
-    ));
+    // P2-3: wrap the DB read so a genuine read error is a distinct, alertable
+    // `url_store_read outcome=failure` rather than surfacing only as the generic
+    // "Audit failed". The empty-store case below stays a StoreEmptyError (a normal
+    // "no URLs yet" signal the callers self-heal on), not a read failure.
+    let items;
+    try {
+      items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
+        siteId,
+        auditType,
+        {
+          limit: STORE_PAGE_SIZE,
+          cursor,
+          sortBy,
+          sortOrder,
+        },
+      ));
+    } catch (error) {
+      this.log.error(sc(`Failed to read ${auditType} URLs for siteId: ${siteId}: ${error.message}`, {
+        event: 'url_store_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name,
+      }));
+      throw error;
+    }
 
     if (items.length === 0) {
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
     }
 
     const urls = items.map(toAuditUrlJson);
-    this.log.info(`[StoreClient] Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`);
+    this.log.info(sc(`Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`, {
+      event: 'url_store_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
+    }));
     return urls;
   }
 
@@ -239,7 +267,9 @@ export default class StoreClient {
     this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
 
-    this.log.info(`[StoreClient] Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`);
+    this.log.info(sc(`Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`, {
+      event: 'guideline_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
+    }));
 
     const topicItems = await this.#fetchAllPages(
       (cursor) => SentimentTopic.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor }),
@@ -259,7 +289,9 @@ export default class StoreClient {
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }
 
-    this.log.info(`[StoreClient] Found ${topics.length} topics and ${guidelines.length} guidelines for siteId: ${siteId}`);
+    this.log.info(sc(`Found ${topics.length} topics and ${guidelines.length} guidelines for siteId: ${siteId}`, {
+      event: 'guideline_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, topics: topics.length, guidelines: guidelines.length,
+    }));
     return { topics, guidelines };
   }
 }

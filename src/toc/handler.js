@@ -73,6 +73,7 @@ async function getTocInputUrls(context, site) {
     site,
     dataAccess,
     auditType,
+    scopeTopPagesToBasePath: true,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
@@ -721,6 +722,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       || existingSuggestion.edgeOptimizeStatus) {
       return { ...existingSuggestion };
     }
+    if (existingSuggestion.isVerified) {
+      return { ...existingSuggestion };
+    }
     const converted = { ...newSuggestion };
     if (converted.transformRules && Array.isArray(converted.transformRules.value)) {
       converted.transformRules = {
@@ -757,6 +761,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     newData: tocSuggestions,
     context,
     buildKey,
+    // Preserve prior behavior: TOC edited suggestions stay protected from the
+    // OUTDATED sweep. Only FAQ/Summarization/Readability changed in LLMO-6761;
+    // TOC is out of scope, so keep its edited suggestions exempt (LLMO-6761).
+    protectEditedFromOutdated: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: suggestion.type,
