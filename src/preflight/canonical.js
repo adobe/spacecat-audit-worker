@@ -23,21 +23,6 @@ import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js
 export const PREFLIGHT_CANONICAL = 'canonical';
 
 /**
- * Checks whose fix is unambiguously "point the canonical at this page's own URL" -
- * so authors see the correct value, not just the current (wrong) one. Excludes
- * `CANONICAL_TAG_OUTSIDE_HEAD` (the href itself is already correct, only its placement is wrong)
- * and the format checks (absolute/protocol/domain/lowercased — fixing those means transforming
- * the existing href, not replacing it with the page's own URL).
- */
-const CHECKS_SUGGESTING_OWN_URL = new Set([
-  CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-  CANONICAL_CHECKS.CANONICAL_TAG_NO_HREF.check,
-  CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
-  CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-  CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
-]);
-
-/**
  * Extracts canonical metadata from raw HTML as a fallback when scraper metadata is absent.
  * @param {string} rawBody - Raw HTML string.
  * @returns {{ exists: boolean, href: string|null, inHead: boolean, count: number }}
@@ -186,7 +171,6 @@ export default async function canonical(context, auditContext) {
           issue: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
           seoImpact: 'Moderate',
           seoRecommendation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion,
-          suggestion: url,
         });
         return;
       }
@@ -207,13 +191,16 @@ export default async function canonical(context, auditContext) {
       const failedChecks = runCanonicalChecks(url, meta, previewBaseURL, log);
       failedChecks.forEach((checkConfig) => {
         const isMultipleTagsCheck = checkConfig.check === multipleTagsCheck;
+        // For author pages in UE,CS,AMS,EDS `url` is the editor host, not the published
+        // site URL, so suggesting it as the canonical is wrong.
+        // Until we can map author -> published via site config, the static `seoRecommendation`
+        // text guides the fix without emitting a concrete (possibly wrong) URL.
         pageAudit.opportunities.push({
           check: checkConfig.check,
           issue: checkConfig.explanation,
           seoImpact: 'Moderate',
           seoRecommendation: checkConfig.suggestion,
           ...(hasHrefValue ? { url: meta.href } : {}),
-          ...(CHECKS_SUGGESTING_OWN_URL.has(checkConfig.check) ? { suggestion: url } : {}),
           ...toElementTargets(isMultipleTagsCheck ? canonicalSelectors : canonicalSelectors[0]),
         });
       });
