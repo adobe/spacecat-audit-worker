@@ -1,3 +1,10 @@
+## [1.521.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.3...v1.521.4) (2026-08-15)
+
+
+### Bug Fixes
+
+* **preflight:** [SITES-49849] stop suggesting author page URL as canonical suggestion ([#2893](https://github.com/adobe/spacecat-audit-worker/issues/2893)) ([f0ad1e1](https://github.com/adobe/spacecat-audit-worker/commit/f0ad1e1598d6e581a47edd9c92adb32c34ce76f0))
+
 ## [1.521.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.2...v1.521.3) (2026-08-15)
 
 
