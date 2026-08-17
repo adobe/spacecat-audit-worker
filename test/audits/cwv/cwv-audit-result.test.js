@@ -141,12 +141,12 @@ describe('CWV Audit Result', () => {
         TIERS: { PAID: 'PAID', PLG: 'PLG' },
       };
 
-      // 12 non-homepage pages, all below the 7000-pageview threshold guard so only the
+      // 105 non-homepage pages, all below the 7000-pageview threshold guard so only the
       // tier-based top-N limit (not the threshold rule) determines how many are kept.
-      const nonHomepagePages = Array.from({ length: 12 }, (_, i) => ({
+      const nonHomepagePages = Array.from({ length: 105 }, (_, i) => ({
         type: 'url',
         url: `https://www.example.com/page-${i}`,
-        pageviews: 6000 - i * 100,
+        pageviews: 6000 - i * 10,
         organic: 0,
         metrics: [],
       }));
@@ -198,7 +198,7 @@ describe('CWV Audit Result', () => {
         expect(urls).to.not.include(nonHomepagePages[3].url);
       });
 
-      it('limits top pages to 10 for a paid-tier site', async () => {
+      it('limits top pages to 100 for a paid-tier site', async () => {
         const tierClientStub = {
           createForSite: sandbox.stub().resolves({
             checkValidEntitlement: sandbox.stub().resolves({
@@ -211,9 +211,9 @@ describe('CWV Audit Result', () => {
         const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
 
         const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
-        expect(urls).to.have.length(11); // homepage + top 10
-        expect(urls).to.include(nonHomepagePages[9].url);
-        expect(urls).to.not.include(nonHomepagePages[10].url);
+        expect(urls).to.have.length(101); // homepage + top 100
+        expect(urls).to.include(nonHomepagePages[99].url);
+        expect(urls).to.not.include(nonHomepagePages[100].url);
       });
 
       it('defaults to the paid limit when no entitlement is found', async () => {
@@ -227,7 +227,7 @@ describe('CWV Audit Result', () => {
         const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
 
         const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
-        expect(urls).to.have.length(11); // homepage + top 10
+        expect(urls).to.have.length(101); // homepage + top 100
       });
 
       it('defaults to the paid limit and logs a warning when tier lookup fails', async () => {
@@ -239,7 +239,7 @@ describe('CWV Audit Result', () => {
         const result = await build({ site, finalUrl: 'www.example.com', log, env: {} });
 
         const urls = result.auditResult.cwv.filter((e) => e.type === 'url').map((e) => e.url);
-        expect(urls).to.have.length(11); // homepage + top 10
+        expect(urls).to.have.length(101); // homepage + top 100
         expect(log.warn.calledWithMatch(/Failed to determine ASO tier/)).to.be.true;
       });
     });

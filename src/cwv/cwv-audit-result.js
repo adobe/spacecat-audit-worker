@@ -20,9 +20,9 @@ import { getRUMDomain } from '../support/utils.js';
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
 // The number of top pages with issues that will be included in the report, by ASO tier.
-// Kept low for now since CWV guidance isn't being actively acted on by customers yet -
-// no point spending audit/LLM cycles on more pages than that until adoption picks up.
-const TOP_PAGES_COUNT_PAID = 10;
+// PLG kept low since CWV guidance isn't being actively acted on by customers yet on that
+// tier - no point spending audit/LLM cycles on more pages than that until adoption picks up.
+const TOP_PAGES_COUNT_PAID = 100;
 const TOP_PAGES_COUNT_PLG = 3;
 const HEAD_REQUEST_TIMEOUT_MS = 10000;
 
