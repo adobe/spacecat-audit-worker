@@ -1,3 +1,31 @@
+## [1.521.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.4...v1.521.5) (2026-08-15)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2895](https://github.com/adobe/spacecat-audit-worker/issues/2895)) ([78018b8](https://github.com/adobe/spacecat-audit-worker/commit/78018b8be908591175e6958dd5952f45b798bf98))
+
+## [1.521.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.3...v1.521.4) (2026-08-15)
+
+
+### Bug Fixes
+
+* **preflight:** [SITES-49849] stop suggesting author page URL as canonical suggestion ([#2893](https://github.com/adobe/spacecat-audit-worker/issues/2893)) ([f0ad1e1](https://github.com/adobe/spacecat-audit-worker/commit/f0ad1e1598d6e581a47edd9c92adb32c34ce76f0))
+
+## [1.521.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.2...v1.521.3) (2026-08-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v4.22.0 ([#2892](https://github.com/adobe/spacecat-audit-worker/issues/2892)) ([679ed1d](https://github.com/adobe/spacecat-audit-worker/commit/679ed1d2c4c15750d46ee4a8e60a91df3b6c4314))
+
+## [1.521.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.1...v1.521.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** publish detection never promoted DEPLOYED fixes to PUBLISHED ([#2878](https://github.com/adobe/spacecat-audit-worker/issues/2878)) ([540a78c](https://github.com/adobe/spacecat-audit-worker/commit/540a78c27aaafd1f9cb68f7a593a4a3729c11477)), closes [#1999](https://github.com/adobe/spacecat-audit-worker/issues/1999)
+
 ## [1.521.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.0...v1.521.1) (2026-08-14)
 
 

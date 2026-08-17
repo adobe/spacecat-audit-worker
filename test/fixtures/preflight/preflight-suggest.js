@@ -44,7 +44,6 @@ export const suggestionData = [
             seoImpact: 'Moderate',
             seoRecommendation: 'Update the canonical URL to point to itself',
             url: 'https://main--example--page.aem.page/wrong',
-            suggestion: 'https://main--example--page.aem.page/page1',
           },
         ],
       },
