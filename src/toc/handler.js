@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 
@@ -59,13 +59,41 @@ function getModeFromData(data, log) {
 }
 
 /**
+ * Returns true when url is on a subdomain or a completely different domain than the site's
+ * base URL hostname. www and bare domain are treated as equivalent (both normalised via
+ * stripWWW). Note this is a plain hostname comparison — unlike isWithinAuditScope in
+ * internal-links/subpath-filter.js, it also rejects cross-domain/subdomain URLs for
+ * root-domain sites (isWithinAuditScope only checks hostname when the site's baseURL itself
+ * has a subpath, so it would let e.g. jobs.wkkellogg.com through for a root-domain site).
+ * Mirrors isOnDifferentSubdomain in src/backlinks/handler.js (LLMO-6965).
+ * @param {string} url - The candidate URL to check.
+ * @param {string} siteBaseURL - The site's canonical base URL.
+ * @returns {boolean}
+ */
+function isOnDifferentDomain(url, siteBaseURL) {
+  try {
+    const siteHostname = stripWWW(new URL(prependSchema(siteBaseURL)).hostname).toLowerCase();
+    const urlHostname = stripWWW(new URL(prependSchema(url)).hostname).toLowerCase();
+    return urlHostname !== siteHostname;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetches and merges TOC audit input URLs from three sources in priority order:
  * 1. Customer desired URLs (from site config)
  * 2. Agentic traffic (Athena CDN logs)
  * 3. Organic SEO top pages (DB)
+ *
+ * The merged set is then scoped to the site's own registered domain (LLMO-6965): any URL
+ * whose hostname is a subdomain of, or entirely different from, the site's base domain
+ * (e.g. jobs.wkkellogg.com or a foreign domain when the site is wkkellogg.com) is dropped
+ * before it can ever be scraped or turned into a suggestion, since OAE never follows
+ * redirects and cannot apply optimization off-domain anyway.
  * @param {Object} context - Audit context
  * @param {Object} site - Site object
- * @returns {Promise<Object>} Merged URL result from getMergedAuditInputUrls
+ * @returns {Promise<Object>} Merged URL result from getMergedAuditInputUrls, domain-scoped
  */
 async function getTocInputUrls(context, site) {
   const { dataAccess, log } = context;
@@ -86,13 +114,18 @@ async function getTocInputUrls(context, site) {
     topOrganicLimit: MAX_TOP_PAGES,
   });
 
+  const baseURL = site.getBaseURL();
+  const scopedUrls = result.urls.filter((url) => !isOnDifferentDomain(url, baseURL));
+  const domainFilteredCount = result.urls.length - scopedUrls.length;
+
   log.info(
     `[TOC] URL inputs: topPages=${result.topPagesUrls.length}, `
     + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
-    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
+    + `filteredOutUrls=${result.filteredCount}, domainFilteredUrls=${domainFilteredCount}, `
+    + `finalUrls=${scopedUrls.length}`,
   );
 
-  return result;
+  return { ...result, urls: scopedUrls };
 }
 
 export const TOC_CHECK = {
@@ -286,6 +319,18 @@ export async function validatePageTocFromScrapeJson(
   try {
     if (!scrapeJsonObject) {
       log.error(`Scrape JSON object not found for ${url}, skipping TOC audit`);
+      return null;
+    }
+
+    // LLMO-6965: the requested URL can be on-domain but still redirect off-domain or onto a
+    // subdomain (e.g. wkkellogg.com/careers -> jobs.wkkellogg.com). OAE does not follow
+    // redirects, so a suggestion here would never actually apply — skip it rather than
+    // suggesting either the pre-redirect or the out-of-scope resolved URL.
+    const { site } = context;
+    const baseURL = site?.getBaseURL?.();
+    const { finalUrl } = scrapeJsonObject;
+    if (finalUrl && baseURL && isOnDifferentDomain(finalUrl, baseURL)) {
+      log.warn(`[TOC] Skipping ${url}: resolved to out-of-scope URL ${finalUrl} (site base=${baseURL})`);
       return null;
     }
 
@@ -677,6 +722,12 @@ export function generateSuggestions(auditUrl, auditData, context) {
   Object.entries(tocData).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
       checkResult.urls.forEach((urlObj) => {
+        // LLMO-6965: last-line-of-defense guard, in case a subdomain/cross-domain URL slipped
+        // past the input-URL and post-redirect scope checks earlier in the pipeline.
+        if (isOnDifferentDomain(urlObj.url, auditUrl)) {
+          log.warn(`[TOC] Dropping suggestion for out-of-scope URL ${urlObj.url} (site base=${auditUrl})`);
+          return;
+        }
         const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
