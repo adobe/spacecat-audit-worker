@@ -25,6 +25,7 @@ describe('Crawl Detection Module', () => {
   let detectBrokenLinksFromCrawlBatch;
   let mergeAndDeduplicate;
   let PAGES_PER_BATCH;
+  let splitSrcsetCandidates;
   let getObjectFromKeyStub;
   let isLinkInaccessibleStub;
   let isWithinAuditScopeStub;
@@ -78,6 +79,7 @@ describe('Crawl Detection Module', () => {
     detectBrokenLinksFromCrawlBatch = module.detectBrokenLinksFromCrawlBatch;
     mergeAndDeduplicate = module.mergeAndDeduplicate;
     PAGES_PER_BATCH = module.PAGES_PER_BATCH;
+    splitSrcsetCandidates = module.splitSrcsetCandidates;
 
     // Reset log stubs
     mockContext.log.info.reset();
@@ -97,6 +99,44 @@ describe('Crawl Detection Module', () => {
     statusBucket: statusBucket || (isBroken ? '4xx' : '2xx-3xx'),
     contentType: 'text/html',
     ...extra,
+  });
+
+  describe('splitSrcsetCandidates (srcset comma-split fix, SITES-49919)', () => {
+    it('keeps a single Scene7 URL intact when its query contains a comma (qlt=85,0)', () => {
+      const src = 'https://worldbank.scene7.com/is/image/worldbankprod/WB_flags_716x402?wid=780&hei=439&qlt=85,0&resMode=sharp';
+      expect(splitSrcsetCandidates(src)).to.deep.equal([src]);
+    });
+
+    it('does not orphan a "0&resMode=sharp" fragment from a comma inside the query', () => {
+      const out = splitSrcsetCandidates('https://s7.example.com/is/image/x?wid=780&qlt=85,0&resMode=sharp');
+      expect(out).to.have.lengthOf(1);
+      expect(out.includes('0&resMode=sharp')).to.equal(false);
+    });
+
+    it('splits multiple candidates and strips descriptors', () => {
+      expect(splitSrcsetCandidates('a.jpg 1x, b.jpg 2x')).to.deep.equal(['a.jpg', 'b.jpg']);
+    });
+
+    it('preserves commas inside a URL while still splitting real candidates', () => {
+      expect(splitSrcsetCandidates('a.jpg?q=1,2 780w, b.jpg 1200w')).to.deep.equal(['a.jpg?q=1,2', 'b.jpg']);
+    });
+
+    it('handles a candidate that ends in a comma with no descriptor', () => {
+      expect(splitSrcsetCandidates('a.jpg, b.jpg')).to.deep.equal(['a.jpg', 'b.jpg']);
+    });
+
+    it('handles multiple and trailing commas', () => {
+      expect(splitSrcsetCandidates('a.jpg,, b.jpg,')).to.deep.equal(['a.jpg', 'b.jpg']);
+    });
+
+    it('returns an empty array for empty or whitespace-only input', () => {
+      expect(splitSrcsetCandidates('')).to.deep.equal([]);
+      expect(splitSrcsetCandidates(' \t\n ')).to.deep.equal([]);
+    });
+
+    it('trims leading whitespace and commas before a lone URL with a descriptor', () => {
+      expect(splitSrcsetCandidates('  ,  a.jpg 780w')).to.deep.equal(['a.jpg']);
+    });
   });
 
   describe('detectBrokenLinksFromCrawlBatch', () => {
