@@ -26,13 +26,21 @@ listening. Traced root cause:
    *standard*, not FIFO, queue.
 2. On the Mystique side, the consumer is a single in-process
    `ThreadPoolExecutor` (`TASK_WORKERS=2`, `MAX_TASK_QUEUE_SIZE=4`) shared
-   across all message types. `is_queue_at_capacity()` halts **all**
-   receiving — interactive included — once more than 2 opportunities are
-   already tracked. No heartbeat/visibility-extension happens while a
-   message waits for a free worker; only after a worker starts does it
-   extend the visibility timeout. Combined with the default 3600s
-   visibility timeout, a message can sit invisible for up to an hour
-   before redelivery.
+   across all message types. `is_queue_at_capacity()` gates the
+   `spacecat-to-mystique` SQS poll loop specifically
+   (`opportunity_service.py:647`) — it halts receiving on *that* path
+   once more than 2 opportunities are already tracked. (It does not
+   gate the whole `TaskManager`: a few HTTP routes — e.g.
+   `meta_tag_benchmark_routes.py`, `org_detector_routes.py`,
+   `variation_routes.py` — call `task_manager.add_task()` directly and
+   bypass this check entirely. That's irrelevant for readability
+   guidance, which only ever arrives via SQS, but it matters if the new
+   preflight consumer's backpressure design assumes this gate protects
+   task intake in general — it doesn't.) No heartbeat/visibility-extension
+   happens while a message waits for a free worker; only after a worker
+   starts does it extend the visibility timeout. Combined with the
+   default 3600s visibility timeout, a message can sit invisible for up
+   to an hour before redelivery.
 3. Confirmed via Langfuse that the AI compute itself is fast and healthy
    (~14s/paragraph, no retries, no errors) — the entire delay is
    consumer pickup/scheduling latency, not model compute. 7-day queue
@@ -77,14 +85,41 @@ Mystique, spanning three repos:
 
 1. **spacecat-infrastructure** — provision a new standard SQS queue
    `spacecat-to-mystique-preflight` (`modules/sqs/queues.tf`), mirroring
-   the existing `spacecat_queue_spacecat_to_mystique` resource, with its
-   own DLQ so preflight-specific backlog/age metrics are distinguishable
-   from bulk's. Output the queue URL for downstream env wiring.
-2. **spacecat-audit-worker** — in
-   `src/readability/shared/async-mystique.js`, `sendPreflightMessages`
-   branches on `mode === 'preflight'` to publish to a new
-   `env.QUEUE_SPACECAT_TO_MYSTIQUE_PREFLIGHT` instead of
-   `env.QUEUE_SPACECAT_TO_MYSTIQUE`. `sendOpportunityBatch` (bulk path)
+   the existing `spacecat_queue_spacecat_to_mystique` resource's queue
+   settings. Note this is a **deliberate deviation**, not a like-for-like
+   mirror, on two points: (a) the existing queue has no DLQ of its own —
+   it shares the single repo-wide `spacecat_queue_dead_letter` resource
+   with 9 other queues (`modules/sqs/queues.tf`) — so giving the new
+   queue its own DLQ is a new pattern we're choosing, not inheriting;
+   (b) the existing queue only outputs an ARN
+   (`spacecat_queue_spacecat_to_mystique_arn`, `modules/sqs/outputs.tf:73-74`),
+   not a URL — only one queue in the whole module (`spacecat_queue_digest_jobs_url`)
+   outputs a URL today, so outputting one for the new queue is the
+   exception, not the norm. Also wire the new queue's ARN into
+   `spacecat-audit-worker/template.yml` as a new CloudFormation
+   Parameter (mirroring the existing `QUEUE_SPACECAT_TO_MYSTIQUE`
+   parameter at lines 39 and 121-123) — nothing in this repo sets that
+   parameter's *value* today (it's supplied via per-environment Helix
+   Deploy params, outside all four repos this ADR touches), so the new
+   `_PREFLIGHT` variant needs the same out-of-repo wiring, not a
+   Terraform output alone. On IAM: no policy change is likely needed —
+   `modules/iam/policies.tf:460` already grants access via a
+   `spacecat-*` wildcard ARN pattern (not a reference to any specific
+   queue resource), which already covers a queue named
+   `spacecat-to-mystique-preflight`.
+2. **spacecat-audit-worker** — the `mode === 'preflight'` branch does
+   **not** live inside `sendPreflightMessages` (it has no `mode`
+   parameter). It lives one level up, in the caller
+   `sendReadabilityToMystique` (`src/readability/shared/async-mystique.js:221`),
+   which already computes `isPreflight = mode === 'preflight'` to
+   decide between calling `sendPreflightMessages` vs
+   `sendOpportunityBatch` — both of which currently hardcode
+   `env.QUEUE_SPACECAT_TO_MYSTIQUE`. The queue-selection change belongs
+   in `sendReadabilityToMystique`: thread a queue URL down to
+   `sendPreflightMessages` (e.g. a new parameter, or reading
+   `env.QUEUE_SPACECAT_TO_MYSTIQUE_PREFLIGHT` when `isPreflight` is
+   true) rather than adding a `mode` branch inside
+   `sendPreflightMessages` itself. `sendOpportunityBatch` (bulk path)
    is untouched. Scope is intentionally limited to readability-preflight
    — the proven offender — not all ~40 handlers that currently share
    `QUEUE_SPACECAT_TO_MYSTIQUE`.
@@ -96,15 +131,18 @@ Mystique, spanning three repos:
    `SQS_SPACECAT_TO_MYSTIQUE_PREFLIGHT_QUEUE_URL`, owns its own
    `TaskManager` sized by its own env vars (independent of the bulk
    pool's `TASK_WORKERS`/`MAX_TASK_QUEUE_SIZE`), and reuses the existing
-   `guidance:readability` task/routing logic unchanged (routing is
-   already keyed by message `type`/`mode`, not by queue). Started/stopped
-   in `server.py`'s lifespan alongside `opportunity_service` and
-   `bp_event_consumer`; no-ops when the env var is unset, per existing
-   convention.
-4. **Kill switch (spacecat-audit-worker)** — gate the mode-based branch
-   in `sendPreflightMessages` behind an explicit
-   `PREFLIGHT_MYSTIQUE_QUEUE_ENABLED` flag, checked *in addition to*
-   `mode === 'preflight'`. When unset or `false`, preflight traffic
+   `guidance:readability` task/routing logic unchanged. Routing
+   (`OpportunityService._route_message`) is keyed by the message
+   `type` field only — `mode` is carried on the message and passed
+   through as data (`opportunity_service.py:1411`) but is never read
+   for dispatch, so it plays no role in how this isolation works.
+   Started/stopped in `server.py`'s lifespan alongside
+   `opportunity_service` and `bp_event_consumer`; no-ops when the env
+   var is unset, per existing convention.
+4. **Kill switch (spacecat-audit-worker)** — gate the new queue-selection
+   logic in `sendReadabilityToMystique` (see Decision #2) behind an
+   explicit `PREFLIGHT_MYSTIQUE_QUEUE_ENABLED` flag, checked *in
+   addition to* `isPreflight`. When unset or `false`, preflight traffic
    falls back to the existing shared `QUEUE_SPACECAT_TO_MYSTIQUE` path
    unconditionally — so the new lane can be turned off instantly via a
    config change in the per-environment Helix Deploy params, with no
@@ -185,8 +223,9 @@ Mystique, spanning three repos:
 2. **mystique**: ship the new consumer env-var-gated (no-op until
    configured), deploy, and validate against a manually-sent test
    message before any producer depends on it.
-3. **spacecat-audit-worker**: flip `sendPreflightMessages` to the new
-   queue once the mystique consumer is confirmed live.
+3. **spacecat-audit-worker**: flip `sendReadabilityToMystique`'s queue
+   selection for the preflight path to the new queue once the mystique
+   consumer is confirmed live.
 4. Burn-in: monitor `ApproximateAgeOfOldestMessage` and
    `ApproximateNumberOfMessagesNotVisible` on the new queue against the
    SITES-49801 baseline before declaring done.
