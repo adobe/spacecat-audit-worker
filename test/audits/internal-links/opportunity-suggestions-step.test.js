@@ -446,6 +446,104 @@ describe('internal-links opportunity suggestions step', () => {
     expect(suggestionMock.save.calledOnce).to.equal(true);
   });
 
+  it('drops out-of-subpath Bright Data suggestions before saving (SITES-49911)', async () => {
+    const findById = sinon.stub();
+    // Broken link lives under /uk; the SERP result is under /us (out of audit scope).
+    const brightDataClient = {
+      googleSearchWithFallback: sinon.stub().resolves({
+        // Same slug as the broken link (scores > 0 so it survives SERP ranking) but a
+        // different locale (/us) that is outside the /uk audit scope.
+        results: [{ link: 'https://example.com/us/blog/seo-guide' }],
+        keywords: 'blog seo',
+      }),
+    };
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub().resolves({ getId: () => 'oppty-1', getType: () => 'broken-internal-links' }),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub().returns(brightDataClient) },
+      buildLocaleSearchUrl: sinon.stub().returns('https://example.com/uk'),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const context = {
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com/uk',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({
+          getHandlers: () => ({
+            'broken-internal-links': {
+              config: { mystiqueItemTypes: ['link'], validateBrightDataUrls: true },
+            },
+          }),
+          getIncludedURLs: () => [],
+        }),
+      },
+      finalUrl: 'https://example.com/uk',
+      sqs: { sendMessage: sinon.stub().resolves() },
+      env: { BRIGHT_DATA_API_KEY: 'key', BRIGHT_DATA_ZONE: 'zone' },
+      dataAccess: {
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([{
+            getData: () => ({
+              urlFrom: 'https://example.com/uk/source',
+              urlTo: 'https://example.com/uk/blog/seo-guide',
+              itemType: 'link',
+            }),
+            getId: () => 'suggestion-1',
+          }]),
+          findById,
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+        },
+        Configuration: {
+          findLatest: sinon.stub().returns({
+            isHandlerEnabledForSite: sinon.stub().returns(true),
+          }),
+        },
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/uk/source', urlTo: 'https://example.com/uk/blog/seo-guide', itemType: 'link' },
+          ],
+          success: true,
+        }),
+      },
+      updatedAuditResult: {
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/uk/source', urlTo: 'https://example.com/uk/blog/seo-guide', itemType: 'link' },
+        ],
+        success: true,
+      },
+    };
+
+    const result = await step(context);
+
+    expect(result.status).to.equal('complete');
+    // Out-of-subpath SERP result is dropped before we ever look up the suggestion.
+    expect(findById).to.not.have.been.called;
+  });
+
   it('logs warning and skips when Suggestion.findById returns null after Bright Data resolve', async () => {
     const brightDataClient = {
       googleSearchWithFallback: sinon.stub().resolves({
@@ -735,6 +833,170 @@ describe('internal-links opportunity suggestions step', () => {
 
       expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    // Same RESOLVED flow but with a crawl-coverage manifest present (crawl run).
+    // The manifest is reconstructed by loadScrapeResultPaths from an S3 read, so we
+    // stub s3Client.send to return the URL->key entries for the crawled pages.
+    async function runResolveFlowWithCoverage(existingSuggestions, crawledUrls, s3ClientOverride) {
+      const opportunity = {
+        getId: () => 'oppty-existing',
+        getType: () => 'broken-internal-links',
+        setStatus: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves(existingSuggestions),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const Opportunity = {
+        allBySiteIdAndStatus: sinon.stub().resolves([opportunity]),
+      };
+      const bulkUpdateStatus = sinon.stub().resolves();
+      const manifestBody = JSON.stringify(crawledUrls.map((u) => [u, 'scrapes/x.json']));
+      const s3Client = s3ClientOverride || {
+        send: sinon.stub().resolves({
+          Body: { transformToString: async () => manifestBody },
+        }),
+      };
+
+      const step = createOpportunityAndSuggestionsStep({
+        auditType: 'broken-internal-links',
+        opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+        suggestionStatuses,
+        isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+        createContextLogger: (log) => log,
+        calculateKpiDeltasForAudit: sinon.stub().returns({}),
+        convertToOpportunity: sinon.stub(),
+        createOpportunityData: sinon.stub(),
+        syncBrokenInternalLinksSuggestions: sinon.stub(),
+        filterByAuditScope: (pages) => pages,
+        extractPathPrefix: () => null,
+        isUnscrapeable: () => false,
+        filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+        BrightDataClient: { createFrom: sinon.stub() },
+        buildLocaleSearchUrl: sinon.stub(),
+        sleep: sinon.stub().resolves(),
+        updateAuditResult: sinon.stub().resolves(),
+        isCanonicalOrHreflangLink: () => false,
+      });
+
+      const result = await step({
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          error: sinon.stub(),
+          debug: sinon.stub(),
+        },
+        site: {
+          getId: () => 'site-1',
+          getConfig: () => ({ getHandlers: () => ({}) }),
+        },
+        audit: {
+          getId: () => 'audit-1',
+          getAuditResult: () => ({ success: true, brokenInternalLinks: [] }),
+        },
+        dataAccess: { Opportunity, Suggestion: { bulkUpdateStatus } },
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+        s3Client,
+      });
+
+      return { result, opportunity, bulkUpdateStatus };
+    }
+
+    const covSug = (status, urlFrom, id) => ({
+      getStatus: () => status,
+      getData: () => ({ urlFrom }),
+      id,
+    });
+
+    it('coverage-gates the RESOLVED path: outdates only crawled suggestions and holds the opportunity open when some pages were not crawled (SITES-49911)', async () => {
+      const suggestions = [
+        covSug(suggestionStatuses.NEW, 'https://example.com/crawled', 'covered-1'),
+        covSug(suggestionStatuses.NEW, 'https://example.com/not-crawled', 'uncovered-1'),
+      ];
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlowWithCoverage(
+        suggestions,
+        ['https://example.com/crawled'],
+      );
+
+      // Only the crawled suggestion is outdated.
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      const [passed, target] = bulkUpdateStatus.firstCall.args;
+      expect(target).to.equal(suggestionStatuses.OUTDATED);
+      expect(passed.map((s) => s.id)).to.deep.equal(['covered-1']);
+      // An unconfirmed (uncrawled) suggestion remains -> opportunity is NOT resolved.
+      expect(opportunity.setStatus).to.not.have.been.called;
+      expect(opportunity.save).to.not.have.been.called;
+    });
+
+    it('resolves and outdates all suggestions when every page was crawled this run (SITES-49911)', async () => {
+      const suggestions = [
+        covSug(suggestionStatuses.NEW, 'https://example.com/a', 'a'),
+        covSug(suggestionStatuses.NEW, 'https://example.com/b', 'b'),
+      ];
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlowWithCoverage(
+        suggestions,
+        ['https://example.com/a', 'https://example.com/b'],
+      );
+
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      expect(bulkUpdateStatus.firstCall.args[0].map((s) => s.id)).to.have.members(['a', 'b']);
+      expect(bulkUpdateStatus.firstCall.args[1]).to.equal(suggestionStatuses.OUTDATED);
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(opportunity.save).to.have.been.called;
+    });
+
+    it('treats an empty crawl manifest as no coverage and preserves prior RESOLVED behavior (SITES-49911)', async () => {
+      const suggestions = [
+        covSug(suggestionStatuses.NEW, 'https://example.com/a', 'a'),
+        covSug(suggestionStatuses.SKIPPED, 'https://example.com/b', 'b'),
+      ];
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlowWithCoverage(
+        suggestions,
+        [],
+      );
+
+      // Empty manifest => no crawl coverage => prior behavior: resolve and outdate
+      // every non-frozen suggestion.
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      expect(bulkUpdateStatus.firstCall.args[0].map((s) => s.id)).to.deep.equal(['a']);
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+    });
+
+    it('holds the opportunity open and outdates nothing when no suggestion page was crawled (SITES-49911)', async () => {
+      const suggestions = [
+        covSug(suggestionStatuses.NEW, 'https://example.com/x', 'x'),
+        covSug(suggestionStatuses.NEW, 'https://example.com/y', 'y'),
+      ];
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlowWithCoverage(
+        suggestions,
+        ['https://example.com/unrelated'],
+      );
+
+      // Crawl run, but none of the suggestions' source pages were covered ->
+      // nothing is outdated and the opportunity is NOT resolved.
+      expect(bulkUpdateStatus).to.not.have.been.called;
+      expect(opportunity.setStatus).to.not.have.been.called;
+      expect(opportunity.save).to.not.have.been.called;
+    });
+
+    it('falls back to prior RESOLVED behavior when the crawl manifest read throws (SITES-49911)', async () => {
+      const suggestions = [covSug(suggestionStatuses.NEW, 'https://example.com/a', 'a')];
+      const throwingS3 = { send: sinon.stub().rejects(new Error('s3 down')) };
+
+      const { opportunity, bulkUpdateStatus } = await runResolveFlowWithCoverage(
+        suggestions,
+        [],
+        throwingS3,
+      );
+
+      // Manifest read error => treat as no coverage => prior resolve + outdate-all.
+      expect(opportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(bulkUpdateStatus).to.have.been.calledOnce;
+      expect(bulkUpdateStatus.firstCall.args[0].map((s) => s.id)).to.deep.equal(['a']);
     });
   });
 });
