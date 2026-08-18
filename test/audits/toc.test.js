@@ -3176,6 +3176,57 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(hasTocInDom($)).to.equal(false);
       });
 
+      it('returns false for a skip-navigation accessibility link list (canadiantire.ca-style)', () => {
+        const $ = cheerioLoad(
+          '<ul class="nl-accessibility-links">'
+          + '<li><a href="#main">Skip to main content</a></li>'
+          + '<li><a href="#secondary-navigation">Skip to navigation</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for a skip-navigation list regardless of surrounding whitespace in link text', () => {
+        const $ = cheerioLoad(
+          '<ul>'
+          + '<li><a href="#content">\n                Skip to main content            \n</a></li>'
+          + '<li><a href="#nav">\n                        Skip to navigation            \n</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for a "Skip navigation" / "Jump to main content" style skip-nav list', () => {
+        const $ = cheerioLoad(
+          '<ol>'
+          + '<li><a href="#footer">Skip navigation</a></li>'
+          + '<li><a href="#body">Jump to main content</a></li>'
+          + '</ol>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for the French-language canadiantire.ca/fr skip-navigation list', () => {
+        const $ = cheerioLoad(
+          '<ul class="nl-accessibility-links">'
+          + '<li><a href="#main">passer au contenu principal</a></li>'
+          + '<li><a href="#secondary-navigation">passer à la navigation</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns true when a list mixes a skip-nav link with genuine TOC section links', () => {
+        const $ = cheerioLoad(
+          '<ul>'
+          + '<li><a href="#main">Skip to main content</a></li>'
+          + '<li><a href="#s1">Section 1</a></li>'
+          + '<li><a href="#s2">Section 2</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
       it('returns false when nav menu has links without # anchors', () => {
         const $ = cheerioLoad(
           '<nav><ul>'

@@ -110,6 +110,40 @@ export const TOPPAGES_CHECK = {
   explanation: 'No URLs found for audit',
 };
 
+// Accessibility "skip navigation" links (e.g. <a href="#main">Skip to main content</a>) are
+// a near-universal WCAG pattern, almost always shipped as a 2+ item list in shared header
+// markup — which satisfies Signal 1 below on every single page of a site, without being a
+// TOC. Confirmed live on canadiantire.ca: `<ul class="nl-accessibility-links">` linking to
+// `#main`/`#secondary-navigation` with text "Skip to main content" / "Skip to navigation"
+// caused hasTocInDom to report true on 100% of 191 sampled pages, masking genuine TOC gaps
+// site-wide. Matched by anchor TEXT rather than by class/id, since the class naming
+// ("nl-accessibility-links" here) is site/design-system-specific and won't generalize, while
+// the "Skip to ..." / "Skip ..." / "Jump to ..." phrasing is standard a11y copy independent
+// of markup conventions.
+//
+// French equivalent included because canadiantire.ca itself is bilingual and re-triggers the
+// exact same false positive on its /fr/ pages via the localized skip-nav copy ("passer au
+// contenu principal" / "passer à la navigation") — confirmed live, same nl-accessibility-links
+// list, just localized text. Other locales are not yet covered; extend this pattern (or move
+// to a per-locale phrase list) if another site surfaces the same gap in a different language.
+const SKIP_NAV_TEXT_RE = /^(skip\s+(to\s+)?(the\s+)?(main\s+)?(content|navigation|nav|footer|search|links?)\b|jump\s+to\s+(the\s+)?(main\s+)?content\b|(passer|aller|sauter)\s+(au|à\s+la|directement\s+au)\s+(contenu(\s+principal)?|navigation)\b)/i;
+
+/**
+ * True when every internal anchor link in the list reads as an accessibility skip-navigation
+ * link (see SKIP_NAV_TEXT_RE above), i.e. the list is skip-nav boilerplate, not a TOC.
+ * A list containing links that are NOT all skip-nav text is left for the normal Signal 1
+ * count check (e.g. a real TOC could coincidentally sit next to a lone skip-nav link outside
+ * this list; this only excludes lists that are entirely skip-nav).
+ * @param {CheerioAPI} $ - The Cheerio instance
+ * @param {Object[]} internalLinks - Array of internal anchor <a> elements from one list
+ * @returns {boolean}
+ */
+function isSkipNavigationList($, internalLinks) {
+  return internalLinks.length > 0 && internalLinks.every(
+    (a) => SKIP_NAV_TEXT_RE.test($(a).text().trim()),
+  );
+}
+
 /**
  * Detect TOC presence in DOM using heuristic signals, without AI.
  * Checks for:
@@ -122,9 +156,12 @@ export function hasTocInDom($) {
   // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#section-id").
   // Exclude bare href="#" (JavaScript tab/nav placeholders) — only count links
   // with a non-empty fragment so search menus and tab widgets don't false-positive.
+  // Also exclude lists that are entirely accessibility skip-navigation links (see
+  // isSkipNavigationList above) — those are boilerplate, not a TOC.
   let anchorListFound = false;
   $('ul, ol').each((_, listEl) => {
-    if ($(listEl).find('a[href^="#"]:not([href="#"])').length >= 2) {
+    const internalLinks = $(listEl).find('a[href^="#"]:not([href="#"])').toArray();
+    if (internalLinks.length >= 2 && !isSkipNavigationList($, internalLinks)) {
       anchorListFound = true;
       return false; // break the each loop
     }
