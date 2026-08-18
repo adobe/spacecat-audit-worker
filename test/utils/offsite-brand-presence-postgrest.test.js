@@ -23,6 +23,7 @@ import {
   loadBrandPresenceDataFromPostgrest,
   mapExecutionsToLegacyBrandPresenceRows,
 } from '../../src/utils/offsite-brand-presence-postgrest.js';
+import { ACCEPTED_REGIONS } from '../../src/offsite-brand-presence/constants.js';
 
 use(sinonChai);
 
@@ -212,6 +213,30 @@ describe('offsite-brand-presence-postgrest', () => {
         Category: '',
       }]);
     });
+
+    it('passes non-US region codes through unmodified', () => {
+      const result = mapExecutionsToLegacyBrandPresenceRows([
+        makeExecution({
+          id: 'exec-gb',
+          region_code: 'GB',
+          brand_presence_sources: [embeddedSource('https://gb.example.com')],
+        }),
+        makeExecution({
+          id: 'exec-ca',
+          region_code: 'CA',
+          brand_presence_sources: [embeddedSource('https://ca.example.com')],
+        }),
+      ]);
+
+      expect(result).to.deep.equal([
+        {
+          Sources: 'https://gb.example.com', Region: 'GB', Topics: '', Prompt: '', Category: '',
+        },
+        {
+          Sources: 'https://ca.example.com', Region: 'CA', Topics: '', Prompt: '', Category: '',
+        },
+      ]);
+    });
   });
 
   describe('loadBrandPresenceDataFromPostgrest', () => {
@@ -252,8 +277,10 @@ describe('offsite-brand-presence-postgrest', () => {
       });
 
       expect(result).to.equal(null);
-      expect(capture.eq).to.deep.include(['region_code', 'US']);
-      expect(capture.in[0][0]).to.equal('model');
+      const regionCall = capture.in.find(([col]) => col === 'region_code');
+      expect(regionCall[1]).to.deep.equal([...ACCEPTED_REGIONS]);
+      const modelCall = capture.in.find(([col]) => col === 'model');
+      expect(modelCall).to.not.equal(undefined);
     });
 
     it('treats null execution data as an empty result set', async () => {
@@ -264,7 +291,7 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(log.info).to.have.been.calledWithMatch('No execution rows found');
     });
 
-    it('queries executions with embedded sources, mapped models, and region_code = US', async () => {
+    it('queries executions with embedded sources, mapped models, and region_code in ACCEPTED_REGIONS', async () => {
       const capture = createCapture();
       const chain = createQueryChain(capture, [{
         data: [makeExecution({
@@ -296,16 +323,58 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.eq).to.deep.include.members([
         ['organization_id', ORG_ID],
         ['site_id', SITE_ID],
-        ['region_code', 'US'],
       ]);
-      expect(capture.in[0]).to.deep.equal(
+      expect(capture.in).to.deep.include.members([
+        ['region_code', [...ACCEPTED_REGIONS]],
         ['model', getBrandPresenceDbModels()],
-      );
+      ]);
       expect(capture.order).to.deep.equal([
         ['execution_date', { ascending: false }],
         ['id', { ascending: false }],
       ]);
       expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
+    });
+
+    it('returns null and warns without querying when regionCodes resolves empty (no silent zero)', async () => {
+      const postgrestClient = { from: sandbox.stub() };
+
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
+        postgrestClient,
+        regionCodes: [],
+      });
+
+      expect(result).to.equal(null);
+      expect(postgrestClient.from).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch('No region codes provided');
+    });
+
+    it('applies the region_code filter on every paginated page, not just the first', async () => {
+      const capture = createCapture();
+      const firstBatch = Array.from(
+        { length: EXECUTION_FETCH_BATCH_SIZE },
+        (_, i) => makeExecution({
+          id: `exec-${i + 1}`,
+          execution_date: '2026-03-12',
+          brand_presence_sources: [embeddedSource(`https://example.com/${i + 1}`)],
+        }),
+      );
+      const secondBatch = [makeExecution({
+        id: `exec-${EXECUTION_FETCH_BATCH_SIZE + 1}`,
+        execution_date: '2026-03-11',
+        brand_presence_sources: [embeddedSource('https://example.com/last')],
+      })];
+      const chain = createQueryChain(capture, [
+        { data: firstBatch, error: null },
+        { data: secondBatch, error: null },
+      ]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
+
+      await loadWith({ previousWeeks: DEFAULT_PREVIOUS_WEEKS, postgrestClient });
+
+      const regionCalls = capture.in.filter(([col]) => col === 'region_code');
+      expect(regionCalls).to.have.lengthOf(2);
+      regionCalls.forEach(([, codes]) => expect(codes).to.deep.equal([...ACCEPTED_REGIONS]));
     });
 
     it('uses keyset pagination and re-fetches when a batch fills the limit', async () => {

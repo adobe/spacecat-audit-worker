@@ -393,14 +393,16 @@ describe('offsite-brand-presence-semrush', function () {
     expect(result).to.equal(null);
     expect(erroredWith(/Service token rejected/)).to.equal(true);
     // The captured body identifies the rejecter (api-service vs Semrush) — LLMO-6709.
-    expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === proxyMsg)).to.equal(true);
+    expect(log.error.getCalls().some((c) => c.args[0].includes(`responseBody="${proxyMsg}"`))).to.equal(true);
   });
 
   it('handles an empty/unreadable error body on a non-2xx response', async () => {
     fetchStub.resolves({ ok: false, status: 500, text: async () => '' });
     const result = await run();
     expect(result).to.equal(null);
-    expect(log.error.getCalls().some((c) => c.args[1]?.responseBody === '')).to.equal(true);
+    // Empty values are dropped by the offsite-logging taxonomy, so no responseBody token
+    // is emitted at all — the status is still captured.
+    expect(log.error.getCalls().some((c) => c.args[0].includes('status=500') && !c.args[0].includes('responseBody='))).to.equal(true);
   });
 
   it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 403', async () => {

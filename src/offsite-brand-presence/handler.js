@@ -272,9 +272,17 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  */
 function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brandTokens) {
   const rows = data.data;
+  let rowsWithSources = 0;
+  let rowsSkippedForRegion = 0;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (!sources || !ACCEPTED_REGIONS.has(row.Region)) {
+    if (!sources) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    rowsWithSources += 1;
+    if (!ACCEPTED_REGIONS.has(row.Region)) {
+      rowsSkippedForRegion += 1;
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -311,6 +319,10 @@ function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brand
       }
       /* c8 ignore stop */
     }
+  }
+
+  if (rowsWithSources > 0 && rowsSkippedForRegion === rowsWithSources) {
+    olog.warn('url_extract', `All ${rowsWithSources} row(s) with sources were skipped: region not in ACCEPTED_REGIONS`, { rows: rowsWithSources });
   }
   olog.debug('url_extract', `Found ${allUrls.size} unique source URLs`, { count: allUrls.size });
 }

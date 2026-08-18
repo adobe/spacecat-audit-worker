@@ -619,6 +619,66 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
+    it('merges the same URL cited from two different accepted regions into one URL-store entry', async () => {
+      // Region never enters the allUrls map key (it's keyed by normalized URL only), so this
+      // is a regression-lock guarantee test, not proof that cross-region duplication was ever
+      // a live risk in the shipped code — it guards against a future change that starts
+      // keying by region. Now that GB/CA/AU/IE/NZ rows reach this function (via the Postgres
+      // region-list change), it's worth pinning down explicitly.
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'US' },
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'GB' },
+        ],
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      const createCalls = dataAccess.AuditUrl.create.getCalls()
+        .filter((c) => c.args[0].url === 'https://youtu.be/shared');
+      expect(createCalls).to.have.lengthOf(1);
+    });
+
+    it('warns when every row with sources was skipped for region', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://youtube.com/v1', Region: 'IN' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'IN' },
+        ],
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /All 2 row\(s\) with sources were skipped: region not in ACCEPTED_REGIONS/,
+      );
+    });
+
+    it('does not warn about region skip when at least one row is in an accepted region', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://youtube.com/v1', Region: 'IN' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'US' },
+        ],
+      });
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(log.warn).to.not.have.been.calledWithMatch(/region not in ACCEPTED_REGIONS/);
+    });
+
+    it('does not warn about region skip when no row has a Sources value', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [{ Prompt: 'no sources here', Region: 'US' }],
+      });
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(log.warn).to.not.have.been.calledWithMatch(/region not in ACCEPTED_REGIONS/);
+    });
+
     it('should ignore non-offsite and substring-matching domains', async () => {
       const sources = 'https://google.com/search;https://notyoutube.com/watch;https://fakereddit.com/r/test;https://twitter.com/post';
       stubBrandPresenceData([sources]);
