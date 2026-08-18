@@ -252,6 +252,9 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 
 ## Known gaps / non-goals (tracked)
 
+- **Region scoping** is not implemented; the legacy path spans `ACCEPTED_REGIONS` (six
+  markets) while this loader sends no region. Follow-up: LLMO-6710 — must close before
+  non-US parity can be claimed.
 - **Per-domain diversity within the cited bucket** is not enforced: the loader emits every
   qualifying third-party row and relies on `selectTopUrls`'s top-N-by-citations logic
   downstream, so a single very-high-citation domain can dominate the cited bucket.
@@ -269,10 +272,7 @@ end-to-end before flipping the env var fleet-wide.
    `Authorization` header into traces/spans (service-bearer leak).
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
 3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per bucket vs legacy.
-4. **Fleet enable** per environment — region scoping (LLMO-6710) closed: `classifyRow`'s
-   caller filters each row's `regions` against `ACCEPTED_REGIONS` client-side (the request
-   itself still carries no region param — see spec §3.3), so non-US accepted markets are no
-   longer silently zeroed out.
+4. **Fleet enable** per environment — **US markets only** until region scoping (LLMO-6710) closes.
 
 ## Configuration / client-convention debt (to resolve before the 3rd caller)
 

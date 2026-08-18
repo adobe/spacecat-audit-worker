@@ -18,6 +18,7 @@ import { ACCEPTED_REGIONS, PROVIDERS } from '../offsite-brand-presence/constants
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
 export const MAX_EXECUTION_FETCH_PAGES = 50;
+
 const DEFAULT_REGION_CODES = [...ACCEPTED_REGIONS];
 
 // Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as

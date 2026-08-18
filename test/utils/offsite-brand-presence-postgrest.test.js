@@ -213,6 +213,30 @@ describe('offsite-brand-presence-postgrest', () => {
         Category: '',
       }]);
     });
+
+    it('maps non-US accepted-region executions through without any US assumption', () => {
+      const result = mapExecutionsToLegacyBrandPresenceRows([
+        makeExecution({
+          id: 'exec-gb',
+          region_code: 'GB',
+          brand_presence_sources: [embeddedSource('https://gb.example.com')],
+        }),
+        makeExecution({
+          id: 'exec-ca',
+          region_code: 'CA',
+          brand_presence_sources: [embeddedSource('https://ca.example.com')],
+        }),
+      ]);
+
+      expect(result).to.deep.equal([
+        {
+          Sources: 'https://gb.example.com', Region: 'GB', Topics: '', Prompt: '', Category: '',
+        },
+        {
+          Sources: 'https://ca.example.com', Region: 'CA', Topics: '', Prompt: '', Category: '',
+        },
+      ]);
+    });
   });
 
   describe('loadBrandPresenceDataFromPostgrest', () => {
@@ -309,6 +333,50 @@ describe('offsite-brand-presence-postgrest', () => {
         ['id', { ascending: false }],
       ]);
       expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
+    });
+
+    it('passes an empty regionCodes array straight through to the query (no silent default)', async () => {
+      const capture = createCapture();
+      const chain = createQueryChain(capture, [{ data: [], error: null }]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
+
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
+        postgrestClient,
+        regionCodes: [],
+      });
+
+      expect(result).to.equal(null);
+      const regionCall = capture.in.find(([col]) => col === 'region_code');
+      expect(regionCall[1]).to.deep.equal([]);
+    });
+
+    it('applies the region_code filter on every paginated page, not just the first', async () => {
+      const capture = createCapture();
+      const firstBatch = Array.from(
+        { length: EXECUTION_FETCH_BATCH_SIZE },
+        (_, i) => makeExecution({
+          id: `exec-${i + 1}`,
+          execution_date: '2026-03-12',
+          brand_presence_sources: [embeddedSource(`https://example.com/${i + 1}`)],
+        }),
+      );
+      const secondBatch = [makeExecution({
+        id: `exec-${EXECUTION_FETCH_BATCH_SIZE + 1}`,
+        execution_date: '2026-03-11',
+        brand_presence_sources: [embeddedSource('https://example.com/last')],
+      })];
+      const chain = createQueryChain(capture, [
+        { data: firstBatch, error: null },
+        { data: secondBatch, error: null },
+      ]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
+
+      await loadWith({ previousWeeks: DEFAULT_PREVIOUS_WEEKS, postgrestClient });
+
+      const regionCalls = capture.in.filter(([col]) => col === 'region_code');
+      expect(regionCalls).to.have.lengthOf(2);
+      regionCalls.forEach(([, codes]) => expect(codes).to.deep.equal([...ACCEPTED_REGIONS]));
     });
 
     it('uses keyset pagination and re-fetches when a batch fills the limit', async () => {

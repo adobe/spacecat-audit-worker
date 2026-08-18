@@ -619,6 +619,25 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
+    it('merges the same URL cited from two different accepted regions into one URL-store entry', async () => {
+      // Now that GB/CA/AU/IE/NZ rows reach this function (via the Postgres region-list
+      // change), the same normalized URL appearing under two different accepted regions
+      // must still collapse to a single allUrls entry, not a duplicate.
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'US' },
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'GB' },
+        ],
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      const createCalls = dataAccess.AuditUrl.create.getCalls()
+        .filter((c) => c.args[0].url === 'https://youtu.be/shared');
+      expect(createCalls).to.have.lengthOf(1);
+    });
+
     it('warns when every row with sources was skipped for region', async () => {
       mockLoadBrandPresenceData.resolves({
         data: [

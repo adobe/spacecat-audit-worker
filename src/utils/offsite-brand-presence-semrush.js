@@ -22,13 +22,13 @@ import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgres
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
-  ACCEPTED_REGIONS,
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from './offsite-logging.js';
+import {
   TOP_CITED_EXCLUDED_DOMAINS,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from '../offsite-brand-presence/constants.js';
-
-const LOG_PREFIX = '[offsite-brand-presence][semrush]';
 
 /**
  * Default spacecat-api-service base URL. Its Elements proxy
@@ -130,16 +130,15 @@ export function buildDomainUrlsUrl({
  *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
  *   `diagnostics` without grepping logs).
  */
-async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
-  const ctx = { siteId };
+async function fetchDomainUrls(url, headers, olog, pageSize) {
   let response;
   const startedAt = Date.now();
   try {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
-    log.error(`${LOG_PREFIX} Fetch failed for domain-urls: ${error.message}`, {
-      ...ctx, error: error.message, durationMs: Date.now() - startedAt,
-    });
+    olog.failure('domain_urls_fetch', 'Fetch failed for domain-urls', {
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, ...errorField(error),
+    }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
     };
@@ -151,15 +150,15 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
     // Capture the body so the rejecter is identifiable (api-service requireImsBearer
     // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
     const responseBody = await readErrorBodySnippet(response);
-    const logCtx = {
-      ...ctx, status: response.status, responseBody, durationMs,
+    const logFields = {
+      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, durationMs,
     };
     if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      log.error(`${LOG_PREFIX} Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, logCtx);
+      olog.failure('domain_urls_fetch', `Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, logFields);
     } else {
-      log.error(`${LOG_PREFIX} domain-urls returned HTTP ${response.status}`, logCtx);
+      olog.failure('domain_urls_fetch', `domain-urls returned HTTP ${response.status}`, logFields);
     }
     return {
       rows: [], ok: false, authFailure, truncated: false,
@@ -170,9 +169,9 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
   try {
     body = await response.json();
   } catch (error) {
-    log.error(`${LOG_PREFIX} Could not parse domain-urls response: ${error.message}`, {
-      ...ctx, error: error.message, durationMs: Date.now() - startedAt,
-    });
+    olog.failure('domain_urls_fetch', 'Could not parse domain-urls response', {
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, ...errorField(error),
+    }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
     };
@@ -181,31 +180,13 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
   const raw = Array.isArray(body?.urls) ? body.urls : [];
   const truncated = raw.length >= pageSize;
   if (truncated) {
-    log.warn(`${LOG_PREFIX} domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
-      ...ctx, rowCount: raw.length, pageSize,
+    olog.warn('domain_urls_fetch', `domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
+      peer: PEER.SEMRUSH, direction: 'inbound', rowCount: raw.length, pageSize,
     });
   }
   return {
     rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated,
   };
-}
-
-/**
- * True when a row's `regions` field (comma-joined region codes, e.g. `"US,GB"`, per the
- * `domain-urls` contract) contains at least one code in {@link ACCEPTED_REGIONS} — mirrors
- * the legacy path's region gate (LLMO-6710). An empty/missing value means the endpoint
- * didn't resolve a region for that row; it is treated as "unknown", not "rejected", so a
- * gap in Semrush's region tagging can't silently zero out a run the way a missing `Region`
- * column does on the legacy path.
- *
- * @param {string} [regionsField]
- * @returns {boolean}
- */
-function isAcceptedRegion(regionsField) {
-  if (!regionsField) {
-    return true;
-  }
-  return regionsField.split(',').some((code) => ACCEPTED_REGIONS.has(code.trim()));
 }
 
 /**
@@ -304,6 +285,7 @@ export async function loadCitedUrlsFromSemrush({
   const { log, env } = context;
   const startedAt = Date.now();
   const siteId = site?.getId?.();
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const elapsed = () => Date.now() - startedAt;
   const baseUrl = env?.SPACECAT_API_URI || SPACECAT_API_DEFAULT_BASE_URL;
 
@@ -314,7 +296,9 @@ export async function loadCitedUrlsFromSemrush({
     try {
       await onProgress(text);
     } catch (error) {
-      log.warn(`${LOG_PREFIX} Failed to post Semrush progress update: ${error.message}`, { siteId });
+      olog.warn('brand_data_load', 'Failed to post Semrush progress update', {
+        peer: PEER.SLACK, direction: 'outbound', ...errorField(error),
+      });
     }
   };
   const setDiagnostics = (patch) => {
@@ -323,13 +307,13 @@ export async function loadCitedUrlsFromSemrush({
     }
   };
 
-  log.info(`${LOG_PREFIX} Starting Semrush source attempt`, { siteId, baseUrl });
+  olog.start('brand_data_load', 'Starting Semrush source attempt', { peer: PEER.SEMRUSH, direction: 'inbound', baseUrl });
   await notify(':mag: Starting Semrush URL-Inspector lookup...');
 
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
-    log.warn(`${LOG_PREFIX} Site has no organization id; skipping Semrush source`, {
-      siteId, durationMs: elapsed(),
+    olog.warn('brand_data_load', 'Site has no organization id; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: elapsed(), reason: 'no-organization-id',
     });
     await notify(':warning: Site has no organization id — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no-organization-id' });
@@ -341,14 +325,14 @@ export async function loadCitedUrlsFromSemrush({
   const { brand, resolved } = await resolveBrandResultForSite(context, site);
   if (!brand?.brandId) {
     if (resolved) {
-      log.info(`${LOG_PREFIX} No active brand for org ${spaceCatId}; skipping Semrush source`, {
-        siteId, orgId: spaceCatId, durationMs: elapsed(),
+      olog.skip('brand_data_load', `No active brand for org ${spaceCatId}; skipping Semrush source`, {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'no-active-brand',
       });
       await notify(':information_source: No active brand configured for this org — falling back to the legacy source.');
       setDiagnostics({ fallbackReason: 'no-active-brand' });
     } else {
-      log.warn(`${LOG_PREFIX} Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
-        siteId, orgId: spaceCatId, durationMs: elapsed(),
+      olog.warn('brand_data_load', `Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'brand-resolution-failed',
       });
       await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
       setDiagnostics({ fallbackReason: 'brand-resolution-failed' });
@@ -367,12 +351,14 @@ export async function loadCitedUrlsFromSemrush({
   });
   if (!entitlement.entitled) {
     if (entitlement.resolved) {
-      log.info(`${LOG_PREFIX} Brand not entitled for Semrush (${entitlement.reason}) for org ${spaceCatId}; skipping Semrush source`, {
-        siteId,
+      olog.skip('brand_data_load', `Brand not entitled for Semrush (${entitlement.reason}) for org ${spaceCatId}; skipping Semrush source`, {
+        peer: PEER.SEMRUSH,
+        direction: 'inbound',
         orgId: spaceCatId,
         brandId: brand.brandId,
         entitlementReason: entitlement.reason,
         durationMs: elapsed(),
+        reason: 'not-entitled',
       });
       await notify(':information_source: Brand is not entitled for Semrush — falling back to the legacy source.');
       // fallbackReason is the coarse, contract-level signal the handler's hard-stop
@@ -385,8 +371,8 @@ export async function loadCitedUrlsFromSemrush({
         entitlementReason: entitlement.reason,
       });
     } else {
-      log.warn(`${LOG_PREFIX} Semrush entitlement check failed (transient) for org ${spaceCatId}; using legacy fallback`, {
-        siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+      olog.warn('brand_data_load', `Semrush entitlement check failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
       });
       await notify(':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.');
       setDiagnostics({
@@ -399,8 +385,8 @@ export async function loadCitedUrlsFromSemrush({
 
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (!dateWindow) {
-    log.warn(`${LOG_PREFIX} Could not derive a date window; skipping Semrush source`, {
-      siteId, orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+    olog.warn('brand_data_load', 'Could not derive a date window; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
     });
     await notify(':warning: Could not derive a date window — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no-date-window' });
@@ -412,13 +398,9 @@ export async function loadCitedUrlsFromSemrush({
   try {
     authorization = await getAuthorizationHeader(context);
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to obtain IMS service token: ${error.message}`, {
-      siteId,
-      orgId: spaceCatId,
-      brandId: brand.brandId,
-      error: error.message,
-      durationMs: elapsed(),
-    });
+    olog.failure('brand_data_load', 'Failed to obtain IMS service token', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), ...errorField(error),
+    }, error);
     await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
     setDiagnostics({ fallbackReason: 'ims-token-failed' });
     return null;
@@ -439,15 +421,15 @@ export async function loadCitedUrlsFromSemrush({
   const url = buildDomainUrlsUrl({
     baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
   });
-  log.info(`${LOG_PREFIX} Querying domain-urls (all hosts, all platforms)`, {
-    siteId, orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+  olog.start('brand_data_load', 'Querying domain-urls (all hosts, all platforms)', {
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, log, siteId, PAGE_SIZE);
+  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
   if (!result.ok) {
-    log.warn(`${LOG_PREFIX} domain-urls request failed; using legacy fallback`, {
-      siteId, orgId: spaceCatId, durationMs: elapsed(),
+    olog.warn('brand_data_load', 'domain-urls request failed; using legacy fallback', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(),
     });
     await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: result.authFailure ? 'domain-urls-auth-failed' : 'domain-urls-failed' });
@@ -460,17 +442,9 @@ export async function loadCitedUrlsFromSemrush({
 
   const allUrls = new Map();
   const bucketCounts = { 'youtube.com': 0, 'reddit.com': 0, cited: 0 };
-  let classifiedCount = 0;
-  let regionSkippedCount = 0;
   for (const row of result.rows) {
     const bucketed = classifyRow(row, siteHostname, brandTokens);
     if (!bucketed) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    classifiedCount += 1;
-    if (!isAcceptedRegion(row.regions)) {
-      regionSkippedCount += 1;
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -490,14 +464,9 @@ export async function loadCitedUrlsFromSemrush({
     }
   }
 
-  if (classifiedCount > 0 && regionSkippedCount === classifiedCount) {
-    log.warn(`${LOG_PREFIX} All ${classifiedCount} classified row(s) were skipped: region not in ACCEPTED_REGIONS`, {
-      siteId, orgId: spaceCatId, brandId: brand.brandId, rows: classifiedCount,
-    });
-  }
-
-  log.info(`${LOG_PREFIX} Bucketed domain-urls response`, {
-    siteId,
+  olog.success('url_extract', 'Bucketed domain-urls response', {
+    peer: PEER.SEMRUSH,
+    direction: 'inbound',
     orgId: spaceCatId,
     brandId: brand.brandId,
     receivedCount: result.rows.length,
@@ -509,12 +478,8 @@ export async function loadCitedUrlsFromSemrush({
   });
   await notify(`:package: Loaded ${bucketCounts['youtube.com']} \`youtube.com\`, ${bucketCounts['reddit.com']} \`reddit.com\`, and ${bucketCounts.cited} cited (third-party) URL(s).`);
 
-  log.info(`${LOG_PREFIX} Collected ${allUrls.size} cited URLs from Semrush`, {
-    siteId,
-    orgId: spaceCatId,
-    brandId: brand.brandId,
-    urlCount: allUrls.size,
-    durationMs: elapsed(),
+  olog.success('brand_data_load', `Collected ${allUrls.size} cited URLs from Semrush`, {
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, urlCount: allUrls.size, durationMs: elapsed(),
   });
   await notify(`:tada: Semrush source succeeded — *${allUrls.size}* total cited URL(s) in ${elapsed()}ms.`);
   return allUrls;
