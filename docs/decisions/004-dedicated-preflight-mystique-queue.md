@@ -48,6 +48,28 @@ screen, and Walmart is ramping up to ~300 authors on legacy V1 Preflight
 imminently, we need to decouple Preflight's Mystique traffic from bulk
 audit traffic rather than just tuning shared capacity.
 
+**This ADR is explicitly a stopgap, not the destination.** A different
+team hit the same class of problem — legacy-stack task starvation
+blocking a customer-critical flow — for Impact Engine (IME) traffic
+inside Mystique. They shipped an isolated request/response queue pair
+(`ime-to-mystique` / `mystique-to-ime`, mystique#4179) as a fast interim
+fix, explicitly labeled "Alternative Design / Approach B" against a
+wiki spec, and reviewers pushed back hard on doing it at the legacy V1
+level at all — citing product-decision concerns (prioritization
+shouldn't be hardcoded per one-off caller) and destabilization risk
+from running three parallel stacks (v1, v1-extended, v2) at once.
+Approach B shipped anyway given IME's low volume and a real deadline,
+but was then **fully reverted** (mystique#4284) once the durable fix —
+routing through Blackboard V2's `control_task_queue` at `priority=1`,
+riding the same fleet-wide `ORDER BY priority DESC` claim path every
+other V2 task already uses (mystique#4285, "Approach C") — landed.
+Reviewers raised the identical concern on this ADR's own thread; we're
+proceeding anyway for the same reason IME did (small volume, real
+customer deadline, weeks until Preflight V2 can absorb this natively),
+but with the explicit understanding that this queue has the same
+retire-on-V2-arrival lifecycle IME's did — see Decision #4 and
+Follow-ups.
+
 ## Decision
 
 Introduce an isolated request lane for Preflight's SQS traffic to
@@ -79,6 +101,21 @@ Mystique, spanning three repos:
    in `server.py`'s lifespan alongside `opportunity_service` and
    `bp_event_consumer`; no-ops when the env var is unset, per existing
    convention.
+4. **Kill switch (spacecat-audit-worker)** — gate the mode-based branch
+   in `sendPreflightMessages` behind an explicit
+   `PREFLIGHT_MYSTIQUE_QUEUE_ENABLED` flag, checked *in addition to*
+   `mode === 'preflight'`. When unset or `false`, preflight traffic
+   falls back to the existing shared `QUEUE_SPACECAT_TO_MYSTIQUE` path
+   unconditionally — so the new lane can be turned off instantly via a
+   config change in the per-environment Helix Deploy params, with no
+   code revert or PR. This was requested explicitly during ADR review
+   (see References) precisely because this is a stopgap: we want a
+   one-flag rollback available while we watch it in prod, not a
+   git-revert-and-redeploy cycle. The mystique-side consumer already
+   gets the equivalent for free — it no-ops at startup if
+   `SQS_SPACECAT_TO_MYSTIQUE_PREFLIGHT_QUEUE_URL` is unset — but that
+   requires a redeploy to take effect, which is why the producer-side
+   flag is the one that actually matters operationally.
 
 ## Alternatives Considered
 
@@ -127,10 +164,20 @@ Mystique, spanning three repos:
 - Does not fix underlying LLM-provider variability if that ever becomes
   the bottleneck — out of scope; Langfuse confirms compute is healthy
   today.
-- Does not by itself require a dedicated *response* queue: routing back
-  from Mystique to spacecat is already ID-based (`auditId`/`siteId`
-  looked up via `AsyncJob.findById`), not queue-based, per
-  `src/readability/preflight/guidance-handler.js`.
+- Does not require a dedicated *response* queue (unlike IME's
+  `mystique-to-ime`, see Context). IME needed one because its caller
+  (Impact Engine / LLMO) had no pre-existing consumer on
+  `mystique-to-spacecat` at all — there was no shared return leg to
+  hook into. Preflight doesn't have that gap: on the Mystique side,
+  every task-completion path (`OpportunityService`, confirmed in
+  `app/services/opportunity_service.py`) publishes results via a single
+  `SQSClient.send_message()` call that always targets
+  `SQS_MYSTIQUE_TO_SPACECAT_QUEUE_URL`, regardless of which request
+  queue the task came from. Our new preflight consumer publishing
+  through that same shared client is enough — spacecat-audit-worker's
+  existing `mystique-to-spacecat` consumer already routes replies by
+  `auditId`/`siteId` (`AsyncJob.findById`, per
+  `src/readability/preflight/guidance-handler.js`), not by source queue.
 
 ## Rollout Plan
 
@@ -146,14 +193,20 @@ Mystique, spanning three repos:
 
 ## Follow-ups
 
+- **File a separate ADR/story for Preflight's V2 migration** — the
+  durable replacement for this queue, analogous to IME's Approach C
+  (mystique#4285): route Preflight's Mystique-bound work through
+  Blackboard V2's priority-aware dispatch instead of a bespoke SQS
+  lane. Once that lands and is verified, revert this ADR's dedicated
+  queue the same way mystique#4284 reverted mystique#4179. This ADR's
+  scope is deliberately limited to buying time until that follow-up
+  ships, not to building V1 out further.
 - Current `MessageGroupId` fairness logic in audit-worker's
   `src/support/sqs.js` is a no-op on standard queues; revisit whether
   the new preflight queue should be FIFO if fairness *within* preflight
   traffic itself becomes necessary.
 - Consider a shorter visibility timeout for the new consumer specifically
   (vs. Mystique's 3600s default), given Preflight's latency sensitivity.
-- Evaluate migrating V1 Preflight readability onto the V2 direct-HTTP
-  path, which would obsolete this queue.
 - Pod-level isolation for the new consumer in `mystique-deploy`, if
   noisy-neighbor issues persist after this change ships.
 - Land the bounded-wait/partial-completion guidance-handler change
@@ -165,3 +218,8 @@ Mystique, spanning three repos:
   (linked to SITES-48938, "[Preflight] V2 API performance & efficiency")
 - Slack (incident triage): https://cq-dev.slack.com/archives/C0A91S5UKRC/p1786561838978239
 - Slack (customer report): https://cq-dev.slack.com/archives/C08LJBRDQ4S/p1786544952696649
+- Slack (IME precedent thread, referenced during this ADR's review):
+  https://cq-dev.slack.com/archives/C0A91S5UKRC/p1786018489506739
+- IME precedent PRs: mystique#4179 (isolated `ime-to-mystique` queue,
+  stopgap), mystique#4284 (revert of #4179), mystique#4285 (durable
+  fix — `control_task_queue` priority dispatch, "Approach C")
