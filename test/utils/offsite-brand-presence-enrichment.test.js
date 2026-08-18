@@ -420,6 +420,33 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result).to.deep.equal([]);
     });
 
+    it('warns when every row with sources was skipped for region', async () => {
+      await setupSharePointStubs([
+        { Sources: 'https://reddit.com/r/a', Region: 'IN', Topics: 'T' },
+        { Sources: 'https://reddit.com/r/b', Region: 'IN', Topics: 'T' },
+      ]);
+      const site = makeSite();
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+
+      expect(result).to.deep.equal([]);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /All 2 row\(s\) with sources were skipped: region not in ACCEPTED_REGIONS/,
+      );
+    });
+
+    it('does not warn about region skip when at least one row is in an accepted region', async () => {
+      await setupSharePointStubs([
+        { Sources: 'https://reddit.com/r/a', Region: 'IN', Topics: 'T' },
+        makeBrandPresenceRow(),
+      ]);
+      const site = makeSite();
+
+      await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+
+      expect(log.warn).to.not.have.been.calledWithMatch(/region not in ACCEPTED_REGIONS/);
+    });
+
     it('skips empty source segments and invalid URL tokens', async () => {
       await setupSharePointStubs([
         makeBrandPresenceRow({

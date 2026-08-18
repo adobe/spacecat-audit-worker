@@ -29,9 +29,6 @@ selection.
   **single** `domain-urls` request per audit run (LLMO-6844 + LLMO-6818).
 
 **Non-goals (known gaps, tracked)**
-- **Region scoping.** The legacy path spans `ACCEPTED_REGIONS` (six markets) while this loader
-  sends **no region param**. Deferred to LLMO-6710 — must be closed before non-US parity is
-  claimed.
 - **Per-domain diversity within the cited bucket.** The loader does not cap how many URLs a
   single third-party domain contributes; `selectTopUrls` downstream ranks by citations only.
 - Changing ranking, bucketing, DRS, or the analysis audits.
@@ -89,6 +86,13 @@ flag stays off until verified (test one canary run via the `enableSemrush:true` 
    - `count = row.citations` (exact, already summed across every engine server-side); citations
      are clamped (`Math.max(0, …)`) and a zero-citation URL is dropped; duplicate URLs within
      the page are summed defensively.
+   - **Region scoping (LLMO-6710, closed).** The request itself still sends no region param
+     (§3.1), but each classified row's `regions` field (comma-joined codes, e.g. `"US,GB"`) is
+     checked client-side against `ACCEPTED_REGIONS` — mirroring the legacy path's gate. A row
+     with no `regions` value (Semrush didn't resolve one) is kept as "unknown", not rejected,
+     so a metadata gap can't silently zero out a run. When every classified row is dropped for
+     region, a warning is logged (`All N classified row(s) were skipped: region not in
+     ACCEPTED_REGIONS`) so this is distinguishable from a genuine zero-citation result.
 3. **Format parity.** The loader re-applies `YOUTUBE_URL_REGEX` / `REDDIT_URL_REGEX`
    (matching the legacy `handler.js` classify) to `youtube.com` / `reddit.com` rows so
    non-thread Reddit and lookalike YouTube hosts are dropped identically.

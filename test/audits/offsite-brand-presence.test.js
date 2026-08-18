@@ -619,6 +619,45 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
+    it('warns when every row with sources was skipped for region', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://youtube.com/v1', Region: 'IN' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'IN' },
+        ],
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /All 2 row\(s\) with sources were skipped: region not in ACCEPTED_REGIONS/,
+      );
+    });
+
+    it('does not warn about region skip when at least one row is in an accepted region', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://youtube.com/v1', Region: 'IN' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'US' },
+        ],
+      });
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(log.warn).to.not.have.been.calledWithMatch(/region not in ACCEPTED_REGIONS/);
+    });
+
+    it('does not warn about region skip when no row has a Sources value', async () => {
+      mockLoadBrandPresenceData.resolves({
+        data: [{ Prompt: 'no sources here', Region: 'US' }],
+      });
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(log.warn).to.not.have.been.calledWithMatch(/region not in ACCEPTED_REGIONS/);
+    });
+
     it('should ignore non-offsite and substring-matching domains', async () => {
       const sources = 'https://google.com/search;https://notyoutube.com/watch;https://fakereddit.com/r/test;https://twitter.com/post';
       stubBrandPresenceData([sources]);

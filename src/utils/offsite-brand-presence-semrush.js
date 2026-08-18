@@ -22,6 +22,7 @@ import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgres
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
+  ACCEPTED_REGIONS,
   TOP_CITED_EXCLUDED_DOMAINS,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
@@ -187,6 +188,24 @@ async function fetchDomainUrls(url, headers, log, siteId, pageSize) {
   return {
     rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated,
   };
+}
+
+/**
+ * True when a row's `regions` field (comma-joined region codes, e.g. `"US,GB"`, per the
+ * `domain-urls` contract) contains at least one code in {@link ACCEPTED_REGIONS} — mirrors
+ * the legacy path's region gate (LLMO-6710). An empty/missing value means the endpoint
+ * didn't resolve a region for that row; it is treated as "unknown", not "rejected", so a
+ * gap in Semrush's region tagging can't silently zero out a run the way a missing `Region`
+ * column does on the legacy path.
+ *
+ * @param {string} [regionsField]
+ * @returns {boolean}
+ */
+function isAcceptedRegion(regionsField) {
+  if (!regionsField) {
+    return true;
+  }
+  return regionsField.split(',').some((code) => ACCEPTED_REGIONS.has(code.trim()));
 }
 
 /**
@@ -441,9 +460,17 @@ export async function loadCitedUrlsFromSemrush({
 
   const allUrls = new Map();
   const bucketCounts = { 'youtube.com': 0, 'reddit.com': 0, cited: 0 };
+  let classifiedCount = 0;
+  let regionSkippedCount = 0;
   for (const row of result.rows) {
     const bucketed = classifyRow(row, siteHostname, brandTokens);
     if (!bucketed) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    classifiedCount += 1;
+    if (!isAcceptedRegion(row.regions)) {
+      regionSkippedCount += 1;
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -461,6 +488,12 @@ export async function loadCitedUrlsFromSemrush({
       allUrls.set(bucketed.url, { count: citations, domain: bucketed.domain });
       bucketCounts[bucketed.domain ?? 'cited'] += 1;
     }
+  }
+
+  if (classifiedCount > 0 && regionSkippedCount === classifiedCount) {
+    log.warn(`${LOG_PREFIX} All ${classifiedCount} classified row(s) were skipped: region not in ACCEPTED_REGIONS`, {
+      siteId, orgId: spaceCatId, brandId: brand.brandId, rows: classifiedCount,
+    });
   }
 
   log.info(`${LOG_PREFIX} Bucketed domain-urls response`, {

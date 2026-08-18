@@ -326,6 +326,70 @@ describe('offsite-brand-presence-semrush', function () {
     expect(messages.some((m) => /Loaded 0 `youtube\.com`, 0 `reddit\.com`, and 2 cited/.test(m))).to.equal(true);
   });
 
+  // --- region scoping (ACCEPTED_REGIONS, LLMO-6710) --------------------------
+
+  it('keeps a row whose regions include an accepted market', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5, regions: 'US' }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
+  });
+
+  it('keeps a row whose regions are a mix including an accepted market', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5, regions: 'IN,GB' }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
+  });
+
+  it('keeps a row with no regions field at all (unknown, not rejected)', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5 }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
+  });
+
+  it('drops a row whose regions are all outside ACCEPTED_REGIONS', async () => {
+    fetchStub.resolves(okJson({
+      urls: [{ url: CITED_URL, citations: 5, regions: 'IN' }],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+  });
+
+  it('warns when every classified row was skipped for region', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: YT_URL, citations: 10, regions: 'IN' },
+        { url: RD_URL, citations: 7, regions: 'IN' },
+      ],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(0);
+    expect(warnedWith(/All 2 classified row\(s\) were skipped: region not in ACCEPTED_REGIONS/)).to.equal(true);
+  });
+
+  it('does not warn about region skip when at least one row keeps its region', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: YT_URL, citations: 10, regions: 'IN' },
+        { url: RD_URL, citations: 7, regions: 'US' },
+      ],
+    }));
+    const allUrls = await run();
+    expect(allUrls.size).to.equal(1);
+    expect(warnedWith(/region not in ACCEPTED_REGIONS/)).to.equal(false);
+  });
+
+  it('does not warn about region skip when no rows were classified at all', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+    await run();
+    expect(warnedWith(/region not in ACCEPTED_REGIONS/)).to.equal(false);
+  });
+
   // --- body / truncation ----------------------------------------------------
 
   it('treats a non-array urls body as empty (no fallback)', async () => {
