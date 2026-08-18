@@ -620,9 +620,11 @@ describe('Offsite Brand Presence Handler', function () {
     });
 
     it('merges the same URL cited from two different accepted regions into one URL-store entry', async () => {
-      // Now that GB/CA/AU/IE/NZ rows reach this function (via the Postgres region-list
-      // change), the same normalized URL appearing under two different accepted regions
-      // must still collapse to a single allUrls entry, not a duplicate.
+      // Region never enters the allUrls map key (it's keyed by normalized URL only), so this
+      // is a regression-lock guarantee test, not proof that cross-region duplication was ever
+      // a live risk in the shipped code — it guards against a future change that starts
+      // keying by region. Now that GB/CA/AU/IE/NZ rows reach this function (via the Postgres
+      // region-list change), it's worth pinning down explicitly.
       mockLoadBrandPresenceData.resolves({
         data: [
           { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'US' },

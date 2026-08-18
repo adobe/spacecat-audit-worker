@@ -214,7 +214,7 @@ describe('offsite-brand-presence-postgrest', () => {
       }]);
     });
 
-    it('maps non-US accepted-region executions through without any US assumption', () => {
+    it('passes non-US region codes through unmodified', () => {
       const result = mapExecutionsToLegacyBrandPresenceRows([
         makeExecution({
           id: 'exec-gb',
@@ -335,10 +335,8 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
     });
 
-    it('passes an empty regionCodes array straight through to the query (no silent default)', async () => {
-      const capture = createCapture();
-      const chain = createQueryChain(capture, [{ data: [], error: null }]);
-      const postgrestClient = { from: sandbox.stub().returns(chain) };
+    it('returns null and warns without querying when regionCodes resolves empty (no silent zero)', async () => {
+      const postgrestClient = { from: sandbox.stub() };
 
       const result = await loadWith({
         previousWeeks: DEFAULT_PREVIOUS_WEEKS,
@@ -347,8 +345,8 @@ describe('offsite-brand-presence-postgrest', () => {
       });
 
       expect(result).to.equal(null);
-      const regionCall = capture.in.find(([col]) => col === 'region_code');
-      expect(regionCall[1]).to.deep.equal([]);
+      expect(postgrestClient.from).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch('No region codes provided');
     });
 
     it('applies the region_code filter on every paginated page, not just the first', async () => {

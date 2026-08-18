@@ -182,6 +182,14 @@ export async function loadBrandPresenceDataFromPostgrest({
     return null;
   }
 
+  // Avoid firing a query that's guaranteed to match nothing.
+  if (regionCodes.length === 0) {
+    log?.warn(bp(`No region codes provided for site ${siteId}, skipping PostgREST query`, {
+      event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', reason: 'no_region_codes',
+    }));
+    return null;
+  }
+
   const { startDate, endDate } = dateWindow;
 
   try {

@@ -22,7 +22,7 @@ import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgres
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from './offsite-logging.js';
 import {
   TOP_CITED_EXCLUDED_DOMAINS,
@@ -180,8 +180,10 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
   const raw = Array.isArray(body?.urls) ? body.urls : [];
   const truncated = raw.length >= pageSize;
   if (truncated) {
+    // A full page is a successful response with a caveat (possible starvation), not a
+    // failure — override the default outcome so this doesn't pollute failure-based alerts.
     olog.warn('domain_urls_fetch', `domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
-      peer: PEER.SEMRUSH, direction: 'inbound', rowCount: raw.length, pageSize,
+      peer: PEER.SEMRUSH, direction: 'inbound', rowCount: raw.length, pageSize, outcome: OUTCOME.SUCCESS,
     });
   }
   return {
@@ -313,7 +315,7 @@ export async function loadCitedUrlsFromSemrush({
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
     olog.warn('brand_data_load', 'Site has no organization id; skipping Semrush source', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: elapsed(), reason: 'no-organization-id',
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: elapsed(), reason: 'no-organization-id', outcome: OUTCOME.SKIP,
     });
     await notify(':warning: Site has no organization id — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no-organization-id' });
@@ -386,7 +388,7 @@ export async function loadCitedUrlsFromSemrush({
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (!dateWindow) {
     olog.warn('brand_data_load', 'Could not derive a date window; skipping Semrush source', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), outcome: OUTCOME.SKIP,
     });
     await notify(':warning: Could not derive a date window — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no-date-window' });
