@@ -66,6 +66,7 @@ export default async function links(context, auditContext) {
     audits,
     auditsResult,
     scrapedObjects,
+    failedScrapes = new Map(),
     urls,
     pageAuthToken,
     timeExecutionBreakdown,
@@ -74,7 +75,13 @@ export default async function links(context, auditContext) {
   // Create links audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_LINKS, type: 'seo', opportunities: [] });
+    const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+    pageResult.audits.push({
+      name: PREFLIGHT_LINKS,
+      type: 'seo',
+      opportunities: [],
+      ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
+    });
   });
 
   // Pre-index PREFLIGHT_LINKS audits for O(1) lookups

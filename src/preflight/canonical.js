@@ -116,6 +116,7 @@ export default async function canonical(context, auditContext) {
     auditsResult,
     previewBaseURL,
     scrapedObjects,
+    failedScrapes = new Map(),
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -126,10 +127,12 @@ export default async function canonical(context, auditContext) {
 
   try {
     previewUrls.forEach((url) => {
+      const scrapeError = failedScrapes.get(stripTrailingSlash(url));
       audits.get(url).audits.push({
         name: PREFLIGHT_CANONICAL,
         type: 'seo',
         opportunities: [],
+        ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
       });
     });
 

@@ -18,6 +18,10 @@ export const PreflightErrorClassification = Object.freeze({
   // Site/org configuration prevents the audit from running (e.g. handler disabled,
   // missing entitlement). Not transient - retrying the job won't help.
   CONFIG_ERROR: 'CONFIG_ERROR',
+
+  // The content-scraper could not fetch the page (403, DNS, timeout, etc.). Transient -
+  // re-running the audit may succeed once the underlying access/availability issue clears.
+  SCRAPE_ERROR: 'SCRAPE_ERROR',
 });
 
 /**
@@ -34,5 +38,23 @@ export const PreflightError = Object.freeze({
     message: 'The Preflight audit is not enabled for this site.',
     description: 'The preflight handler is disabled in the site configuration.',
     classification: PreflightErrorClassification.CONFIG_ERROR,
+  }),
+  SCRAPE_FORBIDDEN: Object.freeze({
+    code: 'PREFLIGHT-101',
+    message: 'This page could not be accessed. Confirm you have permission to view it.',
+    description: 'The content-scraper received an HTTP 401/403 response for the page.',
+    classification: PreflightErrorClassification.SCRAPE_ERROR,
+  }),
+  SCRAPE_TIMEOUT: Object.freeze({
+    code: 'PREFLIGHT-102',
+    message: 'This page took too long to load and could not be checked.',
+    description: 'The content-scraper timed out navigating to or rendering the page.',
+    classification: PreflightErrorClassification.SCRAPE_ERROR,
+  }),
+  SCRAPE_FAILED: Object.freeze({
+    code: 'PREFLIGHT-103',
+    message: 'This page could not be checked.',
+    description: 'The content-scraper failed to fetch the page for a reason other than an access denial or timeout (e.g. DNS failure).',
+    classification: PreflightErrorClassification.SCRAPE_ERROR,
   }),
 });

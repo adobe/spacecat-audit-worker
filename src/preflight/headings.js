@@ -190,6 +190,7 @@ export default async function headings(context, auditContext) {
     audits,
     auditsResult,
     scrapedObjects,
+    failedScrapes = new Map(),
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -201,7 +202,13 @@ export default async function headings(context, auditContext) {
   // Create headings audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_HEADINGS, type: 'seo', opportunities: [] });
+    const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+    pageResult.audits.push({
+      name: PREFLIGHT_HEADINGS,
+      type: 'seo',
+      opportunities: [],
+      ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
+    });
   });
 
   log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Starting headings audit`);

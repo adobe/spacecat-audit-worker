@@ -12,7 +12,10 @@
 
 import { expect } from 'chai';
 
-import { formatStructuredAuditLog, PREFLIGHT_METRIC_MARKER } from '../../src/preflight/utils.js';
+import {
+  formatStructuredAuditLog, PREFLIGHT_METRIC_MARKER, buildFailedScrapesMap,
+} from '../../src/preflight/utils.js';
+import { PreflightError } from '../../src/preflight/error-constants.js';
 
 describe('preflight/utils formatStructuredAuditLog', () => {
   it('leads with the rare pfauditmetric marker (the Splunk query anchor)', () => {
@@ -97,5 +100,97 @@ describe('preflight/utils formatStructuredAuditLog', () => {
     });
 
     expect(out).to.include('error="Error: kaboom"');
+  });
+});
+
+describe('preflight/utils buildFailedScrapesMap', () => {
+  let log;
+
+  beforeEach(() => {
+    log = {
+      warnCalls: [],
+      warn(...args) {
+        this.warnCalls.push(args);
+      },
+    };
+  });
+
+  it('returns an empty map when scrapeResults is not a non-empty array', () => {
+    expect(buildFailedScrapesMap(undefined, log).size).to.equal(0);
+    expect(buildFailedScrapesMap([], log).size).to.equal(0);
+  });
+
+  it('ignores entries that are not FAILED', () => {
+    const result = buildFailedScrapesMap([
+      { metadata: { url: 'https://example.com/page', status: 'COMPLETE' } },
+    ], log);
+
+    expect(result.size).to.equal(0);
+  });
+
+  it('ignores FAILED entries with a missing or invalid url', () => {
+    const result = buildFailedScrapesMap([
+      { metadata: { status: 'FAILED', reason: 'HTTP 403 error' } },
+      { metadata: { url: 'not-a-url', status: 'FAILED', reason: 'HTTP 403 error' } },
+    ], log);
+
+    expect(result.size).to.equal(0);
+  });
+
+  it('ignores entries with no metadata at all', () => {
+    const result = buildFailedScrapesMap([{}], log);
+
+    expect(result.size).to.equal(0);
+  });
+
+  it('classifies a 401/403 reason as SCRAPE_FORBIDDEN, keyed by the trailing-slash-stripped url', () => {
+    const result = buildFailedScrapesMap([
+      {
+        metadata: {
+          url: 'https://example.com/',
+          status: 'FAILED',
+          reason: 'HTTP 403 error for URL: https://example.com/',
+        },
+      },
+    ], log);
+
+    // stripTrailingSlash only strips a bare-origin trailing slash (matching the same
+    // normalization applied to previewUrls elsewhere in handler.js), so the map key here
+    // drops the trailing slash while a deeper path like '/page/' would not.
+    expect(result.get('https://example.com')).to.deep.equal({
+      code: PreflightError.SCRAPE_FORBIDDEN.code,
+      message: PreflightError.SCRAPE_FORBIDDEN.message,
+    });
+    expect(log.warnCalls).to.have.lengthOf(1);
+  });
+
+  it('classifies a timeout reason as SCRAPE_TIMEOUT', () => {
+    const result = buildFailedScrapesMap([
+      { metadata: { url: 'https://example.com/slow', status: 'FAILED', reason: 'Navigation Timeout Exceeded' } },
+    ], log);
+
+    expect(result.get('https://example.com/slow')).to.deep.equal({
+      code: PreflightError.SCRAPE_TIMEOUT.code,
+      message: PreflightError.SCRAPE_TIMEOUT.message,
+    });
+  });
+
+  it('falls back to SCRAPE_FAILED for any other terminal failure reason', () => {
+    const result = buildFailedScrapesMap([
+      { metadata: { url: 'https://example.com/dns', status: 'FAILED', reason: 'net::ERR_NAME_NOT_RESOLVED' } },
+    ], log);
+
+    expect(result.get('https://example.com/dns')).to.deep.equal({
+      code: PreflightError.SCRAPE_FAILED.code,
+      message: PreflightError.SCRAPE_FAILED.message,
+    });
+  });
+
+  it('falls back to SCRAPE_FAILED when reason is missing entirely', () => {
+    const result = buildFailedScrapesMap([
+      { metadata: { url: 'https://example.com/unknown', status: 'FAILED' } },
+    ], log);
+
+    expect(result.get('https://example.com/unknown').code).to.equal(PreflightError.SCRAPE_FAILED.code);
   });
 });

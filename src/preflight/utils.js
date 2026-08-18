@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 import { Site } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isValidUrl, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
+import { PreflightError } from './error-constants.js';
 
 export async function saveIntermediateResults(context, result, auditName) {
   const {
@@ -33,6 +34,47 @@ export function isValidUrls(urls) {
     isNonEmptyArray(urls)
     && urls.every((url) => isValidUrl(url))
   );
+}
+
+/**
+ * Builds a lookup of URLs whose page scrape failed outright (e.g. 401/403, DNS, timeout), from
+ * the content-scraper's completion message. A failed scrape never writes a scrape record to S3,
+ * so without this signal a check has no way to distinguish "genuinely clean page" from "page was
+ * never actually analyzed" - it would silently report the pre-initialized empty/"clean" result.
+ * @param {Array<{ metadata?: { url?: string, status?: string, reason?: string } }>} scrapeResults
+ *   - The content-scraper completion message's per-URL results.
+ * @param {object} log
+ * @returns {Map<string, { code: string, message: string }>} Keyed by `stripTrailingSlash(url)`
+ *   to match the normalization already used when matching scraped pages back to their preview URL.
+ */
+export function buildFailedScrapesMap(scrapeResults, log) {
+  const failedScrapes = new Map();
+
+  if (!isNonEmptyArray(scrapeResults)) {
+    return failedScrapes;
+  }
+
+  scrapeResults.forEach((result) => {
+    const { url, status, reason } = result?.metadata || {};
+    if (status !== 'FAILED' || !isValidUrl(url)) {
+      return;
+    }
+
+    let preflightError = PreflightError.SCRAPE_FAILED;
+    if (/HTTP 40[13]/.test(reason || '')) {
+      preflightError = PreflightError.SCRAPE_FORBIDDEN;
+    } else if (/timeout/i.test(reason || '')) {
+      preflightError = PreflightError.SCRAPE_TIMEOUT;
+    }
+
+    log.warn(`[preflight-audit] Scrape failed for ${url}, reason: ${reason}. Marking checks with ${preflightError.code}.`);
+    failedScrapes.set(stripTrailingSlash(url), {
+      code: preflightError.code,
+      message: preflightError.message,
+    });
+  });
+
+  return failedScrapes;
 }
 
 export function getPrefixedPageAuthToken(site, token, options) {

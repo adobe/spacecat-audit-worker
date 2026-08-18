@@ -59,6 +59,7 @@ export default async function metatags(context, auditContext) {
     audits,
     auditsResult,
     scrapedObjects,
+    failedScrapes = new Map(),
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -69,7 +70,13 @@ export default async function metatags(context, auditContext) {
   // Create metatags audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_METATAGS, type: 'seo', opportunities: [] });
+    const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+    pageResult.audits.push({
+      name: PREFLIGHT_METATAGS,
+      type: 'seo',
+      opportunities: [],
+      ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
+    });
   });
 
   // Workaround for the updated meta-tags audit which requires a map of URL to S3 key

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
@@ -18,6 +18,7 @@ import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import { formatWcagRule } from '../accessibility/utils/generate-individual-opportunities.js';
+import { PreflightError } from './error-constants.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -74,6 +75,7 @@ export async function scrapeAccessibilityData(context, auditContext) {
     previewUrls,
     step,
     audits,
+    failedScrapes = new Map(),
   } = auditContext;
 
   const siteId = site.getId();
@@ -93,18 +95,29 @@ export async function scrapeAccessibilityData(context, auditContext) {
 
   log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 1: Preparing accessibility scrape`);
 
-  // Create accessibility audit entries for all pages
+  // Create accessibility audit entries for all pages. Pages whose main page scrape already
+  // failed outright (403/DNS/timeout) get a status: 'error' entry now and are excluded below from
+  // both the accessibility scrape request and the poll - their result file will never appear.
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
     if (pageResult) {
-      pageResult.audits.push({ name: PREFLIGHT_ACCESSIBILITY, type: 'a11y', opportunities: [] });
+      const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+      pageResult.audits.push({
+        name: PREFLIGHT_ACCESSIBILITY,
+        type: 'a11y',
+        opportunities: [],
+        ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
+      });
     } else {
       log.warn(`[preflight-audit] No audit entry found for URL: ${url}`);
     }
   });
 
-  // Use the URLs from the preflight job request directly
-  const urlsToScrape = previewUrls.map((url) => ({ url }));
+  // Use the URLs from the preflight job request directly, excluding ones already known to have
+  // failed their main scrape - no point sending them on for accessibility processing too.
+  const urlsToScrape = previewUrls
+    .filter((url) => !failedScrapes.has(stripTrailingSlash(url)))
+    .map((url) => ({ url }));
   log.debug(`[preflight-audit] Using preview URLs for accessibility audit: ${JSON.stringify(urlsToScrape, null, 2)}`);
 
   // Force re-scrape all URLs regardless of existing data
@@ -182,6 +195,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
     step,
     audits,
     auditsResult,
+    failedScrapes = new Map(),
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -204,7 +218,11 @@ export async function processAccessibilityOpportunities(context, auditContext) {
   let pagesWithData = 0;
   let pageErrors = 0;
 
-  for (const url of previewUrls) {
+  // Pages whose main scrape already failed were marked status: 'error' and never sent on for
+  // accessibility scraping (scrapeAccessibilityData) - there's no result file to look up for them.
+  const scannedUrls = previewUrls.filter((url) => !failedScrapes.has(stripTrailingSlash(url)));
+
+  for (const url of scannedUrls) {
     try {
       // Generate the expected filename for this URL
       const filename = generateAccessibilityFilename(url);
@@ -218,7 +236,19 @@ export async function processAccessibilityOpportunities(context, auditContext) {
 
       if (!accessibilityData) {
         log.warn(`[preflight-audit] No accessibility data found for ${url} at key: ${fileKey}`);
-        // Skip to next URL if no data found
+        // No result file ever showed up (scrape timeout) - surface that instead of leaving a
+        // silent "clean" result.
+        const pageResult = audits.get(url);
+        const accessibilityAudit = pageResult.audits.find(
+          (a) => a.name === PREFLIGHT_ACCESSIBILITY,
+        );
+        if (accessibilityAudit) {
+          accessibilityAudit.status = 'error';
+          accessibilityAudit.error = {
+            code: PreflightError.SCRAPE_TIMEOUT.code,
+            message: PreflightError.SCRAPE_TIMEOUT.message,
+          };
+        }
       } else {
         pagesWithData += 1;
         log.debug(`[preflight-audit] Successfully loaded accessibility data for ${url}`);
@@ -363,7 +393,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
  * Accessibility preflight handler
  */
 export default async function accessibility(context, auditContext) {
-  const { previewUrls, timeExecutionBreakdown } = auditContext;
+  const { previewUrls, timeExecutionBreakdown, failedScrapes = new Map() } = auditContext;
   const { log, site, job } = context;
 
   // Check if we have URLs to process
@@ -395,8 +425,12 @@ export default async function accessibility(context, auditContext) {
   // 1 second poll interval
   const pollInterval = 1 * 1000;
 
-  // Generate expected filenames based on preview URLs
-  const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
+  // Generate expected filenames based on preview URLs, excluding ones already known to have
+  // failed their main scrape - no accessibility result file will ever be produced for those, so
+  // waiting on them would just burn the full maxWaitTime for nothing.
+  const expectedFiles = previewUrls
+    .filter((url) => !failedScrapes.has(stripTrailingSlash(url)))
+    .map((url) => generateAccessibilityFilename(url));
 
   log.debug(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
 

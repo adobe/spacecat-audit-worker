@@ -16,6 +16,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
 import { isValidUrls } from '../../src/preflight/utils.js';
+import { PreflightError } from '../../src/preflight/error-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -206,6 +207,31 @@ describe('Preflight Form Accessibility Audit', () => {
           type: 'form-a11y',
           opportunities: [],
         });
+      });
+
+      it('marks a page whose main scrape already failed with status: error and excludes it from form detection (SITES-48986)', async () => {
+        const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
+
+        auditContext.failedScrapes = new Map([
+          ['https://example.com/page1', { code: 'PREFLIGHT-101', message: 'This page could not be accessed. Confirm you have permission to view it.' }],
+        ]);
+        auditContext.audits.get('https://example.com/page1').audits = [];
+        auditContext.audits.get('https://example.com/page2').audits = [];
+
+        const urlsToDetect = await detectFormAccessibility(context, auditContext);
+
+        const page1Audit = auditContext.audits.get('https://example.com/page1').audits[0];
+        expect(page1Audit.status).to.equal('error');
+        expect(page1Audit.error).to.deep.equal({
+          code: 'PREFLIGHT-101',
+          message: 'This page could not be accessed. Confirm you have permission to view it.',
+        });
+
+        const page2Audit = auditContext.audits.get('https://example.com/page2').audits[0];
+        expect(page2Audit.status).to.be.undefined;
+
+        // The failed page is never looked at for forms and never sent to Mystique.
+        expect(urlsToDetect).to.deep.equal([{ form: 'https://example.com/page2', formSource: 'form' }]);
       });
 
       it('should handle missing audit entry for URL', async () => {
@@ -589,6 +615,43 @@ describe('Preflight Form Accessibility Audit', () => {
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] site-123 No form accessibility data found for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json',
         );
+
+        // No result file ever showed up for a URL that wasn't already known to have failed its
+        // main scrape - this is a genuine Mystique round-trip timeout, so it must be surfaced as
+        // an error rather than left as a silent "clean" empty result (SITES-49360).
+        const page1Audit = auditContext.audits.get('https://example.com/page1').audits
+          .find((a) => a.name === 'form-accessibility');
+        expect(page1Audit.status).to.equal('error');
+        expect(page1Audit.error).to.deep.equal({
+          code: PreflightError.SCRAPE_TIMEOUT.code,
+          message: PreflightError.SCRAPE_TIMEOUT.message,
+        });
+      });
+
+      it('skips the result-file lookup entirely for a page whose main scrape already failed (SITES-48986)', async () => {
+        const { processFormAccessibilityOpportunities } = await import('../../src/preflight/form-accessibility.js');
+
+        auditContext.failedScrapes = new Map([
+          ['https://example.com/page1', { code: 'PREFLIGHT-101', message: 'This page could not be accessed. Confirm you have permission to view it.' }],
+        ]);
+
+        s3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.resolve({
+              Body: { transformToString: sinon.stub().resolves(JSON.stringify({ a11yIssues: [] })) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        await processFormAccessibilityOpportunities(context, auditContext);
+
+        expect(log.warn).to.not.have.been.calledWith(
+          '[preflight-audit] site-123 No form accessibility data found for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json',
+        );
+        const page2Audit = auditContext.audits.get('https://example.com/page2').audits
+          .find((a) => a.name === 'form-accessibility');
+        expect(page2Audit.status).to.be.undefined;
       });
 
       it('skips a stale result file (freshness gate) instead of serving previous-run data (SITES-49003)', async () => {
@@ -1867,21 +1930,14 @@ describe('Preflight Form Accessibility Audit', () => {
     it('should have empty urlsToDetect after mapping', async () => {
       const { detectFormAccessibility } = await import('../../src/preflight/form-accessibility.js');
 
-      // Create a scenario where previewUrls exists but map results in empty urlsToScrape
-      // This is a rare edge case but needed for coverage
+      // Create a scenario where previewUrls exists but every URL already failed its main
+      // scrape, so urlsToDetect is empty after filtering out known-failed URLs.
       auditContext.previewUrls = [''];
-      // Mock map only on this instance to return an empty array
-      auditContext.previewUrls.map = function mockMap() {
-        return [];
-      };
+      auditContext.failedScrapes = new Map([['', { code: 'PREFLIGHT-103', message: 'This page could not be checked.' }]]);
 
-      try {
-        await detectFormAccessibility(context, auditContext);
-        expect(log.info).to.have.been.calledWith('[preflight-audit] site-123  No URLs to detect for form accessibility audit');
-        expect(context.sqs.sendMessage).to.not.have.been.called;
-      } finally {
-        // No need to restore map since we only mocked the instance
-      }
+      await detectFormAccessibility(context, auditContext);
+      expect(log.info).to.have.been.calledWith('[preflight-audit] site-123  No URLs to detect for form accessibility audit');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('should handle error during individual file processing and add form-accessibility-error opportunity', async () => {

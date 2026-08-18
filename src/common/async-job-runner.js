@@ -69,7 +69,7 @@ export class AsyncJobRunner extends StepAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, jobId, auditContext = {},
+      type, jobId, auditContext = {}, scrapeResults,
     } = message;
     try {
       const job = await this.jobProvider(auditContext.jobId || jobId, context);
@@ -94,7 +94,7 @@ export class AsyncJobRunner extends StepAudit {
       const step = this.getStep(stepName);
 
       const updatedStepContext = {
-        ...context, site, job, type, auditContext,
+        ...context, site, job, type, auditContext, scrapeResults,
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);

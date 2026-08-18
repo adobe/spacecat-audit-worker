@@ -31,6 +31,7 @@ import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
 import readabilityData from '../fixtures/preflight/preflight-identify-readability.json' with { type: 'json' };
 import { getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults } from '../../src/preflight/utils.js';
+import { PreflightError } from '../../src/preflight/error-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1351,6 +1352,65 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    it('marks every check with status: error when the content-scraper reports the page scrape as FAILED (SITES-48986)', async function () {
+      this.timeout(10000);
+
+      // No scrape.json exists for this URL - the content-scraper never wrote one because the
+      // scrape itself failed (this is the actual production signature of a 403/DNS/timeout).
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({ Contents: [], IsTruncated: false });
+        }
+        return Promise.resolve({});
+      });
+
+      // The completion message that triggered this step reports the scrape as FAILED for the
+      // one URL in this job - this is the signal AsyncJobRunner now threads through onto context.
+      context.scrapeResults = [
+        {
+          metadata: {
+            url: 'https://main--example--page.aem.page/page1',
+            status: 'FAILED',
+            reason: 'HTTP 403 error for URL: https://main--example--page.aem.page/page1',
+          },
+        },
+      ];
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          enableAuthentication: false,
+        },
+      });
+
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await preflightAuditFunction(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+
+      expect(actualResult).to.have.lengthOf(1);
+      const [pageResult] = actualResult;
+      // readability is a separate audit family untouched by this fix (not part of the
+      // scrapedObjects.forEach blind spot these tickets cover) - accessibility/form-accessibility
+      // are esmocked out in this describe block's setup and covered by their own test files.
+      const checksUnderTest = pageResult.audits.filter((audit) => audit.name !== 'readability');
+      expect(checksUnderTest.map((audit) => audit.name)).to.include.members([
+        AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT, 'canonical', 'metatags', 'headings', 'links',
+      ]);
+      checksUnderTest.forEach((audit) => {
+        expect(audit.status, `expected ${audit.name} to be marked as failed`).to.equal('error');
+        expect(audit.error).to.deep.equal({
+          code: PreflightError.SCRAPE_FORBIDDEN.code,
+          message: PreflightError.SCRAPE_FORBIDDEN.message,
+        });
+        expect(audit.opportunities).to.deep.equal([]);
+      });
+    });
+
     // eslint-disable-next-line func-names
     it('handles invalid http:// URLs gracefully in insecure link detection', async function () {
       this.timeout(10000);
@@ -2379,6 +2439,35 @@ describe('Preflight Audit', () => {
         );
       });
 
+      it('marks a page whose main scrape already failed with status: error and excludes it from the scrape request (SITES-48986)', async () => {
+        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
+
+        auditContext.failedScrapes = new Map([
+          ['https://example.com/page1', { code: 'PREFLIGHT-101', message: 'This page could not be accessed. Confirm you have permission to view it.' }],
+        ]);
+        // Start from a clean slate - scrapeAccessibilityData pushes a new entry rather than
+        // replacing, so the pre-seeded beforeEach entry would otherwise sit at index 0.
+        auditContext.audits.get('https://example.com/page1').audits = [];
+        auditContext.audits.get('https://example.com/page2').audits = [];
+
+        await scrapeAccessibilityData(context, auditContext);
+
+        const page1Audit = auditContext.audits.get('https://example.com/page1').audits[0];
+        expect(page1Audit.status).to.equal('error');
+        expect(page1Audit.error).to.deep.equal({
+          code: 'PREFLIGHT-101',
+          message: 'This page could not be accessed. Confirm you have permission to view it.',
+        });
+
+        const page2Audit = auditContext.audits.get('https://example.com/page2').audits[0];
+        expect(page2Audit.status).to.be.undefined;
+
+        // Only the non-failed URL is sent on for accessibility scraping.
+        expect(sqs.sendMessage).to.have.been.calledOnce;
+        const message = sqs.sendMessage.getCall(0).args[1];
+        expect(message.urls).to.deep.equal([{ url: 'https://example.com/page2' }]);
+      });
+
       it('should handle missing S3 bucket configuration', async () => {
         const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
@@ -2858,6 +2947,49 @@ describe('Preflight Audit', () => {
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No accessibility data found for https://example.com/page1 at key: accessibility-preflight/site-123/example_com_page1.json',
         );
+
+        // No result file ever showed up for a URL that wasn't already known to have failed its
+        // main scrape - this is a genuine poll timeout, so it must be surfaced as an error rather
+        // than left as a silent "clean" empty result (SITES-49360).
+        const page1Audit = auditContext.audits.get('https://example.com/page1').audits[0];
+        expect(page1Audit.status).to.equal('error');
+        expect(page1Audit.error).to.deep.equal({
+          code: PreflightError.SCRAPE_TIMEOUT.code,
+          message: PreflightError.SCRAPE_TIMEOUT.message,
+        });
+      });
+
+      it('skips the S3 lookup entirely for a page whose main scrape already failed (SITES-48986)', async () => {
+        const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+
+        auditContext.failedScrapes = new Map([
+          ['https://example.com/page1', { code: 'PREFLIGHT-101', message: 'This page could not be accessed. Confirm you have permission to view it.' }],
+        ]);
+
+        s3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.resolve({
+              Body: { transformToString: sinon.stub().resolves(JSON.stringify({ violations: {} })) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        await processAccessibilityOpportunities(context, auditContext);
+
+        // The known-failed page is skipped entirely - no S3 lookup, no "no data found" warning,
+        // and its (already error-tagged, by scrapeAccessibilityData in the real flow) audit entry
+        // is left alone rather than being overwritten with a timeout error or violation data.
+        expect(log.warn).to.not.have.been.calledWith(
+          '[preflight-audit] No accessibility data found for https://example.com/page1 at key: accessibility-preflight/site-123/example_com_page1.json',
+        );
+        const page1Audit = auditContext.audits.get('https://example.com/page1').audits[0];
+        expect(page1Audit.opportunities).to.deep.equal([]);
+
+        // The non-failed page is processed normally.
+        const page2Audit = auditContext.audits.get('https://example.com/page2').audits[0];
+        expect(page2Audit.status).to.be.undefined;
+        expect(page2Audit.opportunities).to.deep.equal([]);
       });
 
       it('should add timing information to execution breakdown', async () => {
@@ -4120,23 +4252,16 @@ describe('Preflight Audit', () => {
     it('should have empty urlsToScrape after mapping', async () => {
       const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-      // Create a scenario where previewUrls exists but map results in empty urlsToScrape
-      // This is a rare edge case but needed for coverage
+      // Create a scenario where previewUrls exists but every URL already failed its main
+      // scrape, so urlsToScrape is empty after filtering out known-failed URLs.
       auditContext.previewUrls = [''];
-      // Mock map only on this instance to return an empty array
-      auditContext.previewUrls.map = function mockMap() {
-        return [];
-      };
+      auditContext.failedScrapes = new Map([['', { code: 'PREFLIGHT-103', message: 'This page could not be checked.' }]]);
 
-      try {
-        await scrapeAccessibilityData(context, auditContext);
+      await scrapeAccessibilityData(context, auditContext);
 
-        // Should log the "No URLs to scrape" message from line 126
-        expect(log.info).to.have.been.calledWith('[preflight-audit] No URLs to scrape');
-        expect(context.sqs.sendMessage).to.not.have.been.called;
-      } finally {
-        // No need to restore map since we only mocked the instance
-      }
+      // Should log the "No URLs to scrape" message
+      expect(log.info).to.have.been.calledWith('[preflight-audit] No URLs to scrape');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('should handle error during individual file processing and add accessibility-error opportunity', async () => {

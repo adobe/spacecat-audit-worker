@@ -19,6 +19,7 @@ import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults, formatStructuredAuditLog,
+  buildFailedScrapesMap,
 } from './utils.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 import { PreflightError } from './error-constants.js';
@@ -120,7 +121,7 @@ export const preflightAudit = async (context) => {
   const startTimestamp = new Date().toISOString();
 
   const {
-    site, job, s3Client, log, dataAccess,
+    site, job, s3Client, log, dataAccess, scrapeResults,
   } = context;
   const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
@@ -251,6 +252,10 @@ export const preflightAudit = async (context) => {
         })),
     );
 
+    // URLs whose scrape failed outright (403/DNS/timeout) - no scrape record will ever show up
+    // for these in scrapedObjects, so checks must not fall through to a silent "clean" default.
+    const failedScrapes = buildFailedScrapesMap(scrapeResults, log);
+
     // Initialize results
     const auditsResult = previewUrls.map((url) => ({
       pageUrl: url,
@@ -272,14 +277,22 @@ export const preflightAudit = async (context) => {
       try {
         previewUrls.forEach((url) => {
           const pageResult = audits.get(url);
+          const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+          const errorFields = scrapeError ? { status: 'error', error: scrapeError } : {};
           if (bodySizeEnabled) {
-            pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
+            pageResult.audits.push({
+              name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [], ...errorFields,
+            });
           }
           if (loremIpsumEnabled) {
-            pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
+            pageResult.audits.push({
+              name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [], ...errorFields,
+            });
           }
           if (h1CountEnabled) {
-            pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
+            pageResult.audits.push({
+              name: AUDIT_H1_COUNT, type: 'seo', opportunities: [], ...errorFields,
+            });
           }
         });
 
@@ -429,6 +442,7 @@ export const preflightAudit = async (context) => {
           auditsResult,
           s3Keys,
           scrapedObjects,
+          failedScrapes,
           pageAuthToken,
           urls,
           timeExecutionBreakdown,

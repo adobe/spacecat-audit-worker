@@ -143,7 +143,7 @@ describe('Preflight Canonical Audit', () => {
 
     it('surfaces every canonical tag selector for canonical-tag-multiple, not just the first', async () => {
       // Protects: the whole point of this check is "there is more than one" — surfacing only
-      // one tag's selector would hide the rest from the author (SITES-48646 follow-up).
+      // one tag's selector would hide the rest from the author ( follow-up).
       const ctx = buildContext();
       const rawBody = `<html><head>
         <link rel="canonical" href="${PAGE_URL}">

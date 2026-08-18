@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'crypto';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 
 import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
@@ -19,6 +19,7 @@ import { sleep } from '../support/utils.js';
 import { getObjectFromKey, getObjectMetadataUsingPrefix } from '../utils/s3-utils.js';
 import { generateAccessibilityFilename } from './accessibility.js';
 import { getDomElementSelector } from './utils/dom-selector.js';
+import { PreflightError } from './error-constants.js';
 
 export const PREFLIGHT_FORM_ACCESSIBILITY = 'form-accessibility';
 
@@ -130,6 +131,7 @@ export async function detectFormAccessibility(context, auditContext) {
     previewUrls,
     step,
     audits,
+    failedScrapes = new Map(),
   } = auditContext;
 
   const siteId = site.getId();
@@ -149,11 +151,20 @@ export async function detectFormAccessibility(context, auditContext) {
 
   log.debug(`[preflight-audit] ${siteId}, job: ${jobId}, step: ${step}. Step 1: Preparing form accessibility scrape`);
 
-  // Create form accessibility audit entries for all pages
+  // Create form accessibility audit entries for all pages. Pages whose main page scrape already
+  // failed outright (403/DNS/timeout) get a status: 'error' entry now and are excluded below from
+  // form detection - there's no scraped HTML to find <form> elements in, and nothing useful to
+  // send to Mystique.
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
     if (pageResult) {
-      pageResult.audits.push({ name: PREFLIGHT_FORM_ACCESSIBILITY, type: 'form-a11y', opportunities: [] });
+      const scrapeError = failedScrapes.get(stripTrailingSlash(url));
+      pageResult.audits.push({
+        name: PREFLIGHT_FORM_ACCESSIBILITY,
+        type: 'form-a11y',
+        opportunities: [],
+        ...(scrapeError ? { status: 'error', error: scrapeError } : {}),
+      });
     } else {
       log.warn(`[preflight-audit] ${siteId}, No audit entry found for URL: ${url}`);
     }
@@ -164,7 +175,9 @@ export async function detectFormAccessibility(context, auditContext) {
   // just the first <form> in DOM order (e.g. a header search widget ahead of
   // the actual content form) — see SITES-48703.
   const entriesPerPage = await Promise.all(
-    previewUrls.map((url) => findFormsOnPage(url, s3Client, bucketName, siteId, log)),
+    previewUrls
+      .filter((url) => !failedScrapes.has(stripTrailingSlash(url)))
+      .map((url) => findFormsOnPage(url, s3Client, bucketName, siteId, log)),
   );
   const urlsToDetect = entriesPerPage.flat();
 
@@ -242,6 +255,7 @@ export async function processFormAccessibilityOpportunities(
     step,
     audits,
     auditsResult,
+    failedScrapes = new Map(),
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -261,8 +275,12 @@ export async function processFormAccessibilityOpportunities(
   // Falls back to one generic entry per URL when the caller didn't pass the
   // detected entries (e.g. this function called standalone) — preserves the
   // original one-file-per-URL behavior in that case.
-  const resolvedFormEntries = formEntries
-    || previewUrls.map((url) => ({ form: url, formSource: 'form' }));
+  // Pages whose main scrape already failed were marked status: 'error' and never looked at for
+  // forms (detectFormAccessibility) - exclude them here too, including in the standalone-call
+  // fallback below, so there's no result file lookup attempted for them.
+  const resolvedFormEntries = (formEntries
+    || previewUrls.map((url) => ({ form: url, formSource: 'form' })))
+    .filter(({ form: url }) => !failedScrapes.has(stripTrailingSlash(url)));
 
   try {
     // When invoked from the main runner we get the freshness threshold the poll used.
@@ -317,7 +335,19 @@ export async function processFormAccessibilityOpportunities(
 
         if (!accessibilityData) {
           log.warn(`[preflight-audit] ${siteId} No form accessibility data found for ${url} at key: ${fileKey}`);
-          // Skip to next URL if no data found
+          // No result file ever showed up (Mystique round-trip timeout) - surface that instead of
+          // leaving a silent "clean" result.
+          const pageResult = audits.get(url);
+          const accessibilityAudit = pageResult.audits.find(
+            (a) => a.name === PREFLIGHT_FORM_ACCESSIBILITY,
+          );
+          if (accessibilityAudit) {
+            accessibilityAudit.status = 'error';
+            accessibilityAudit.error = {
+              code: PreflightError.SCRAPE_TIMEOUT.code,
+              message: PreflightError.SCRAPE_TIMEOUT.message,
+            };
+          }
         } else {
           formsWithData += 1;
           log.info(`[preflight-audit] ${siteId} Successfully loaded form accessibility data for ${url}`);
