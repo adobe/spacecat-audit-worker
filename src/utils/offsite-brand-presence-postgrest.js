@@ -14,11 +14,12 @@ import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import {
   appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
 } from './offsite-logging.js';
-import { PROVIDERS } from '../offsite-brand-presence/constants.js';
+import { ACCEPTED_REGIONS, PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
 export const MAX_EXECUTION_FETCH_PAGES = 50;
-const DEFAULT_REGION_CODE = 'US';
+
+const DEFAULT_REGION_CODES = [...ACCEPTED_REGIONS];
 
 // Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
 // Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted.
@@ -82,7 +83,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
   startDate,
   endDate,
   models,
-  regionCode = DEFAULT_REGION_CODE,
+  regionCodes = DEFAULT_REGION_CODES,
   log,
 }) {
   const rows = [];
@@ -104,7 +105,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
       .select('id, execution_date, topics, prompt, category_name, region_code, model, brand_presence_sources(source_urls(url))')
       .eq('organization_id', organizationId)
       .eq('site_id', siteId)
-      .eq('region_code', regionCode)
+      .in('region_code', regionCodes)
       .in('model', models)
       .gte('execution_date', startDate)
       .lte('execution_date', endDate)
@@ -168,7 +169,7 @@ export async function loadBrandPresenceDataFromPostgrest({
   organizationId,
   previousWeeks,
   postgrestClient,
-  regionCode = DEFAULT_REGION_CODE,
+  regionCodes = DEFAULT_REGION_CODES,
   log,
 }) {
   if (!siteId || !organizationId || !postgrestClient?.from) {
@@ -181,6 +182,14 @@ export async function loadBrandPresenceDataFromPostgrest({
     return null;
   }
 
+  // Avoid firing a query that's guaranteed to match nothing.
+  if (regionCodes.length === 0) {
+    log?.warn(bp(`No region codes provided for site ${siteId}, skipping PostgREST query`, {
+      event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', reason: 'no_region_codes',
+    }));
+    return null;
+  }
+
   const { startDate, endDate } = dateWindow;
 
   try {
@@ -190,7 +199,7 @@ export async function loadBrandPresenceDataFromPostgrest({
       startDate,
       endDate,
       models,
-      regionCode,
+      regionCodes,
       log,
     });
 

@@ -242,7 +242,14 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
- * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit.
+ *   Single-URL coverage guard: a suggestion is only eligible for OUTDATED if its data.url is
+ *   present in the set (i.e. the page was actually re-examined this run).
+ * @param {Function} [params.isWithinCoverage] - Optional coverage predicate over a suggestion's
+ *   data object, returning true when the suggestion was actually re-examined this run. Use this
+ *   instead of scrapedUrlsSet when coverage is keyed by something other than a single `url`
+ *   (e.g. broken-internal-links, whose items are urlFrom/urlTo pairs — SITES-49911). Takes
+ *   precedence over scrapedUrlsSet; when neither is provided the guard is a no-op.
  * @param {boolean} [params.outdateInProgress] - Defaults to false, preserving today's
  *   behavior of leaving IN_PROGRESS suggestions alone. Pass true to also outdate them
  *   when no longer detected.
@@ -259,6 +266,7 @@ export const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  isWithinCoverage = null,
   outdateInProgress = false,
   protectEditedFromOutdated = false,
 }) => {
@@ -303,9 +311,18 @@ export const handleOutdatedSuggestions = async ({
       );
     })
     .filter((existing) => {
-      // mark suggestions as outdated only if their URL was actually scraped
+      // Scope-coverage guard: only outdate a suggestion if it was actually re-examined
+      // this run, so a suggestion missing from newDataKeys purely because its page/link
+      // fell outside this run's coverage is not mistaken for a genuine fix (SITES-49911).
+      const data = existing.getData?.();
+      // Caller-supplied predicate wins — used when coverage is not keyed by a single `url`
+      // (e.g. broken-internal-links pairs, keyed on the crawled source page urlFrom).
+      if (typeof isWithinCoverage === 'function') {
+        return isWithinCoverage(data);
+      }
+      // Legacy single-URL coverage set: mark outdated only if the URL was actually scraped.
       if (scrapedUrlsSet) {
-        const suggestionUrl = existing.getData()?.url;
+        const suggestionUrl = data?.url;
         return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
       }
       return true;
