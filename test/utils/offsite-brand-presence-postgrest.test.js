@@ -23,7 +23,6 @@ import {
   loadBrandPresenceDataFromPostgrest,
   mapExecutionsToLegacyBrandPresenceRows,
 } from '../../src/utils/offsite-brand-presence-postgrest.js';
-import { ACCEPTED_REGIONS } from '../../src/offsite-brand-presence/constants.js';
 
 use(sinonChai);
 
@@ -278,7 +277,7 @@ describe('offsite-brand-presence-postgrest', () => {
 
       expect(result).to.equal(null);
       const regionCall = capture.in.find(([col]) => col === 'region_code');
-      expect(regionCall[1]).to.deep.equal([...ACCEPTED_REGIONS]);
+      expect(regionCall).to.equal(undefined);
       const modelCall = capture.in.find(([col]) => col === 'model');
       expect(modelCall).to.not.equal(undefined);
     });
@@ -291,7 +290,7 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(log.info).to.have.been.calledWithMatch('No execution rows found');
     });
 
-    it('queries executions with embedded sources, mapped models, and region_code in ACCEPTED_REGIONS', async () => {
+    it('queries executions with embedded sources and mapped models, without a region filter', async () => {
       const capture = createCapture();
       const chain = createQueryChain(capture, [{
         data: [makeExecution({
@@ -325,9 +324,9 @@ describe('offsite-brand-presence-postgrest', () => {
         ['site_id', SITE_ID],
       ]);
       expect(capture.in).to.deep.include.members([
-        ['region_code', [...ACCEPTED_REGIONS]],
         ['model', getBrandPresenceDbModels()],
       ]);
+      expect(capture.in.find(([col]) => col === 'region_code')).to.equal(undefined);
       expect(capture.order).to.deep.equal([
         ['execution_date', { ascending: false }],
         ['id', { ascending: false }],
@@ -335,21 +334,7 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
     });
 
-    it('returns null and warns without querying when regionCodes resolves empty (no silent zero)', async () => {
-      const postgrestClient = { from: sandbox.stub() };
-
-      const result = await loadWith({
-        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
-        postgrestClient,
-        regionCodes: [],
-      });
-
-      expect(result).to.equal(null);
-      expect(postgrestClient.from).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWithMatch('No region codes provided');
-    });
-
-    it('applies the region_code filter on every paginated page, not just the first', async () => {
+    it('applies the model filter on every paginated page, not just the first', async () => {
       const capture = createCapture();
       const firstBatch = Array.from(
         { length: EXECUTION_FETCH_BATCH_SIZE },
@@ -372,9 +357,10 @@ describe('offsite-brand-presence-postgrest', () => {
 
       await loadWith({ previousWeeks: DEFAULT_PREVIOUS_WEEKS, postgrestClient });
 
-      const regionCalls = capture.in.filter(([col]) => col === 'region_code');
-      expect(regionCalls).to.have.lengthOf(2);
-      regionCalls.forEach(([, codes]) => expect(codes).to.deep.equal([...ACCEPTED_REGIONS]));
+      const modelCalls = capture.in.filter(([col]) => col === 'model');
+      expect(modelCalls).to.have.lengthOf(2);
+      modelCalls.forEach(([, models]) => expect(models).to.deep.equal(getBrandPresenceDbModels()));
+      expect(capture.in.find(([col]) => col === 'region_code')).to.equal(undefined);
     });
 
     it('uses keyset pagination and re-fetches when a batch fills the limit', async () => {

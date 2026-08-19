@@ -35,7 +35,6 @@ import {
   DRS_URLS_LIMIT,
   RETRIABLE_STATUSES,
   RETRY_DELAY_MS,
-  ACCEPTED_REGIONS,
   OFFSITE_DOMAINS,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
@@ -261,7 +260,6 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
  * Populates both the global URL map (for URL store) and the topic map (for guideline store).
- * Only processes rows whose Region is in ACCEPTED_REGIONS.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
@@ -272,17 +270,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  */
 function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brandTokens) {
   const rows = data.data;
-  let rowsWithSources = 0;
-  let rowsSkippedForRegion = 0;
   for (const row of rows) {
     const sources = row.Sources?.trim();
     if (!sources) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    rowsWithSources += 1;
-    if (!ACCEPTED_REGIONS.has(row.Region)) {
-      rowsSkippedForRegion += 1;
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -321,9 +311,6 @@ function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brand
     }
   }
 
-  if (rowsWithSources > 0 && rowsSkippedForRegion === rowsWithSources) {
-    olog.warn('url_extract', `All ${rowsWithSources} row(s) with sources were skipped: region not in ACCEPTED_REGIONS`, { rows: rowsWithSources });
-  }
   olog.debug('url_extract', `Found ${allUrls.size} unique source URLs`, { count: allUrls.size });
 }
 

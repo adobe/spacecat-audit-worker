@@ -43,9 +43,6 @@ export const SEMRUSH_PLATFORM_BY_PROVIDER = Object.freeze({
 
 export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
-// Region codes whose brand-presence rows are processed.
-export const ACCEPTED_REGIONS = Object.freeze(new Set(['US', 'GB', 'CA', 'AU', 'IE', 'NZ', 'DE', 'FR', 'ES', 'IT', 'PT']));
-
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
   FAILED: 'failed',
