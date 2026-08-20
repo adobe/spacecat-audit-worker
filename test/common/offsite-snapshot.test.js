@@ -18,6 +18,7 @@ import {
   SNAPSHOT_TAG,
   SNAPSHOT_KINDS,
   buildSnapshotData,
+  isOffsiteSnapshot,
   findSnapshotByTriggerAuditId,
   prepareSuppressedRunSnapshot,
   prepareSupersededRunSnapshot,
@@ -109,6 +110,30 @@ describe('offsite-snapshot', () => {
       });
       expect(result.snapshot).to.not.have.property('evergreenOpportunityId');
       expect(result.snapshot).to.not.have.property('triggerAuditId');
+    });
+  });
+
+  describe('isOffsiteSnapshot', () => {
+    it('recognizes a tagged opportunity of the requested type', () => {
+      expect(isOffsiteSnapshot(makeSnapshotOpportunity(), 'cited-analysis')).to.be.true;
+    });
+
+    it('rejects a different type or missing managed tag', () => {
+      expect(isOffsiteSnapshot(
+        makeSnapshotOpportunity({ type: 'reddit-analysis' }),
+        'cited-analysis',
+      )).to.be.false;
+      expect(isOffsiteSnapshot(
+        makeSnapshotOpportunity({ tags: [] }),
+        'cited-analysis',
+      )).to.be.false;
+    });
+
+    it('rejects an opportunity without a tags array', () => {
+      expect(isOffsiteSnapshot(
+        makeSnapshotOpportunity({ tags: null }),
+        'cited-analysis',
+      )).to.be.false;
     });
   });
 
