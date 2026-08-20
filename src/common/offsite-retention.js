@@ -10,11 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
-import { subDays, differenceInDays } from 'date-fns';
+import { subDays } from 'date-fns';
 import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { isOffsiteSnapshot } from './offsite-snapshot.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
+// See docs/decisions/004-offsite-snapshot-retention-window.md for the rationale.
 export const SNAPSHOT_RETENTION_DAYS = 30;
+
+// Bounds the blast radius of a single invocation — e.g. a dormant site's first refresh after
+// months, when many snapshots become eligible at once. findExpiredSnapshots sorts oldest-first,
+// so any remainder beyond this cap drains across subsequent refreshes rather than all at once.
+export const MAX_DELETIONS_PER_RUN = 50;
+
+// Mirrors the mapping in offsite-snapshot.js — kept local to avoid a cross-module circular import.
+const AUDIT_SLUG_BY_TYPE = {
+  'cited-analysis': AUDIT.CITED,
+  'reddit-analysis': AUDIT.REDDIT,
+  'youtube-analysis': AUDIT.YOUTUBE,
+};
 
 /**
  * Finds managed offsite snapshots older than the retention cutoff, oldest first.
@@ -23,6 +39,7 @@ export async function findExpiredSnapshots({
   dataAccess, siteId, auditType, log,
 }) {
   const { Opportunity } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
 
   let ignoredOpportunities;
 
@@ -30,7 +47,9 @@ export async function findExpiredSnapshots({
     ignoredOpportunities = await Opportunity
       .allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (error) {
-    log.error(`[Offsite][Retention] Failed to find snapshots siteId=${siteId} auditType=${auditType} error=${error.message}`);
+    olog.failure('retention_lookup', `Failed to find snapshots for auditType ${auditType}`, {
+      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    });
     return [];
   }
 
@@ -46,42 +65,51 @@ export async function findExpiredSnapshots({
 
 /**
  * Deletes expired snapshots without interrupting the refresh that invoked retention.
+ *
+ * Deletion is batched (bulk `removeByIds`) rather than per-record, per CLAUDE.md's N+1 rule:
+ * a concurrent `Promise.all` over individual `.remove()` calls would fan out to
+ * `expired * (1 + suggestionsPerSnapshot)` concurrent requests against the shared connection
+ * pool — worst-case exactly when a dormant site resumes refreshing after an accumulated
+ * backlog. Suggestions are read sequentially (not concurrently) ahead of the bulk removes to
+ * avoid a similar read-side fan-out; batch sizes are bounded by MAX_DELETIONS_PER_RUN.
+ *
+ * This trades per-record failure isolation for the bulk pattern: a failure here throws and is
+ * caught by the caller (retention must not fail an otherwise successful refresh), rather than
+ * reporting a partial success/failure count.
  */
 export async function deleteExpiredSnapshots({
   dataAccess, siteId, auditType, log,
 }) {
-  const expiredSnapshots = await findExpiredSnapshots({
+  const { Opportunity, Suggestion } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
+
+  const allExpiredSnapshots = await findExpiredSnapshots({
     dataAccess, siteId, auditType, log,
   });
+  const expiredSnapshots = allExpiredSnapshots.slice(0, MAX_DELETIONS_PER_RUN);
 
-  const deletionResults = await Promise.all(expiredSnapshots.map(async (snapshot) => {
-    const snapshotAgeDays = differenceInDays(new Date(), new Date(snapshot.getCreatedAt()));
-    const triggerAuditId = snapshot.getData()?.snapshot?.triggerAuditId || 'unknown';
+  if (expiredSnapshots.length === 0) {
+    return 0;
+  }
 
-    try {
-      // Dependent suggestions cascade-delete with the snapshot opportunity.
-      await snapshot.remove();
+  const suggestionIds = [];
+  for (const snapshot of expiredSnapshots) {
+    // Sequential by design — see function doc.
+    // eslint-disable-next-line no-await-in-loop
+    const suggestions = await snapshot.getSuggestions();
+    suggestionIds.push(...suggestions.map((suggestion) => suggestion.getId()));
+  }
 
-      log.info(`[Offsite][Retention] Deleted snapshot opportunityId=${snapshot.getId()} `
-        + `siteId=${siteId} auditType=${auditType} triggerAuditId=${triggerAuditId} `
-        + `snapshotAgeDays=${snapshotAgeDays}`);
+  if (suggestionIds.length > 0) {
+    await Suggestion.removeByIds(suggestionIds);
+  }
 
-      return true;
-    } catch (error) {
-      log.error(`[Offsite][Retention] Failed to delete snapshot opportunityId=${snapshot.getId()} `
-        + `siteId=${siteId} auditType=${auditType} triggerAuditId=${triggerAuditId} `
-        + `snapshotAgeDays=${snapshotAgeDays} error=${error.message}`);
+  const snapshotIds = expiredSnapshots.map((snapshot) => snapshot.getId());
+  await Opportunity.removeByIds(snapshotIds);
 
-      return false;
-    }
-  }));
+  olog.success('retention_delete', `Deleted ${snapshotIds.length} expired snapshot(s) for auditType ${auditType}`, {
+    peer: PEER.POSTGRES, direction: 'outbound', eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
+  });
 
-  const deletedSnapshotCount = deletionResults.filter(Boolean).length;
-  const failedSnapshotCount = expiredSnapshots.length - deletedSnapshotCount;
-
-  log.info(`[Offsite][Retention] Snapshot deletion summary siteId=${siteId} `
-    + `auditType=${auditType} eligible=${expiredSnapshots.length} `
-    + `deleted=${deletedSnapshotCount} failed=${failedSnapshotCount}`);
-
-  return deletedSnapshotCount;
+  return snapshotIds.length;
 }

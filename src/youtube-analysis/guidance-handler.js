@@ -228,7 +228,9 @@ export default async function handler(message, context) {
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      log.error(`[Offsite][Retention] Unexpected failure siteId=${siteId} auditType=${auditType} error=${error.message}`);
+      ologOpp.failure('retention_delete', `Unexpected retention failure for auditType ${auditType}`, {
+        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      }, error);
     }
 
     if (auditId) {

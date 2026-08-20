@@ -18,6 +18,7 @@ import { subDays } from 'date-fns';
 import { SNAPSHOT_TAG } from '../../src/common/offsite-snapshot.js';
 import {
   SNAPSHOT_RETENTION_DAYS,
+  MAX_DELETIONS_PER_RUN,
   findExpiredSnapshots,
   deleteExpiredSnapshots,
 } from '../../src/common/offsite-retention.js';
@@ -51,14 +52,14 @@ describe('offsite-retention', () => {
     tags = [SNAPSHOT_TAG],
     snapshot = { kind: 'superseded-refresh', triggerAuditId: `trigger-${id}` },
     createdAt,
-    remove,
+    suggestions = [],
   }) => ({
     getId: () => id,
     getType: () => type,
     getTags: () => tags,
     getData: () => ({ snapshot }),
     getCreatedAt: () => createdAt,
-    remove: remove || sandbox.stub().resolves(),
+    getSuggestions: sandbox.stub().resolves(suggestions),
   });
 
   describe('SNAPSHOT_RETENTION_DAYS', () => {
@@ -121,9 +122,24 @@ describe('offsite-retention', () => {
       });
 
       expect(expiredSnapshots).to.deep.equal([]);
-      expect(log.error).to.have.been.calledWith(sinon.match(
-        /\[Offsite\]\[Retention\] Failed to find snapshots siteId=site-1 auditType=cited-analysis error=DB down/,
-      ));
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/event=retention_lookup/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/audit=cited/))
+          .and(sinon.match(/errorMessage="DB down"/)),
+      );
+    });
+
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      const dataAccess = {
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
+      };
+
+      await findExpiredSnapshots({
+        dataAccess, siteId, auditType: 'not-a-real-audit', log,
+      });
+
+      expect(log.error).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
 
     it('returns [] when the lookup resolves to null/undefined', async () => {
@@ -200,19 +216,25 @@ describe('offsite-retention', () => {
   });
 
   describe('deleteExpiredSnapshots', () => {
-    it('deletes every expired snapshot and returns the deleted count', async () => {
+    it('bulk-removes suggestions then snapshots, and returns the deleted count', async () => {
+      const firstSuggestion = { getId: () => 'sugg-1' };
+      const secondSuggestion = { getId: () => 'sugg-2' };
       const firstExpiredSnapshot = buildSnapshotOpportunity({
-        id: 'first-expired', createdAt: daysAgo(45),
+        id: 'first-expired', createdAt: daysAgo(45), suggestions: [firstSuggestion],
       });
       const secondExpiredSnapshot = buildSnapshotOpportunity({
-        id: 'second-expired', createdAt: daysAgo(60),
+        id: 'second-expired', createdAt: daysAgo(60), suggestions: [secondSuggestion],
       });
+      const removeByIdsSuggestion = sandbox.stub().resolves();
+      const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
         Opportunity: {
           allBySiteIdAndStatus: sandbox.stub().resolves([
             firstExpiredSnapshot, secondExpiredSnapshot,
           ]),
+          removeByIds: removeByIdsOpportunity,
         },
+        Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
       const deletedSnapshotCount = await deleteExpiredSnapshots({
@@ -220,80 +242,27 @@ describe('offsite-retention', () => {
       });
 
       expect(deletedSnapshotCount).to.equal(2);
-      expect(firstExpiredSnapshot.remove).to.have.been.calledOnce;
-      expect(secondExpiredSnapshot.remove).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWith(sinon.match(
-        /Snapshot deletion summary siteId=site-1 auditType=cited-analysis eligible=2 deleted=2 failed=0/,
-      ));
+      // Oldest-first ordering from findExpiredSnapshots is preserved into the bulk call.
+      expect(removeByIdsSuggestion).to.have.been.calledOnceWith(['sugg-2', 'sugg-1']);
+      expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['second-expired', 'first-expired']);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=retention_delete/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/eligible=2/))
+          .and(sinon.match(/deleted=2/)),
+      );
     });
 
-    it('continues after one deletion fails and counts only successful deletions', async () => {
-      const failingSnapshot = buildSnapshotOpportunity({
-        id: 'failing',
-        createdAt: daysAgo(45),
-        remove: sandbox.stub().rejects(new Error('FK violation')),
-      });
-      const firstDeletedSnapshot = buildSnapshotOpportunity({
-        id: 'deleted-1', createdAt: daysAgo(50),
-      });
-      const secondDeletedSnapshot = buildSnapshotOpportunity({
-        id: 'deleted-2', createdAt: daysAgo(55),
-      });
+    it('skips the suggestion bulk-remove when no expired snapshot has suggestions', async () => {
+      const snapshot = buildSnapshotOpportunity({ id: 'no-suggestions', createdAt: daysAgo(45) });
+      const removeByIdsSuggestion = sandbox.stub().resolves();
+      const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
         Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub().resolves([
-            failingSnapshot, firstDeletedSnapshot, secondDeletedSnapshot,
-          ]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]),
+          removeByIds: removeByIdsOpportunity,
         },
-      };
-
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
-        dataAccess, siteId, auditType, log,
-      });
-
-      expect(deletedSnapshotCount).to.equal(2);
-      expect(failingSnapshot.remove).to.have.been.calledOnce;
-      expect(firstDeletedSnapshot.remove).to.have.been.calledOnce;
-      expect(secondDeletedSnapshot.remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(
-          /\[Offsite\]\[Retention\] Failed to delete snapshot opportunityId=failing siteId=site-1 auditType=cited-analysis triggerAuditId=trigger-failing snapshotAgeDays=45 error=FK violation/,
-        ),
-      );
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(
-          /Snapshot deletion summary siteId=site-1 auditType=cited-analysis eligible=3 deleted=2 failed=1/,
-        ),
-      );
-    });
-
-    it('audit-logs each successful deletion with snapshot identity and age', async () => {
-      const snapshot = buildSnapshotOpportunity({
-        id: 'snap-1',
-        snapshot: { kind: 'superseded-refresh', triggerAuditId: 'audit-xyz' },
-        createdAt: daysAgo(45),
-      });
-      const dataAccess = {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]) },
-      };
-
-      await deleteExpiredSnapshots({
-        dataAccess, siteId, auditType, log,
-      });
-
-      expect(log.info).to.have.been.calledWith(sinon.match(
-        /\[Offsite\]\[Retention\] Deleted snapshot opportunityId=snap-1 siteId=site-1 auditType=cited-analysis triggerAuditId=audit-xyz snapshotAgeDays=45/,
-      ));
-    });
-
-    it('logs unknown when triggerAuditId metadata is missing', async () => {
-      const snapshot = buildSnapshotOpportunity({
-        id: 'snap-no-trigger',
-        snapshot: null,
-        createdAt: daysAgo(45),
-      });
-      const dataAccess = {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]) },
+        Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
       const deletedSnapshotCount = await deleteExpiredSnapshots({
@@ -301,13 +270,20 @@ describe('offsite-retention', () => {
       });
 
       expect(deletedSnapshotCount).to.equal(1);
-      expect(log.info).to.have.been.calledWith(sinon.match(/triggerAuditId=unknown/));
+      expect(removeByIdsSuggestion).to.not.have.been.called;
+      expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['no-suggestions']);
     });
 
-    it('returns 0 and logs a zero-candidate summary when nothing is expired', async () => {
+    it('returns 0, calls no removeByIds, and does not log when nothing is expired', async () => {
       const youngSnapshot = buildSnapshotOpportunity({ id: 'young', createdAt: daysAgo(5) });
+      const removeByIdsSuggestion = sandbox.stub().resolves();
+      const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([youngSnapshot]) },
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([youngSnapshot]),
+          removeByIds: removeByIdsOpportunity,
+        },
+        Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
       const deletedSnapshotCount = await deleteExpiredSnapshots({
@@ -315,15 +291,18 @@ describe('offsite-retention', () => {
       });
 
       expect(deletedSnapshotCount).to.equal(0);
-      expect(youngSnapshot.remove).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(sinon.match(
-        /Snapshot deletion summary siteId=site-1 auditType=cited-analysis eligible=0 deleted=0 failed=0/,
-      ));
+      expect(removeByIdsSuggestion).to.not.have.been.called;
+      expect(removeByIdsOpportunity).to.not.have.been.called;
+      expect(log.info).to.not.have.been.called;
     });
 
-    it('returns 0 and logs a summary when finding snapshots fails', async () => {
+    it('returns 0 without calling removeByIds when the lookup fails', async () => {
+      const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
-        Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')),
+          removeByIds: removeByIdsOpportunity,
+        },
       };
 
       const deletedSnapshotCount = await deleteExpiredSnapshots({
@@ -331,9 +310,92 @@ describe('offsite-retention', () => {
       });
 
       expect(deletedSnapshotCount).to.equal(0);
-      expect(log.info).to.have.been.calledWith(sinon.match(
-        /Snapshot deletion summary siteId=site-1 auditType=cited-analysis eligible=0 deleted=0 failed=0/,
+      expect(removeByIdsOpportunity).to.not.have.been.called;
+    });
+
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      const snapshot = buildSnapshotOpportunity({
+        id: 'snap-1', type: 'not-a-real-audit', createdAt: daysAgo(45),
+      });
+      const dataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]),
+          removeByIds: sandbox.stub().resolves(),
+        },
+        Suggestion: { removeByIds: sandbox.stub().resolves() },
+      };
+
+      await deleteExpiredSnapshots({
+        dataAccess, siteId, auditType: 'not-a-real-audit', log,
+      });
+
+      expect(log.info).to.have.been.calledWith(sinon.match(/audit=unknown/));
+    });
+
+    it('propagates errors from Suggestion.removeByIds (retention must not silently succeed)', async () => {
+      const snapshot = buildSnapshotOpportunity({
+        id: 'snap-1', createdAt: daysAgo(45), suggestions: [{ getId: () => 'sugg-1' }],
+      });
+      const dataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]),
+          removeByIds: sandbox.stub().resolves(),
+        },
+        Suggestion: { removeByIds: sandbox.stub().rejects(new Error('FK violation')) },
+      };
+
+      await expect(deleteExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      })).to.be.rejectedWith('FK violation');
+    });
+
+    it('propagates errors from Opportunity.removeByIds (retention must not silently succeed)', async () => {
+      const snapshot = buildSnapshotOpportunity({ id: 'snap-1', createdAt: daysAgo(45) });
+      const dataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([snapshot]),
+          removeByIds: sandbox.stub().rejects(new Error('DB down')),
+        },
+        Suggestion: { removeByIds: sandbox.stub().resolves() },
+      };
+
+      await expect(deleteExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      })).to.be.rejectedWith('DB down');
+    });
+
+    it('caps deletions per run at MAX_DELETIONS_PER_RUN, deleting the oldest first', async () => {
+      const totalExpired = MAX_DELETIONS_PER_RUN + 5;
+      // Oldest (largest daysAgo) first, matching findExpiredSnapshots' sort.
+      const expiredSnapshots = Array.from({ length: totalExpired }, (_, index) => (
+        buildSnapshotOpportunity({
+          id: `snap-${totalExpired - index}`,
+          createdAt: daysAgo(45 + (totalExpired - index)),
+        })
       ));
+      const removeByIdsOpportunity = sandbox.stub().resolves();
+      const dataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves(expiredSnapshots),
+          removeByIds: removeByIdsOpportunity,
+        },
+        Suggestion: { removeByIds: sandbox.stub().resolves() },
+      };
+
+      const deletedSnapshotCount = await deleteExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      });
+
+      expect(deletedSnapshotCount).to.equal(MAX_DELETIONS_PER_RUN);
+      const deletedIds = removeByIdsOpportunity.firstCall.args[0];
+      expect(deletedIds).to.have.lengthOf(MAX_DELETIONS_PER_RUN);
+      // The oldest snapshot (snap-<totalExpired>, daysAgo(45 + totalExpired)) must be included.
+      expect(deletedIds).to.include(`snap-${totalExpired}`);
+      // The newest of the expired set (snap-1) is left for a later run.
+      expect(deletedIds).to.not.include('snap-1');
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(`eligible=${totalExpired}`).and(sinon.match(`deleted=${MAX_DELETIONS_PER_RUN}`)),
+      );
     });
   });
 });

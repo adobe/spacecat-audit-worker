@@ -1583,9 +1583,20 @@ describe('YouTube Analysis Guidance Handler', () => {
       const result = await guidanceHandler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(
-        /\[Offsite\]\[Retention\] Unexpected failure siteId=test-site-id auditType=youtube-analysis error=retention blew up/,
-      ));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=retention_delete/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/errorMessage="retention blew up"/)),
+      );
+    });
+
+    it('does not run retention when the refresh itself fails before reaching the success path', async () => {
+      mockSyncSuggestions.rejects(new Error('sync blew up'));
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(400);
+      expect(deleteExpiredSnapshotsStub).to.not.have.been.called;
     });
   });
 });
