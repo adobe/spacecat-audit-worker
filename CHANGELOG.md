@@ -1,3 +1,10 @@
+# [1.522.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.8...v1.522.0) (2026-08-20)
+
+
+### Features
+
+* **offsite-snapshot-opportunties:** Make offsite opportunities snapshots on every refresh (LLMO-6152) ([#2771](https://github.com/adobe/spacecat-audit-worker/issues/2771)) ([4f83a72](https://github.com/adobe/spacecat-audit-worker/commit/4f83a727439d9ecbcd6cb2c8c50ab26ed6783ae6))
+
 ## [1.521.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.7...v1.521.8) (2026-08-19)
 
 
