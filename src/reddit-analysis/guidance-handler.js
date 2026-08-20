@@ -34,7 +34,10 @@ import {
 import {
   createOffsiteLogger, errorField, AUDIT, PEER,
 } from '../utils/offsite-logging.js';
-import { deleteExpiredSnapshots } from '../common/offsite-retention.js';
+import {
+  deleteExpiredSnapshots,
+  deleteExpiredOutdatedSuggestions,
+} from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
@@ -224,7 +227,18 @@ export default async function handler(message, context) {
     });
     logOffsiteLlmUsage(log, HUMAN_PREFIX, siteId, opportunityData.llmUsage);
 
-    // Retention must not fail an otherwise successful refresh.
+    // Expired suggestion deletion must not fail an otherwise successful refresh.
+    try {
+      await deleteExpiredOutdatedSuggestions({
+        dataAccess, opportunity, siteId, auditType, log,
+      });
+    } catch (error) {
+      ologOpp.failure('outdated_suggestion_delete', `Unexpected expired OUTDATED suggestion deletion failure for auditType ${auditType}`, {
+        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      }, error);
+    }
+
+    // Expired snapshot deletion must not fail an otherwise successful refresh.
     try {
       await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,

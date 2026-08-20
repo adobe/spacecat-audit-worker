@@ -11,7 +11,7 @@
  */
 
 import { subDays } from 'date-fns';
-import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Suggestion as Sugg } from '@adobe/spacecat-shared-data-access';
 import { isOffsiteSnapshot } from './offsite-snapshot.js';
 import {
   createOffsiteLogger, errorField, AUDIT, PEER,
@@ -112,4 +112,117 @@ export async function deleteExpiredSnapshots({
   });
 
   return snapshotIds.length;
+}
+
+export const OUTDATED_SUGGESTION_RETENTION_DAYS = 30;
+
+// Bounds the PostgREST DELETE-IN request URL.
+export const OUTDATED_SUGGESTION_DELETE_BATCH_SIZE = 100;
+
+function chunk(items, size) {
+  const batches = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+}
+
+/**
+ * Returns true only for an OUTDATED suggestion with a valid updatedAt before the cutoff.
+ * Invalid timestamps are retained because deletion cannot be proven safe.
+ */
+export function isOutdatedSuggestionExpired(suggestion, retentionCutoff) {
+  if (suggestion.getStatus() !== Sugg.STATUSES.OUTDATED) {
+    return false;
+  }
+  const updatedAt = suggestion.getUpdatedAt();
+  if (!updatedAt) {
+    return false;
+  }
+  const updatedAtTime = new Date(updatedAt).getTime();
+  if (Number.isNaN(updatedAtTime)) {
+    return false;
+  }
+  return updatedAtTime < retentionCutoff.getTime();
+}
+
+/**
+ * Deletes expired OUTDATED suggestions in bounded batches without interrupting refresh.
+ */
+export async function deleteExpiredOutdatedSuggestions({
+  dataAccess, opportunity, siteId, auditType, log,
+}) {
+  const { Suggestion } = dataAccess;
+  const emptyRetentionSummary = {
+    scanned: 0, eligible: 0, deleted: 0, failed: 0,
+  };
+  const opportunityId = opportunity.getId();
+  const olog = createOffsiteLogger(log, {
+    audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId, opportunityId,
+  });
+
+  let opportunitySuggestions;
+  try {
+    opportunitySuggestions = await opportunity.getSuggestions() || [];
+  } catch (error) {
+    olog.failure('outdated_suggestion_lookup', `Failed to read suggestions for expired OUTDATED suggestion deletion, auditType ${auditType}`, {
+      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    });
+    return emptyRetentionSummary;
+  }
+
+  const retentionCutoff = subDays(new Date(), OUTDATED_SUGGESTION_RETENTION_DAYS);
+  const expiredOutdatedSuggestions = opportunitySuggestions
+    .filter((suggestion) => isOutdatedSuggestionExpired(suggestion, retentionCutoff));
+  const suggestionBatches = chunk(
+    expiredOutdatedSuggestions,
+    OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
+  );
+
+  const batchResults = await Promise.all(
+    suggestionBatches.map(async (suggestionBatch) => {
+      const suggestionIds = suggestionBatch.map((suggestion) => suggestion.getId());
+      try {
+        // Dependent fix-entity rows cascade-delete with their suggestions.
+        await Suggestion.removeByIds(suggestionIds);
+        olog.success('outdated_suggestion_delete', `Deleted ${suggestionIds.length} expired OUTDATED suggestion(s) for auditType ${auditType}`, {
+          peer: PEER.POSTGRES, direction: 'outbound', suggestionIds,
+        });
+        return { deleted: suggestionBatch.length, failed: 0 };
+      } catch (error) {
+        olog.failure('outdated_suggestion_delete', `Failed to delete ${suggestionBatch.length} expired OUTDATED suggestion(s), auditType ${auditType}`, {
+          peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+        });
+        return { deleted: 0, failed: suggestionBatch.length };
+      }
+    }),
+  );
+  const deletionTotals = batchResults.reduce(
+    (summary, batchResult) => ({
+      deleted: summary.deleted + batchResult.deleted,
+      failed: summary.failed + batchResult.failed,
+    }),
+    { deleted: 0, failed: 0 },
+  );
+  const retentionSummary = {
+    scanned: opportunitySuggestions.length,
+    eligible: expiredOutdatedSuggestions.length,
+    ...deletionTotals,
+  };
+
+  const summaryFields = {
+    peer: PEER.POSTGRES,
+    direction: 'outbound',
+    scanned: retentionSummary.scanned,
+    eligible: retentionSummary.eligible,
+    deleted: retentionSummary.deleted,
+    failed: retentionSummary.failed,
+  };
+  if (retentionSummary.failed > 0) {
+    olog.failure('outdated_suggestion_retention_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+  } else {
+    olog.success('outdated_suggestion_retention_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+  }
+
+  return retentionSummary;
 }
