@@ -128,6 +128,8 @@ export async function prepareSuppressedRunSnapshot({
     : null;
 
   if (existingSuppressedRunSnapshot) {
+    // triggerAuditId is provably truthy here: existingSuppressedRunSnapshot can only be set
+    // by the lookup above, which only runs when triggerAuditId is truthy.
     olog.success('snapshot_prepare', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
@@ -178,6 +180,8 @@ export async function prepareSupersededRunSnapshot({
     : null;
 
   if (existingSupersededRunSnapshot) {
+    // triggerAuditId is provably truthy here: existingSupersededRunSnapshot can only be set
+    // by the lookup above, which only runs when triggerAuditId is truthy.
     olog.success('snapshot_prepare', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),

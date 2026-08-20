@@ -69,11 +69,14 @@ in the DB but has no suggestions. The catch block deletes the orphan and rethrow
 delivery recreates the snapshot cleanly. If the delete itself fails, the error is logged
 (`snapshot_cleanup outcome=failure`) and the original error is still rethrown.
 
-### Shared orchestration
+### No shared orchestrator
 
-`prepareSnapshotForRun` in `offsite-refresh.js` combines `resolveEvergreenOffsiteOpportunity`
-and the suppressed/surfaced dispatch into one call, eliminating the duplicate 20-line block
-that previously existed in each of the three guidance handlers.
+Each guidance handler calls `resolveEvergreenOffsiteOpportunity` (from `offsite-refresh.js`)
+followed by `prepareSuppressedRunSnapshot` or `prepareSupersededRunSnapshot` (from
+`offsite-snapshot.js`) inline, rather than through a single combining function. A shared
+orchestrator was tried and reverted: it required one of the two modules to import the other,
+and esmock deadlocks when two modules that both partially mock each other are loaded in the
+same test. `offsite-refresh.js` and `offsite-snapshot.js` have no cross-imports as a result.
 
 ### Known limitation — in-memory scan
 

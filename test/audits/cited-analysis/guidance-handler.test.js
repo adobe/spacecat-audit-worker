@@ -1405,6 +1405,9 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
     });
 
+    // resolveEvergreenOffsiteOpportunityStub intentionally mirrors the duplicate-retirement
+    // logic in offsite-refresh.js (setStatus IGNORED + saveMany), so the assertions below
+    // exercise the stub's fidelity to that real behavior, not just the handler's plumbing.
     it('should lazily retire duplicate NEW opportunities of the same type via saveMany, keeping the most recent as evergreen', async () => {
       const older = {
         getId: sandbox.stub().returns('older-opp'),
