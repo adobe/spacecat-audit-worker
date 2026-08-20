@@ -41,7 +41,7 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.description).to.equal(opportunityData.description);
       expect(result.runbook).to.equal(opportunityData.runbook);
       expect(result.status).to.equal(opportunityData.status);
-      expect(result.tags).to.deep.equal(['Video Content', 'Youtube']);
+      expect(result.tags).to.deep.equal(['Video Content', 'Youtube', 'social', 'isElmo']);
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.type).to.equal('youtube-analysis');
