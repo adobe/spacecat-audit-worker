@@ -1,3 +1,10 @@
+# [1.525.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.524.0...v1.525.0) (2026-08-20)
+
+
+### Features
+
+* **offsite-suggestions-deletion:** Outdated suggestions deletion after 30 days (LLMO-6124) ([#2774](https://github.com/adobe/spacecat-audit-worker/issues/2774)) ([0ce80c0](https://github.com/adobe/spacecat-audit-worker/commit/0ce80c012f9f143e4ba9f480476fd3cf611273f0))
+
 # [1.524.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.523.0...v1.524.0) (2026-08-20)
 
 
