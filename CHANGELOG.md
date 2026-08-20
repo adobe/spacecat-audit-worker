@@ -1,3 +1,10 @@
+# [1.523.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.522.0...v1.523.0) (2026-08-20)
+
+
+### Features
+
+* **offsite-brand-presence:** remove ACCEPTED_REGIONS restriction ([#2899](https://github.com/adobe/spacecat-audit-worker/issues/2899)) ([74fd944](https://github.com/adobe/spacecat-audit-worker/commit/74fd944887d9830b720869257093cadaf1969e77))
+
 # [1.522.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.521.8...v1.522.0) (2026-08-20)
 
 
