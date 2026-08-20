@@ -28,6 +28,7 @@ export function createOpportunityData({ opportunityData } = {}) {
     description: opportunityData?.description || 'Enhance your company\'s Youtube presence to improve brand sentiment and visibility. '
       + 'A well-managed Youtube presence can influence how your brand is perceived in community discussions.',
     status: opportunityData?.status || 'NEW',
+    // Always merge defaults so snapshot tags are preserved alongside content tags.
     tags: [...new Set([...(opportunityData?.tags || []), 'Video Content', 'social', 'isElmo'])],
     data: {
       ...(opportunityData?.data || {}),

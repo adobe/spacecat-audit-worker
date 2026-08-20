@@ -303,7 +303,7 @@ describe('offsite-refresh', () => {
         context,
         () => ({ data: {}, status: 'IGNORED' }),
         'reddit-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       );
 
       expect(log.info).to.have.been.calledWith(
@@ -337,7 +337,7 @@ describe('offsite-refresh', () => {
         context,
         () => ({ data: {} }),
         'cited-analysis',
-        { existingOpportunity: evergreen },
+        { opportunityToUpdate: evergreen },
       );
 
       expect(log.info).to.have.been.calledWith(
@@ -359,7 +359,7 @@ describe('offsite-refresh', () => {
         context,
         () => ({ data: {}, status: 'NEW' }),
         'youtube-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       )).to.be.rejectedWith('db exploded');
 
       expect(log.error).to.have.been.calledWith(

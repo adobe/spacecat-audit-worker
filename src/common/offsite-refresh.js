@@ -129,7 +129,7 @@ export async function persistOffsiteOpportunity(
     olog.success('opportunity_persist', `Refreshed evergreen ${auditType} opportunity`, {
       peer: PEER.POSTGRES,
       direction: 'outbound',
-      opportunityId: evergreenOpportunity.getId(),
+      opportunityId: opportunityToUpdate.getId(),
       status: mappedOpportunity.status,
     });
     return opportunityToUpdate;

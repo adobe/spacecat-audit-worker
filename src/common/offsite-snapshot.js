@@ -11,6 +11,9 @@
  */
 
 import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
 export const SNAPSHOT_TAG = 'offsite-snapshot';
 
@@ -21,20 +24,36 @@ export const SNAPSHOT_KINDS = {
   SUPPRESSED_REFRESH: 'suppressed-refresh',
 };
 
+// Mirrors the mapping in offsite-refresh.js — kept local to avoid a cross-module circular import.
+const AUDIT_SLUG_BY_TYPE = {
+  'cited-analysis': AUDIT.CITED,
+  'reddit-analysis': AUDIT.REDDIT,
+  'youtube-analysis': AUDIT.YOUTUBE,
+};
+
 /**
  * Finds a snapshot by (siteId, auditType, triggerAuditId).
  * Lookup failures propagate to avoid duplicate creation.
+ *
+ * NOTE: This fetches ALL IGNORED opportunities for a site from the DB and filters in-memory.
+ * Since every refresh creates a snapshot, the working set grows over time (one per refresh across
+ * all audit types). For active sites this can reach hundreds of records within months. A
+ * server-side filtered query in the data-access layer would close this gap.
+ * TODO(LLMO-6154 or follow-up): push type+tag filtering to PostgREST.
  */
 export async function findSnapshotByTriggerAuditId({
   dataAccess, siteId, auditType, triggerAuditId, log,
 }) {
   const { Opportunity } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
   let opportunities;
 
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (e) {
-    log.error(`[Offsite][Snapshot] Failed to look up existing auditType ${auditType} snapshots for siteId ${siteId}: ${e.message}`);
+    olog.failure('snapshot_lookup', `Failed to look up existing auditType ${auditType} snapshots`, {
+      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(e),
+    });
     throw e;
   }
 
@@ -83,6 +102,8 @@ export async function prepareSuppressedRunSnapshot({
   evergreenOpportunity,
   log,
 }) {
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
+
   // The suppressed run itself becomes the snapshot; the evergreen remains unchanged.
   const suppressedRunSnapshotData = {
     ...opportunityData,
@@ -95,7 +116,9 @@ export async function prepareSuppressedRunSnapshot({
   };
 
   if (!triggerAuditId) {
-    log.warn('[Offsite][Snapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+      reason: 'missing_audit_id',
+    });
   }
 
   const existingSuppressedRunSnapshot = triggerAuditId
@@ -105,9 +128,15 @@ export async function prepareSuppressedRunSnapshot({
     : null;
 
   if (existingSuppressedRunSnapshot) {
-    log.info(`[Offsite][Snapshot] Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()} for siteId ${siteId}, auditType ${auditType}, triggerAuditId ${triggerAuditId}`);
+    olog.success('snapshot_prepare', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
+      peer: PEER.POSTGRES,
+      snapshotId: existingSuppressedRunSnapshot.getId(),
+      triggerAuditId: triggerAuditId || undefined,
+    });
   } else {
-    log.info(`[Offsite][Snapshot] Preparing new suppressed-refresh snapshot for siteId ${siteId}, auditType ${auditType}, triggerAuditId ${triggerAuditId || 'unknown'}`);
+    olog.start('snapshot_prepare', 'Preparing new suppressed-refresh snapshot', {
+      triggerAuditId: triggerAuditId || undefined,
+    });
   }
 
   return {
@@ -128,14 +157,18 @@ export async function prepareSupersededRunSnapshot({
   evergreenOpportunity,
   log,
 }) {
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
+
   if (!evergreenOpportunity) {
     // First surfaced run: there is no previous evergreen state to preserve.
-    log.debug(`[Offsite][Snapshot] No evergreen opportunity exists; no superseded-refresh snapshot is needed for siteId ${siteId}, auditType ${auditType}`);
+    olog.debug('snapshot_prepare', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed');
     return { opportunityData, opportunityToUpdate: null };
   }
 
   if (!triggerAuditId) {
-    log.warn('[Offsite][Snapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+      reason: 'missing_audit_id',
+    });
   }
 
   const existingSupersededRunSnapshot = triggerAuditId
@@ -145,7 +178,11 @@ export async function prepareSupersededRunSnapshot({
     : null;
 
   if (existingSupersededRunSnapshot) {
-    log.info(`[Offsite][Snapshot] Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()} for siteId ${siteId}, auditType ${auditType}, triggerAuditId ${triggerAuditId}`);
+    olog.success('snapshot_prepare', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
+      peer: PEER.POSTGRES,
+      snapshotId: existingSupersededRunSnapshot.getId(),
+      triggerAuditId: triggerAuditId || undefined,
+    });
   }
 
   if (!existingSupersededRunSnapshot) {
@@ -178,21 +215,43 @@ export async function prepareSupersededRunSnapshot({
     const suggestions = await evergreenOpportunity.getSuggestions();
 
     if (suggestions.length > 0) {
-      const { errorItems } = await snapshot.addSuggestions(suggestions.map((suggestion) => ({
-        type: suggestion.getType(),
-        rank: suggestion.getRank(),
-        data: suggestion.getData(),
-        status: suggestion.getStatus(),
-        ...(suggestion.getKpiDeltas() ? { kpiDeltas: suggestion.getKpiDeltas() } : {}),
-        ...(suggestion.getSkipReason() ? { skipReason: suggestion.getSkipReason() } : {}),
-        ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
-      })));
-      if (errorItems?.length > 0) {
-        log.error(`[Offsite][Snapshot] ${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`);
+      try {
+        const { errorItems } = await snapshot.addSuggestions(suggestions.map((suggestion) => ({
+          type: suggestion.getType(),
+          rank: suggestion.getRank(),
+          data: suggestion.getData(),
+          status: suggestion.getStatus(),
+          ...(suggestion.getKpiDeltas() ? { kpiDeltas: suggestion.getKpiDeltas() } : {}),
+          ...(suggestion.getSkipReason() ? { skipReason: suggestion.getSkipReason() } : {}),
+          ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
+        })));
+        if (errorItems?.length > 0) {
+          olog.failure('snapshot_copy_suggestions', `${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`, {
+            peer: PEER.POSTGRES, opportunityId: snapshot.getId(),
+          });
+        }
+      } catch (err) {
+        // addSuggestions threw entirely — the snapshot record already exists but has no
+        // suggestions. Delete the orphan so the next delivery recreates the snapshot cleanly.
+        olog.failure('snapshot_copy_suggestions', `addSuggestions threw for snapshot ${snapshot.getId()}; deleting orphan and rethrowing`, {
+          peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(err),
+        });
+        try {
+          await snapshot.remove();
+        } catch (removeErr) {
+          olog.failure('snapshot_cleanup', `Failed to delete orphan snapshot ${snapshot.getId()}`, {
+            peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(removeErr),
+          });
+        }
+        throw err;
       }
     }
 
-    log.info(`[Offsite][Snapshot] Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()} for siteId ${siteId}, auditType ${auditType}, triggerAuditId ${triggerAuditId || 'unknown'}`);
+    olog.success('snapshot_prepare', `Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()}`, {
+      peer: PEER.POSTGRES,
+      opportunityId: snapshot.getId(),
+      triggerAuditId: triggerAuditId || undefined,
+    });
   }
 
   return { opportunityData, opportunityToUpdate: evergreenOpportunity };

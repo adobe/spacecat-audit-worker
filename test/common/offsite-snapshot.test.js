@@ -600,6 +600,76 @@ describe('offsite-snapshot', () => {
       expect(log.error).to.have.been.calledWith(sinon.match(/1 suggestion\(s\) failed to copy/));
     });
 
+    it('deletes the orphan snapshot and rethrows when addSuggestions fully rejects', async () => {
+      const addSuggestionsError = new Error('DB write failed');
+      const remove = sandbox.stub().resolves();
+      const create = sandbox.stub().resolves({
+        getId: () => 'snapshot-1',
+        addSuggestions: sandbox.stub().rejects(addSuggestionsError),
+        remove,
+      });
+      const suggestion = {
+        getType: () => 'CONTENT_UPDATE',
+        getRank: () => 1,
+        getData: () => ({}),
+        getStatus: () => 'NEW',
+        getKpiDeltas: () => undefined,
+        getSkipReason: () => undefined,
+        getSkipDetail: () => undefined,
+      };
+      const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+
+      await expect(prepareSupersededRunSnapshot({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
+        },
+        siteId: 'site-1',
+        auditType: 'cited-analysis',
+        triggerAuditId: 'audit-1',
+        opportunityData: {},
+        evergreenOpportunity,
+        log,
+      })).to.be.rejectedWith('DB write failed');
+
+      expect(remove).to.have.been.calledOnce;
+      expect(log.error).to.have.been.calledWith(sinon.match(/addSuggestions threw.*deleting orphan/i));
+    });
+
+    it('still rethrows the original addSuggestions error when orphan removal also fails', async () => {
+      const addSuggestionsError = new Error('DB write failed');
+      const remove = sandbox.stub().rejects(new Error('delete also failed'));
+      const create = sandbox.stub().resolves({
+        getId: () => 'snapshot-1',
+        addSuggestions: sandbox.stub().rejects(addSuggestionsError),
+        remove,
+      });
+      const suggestion = {
+        getType: () => 'CONTENT_UPDATE',
+        getRank: () => 1,
+        getData: () => ({}),
+        getStatus: () => 'NEW',
+        getKpiDeltas: () => undefined,
+        getSkipReason: () => undefined,
+        getSkipDetail: () => undefined,
+      };
+      const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+
+      await expect(prepareSupersededRunSnapshot({
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
+        },
+        siteId: 'site-1',
+        auditType: 'cited-analysis',
+        triggerAuditId: 'audit-1',
+        opportunityData: {},
+        evergreenOpportunity,
+        log,
+      })).to.be.rejectedWith('DB write failed');
+
+      expect(remove).to.have.been.calledOnce;
+      expect(log.error).to.have.been.calledWith(sinon.match(/Failed to delete orphan snapshot/i));
+    });
+
     it('creates a managed snapshot without trigger metadata when auditId is missing', async () => {
       const evergreenOpportunity = makeEvergreenOpportunity();
       const create = sandbox.stub().resolves({

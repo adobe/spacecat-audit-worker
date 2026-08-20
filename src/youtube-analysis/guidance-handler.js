@@ -26,12 +26,12 @@ import {
   isSuppressedRun,
 } from '../common/offsite-refresh.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
-} from '../utils/offsite-logging.js';
-import {
   prepareSuppressedRunSnapshot,
   prepareSupersededRunSnapshot,
 } from '../common/offsite-snapshot.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER,
+} from '../utils/offsite-logging.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
@@ -149,8 +149,7 @@ export default async function handler(message, context) {
     const evergreenOpportunity = await resolveEvergreenOffsiteOpportunity({
       dataAccess, siteId, auditType, log,
     });
-    const suppressedRun = isSuppressedRun(incomingStatus);
-    const preparedOpportunityPersistence = suppressedRun
+    const preparedOpportunityPersistence = isSuppressedRun(incomingStatus)
       ? await prepareSuppressedRunSnapshot({
         dataAccess,
         siteId,

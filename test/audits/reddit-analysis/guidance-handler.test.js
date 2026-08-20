@@ -36,6 +36,8 @@ describe('Reddit Analysis Guidance Handler', () => {
   let resolveBrandResultForSiteStub;
   let supersededRunSnapshotCreationStub;
   let findSnapshotByTriggerAuditIdStub;
+  let resolveEvergreenOffsiteOpportunityStub;
+  let isSuppressedRunStub;
   let prepareSuppressedRunSnapshotStub;
   let prepareSupersededRunSnapshotStub;
 
@@ -75,25 +77,28 @@ describe('Reddit Analysis Guidance Handler', () => {
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
     supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
     findSnapshotByTriggerAuditIdStub = sandbox.stub().resolves(null);
+    resolveEvergreenOffsiteOpportunityStub = sandbox.stub().callsFake(
+      async ({ dataAccess: da, siteId: sid, auditType: at }) => {
+        const opps = await da.Opportunity.allBySiteIdAndStatus(sid, 'NEW');
+        return (opps || []).filter((o) => o.getType() === at)
+          .sort((a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()))[0] || null;
+      },
+    );
+    isSuppressedRunStub = sandbox.stub().callsFake((status) => status === 'IGNORED');
+
     prepareSuppressedRunSnapshotStub = sandbox.stub().callsFake(async ({
-      triggerAuditId,
-      opportunityData,
-      evergreenOpportunity,
+      triggerAuditId, opportunityData, evergreenOpportunity,
     }) => {
-      const existingSuppressedRunSnapshot = triggerAuditId
-        ? await findSnapshotByTriggerAuditIdStub()
-        : null;
+      const existingSnapshot = triggerAuditId ? await findSnapshotByTriggerAuditIdStub() : null;
       return {
-        opportunityToUpdate: existingSuppressedRunSnapshot,
+        opportunityToUpdate: existingSnapshot,
         opportunityData: {
           ...opportunityData,
           tags: [...new Set([...(opportunityData.tags || []), 'offsite-snapshot'])],
           data: {
             ...(opportunityData.data || {}),
             snapshot: {
-              ...(evergreenOpportunity
-                ? { evergreenOpportunityId: evergreenOpportunity.getId() }
-                : {}),
+              ...(evergreenOpportunity ? { evergreenOpportunityId: evergreenOpportunity.getId() } : {}),
               kind: 'suppressed-refresh',
               ...(triggerAuditId ? { triggerAuditId } : {}),
             },
@@ -101,27 +106,14 @@ describe('Reddit Analysis Guidance Handler', () => {
         },
       };
     });
+
     prepareSupersededRunSnapshotStub = sandbox.stub().callsFake(async ({
-      dataAccess,
-      siteId: refreshSiteId,
-      auditType,
-      triggerAuditId,
-      opportunityData,
-      evergreenOpportunity,
-      log,
+      dataAccess: da, siteId: sid, auditType: at, triggerAuditId, opportunityData, evergreenOpportunity, log: callLog,
     }) => {
       if (evergreenOpportunity) {
         await supersededRunSnapshotCreationStub({
-          dataAccess,
-          siteId: refreshSiteId,
-          auditType,
-          triggerAuditId,
-          evergreenOpportunity,
-          log,
+          dataAccess: da, siteId: sid, auditType: at, triggerAuditId, evergreenOpportunity, log: callLog,
         });
-        if (!triggerAuditId) {
-          log.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
-        }
       }
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });
@@ -132,6 +124,12 @@ describe('Reddit Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
+        resolveEvergreenOffsiteOpportunity: resolveEvergreenOffsiteOpportunityStub,
+        isSuppressedRun: isSuppressedRunStub,
+      },
+      '../../../src/common/offsite-snapshot.js': {
+        prepareSuppressedRunSnapshot: prepareSuppressedRunSnapshotStub,
+        prepareSupersededRunSnapshot: prepareSupersededRunSnapshotStub,
       },
       '../../../src/utils/slack-utils.js': { postMessageOptional: mockPostMessageOptional },
       '../../../src/utils/analysis-fetch.js': {
@@ -140,10 +138,6 @@ describe('Reddit Analysis Guidance Handler', () => {
       '../../../src/utils/brand-resolver.js': {
         resolveBrandResultForSite: resolveBrandResultForSiteStub,
         applyScopeToOpportunity: realApplyScopeToOpportunity,
-      },
-      '../../../src/common/offsite-snapshot.js': {
-        prepareSuppressedRunSnapshot: prepareSuppressedRunSnapshotStub,
-        prepareSupersededRunSnapshot: prepareSupersededRunSnapshotStub,
       },
     });
 
