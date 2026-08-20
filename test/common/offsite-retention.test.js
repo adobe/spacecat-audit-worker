@@ -213,9 +213,34 @@ describe('offsite-retention', () => {
 
       expect(expiredSnapshots).to.deep.equal([beyondCutoff]);
     });
+
+    it('retains (does not expire) a snapshot with a missing getCreatedAt() value', async () => {
+      // `new Date(undefined) < cutoff` is false, so a malformed/missing createdAt is retained
+      // forever rather than expired. The datastore always populates createdAt in practice, so
+      // this pins the known (accepted) behavior rather than asserting it is desirable.
+      const missingCreatedAt = buildSnapshotOpportunity({ id: 'missing-created-at', createdAt: undefined });
+      const dataAccess = {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([missingCreatedAt]),
+        },
+      };
+
+      const expiredSnapshots = await findExpiredSnapshots({
+        dataAccess, siteId, auditType, log,
+      });
+
+      expect(expiredSnapshots).to.deep.equal([]);
+    });
   });
 
   describe('deleteExpiredSnapshots', () => {
+    // Pin the clock so daysAgo()-derived fixtures can't flake by straddling a real-clock
+    // day boundary (e.g. a snapshot built as "45 days ago" resolving to 44 or 46 depending
+    // on exactly when the test runs).
+    beforeEach(() => {
+      sandbox.useFakeTimers(new Date('2026-01-15T12:00:00.000Z'));
+    });
+
     it('bulk-removes suggestions then snapshots, and returns the deleted count', async () => {
       const firstSuggestion = { getId: () => 'sugg-1' };
       const secondSuggestion = { getId: () => 'sugg-2' };
