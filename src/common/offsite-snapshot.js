@@ -131,7 +131,7 @@ export async function prepareSuppressedRunSnapshot({
     olog.success('snapshot_prepare', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
-      triggerAuditId: triggerAuditId || undefined,
+      triggerAuditId,
     });
   } else {
     olog.start('snapshot_prepare', 'Preparing new suppressed-refresh snapshot', {
@@ -181,7 +181,7 @@ export async function prepareSupersededRunSnapshot({
     olog.success('snapshot_prepare', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),
-      triggerAuditId: triggerAuditId || undefined,
+      triggerAuditId,
     });
   }
 

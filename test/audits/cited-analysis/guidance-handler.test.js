@@ -84,15 +84,29 @@ describe('Cited Analysis Guidance Handler', () => {
     resolveEvergreenOffsiteOpportunityStub = sandbox.stub().callsFake(
       async ({ dataAccess: da, siteId: sid, auditType: at }) => {
         const opps = await da.Opportunity.allBySiteIdAndStatus(sid, 'NEW');
-        return (opps || []).filter((o) => o.getType() === at)
-          .sort((a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()))[0] || null;
+        const matching = (opps || []).filter((o) => o.getType() === at);
+        if (matching.length === 0) return null;
+        if (matching.length === 1) return matching[0];
+
+        const [evergreen, ...duplicates] = [...matching].sort(
+          (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
+        );
+        duplicates.forEach((duplicate) => {
+          duplicate.setStatus('IGNORED');
+          duplicate.setUpdatedBy('system');
+        });
+        await da.Opportunity.saveMany(duplicates);
+        return evergreen;
       },
     );
     isSuppressedRunStub = sandbox.stub().callsFake((status) => status === 'IGNORED');
 
     prepareSuppressedRunSnapshotStub = sandbox.stub().callsFake(async ({
-      triggerAuditId, opportunityData, evergreenOpportunity,
+      triggerAuditId, opportunityData, evergreenOpportunity, log: callLog,
     }) => {
+      if (!triggerAuditId) {
+        callLog.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+      }
       const existingSnapshot = triggerAuditId ? await findSnapshotByTriggerAuditIdStub() : null;
       return {
         opportunityToUpdate: existingSnapshot,
@@ -118,6 +132,9 @@ describe('Cited Analysis Guidance Handler', () => {
         await supersededRunSnapshotCreationStub({
           dataAccess: da, siteId: sid, auditType: at, triggerAuditId, evergreenOpportunity, log: callLog,
         });
+        if (!triggerAuditId) {
+          callLog.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+        }
       }
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });

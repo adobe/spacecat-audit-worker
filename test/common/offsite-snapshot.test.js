@@ -200,6 +200,18 @@ describe('offsite-snapshot', () => {
 
       expect(result).to.equal(unlinked);
     });
+
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      const dataAccess = {
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
+      };
+
+      await expect(findSnapshotByTriggerAuditId({
+        dataAccess, siteId: 'site-1', auditType: 'not-a-real-audit', triggerAuditId: 'audit-1', log,
+      })).to.be.rejectedWith('DB down');
+
+      expect(log.error).to.have.been.calledWith(sinon.match(/audit=unknown/));
+    });
   });
 
   describe('prepareSuppressedRunSnapshot', () => {
@@ -292,6 +304,20 @@ describe('offsite-snapshot', () => {
       });
 
       expect(result.opportunityData.tags).to.deep.equal([SNAPSHOT_TAG]);
+    });
+
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      await prepareSuppressedRunSnapshot({
+        dataAccess: {},
+        siteId: 'site-1',
+        auditType: 'not-a-real-audit',
+        triggerAuditId: undefined,
+        opportunityData: { status: 'IGNORED' },
+        evergreenOpportunity: null,
+        log,
+      });
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
   });
 
@@ -709,6 +735,25 @@ describe('offsite-snapshot', () => {
         evergreenOpportunity: { getId: () => 'evergreen-1' },
         log,
       })).to.be.rejectedWith('DB down');
+    });
+
+    it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {
+      const create = sandbox.stub().resolves({
+        getId: () => 'snapshot-1',
+        addSuggestions: sandbox.stub(),
+      });
+
+      await prepareSupersededRunSnapshot({
+        dataAccess: { Opportunity: { create } },
+        siteId: 'site-1',
+        auditType: 'not-a-real-audit',
+        triggerAuditId: undefined,
+        opportunityData: { status: 'NEW' },
+        evergreenOpportunity: makeEvergreenOpportunity(),
+        log,
+      });
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
   });
 });
