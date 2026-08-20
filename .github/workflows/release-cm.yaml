@@ -1,0 +1,24 @@
+name: release-cm
+
+# Decorate each published GitHub release with ServiceNow-CMR-compatible
+# change-management attributes. Fires because semantic-release publishes the
+# release with the ADOBE_BOT PAT — a release created by the default GITHUB_TOKEN
+# would NOT trigger `release: published`. Decoration only (no ServiceNow API).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write        # to edit the release body
+  pull-requests: read    # to read PR author, reviews, and labels
+
+jobs:
+  release-cm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # for .snow.yml
+        with:
+          persist-credentials: false
+      # Pin to a full commit SHA once mysticat-ci publishes the action (supply-chain
+      # hygiene against an accidental tag move); using @v1 until it is released.
+      - uses: adobe/mysticat-ci/.github/actions/release-cm@v1
