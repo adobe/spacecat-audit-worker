@@ -1,3 +1,10 @@
+# [1.524.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.523.0...v1.524.0) (2026-08-20)
+
+
+### Features
+
+* **offsite-snapshots-deletion:** Outdated snapshots deletion after 30 days (LLMO-6154) ([#2772](https://github.com/adobe/spacecat-audit-worker/issues/2772)) ([8cb4e33](https://github.com/adobe/spacecat-audit-worker/commit/8cb4e33d6370c735b480c5ed5d5e2d800eabdab1))
+
 # [1.523.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.522.0...v1.523.0) (2026-08-20)
 
 
