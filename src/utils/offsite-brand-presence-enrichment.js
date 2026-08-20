@@ -25,7 +25,6 @@ import {
   appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
 } from './offsite-logging.js';
 import {
-  ACCEPTED_REGIONS,
   BRAND_PRESENCE_REGEX,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
@@ -316,7 +315,6 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
 
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
- * Only processes rows whose Region is in ACCEPTED_REGIONS.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
@@ -326,17 +324,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  */
 function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
   const rows = data.data;
-  let rowsWithSources = 0;
-  let rowsSkippedForRegion = 0;
   for (const row of rows) {
     const sources = row.Sources?.trim();
     if (!sources) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    rowsWithSources += 1;
-    if (!ACCEPTED_REGIONS.has(row.Region)) {
-      rowsSkippedForRegion += 1;
       // eslint-disable-next-line no-continue
       continue;
     }
@@ -371,11 +361,6 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
     }
   }
 
-  if (rowsWithSources > 0 && rowsSkippedForRegion === rowsWithSources) {
-    log.warn(enrich(`All ${rowsWithSources} row(s) with sources were skipped: region not in ACCEPTED_REGIONS`, {
-      event: 'url_extract', outcome: OUTCOME.SKIP, rows: rowsWithSources,
-    }));
-  }
   log.info(enrich(`Found ${allUrls.size} unique source URLs`, {
     event: 'url_extract', outcome: OUTCOME.SUCCESS, count: allUrls.size,
   }));
