@@ -5366,8 +5366,9 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      // Four calls: one per source (organic, included, agentic) + one cross-source dedup
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(4);
+      // Five calls: one per source (organic, included, agentic) + one cross-source dedup
+      // + one merge with the (empty) domain-wide reconciliation batch (LLMO-7052).
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(5);
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {

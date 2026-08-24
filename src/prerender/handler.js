@@ -38,6 +38,10 @@ import {
   mergePathSuggestionData,
 } from './path-suggestions/main.js';
 import {
+  getDomainWideReconciliationCandidates,
+  reconcileCoveredByDomainWide,
+} from './domain-wide-reconciliation.js';
+import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
   DOMAIN_WIDE_SUGGESTION_KEY,
@@ -623,6 +627,7 @@ export async function submitForScraping(context) {
   let isFirstRunOfCycle;
   let agenticNewThisCycle = 0;
   let edgeDeployedPathnames = new Set();
+  let domainWideReconciliationCount = 0;
 
   if (isSlackTriggered) {
     // Dedup each source independently: organic uses pathname-only dedup (tracking params stay
@@ -700,7 +705,18 @@ export async function submitForScraping(context) {
       (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
     ).length;
 
-    finalUrls = batchedUrls;
+    // LLMO-7052: append the coveredByDomainWide reconciliation backlog additively, on top
+    // of DAILY_BATCH_SIZE, so it runs on a fixed cadence rather than competing with
+    // organic/agentic/included for the same slots.
+    const reconciliationUrls = (await getDomainWideReconciliationCandidates(context, siteId))
+      .map((url) => rebaseUrl(url, preferredBase, log));
+    domainWideReconciliationCount = reconciliationUrls.length;
+    const { urls: batchedUrlsWithReconciliation } = mergeAndGetUniqueHtmlUrls(
+      [...batchedUrls, ...reconciliationUrls],
+      { includeQueryParams: true },
+    );
+
+    finalUrls = batchedUrlsWithReconciliation;
   }
 
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -716,6 +732,7 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
     edgeDeployedUrls=${edgeDeployedPathnames.size},
+    domainWideReconciliationUrls=${domainWideReconciliationCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
@@ -1584,6 +1601,10 @@ export async function processContentAndGenerateOpportunities(context) {
         .map((r) => toPathname(r.url)),
     );
     await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgePathnames);
+    // LLMO-7052: clear coveredByDomainWide on any suggestion this run's scrapes confirm is
+    // no longer deployed at edge — runs against all successfulComparisons, not just the
+    // reconciliation batch, so incidental confirmations from normal rotation are caught too.
+    await reconcileCoveredByDomainWide(opportunityWithSuggestions, context, successfulComparisons);
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
