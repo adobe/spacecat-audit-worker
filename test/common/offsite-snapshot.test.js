@@ -157,7 +157,7 @@ describe('offsite-snapshot', () => {
         dataAccess, siteId: 'site-1', auditType: 'cited-analysis', triggerAuditId: 'audit-1', log,
       })).to.be.rejectedWith('DB down');
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to look up existing auditType cited-analysis snapshots/),
+        sinon.match(/Failed to look up existing snapshots/).and(sinon.match(/auditType=cited-analysis/)),
       );
     });
 
@@ -283,7 +283,7 @@ describe('offsite-snapshot', () => {
         tags: ['custom-tag'],
         data: { qa: 'suppressed' },
       });
-      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing suppressed-refresh snapshot snapshot-1/));
+      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing suppressed-refresh snapshot/).and(sinon.match(/snapshotId=snapshot-1/)));
     });
 
     it('builds a managed snapshot without lookup when triggerAuditId is missing', async () => {
@@ -394,7 +394,7 @@ describe('offsite-snapshot', () => {
         opportunityToUpdate: evergreenOpportunity,
       });
       expect(create).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing superseded-refresh snapshot snapshot-1/));
+      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing superseded-refresh snapshot/).and(sinon.match(/snapshotId=snapshot-1/)));
     });
 
     it('creates an IGNORED managed snapshot preserving fields, scope, and data', async () => {
@@ -451,7 +451,9 @@ describe('offsite-snapshot', () => {
         },
       });
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Created superseded-refresh snapshot snapshot-1 from evergreen opportunity evergreen-1/),
+        sinon.match(/Created superseded-refresh snapshot from evergreen opportunity/)
+          .and(sinon.match(/opportunityId=snapshot-1/))
+          .and(sinon.match(/evergreenOpportunityId=evergreen-1/)),
       );
     });
 
@@ -648,7 +650,7 @@ describe('offsite-snapshot', () => {
         log,
       });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/1 suggestion\(s\) failed to copy/));
+      expect(log.error).to.have.been.calledWith(sinon.match(/Suggestions failed to copy onto snapshot/).and(sinon.match(/failed=1/)));
     });
 
     it('deletes the orphan snapshot and rethrows when addSuggestions fully rejects', async () => {

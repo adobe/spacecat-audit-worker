@@ -254,7 +254,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
     expect(sentTypes).to.include('reddit-analysis');
     expect(sentTypes).to.include('offsite-brand-presence-drs-status');
-    expect(log.warn).to.have.been.calledWithMatch(/getJob failed for job-2/);
+    expect(log.warn).to.have.been.calledWithMatch(/DRS getJob call failed.*drsJobId=job-2/);
   });
 
   it('reports a job as still running when getJob errors past the deadline', async () => {
@@ -514,7 +514,7 @@ describe('offsite-brand-presence DRS status handler', function () {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger .* analysis audit for site/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audit/);
     });
 
     it('skips an audit type when a recent audit exists within the cooldown window', async () => {
@@ -530,7 +530,7 @@ describe('offsite-brand-presence DRS status handler', function () {
       const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
       expect(types).to.include('youtube-analysis');
       expect(types).to.not.include('reddit-analysis');
-      expect(log.info).to.have.been.calledWithMatch(/Skipping reddit-analysis.*recent audit exists/);
+      expect(log.info).to.have.been.calledWithMatch(/Skipping analysis dispatch; recent audit exists.*auditType=reddit-analysis/);
     });
 
     it('triggers within the cooldown when the recent audit is a pending_scrape run', async () => {
@@ -639,7 +639,7 @@ describe('offsite-brand-presence DRS status handler', function () {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits for/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audits/);
     });
 
     it('dispatches with partial data at the deadline if a dataset is still running', async () => {

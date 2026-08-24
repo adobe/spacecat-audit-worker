@@ -361,7 +361,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
     }
   }
 
-  log.info(enrich(`Found ${allUrls.size} unique source URLs`, {
+  log.info(enrich('Found unique source URLs', {
     event: 'data_acquisition_bp_data_urls_extracted_enriched', outcome: OUTCOME.SUCCESS, count: allUrls.size,
   }));
 }
@@ -395,8 +395,8 @@ export async function loadBrandPresenceData({
     : false;
 
   if (isBrandalfOrg === null) {
-    log.warn(enrich(`Brandalf flag state unknown for org ${organizationId}; skipping legacy file fetch for site ${siteId}`, {
-      event: 'data_acquisition_bp_data_source_selected', outcome: OUTCOME.SKIP, reason: 'brandalf_unknown',
+    log.warn(enrich('Brandalf flag state unknown; skipping legacy file fetch', {
+      event: 'data_acquisition_bp_data_source_selected', outcome: OUTCOME.SKIP, reason: 'brandalf_unknown', orgId: organizationId, siteId,
     }));
     return null;
   }
@@ -412,13 +412,13 @@ export async function loadBrandPresenceData({
     });
     if (dbData) {
       // P2-1: the PostgREST success path previously returned unlogged at the enrichment level.
-      log.info(enrich(`Loaded ${dbData.data.length} brand presence rows from PostgREST for site ${siteId}`, {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', rows: dbData.data.length,
+      log.info(enrich('Loaded brand presence rows from PostgREST', {
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', siteId, rows: dbData.data.length,
       }));
       return dbData;
     }
-    log.info(enrich(`No PostgREST data for brandalf-enabled site ${siteId}, falling back to SharePoint file fetch`, {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows',
+    log.info(enrich('No PostgREST data for brandalf-enabled site; falling back to SharePoint file fetch', {
+      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows', siteId,
     }));
   }
 
@@ -427,8 +427,8 @@ export async function loadBrandPresenceData({
     resolvedSite = await context.dataAccess?.Site?.findById(siteId);
   }
   if (!resolvedSite) {
-    log.warn(enrich(`Cannot resolve site for ${siteId}, skipping SharePoint fetch`, {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site',
+    log.warn(enrich('Cannot resolve site; skipping SharePoint fetch', {
+      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site', siteId,
     }));
     return null;
   }
@@ -439,15 +439,15 @@ export async function loadBrandPresenceData({
     sharepointClient = await createLLMOSharepointClient(context);
     queryResult = await readQueryIndexPaths(resolvedSite, sharepointClient, log);
   } catch (error) {
-    log.error(enrich(`Error reading query-index from SharePoint: ${error.message}`, {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'query_index', errorName: error.name,
+    log.error(enrich('Error reading query-index from SharePoint', {
+      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'query_index', errorName: error.name, errorMessage: error.message,
     }));
     return null;
   }
 
   if (!queryResult || queryResult.paths.length === 0) {
-    log.warn(enrich(`Failed to read query-index for site ${siteId}`, {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index',
+    log.warn(enrich('Failed to read query-index', {
+      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index', siteId,
     }));
     return null;
   }
@@ -461,13 +461,13 @@ export async function loadBrandPresenceData({
   const matchedFiles = previousWeeks.flatMap(
     ({ week, year }) => filterBrandPresenceFiles(paths, week, year),
   );
-  log.info(enrich(`Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`, {
-    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.START, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', files: matchedFiles.length,
+  log.info(enrich('Found brand presence files', {
+    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.START, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', files: matchedFiles.length, weeks: weekLabels,
   }));
 
   if (matchedFiles.length === 0) {
-    log.info(enrich(`No matching brand presence files for site ${siteId}`, {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0,
+    log.info(enrich('No matching brand presence files', {
+      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId,
     }));
     return null;
   }
@@ -483,20 +483,20 @@ export async function loadBrandPresenceData({
       }
       allRows.push(...data.data);
     } catch (err) {
-      log.error(enrich(`Error reading brand presence sheet ${sheetName}: ${err.message}`, {
-        event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', errorName: err.name,
+      log.error(enrich('Error reading brand presence sheet', {
+        event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', sheetName, errorName: err.name, errorMessage: err.message,
       }));
     }
   }
 
   if (allRows.length === 0) {
-    log.info(enrich(`No usable brand presence rows from SharePoint for site ${siteId}`, {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0,
+    log.info(enrich('No usable brand presence rows from SharePoint', {
+      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId,
     }));
     return null;
   }
-  log.info(enrich(`Loaded ${allRows.length} brand presence rows from SharePoint for site ${siteId}`, {
-    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SUCCESS, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', rows: allRows.length,
+  log.info(enrich('Loaded brand presence rows from SharePoint', {
+    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SUCCESS, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', siteId, rows: allRows.length,
   }));
   return { data: allRows };
 }
@@ -540,8 +540,8 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
-  log.info(enrich(`Processing weeks: ${weekLabels}`, {
-    event: 'data_acquisition_bp_data_source_selected', outcome: OUTCOME.START,
+  log.info(enrich('Processing weeks', {
+    event: 'data_acquisition_bp_data_source_selected', outcome: OUTCOME.START, weeks: weekLabels,
   }));
 
   const brandPresenceData = await loadBrandPresenceData({
@@ -557,8 +557,8 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
     try {
       siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
     } catch {
-      log.warn(enrich(`Could not parse baseURL "${baseURL}", skipping site URL filter`, {
-        event: 'data_acquisition_bp_data_urls_extracted_enriched', outcome: OUTCOME.SKIP, reason: 'unparseable_base_url',
+      log.warn(enrich('Could not parse baseURL; skipping site URL filter', {
+        event: 'data_acquisition_bp_data_urls_extracted_enriched', outcome: OUTCOME.SKIP, reason: 'unparseable_base_url', baseURL,
       }));
     }
   }

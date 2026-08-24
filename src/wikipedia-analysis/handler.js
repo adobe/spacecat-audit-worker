@@ -235,7 +235,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   const siteId = site.getId();
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId });
 
-  olog.start('audit_orchestration_started', `Starting Wikipedia analysis audit for site: ${siteId}`);
+  olog.start('audit_orchestration_started', 'Audit started');
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
@@ -264,7 +264,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       };
     }
 
-    olog.success('audit_orchestration_brand_profile_resolved', 'Resolved Wikipedia config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
       companyName: wikipediaConfig.companyName,
       website: wikipediaConfig.companyWebsite,
       wikipediaUrl: wikipediaConfig.wikipediaUrl,
@@ -363,7 +363,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     olog.success(
       'audit_analysis_mystique_request_handoff',
-      'Queued Wikipedia analysis request to Mystique',
+      'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',

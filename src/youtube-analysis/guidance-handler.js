@@ -74,12 +74,12 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId, auditId });
 
-  olog.start('audit_analysis_completed', `Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+  olog.start('audit_analysis_completed', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
   if (data?.error) {
-    olog.failure('audit_analysis_completed', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+    olog.failure('audit_analysis_completed', 'Mystique returned an error', {
       peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     return noContent();
@@ -114,14 +114,14 @@ export default async function handler(message, context) {
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('audit_persistence_completed', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
+    olog.failure('audit_persistence_completed', 'Site not found', { reason: 'site_not_found' });
     return notFound('Site not found');
   }
 
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('audit_persistence_completed', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
+      olog.failure('audit_persistence_completed', 'Audit not found', { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -137,7 +137,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('audit_analysis_completed', `Processing ${suggestions.length} suggestions`, {
+    olog.debug('audit_analysis_completed', 'Processing suggestions', {
       count: suggestions.length, companyName,
     });
 
@@ -147,7 +147,7 @@ export default async function handler(message, context) {
 
     // Validate before mutating the evergreen opportunity.
     if (!isValidOffsiteAnalysis(analysisData, auditType)) {
-      olog.failure('audit_persistence_completed', `Malformed analysis payload for siteId: ${siteId}; skipping update`, { reason: 'malformed_payload' });
+      olog.failure('audit_persistence_completed', 'Malformed analysis payload; skipping update', { reason: 'malformed_payload' });
       return badRequest('Malformed analysis payload');
     }
 
@@ -221,8 +221,8 @@ export default async function handler(message, context) {
       throw error;
     }
 
-    ologOpp.success('audit_persistence_completed', `Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`, {
-      count: suggestions.length,
+    ologOpp.success('audit_persistence_completed', 'Run processed successfully', {
+      count: suggestions.length, companyName,
     });
     logOffsiteLlmUsage(log, HUMAN_PREFIX, siteId, opportunityData.llmUsage);
 
@@ -232,8 +232,8 @@ export default async function handler(message, context) {
         dataAccess, opportunity, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_suggestions_removed', `Unexpected expired OUTDATED suggestion deletion failure for auditType ${auditType}`, {
-        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      ologOpp.failure('audit_housekeeping_suggestions_removed', 'OUTDATED suggestion deletion failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
       }, error);
     }
 
@@ -243,8 +243,8 @@ export default async function handler(message, context) {
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_opportunities_removed', `Unexpected retention failure for auditType ${auditType}`, {
-        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      ologOpp.failure('audit_housekeeping_opportunities_removed', 'Snapshot retention failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
       }, error);
     }
 
@@ -283,7 +283,7 @@ export default async function handler(message, context) {
     // Intentional drill-down: a failure already logged by an inner event (e.g.
     // audit_persistence_suggestions_synced) will also surface here as
     // audit_persistence_completed outcome=failure — the terminal, per-run marker.
-    olog.failure('audit_persistence_completed', 'Error processing YouTube analysis', { ...errorField(error) }, error);
+    olog.failure('audit_persistence_completed', 'Error processing analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

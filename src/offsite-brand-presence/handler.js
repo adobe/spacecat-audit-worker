@@ -383,7 +383,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   const createdCount = storedUrls.size - existingCount;
   const failCount = entries.length - storedUrls.size;
 
-  olog.success('data_acquisition_store_urls_written', `URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`, {
+  olog.success('data_acquisition_store_urls_written', 'URL store write complete', {
     peer: PEER.URL_STORE, direction: 'outbound', created: createdCount, existing: existingCount, failed: failCount,
   });
 
@@ -484,7 +484,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
   const updated = results.filter((r) => r === 'updated').length;
   const failed = results.filter((r) => r === 'error').length;
 
-  olog.success('audit_orchestration_guideline_store_written', `Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`, {
+  olog.success('audit_orchestration_guideline_store_written', 'Guideline store write complete', {
     peer: PEER.SPACECAT, direction: 'outbound', created, updated, failed,
   });
 }
@@ -526,24 +526,23 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       const start = Date.now();
       // eslint-disable-next-line no-await-in-loop
       const result = await submitFn(params);
-      olog.success('data_acquisition_scrape_job_submitted', `DRS job created for ${jobDataset} (${Date.now() - start}ms)`, {
-        peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id,
+      olog.success('data_acquisition_scrape_job_submitted', 'DRS job created', {
+        peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id, durationMs: Date.now() - start,
       });
       return {
         domain, datasetId, status: 'success', response: result,
       };
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
-        olog.warn('data_acquisition_scrape_job_submitted', `DRS job for ${jobDataset} failed (attempt 1), retrying in ${RETRY_DELAY_MS}ms`, {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, ...errorField(err),
+        olog.warn('data_acquisition_scrape_job_submitted', 'DRS job submission failed; retrying', {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, delayMs: RETRY_DELAY_MS, ...errorField(err),
         });
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => {
           setTimeout(resolve, RETRY_DELAY_MS);
         });
       } else {
-        const label = attempt === 0 ? '' : ' after retry';
-        olog.failure('data_acquisition_scrape_job_submitted', `DRS job failed for ${jobDataset}${label}`, {
+        olog.failure('data_acquisition_scrape_job_submitted', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
           peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', ...errorField(err),
         });
         return {
@@ -614,7 +613,7 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.warn('data_acquisition_scrape_job_submitted', `Site ${siteId} organization has no imsOrgId, skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.`, {
+    olog.warn('data_acquisition_scrape_job_submitted', 'Organization has no imsOrgId; skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
       outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org',
     });
     return {
@@ -655,7 +654,7 @@ async function triggerDrsScraping(
   }
 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
-  olog.start('data_acquisition_scrape_job_submitted', `Submitting ${jobs.length} DRS scrape jobs${orgSuffix}`, { peer: PEER.DRS, direction: 'outbound', jobs: jobs.length });
+  olog.start('data_acquisition_scrape_job_submitted', `Submitting DRS scrape jobs${orgSuffix}`, { peer: PEER.DRS, direction: 'outbound', jobs: jobs.length });
 
   const results = [];
   for (const job of jobs) {
@@ -835,7 +834,7 @@ async function scheduleDrsStatusPoll(
     .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
 
   if (jobs.length === 0) {
-    olog.skip('data_acquisition_scrape_job_poll_scheduled', `No successfully submitted DRS jobs for ${baseURL}, not scheduling status poll`, {
+    olog.skip('data_acquisition_scrape_job_poll_scheduled', 'No successfully submitted DRS jobs; not scheduling status poll', {
       peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs',
     });
     return;
@@ -860,7 +859,7 @@ async function scheduleDrsStatusPoll(
     },
   }, null, pollIntervalSeconds);
 
-  olog.success('data_acquisition_scrape_job_poll_scheduled', `Scheduled DRS status poll for ${baseURL} (${jobs.length} jobs, every ${pollIntervalSeconds}s)`, {
+  olog.success('data_acquisition_scrape_job_poll_scheduled', 'Scheduled DRS status poll', {
     peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds,
   });
 }
@@ -903,7 +902,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    olog.failure('audit_orchestration_started', `Unknown domainScope '${domainScope}', aborting run`, { reason: 'unknown_scope', domainScope });
+    olog.failure('audit_orchestration_started', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', domainScope });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -917,7 +916,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  olog.start('audit_orchestration_started', `Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
+  olog.start('audit_orchestration_started', 'Audit started', { weeks: weekLabels });
 
   let siteHostname;
   try {
@@ -1054,7 +1053,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     }
   }
 
-  olog.success('data_acquisition_bp_data_urls_extracted', `Total unique source URLs found: ${allUrls.size}`, { count: allUrls.size });
+  olog.success('data_acquisition_bp_data_urls_extracted', 'Unique source URLs collected', { count: allUrls.size });
 
   // Compute per-domain counts for audit result
   const urlCounts = {};
@@ -1147,7 +1146,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   //   await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
   // }
 
-  olog.success('audit_orchestration_completed', `Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`, {
+  olog.success('audit_orchestration_completed', 'Audit complete', {
     urls: allUrls.size, drsJobs: drsResults.length,
   });
 

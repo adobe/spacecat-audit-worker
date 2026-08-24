@@ -423,7 +423,7 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Invalid enableSemrush/);
+      expect(log.warn).to.have.been.calledWithMatch(/Invalid override value in auditContext/);
     });
 
     it('env-enabled fallback surfaces dataSource+fallbackReason even when legacy also yields nothing', async () => {
@@ -888,7 +888,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 already existed, 0 failed/),
+        sinon.match(/created=0 existing=1 failed=0/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -926,7 +926,7 @@ describe('Offsite Brand Presence Handler', function () {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 0 already existed, 1 failed/),
+        sinon.match(/created=0 existing=0 failed=1/),
       );
     });
 
@@ -940,7 +940,7 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/2 created, 0 already existed, 1 failed/),
+        sinon.match(/created=2 existing=0 failed=1/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -1619,7 +1619,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.drsJobs[0].status).to.equal('error');
       expect(result.auditResult.drsJobs[0].error).to.include('503');
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS job failed/),
+        sinon.match(/DRS job submission failed/),
       );
     });
 
@@ -1638,7 +1638,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/failed \(attempt 1\), retrying in 500ms/),
+        sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)),
       );
     });
 
@@ -1745,7 +1745,7 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
-      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)));
     });
 
     it('should not retry on 400 and fail immediately', async () => {
@@ -1777,7 +1777,7 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('net-retry-ok');
-      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)));
     });
 
     it('should record error when both attempts fail with 503', async () => {
@@ -1791,7 +1791,7 @@ describe('Offsite Brand Presence Handler', function () {
         expect(job.status).to.equal('error');
         expect(job.error).to.include('503');
       }
-      expect(log.error).to.have.been.calledWith(sinon.match(/DRS job failed.*after retry/));
+      expect(log.error).to.have.been.calledWith(sinon.match(/DRS job submission failed after retry/));
     });
 
     it('should not retry on 422 and fail immediately', async () => {

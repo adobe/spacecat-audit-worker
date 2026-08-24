@@ -391,7 +391,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index for site/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index/);
     });
 
     it('aggregates topics from brand presence rows (US, reddit URL, topic)', async () => {
@@ -876,7 +876,7 @@ describe('offsite-brand-presence-enrichment', function () {
       });
 
       expect(result).to.be.null;
-      expect(log.info).to.have.been.calledWithMatch(/Found 0 brand presence files/);
+      expect(log.info).to.have.been.calledWithMatch(/Found brand presence files.*files=0/);
     });
 
     it('skips a brand-presence sheet whose workbook has no worksheets', async () => {

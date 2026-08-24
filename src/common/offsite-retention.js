@@ -47,8 +47,8 @@ export async function findExpiredSnapshots({
     ignoredOpportunities = await Opportunity
       .allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (error) {
-    olog.failure('audit_housekeeping_opportunities_found', `Failed to find snapshots for auditType ${auditType}`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    olog.failure('audit_housekeeping_opportunities_found', 'Failed to find snapshots', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, ...errorField(error),
     });
     return [];
   }
@@ -107,8 +107,8 @@ export async function deleteExpiredSnapshots({
   const snapshotIds = expiredSnapshots.map((snapshot) => snapshot.getId());
   await Opportunity.removeByIds(snapshotIds);
 
-  olog.success('audit_housekeeping_opportunities_removed', `Deleted ${snapshotIds.length} expired snapshot(s) for auditType ${auditType}`, {
-    peer: PEER.POSTGRES, direction: 'outbound', eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
+  olog.success('audit_housekeeping_opportunities_removed', 'Deleted expired snapshots', {
+    peer: PEER.POSTGRES, direction: 'outbound', auditType, eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
   });
 
   return snapshotIds.length;
@@ -165,8 +165,8 @@ export async function deleteExpiredOutdatedSuggestions({
   try {
     opportunitySuggestions = await opportunity.getSuggestions() || [];
   } catch (error) {
-    olog.failure('audit_housekeeping_suggestions_found', `Failed to read suggestions for expired OUTDATED suggestion deletion, auditType ${auditType}`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    olog.failure('audit_housekeeping_suggestions_found', 'Failed to read suggestions for expired OUTDATED suggestion deletion', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, ...errorField(error),
     });
     return emptyRetentionSummary;
   }
@@ -185,13 +185,13 @@ export async function deleteExpiredOutdatedSuggestions({
       try {
         // Dependent fix-entity rows cascade-delete with their suggestions.
         await Suggestion.removeByIds(suggestionIds);
-        olog.success('audit_housekeeping_suggestions_removed', `Deleted ${suggestionIds.length} expired OUTDATED suggestion(s) for auditType ${auditType}`, {
-          peer: PEER.POSTGRES, direction: 'outbound', suggestionIds,
+        olog.success('audit_housekeeping_suggestions_removed', 'Deleted expired OUTDATED suggestions', {
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, suggestionIds,
         });
         return { deleted: suggestionBatch.length, failed: 0 };
       } catch (error) {
-        olog.failure('audit_housekeeping_suggestions_removed', `Failed to delete ${suggestionBatch.length} expired OUTDATED suggestion(s), auditType ${auditType}`, {
-          peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+        olog.failure('audit_housekeeping_suggestions_removed', 'Failed to delete expired OUTDATED suggestion batch', {
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, ...errorField(error),
         });
         return { deleted: 0, failed: suggestionBatch.length };
       }
@@ -213,15 +213,16 @@ export async function deleteExpiredOutdatedSuggestions({
   const summaryFields = {
     peer: PEER.POSTGRES,
     direction: 'outbound',
+    auditType,
     scanned: retentionSummary.scanned,
     eligible: retentionSummary.eligible,
     deleted: retentionSummary.deleted,
     failed: retentionSummary.failed,
   };
   if (retentionSummary.failed > 0) {
-    olog.failure('audit_housekeeping_suggestions_removal_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+    olog.failure('audit_housekeeping_suggestions_removal_summary', 'Expired OUTDATED suggestion deletion summary', summaryFields);
   } else {
-    olog.success('audit_housekeeping_suggestions_removal_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+    olog.success('audit_housekeeping_suggestions_removal_summary', 'Expired OUTDATED suggestion deletion summary', summaryFields);
   }
 
   return retentionSummary;

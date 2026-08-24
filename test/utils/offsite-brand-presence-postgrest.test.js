@@ -475,7 +475,7 @@ describe('offsite-brand-presence-postgrest', () => {
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
-        '[offsite:brand-presence-postgrest] PostgREST query failed for site site-123: Failed to fetch brand_presence_executions: query failed',
+        '[offsite:brand-presence-postgrest] PostgREST query failed',
       );
     });
 
@@ -496,7 +496,7 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(result).to.not.equal(null);
       expect(result.data).to.have.length.greaterThan(0);
       expect(log.warn).to.have.been.calledWithMatch(
-        `Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`,
+        'Exceeded maximum brand_presence_executions pages; processing rows fetched so far',
       );
     });
   });

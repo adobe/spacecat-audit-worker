@@ -228,7 +228,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Reddit analysis/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
     });
 
     it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
@@ -829,7 +829,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Reddit analysis/)
+        sinon.match(/Error processing analysis/)
           .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
@@ -988,7 +988,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received Reddit analysis guidance for siteId/),
+        sinon.match(/Guidance received/),
       );
     });
 
