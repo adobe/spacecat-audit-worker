@@ -27,11 +27,18 @@ const HEAD_REQUEST_TIMEOUT_MS = 10000;
  * CWV candidates come from RUM field data — i.e. real users successfully loaded
  * these pages — so a request that we cannot complete from our infrastructure does
  * NOT mean the page is gone. In particular a 403/401/429 (bot-block / rate-limit),
- * a 5xx, or a network/timeout failure must NOT drop the URL, otherwise a site that
+ * a 5xx, or a timeout/bot-block failure must NOT drop the URL, otherwise a site that
  * bot-blocks our crawler loses ALL of its valid CWV opportunities (see SITES-47218).
- * Only a definitive "gone" status (404/410) is treated as a reason to skip — which
- * preserves the original intent of filtering out 404/clientlib/sling URLs
- * (SITES-40803) without the over-suppression.
+ *
+ * Two signals are treated as definitively "gone":
+ *   1. an HTTP 404/410 status, and
+ *   2. a hard network failure where the host cannot be reached at all —
+ *      DNS non-resolution (ENOTFOUND) or connection refused (ECONNREFUSED).
+ * A hard network failure is distinguished from an ambiguous one (timeout /
+ * AbortError / other transient errors), which is kept: this stops a stale RUM
+ * entry whose host no longer resolves from re-appearing as a CWV opportunity
+ * (the SITES-40803 symptom leaking back through the exception path) while still
+ * honouring the SITES-47218 fix for blocked-but-live sites.
  *
  * @param {string} url - The URL to check
  * @param {Object} log - Logger instance
@@ -58,7 +65,15 @@ export async function isUrlGone(url, log) {
     return false;
   } catch (err) {
     clearTimeout(timeoutId);
-    // Transient or blocked (timeout / network / bot-block). NOT "gone" — keep the
+    // A hard network failure — the host does not resolve (ENOTFOUND) or refuses
+    // connections (ECONNREFUSED) — is a strong "gone" signal, so skip the URL.
+    // (undici wraps the underlying error under `err.cause`, so check both.)
+    const code = err.code || err.cause?.code;
+    if (code === 'ENOTFOUND' || code === 'ECONNREFUSED') {
+      log.debug(`[audit-worker-cwv] Skipping URL (unreachable ${code}): ${url}`);
+      return true;
+    }
+    // Ambiguous failure (timeout / AbortError / bot-block). NOT "gone" — keep the
     // URL, because RUM already proves real users load it.
     log.debug(`[audit-worker-cwv] HEAD check inconclusive, keeping URL: ${url} error=${err.message}`);
     return false;

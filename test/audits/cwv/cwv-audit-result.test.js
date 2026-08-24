@@ -68,10 +68,44 @@ describe('CWV Audit Result', () => {
       expect(result).to.be.false;
     });
 
-    it('returns FALSE when fetch throws (transient/blocked, not gone)', async () => {
+    it('returns FALSE when fetch throws an ambiguous error (timeout/bot-block, not gone)', async () => {
       fetchStub.rejects(new Error('network error'));
       const result = await isUrlGone('https://example.com/timeout', log);
       expect(result).to.be.false;
+    });
+
+    it('returns FALSE when fetch aborts (AbortError timeout, not gone)', async () => {
+      const abortErr = new Error('The operation was aborted');
+      abortErr.name = 'AbortError';
+      fetchStub.rejects(abortErr);
+      const result = await isUrlGone('https://example.com/slow', log);
+      expect(result).to.be.false;
+    });
+
+    it('returns true when the host does not resolve (ENOTFOUND, gone)', async () => {
+      const err = new Error('getaddrinfo ENOTFOUND example.invalid');
+      err.code = 'ENOTFOUND';
+      fetchStub.rejects(err);
+      const result = await isUrlGone('https://example.invalid/', log);
+      expect(result).to.be.true;
+    });
+
+    it('returns true when the connection is refused (ECONNREFUSED, gone)', async () => {
+      const err = new Error('connect ECONNREFUSED');
+      err.code = 'ECONNREFUSED';
+      fetchStub.rejects(err);
+      const result = await isUrlGone('https://example.com/down', log);
+      expect(result).to.be.true;
+    });
+
+    it('returns true when a hard network failure is wrapped under err.cause (undici)', async () => {
+      const cause = new Error('getaddrinfo ENOTFOUND example.invalid');
+      cause.code = 'ENOTFOUND';
+      const err = new TypeError('fetch failed');
+      err.cause = cause;
+      fetchStub.rejects(err);
+      const result = await isUrlGone('https://example.invalid/', log);
+      expect(result).to.be.true;
     });
   });
 
