@@ -682,17 +682,17 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(400);
-      // The outer catch folds the error into a structured guidance_complete failure line
+      // The outer catch folds the error into a structured audit_persistence_completed failure line
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Error processing YouTube analysis/)
-          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
-        (c) => /event=guidance_complete/.test(String(c.args[0])),
+        (c) => /event=audit_persistence_completed/.test(String(c.args[0])),
       );
       expect(outerCatchCall.args).to.have.lengthOf(2);
       expect(outerCatchCall.args[1]).to.be.an('error');
@@ -714,7 +714,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(response.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=suggestion_sync/)
+        sinon.match(/event=audit_persistence_suggestions_synced/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/errorName=Error/)),
@@ -734,7 +734,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       await guidanceHandler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=suggestion_sync/)
+        sinon.match(/event=audit_persistence_suggestions_synced/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/opportunityId=opportunity-123/)),
@@ -1589,7 +1589,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(200);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=retention_delete/)
+        sinon.match(/event=audit_housekeeping_opportunities_removed/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
@@ -1678,7 +1678,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(200);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_delete/)
+        sinon.match(/event=audit_housekeeping_suggestions_removed/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );

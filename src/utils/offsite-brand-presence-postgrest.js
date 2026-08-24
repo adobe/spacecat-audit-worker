@@ -92,7 +92,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
       log.warn(bp(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES}), processing ${rows.length} rows fetched so far`, {
-        event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
       }));
       break;
     }
@@ -128,7 +128,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
     const batch = data || [];
     rows.push(...batch);
     log?.info(bp(`Fetched batch: ${batch.length} rows (total: ${rows.length})`, {
-      event: 'brand_data_load', outcome: OUTCOME.START, peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length,
+      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.START, peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length,
     }));
 
     if (batch.length < EXECUTION_FETCH_BATCH_SIZE) {
@@ -191,7 +191,7 @@ export async function loadBrandPresenceDataFromPostgrest({
 
     if (executions.length === 0) {
       log?.info(bp(`No execution rows found for site ${siteId}`, {
-        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions',
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions',
       }));
       return null;
     }
@@ -199,18 +199,18 @@ export async function loadBrandPresenceDataFromPostgrest({
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
       log?.info(bp(`No usable rows found for site ${siteId}`, {
-        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows',
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows',
       }));
       return null;
     }
 
     log?.info(bp(`Loaded ${rows.length} legacy-shaped rows from PostgREST for site ${siteId}`, {
-      event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', rows: rows.length,
+      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', rows: rows.length,
     }));
     return { data: rows };
   } catch (error) {
     log?.warn(bp(`PostgREST query failed for site ${siteId}: ${error.message}`, {
-      event: 'brand_data_load', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', errorName: error.name,
+      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', errorName: error.name,
     }));
     return null;
   }

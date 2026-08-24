@@ -57,7 +57,7 @@ export async function findSnapshotByTriggerAuditId({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (e) {
-    olog.failure('snapshot_lookup', `Failed to look up existing auditType ${auditType} snapshots`, {
+    olog.failure('audit_persistence_snapshot_resolved', `Failed to look up existing auditType ${auditType} snapshots`, {
       peer: PEER.POSTGRES, direction: 'inbound', ...errorField(e),
     });
     throw e;
@@ -121,7 +121,7 @@ export async function prepareSuppressedRunSnapshot({
   };
 
   if (!triggerAuditId) {
-    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+    olog.warn('audit_persistence_snapshot_prepared', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
     });
   }
@@ -135,13 +135,13 @@ export async function prepareSuppressedRunSnapshot({
   if (existingSuppressedRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSuppressedRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('snapshot_prepare', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
       triggerAuditId,
     });
   } else {
-    olog.start('snapshot_prepare', 'Preparing new suppressed-refresh snapshot', {
+    olog.start('audit_persistence_snapshot_prepared', 'Preparing new suppressed-refresh snapshot', {
       triggerAuditId: triggerAuditId || undefined,
     });
   }
@@ -168,12 +168,12 @@ export async function prepareSupersededRunSnapshot({
 
   if (!evergreenOpportunity) {
     // First surfaced run: there is no previous evergreen state to preserve.
-    olog.debug('snapshot_prepare', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed');
+    olog.debug('audit_persistence_snapshot_prepared', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed');
     return { opportunityData, opportunityToUpdate: null };
   }
 
   if (!triggerAuditId) {
-    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+    olog.warn('audit_persistence_snapshot_prepared', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
     });
   }
@@ -187,7 +187,7 @@ export async function prepareSupersededRunSnapshot({
   if (existingSupersededRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSupersededRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('snapshot_prepare', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),
       triggerAuditId,
@@ -235,20 +235,20 @@ export async function prepareSupersededRunSnapshot({
           ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
         })));
         if (errorItems?.length > 0) {
-          olog.failure('snapshot_copy_suggestions', `${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`, {
+          olog.failure('audit_persistence_snapshot_suggestions_copied', `${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`, {
             peer: PEER.POSTGRES, opportunityId: snapshot.getId(),
           });
         }
       } catch (err) {
         // addSuggestions threw entirely — the snapshot record already exists but has no
         // suggestions. Delete the orphan so the next delivery recreates the snapshot cleanly.
-        olog.failure('snapshot_copy_suggestions', `addSuggestions threw for snapshot ${snapshot.getId()}; deleting orphan and rethrowing`, {
+        olog.failure('audit_persistence_snapshot_suggestions_copied', `addSuggestions threw for snapshot ${snapshot.getId()}; deleting orphan and rethrowing`, {
           peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(err),
         });
         try {
           await snapshot.remove();
         } catch (removeErr) {
-          olog.failure('snapshot_cleanup', `Failed to delete orphan snapshot ${snapshot.getId()}`, {
+          olog.failure('audit_persistence_snapshot_cleaned_up', `Failed to delete orphan snapshot ${snapshot.getId()}`, {
             peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(removeErr),
           });
         }
@@ -256,7 +256,7 @@ export async function prepareSupersededRunSnapshot({
       }
     }
 
-    olog.success('snapshot_prepare', `Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', `Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()}`, {
       peer: PEER.POSTGRES,
       opportunityId: snapshot.getId(),
       triggerAuditId: triggerAuditId || undefined,

@@ -140,7 +140,7 @@ describe('offsite-audit-utils', () => {
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
       expect(olog.skip).to.have.been.calledWith(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         'DRS client not configured, skipping availability filter',
         sinon.match({ reason: 'not_configured' }),
       );
@@ -186,7 +186,7 @@ describe('offsite-audit-utils', () => {
         total: 3, available: 2, scraping: 0, notFound: 1, determined: true,
       });
       expect(olog.debug).to.have.been.calledWith(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         'DRS availability filter: removed 1 URL(s) not yet scraped (0 scraping, 1 not-found), 2 remaining',
         sinon.match({ peer: PEER.DRS, removed: 1, remaining: 2 }),
       );
@@ -207,7 +207,7 @@ describe('offsite-audit-utils', () => {
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(olog.debug).to.have.been.calledWith(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         'DRS lookup datasetId=ds1: 1/3 available, 0 scraping, 2 not-found',
         sinon.match({ peer: PEER.DRS, datasetId: 'ds1' }),
       );
@@ -236,7 +236,7 @@ describe('offsite-audit-utils', () => {
         total: 3, available: 1, scraping: 1, notFound: 1, determined: true,
       });
       expect(olog.debug).to.have.been.calledWith(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         'DRS availability filter: removed 2 URL(s) not yet scraped (1 scraping, 1 not-found), 1 remaining',
         sinon.match({ peer: PEER.DRS, removed: 2, remaining: 1 }),
       );
@@ -278,8 +278,8 @@ describe('offsite-audit-utils', () => {
 
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(olog.warn).to.have.been.calledWith('drs_availability', sinon.match(/DRS lookup returned null/), sinon.match({ peer: PEER.DRS, datasetId: 'ds1', reason: 'null_response' }));
-      expect(olog.warn).to.have.been.calledWith('drs_availability', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_scrape_job_status_polled', sinon.match(/DRS lookup returned null/), sinon.match({ peer: PEER.DRS, datasetId: 'ds1', reason: 'null_response' }));
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_scrape_job_status_polled', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
     });
 
     it('falls back to full list when all lookups throw', async () => {
@@ -293,10 +293,10 @@ describe('offsite-audit-utils', () => {
 
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(olog.warn).to.have.been.calledWith('drs_availability', sinon.match(/DRS lookup failed for datasetId=ds1/), sinon.match({
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_scrape_job_status_polled', sinon.match(/DRS lookup failed for datasetId=ds1/), sinon.match({
         peer: PEER.DRS, datasetId: 'ds1', errorName: 'Error', errorMessage: 'network error',
       }));
-      expect(olog.warn).to.have.been.calledWith('drs_availability', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_scrape_job_status_polled', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
     });
 
     it('does not log removed count when all URLs pass the filter', async () => {
@@ -317,7 +317,7 @@ describe('offsite-audit-utils', () => {
       expect(result.counts).to.deep.equal({
         total: 3, available: 3, scraping: 0, notFound: 0, determined: true,
       });
-      expect(olog.debug).to.not.have.been.calledWith('drs_availability', sinon.match(/DRS availability filter: removed/));
+      expect(olog.debug).to.not.have.been.calledWith('data_acquisition_scrape_job_status_polled', sinon.match(/DRS availability filter: removed/));
     });
 
     it('works without log or logPrefix', async () => {
@@ -349,7 +349,7 @@ describe('offsite-audit-utils', () => {
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(olog.debug).to.have.been.calledWith(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         `DRS lookup datasetId=ds1: 0/${urls.length} available, 0 scraping, 0 not-found`,
         sinon.match({ peer: PEER.DRS, datasetId: 'ds1' }),
       );
@@ -491,7 +491,7 @@ describe('offsite-audit-utils', () => {
         { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
         olog,
       )).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(olog.debug).to.have.been.calledOnceWith('url_limit_resolve', sinon.match(/exceeds cap/), sinon.match({ requested: MYSTIQUE_URLS_LIMIT + 10, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT }));
+      expect(olog.debug).to.have.been.calledOnceWith('audit_analysis_url_limit_resolved', sinon.match(/exceeds cap/), sinon.match({ requested: MYSTIQUE_URLS_LIMIT + 10, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT }));
     });
 
     it('returns default and warns when urlLimit is invalid', () => {
@@ -502,7 +502,7 @@ describe('offsite-audit-utils', () => {
       expect(fractional).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(olog.warn).to.have.been.calledTwice;
       expect(olog.warn).to.have.been.calledWith(
-        'url_limit_resolve',
+        'audit_analysis_url_limit_resolved',
         sinon.match(/Invalid urlLimit/),
         sinon.match({ reason: 'invalid' }),
       );
@@ -646,7 +646,7 @@ describe('offsite-audit-utils', () => {
         },
       });
       expect(olog.success).to.have.been.calledWith(
-        'scrape_request',
+        'data_acquisition_scrape_job_submitted',
         sinon.match(/Requested DRS scrape/),
         sinon.match({ reason: 'self_heal', domainScope: 'top-cited' }),
       );
@@ -710,7 +710,7 @@ describe('offsite-audit-utils', () => {
       await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, olog);
 
       expect(olog.warn).to.have.been.calledWith(
-        'scrape_request',
+        'data_acquisition_scrape_job_submitted',
         sinon.match(/Failed to request DRS scrape/),
         sinon.match({ reason: 'self_heal' }),
       );

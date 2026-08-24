@@ -46,7 +46,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 const HUMAN_PREFIX = `[offsite:${AUDIT.CITED}]`;
 
 /**
- * Classifies a presigned-analysis-fetch failure for the `analysis_fetch` reason token:
+ * Classifies a presigned-analysis-fetch failure for the `audit_persistence_payload_fetched`
+ * event's reason token:
  * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
  * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
  *
@@ -75,12 +76,12 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId, auditId });
 
-  olog.start('guidance_receive', `Received cited analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+  olog.start('audit_analysis_completed', `Received cited analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
   if (data?.error) {
-    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+    olog.failure('audit_analysis_completed', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
       peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     return noContent();
@@ -95,11 +96,11 @@ export default async function handler(message, context) {
         log,
         prefix: HUMAN_PREFIX,
       });
-      olog.success('analysis_fetch', 'Fetched analysis from presigned URL', {
+      olog.success('audit_persistence_payload_fetched', 'Fetched analysis from presigned URL', {
         peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      olog.failure('analysis_fetch', 'Error fetching from presigned URL', {
+      olog.failure('audit_persistence_payload_fetched', 'Error fetching from presigned URL', {
         peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
@@ -109,20 +110,20 @@ export default async function handler(message, context) {
   }
 
   if (!analysisData) {
-    olog.failure('guidance_complete', 'No analysis data provided in message', { reason: 'no_analysis_data' });
+    olog.failure('audit_persistence_completed', 'No analysis data provided in message', { reason: 'no_analysis_data' });
     return badRequest('Analysis data is required');
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('guidance_complete', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
+    olog.failure('audit_persistence_completed', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
     return notFound('Site not found');
   }
 
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('guidance_complete', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
+      olog.failure('audit_persistence_completed', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -134,11 +135,11 @@ export default async function handler(message, context) {
     const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
-      olog.skip('guidance_complete', 'No suggestions found in analysis', { reason: 'no_suggestions' });
+      olog.skip('audit_persistence_completed', 'No suggestions found in analysis', { reason: 'no_suggestions' });
       return noContent();
     }
 
-    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions`, {
+    olog.debug('audit_analysis_completed', `Processing ${suggestions.length} suggestions`, {
       count: suggestions.length, companyName,
     });
 
@@ -148,7 +149,7 @@ export default async function handler(message, context) {
 
     // Validate before mutating the evergreen opportunity.
     if (!isValidOffsiteAnalysis(analysisData, auditType)) {
-      olog.failure('guidance_complete', `Malformed analysis payload for siteId: ${siteId}; skipping update`, { reason: 'malformed_payload' });
+      olog.failure('audit_persistence_completed', `Malformed analysis payload for siteId: ${siteId}; skipping update`, { reason: 'malformed_payload' });
       return badRequest('Malformed analysis payload');
     }
 
@@ -212,17 +213,17 @@ export default async function handler(message, context) {
           data: suggestion.data,
         }),
       });
-      ologOpp.success('suggestion_sync', `Synced ${suggestions.length} suggestions`, {
+      ologOpp.success('audit_persistence_suggestions_synced', `Synced ${suggestions.length} suggestions`, {
         peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
       });
     } catch (error) {
-      ologOpp.failure('suggestion_sync', 'Failed to sync suggestions', {
+      ologOpp.failure('audit_persistence_suggestions_synced', 'Failed to sync suggestions', {
         peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
       });
       throw error;
     }
 
-    ologOpp.success('guidance_complete', `Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`, {
+    ologOpp.success('audit_persistence_completed', `Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`, {
       count: suggestions.length,
     });
     logOffsiteLlmUsage(log, HUMAN_PREFIX, siteId, opportunityData.llmUsage);
@@ -233,7 +234,7 @@ export default async function handler(message, context) {
         dataAccess, opportunity, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('outdated_suggestion_delete', `Unexpected expired OUTDATED suggestion deletion failure for auditType ${auditType}`, {
+      ologOpp.failure('audit_housekeeping_suggestions_removed', `Unexpected expired OUTDATED suggestion deletion failure for auditType ${auditType}`, {
         peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
       }, error);
     }
@@ -244,7 +245,7 @@ export default async function handler(message, context) {
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('retention_delete', `Unexpected retention failure for auditType ${auditType}`, {
+      ologOpp.failure('audit_housekeeping_opportunities_removed', `Unexpected retention failure for auditType ${auditType}`, {
         peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
       }, error);
     }
@@ -283,9 +284,10 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    // Intentional drill-down: a failure already logged by an inner event (e.g. suggestion_sync)
-    // will also surface here as guidance_complete outcome=failure - the terminal, per-run marker.
-    olog.failure('guidance_complete', 'Error processing cited analysis', { ...errorField(error) }, error);
+    // Intentional drill-down: a failure already logged by an inner event (e.g.
+    // audit_persistence_suggestions_synced) will also surface here as
+    // audit_persistence_completed outcome=failure - the terminal, per-run marker.
+    olog.failure('audit_persistence_completed', 'Error processing cited analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

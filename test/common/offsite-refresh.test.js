@@ -132,7 +132,7 @@ describe('offsite-refresh', () => {
 
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DB down/)
-          .and(sinon.match(/event=opportunity_resolve/))
+          .and(sinon.match(/event=audit_persistence_opportunity_resolved/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/audit=cited/)),
       );
@@ -148,7 +148,7 @@ describe('offsite-refresh', () => {
       })).to.be.rejectedWith('DB down');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=opportunity_resolve/).and(sinon.match(/audit=unknown/)),
+        sinon.match(/event=audit_persistence_opportunity_resolved/).and(sinon.match(/audit=unknown/)),
       );
     });
 
@@ -221,7 +221,7 @@ describe('offsite-refresh', () => {
       expect(newest.setStatus).to.not.have.been.called;
       // P4-7: retirement is now a structured opportunity_retire line.
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_retire/)
+        sinon.match(/event=audit_persistence_opportunity_retired/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/retired=2/))
           .and(sinon.match(/kept=newest/)),
@@ -307,7 +307,7 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_opportunity_persisted/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/audit=reddit/))
@@ -341,7 +341,7 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_opportunity_persisted/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/)),
       );
@@ -363,7 +363,7 @@ describe('offsite-refresh', () => {
       )).to.be.rejectedWith('db exploded');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_opportunity_persisted/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=db_write/))
           .and(sinon.match(/errorName=Error/))

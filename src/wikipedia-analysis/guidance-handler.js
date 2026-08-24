@@ -31,7 +31,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
 const HUMAN_PREFIX = `[offsite:${AUDIT.WIKIPEDIA}]`;
 
 /**
- * Classifies a presigned-analysis-fetch failure for the `analysis_fetch` reason token:
+ * Classifies a presigned-analysis-fetch failure for the `audit_persistence_payload_fetched`
+ * event's reason token:
  * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
  * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
  *
@@ -132,13 +133,13 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
 
-  olog.start('guidance_receive', `Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+  olog.start('audit_analysis_completed', `Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('guidance_complete', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
+    olog.failure('audit_persistence_completed', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
     return notFound('Site not found');
   }
   const baseUrl = site.getBaseURL();
@@ -146,7 +147,7 @@ export default async function handler(message, context) {
   // Mystique couldn't complete the analysis (e.g. an upstream producer/service
   // failure). Report it to the Slack thread instead of failing silently, then stop.
   if (data?.error) {
-    olog.failure('guidance_receive', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+    olog.failure('audit_analysis_completed', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
       peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     await postWikipediaOutcomeToSlack(
@@ -167,11 +168,11 @@ export default async function handler(message, context) {
         log,
         prefix: HUMAN_PREFIX,
       });
-      olog.success('analysis_fetch', 'Fetched analysis from presigned URL', {
+      olog.success('audit_persistence_payload_fetched', 'Fetched analysis from presigned URL', {
         peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      olog.failure('analysis_fetch', 'Error fetching from presigned URL', {
+      olog.failure('audit_persistence_payload_fetched', 'Error fetching from presigned URL', {
         peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
@@ -180,7 +181,7 @@ export default async function handler(message, context) {
 
   // Validate analysis data
   if (!analysisData) {
-    olog.failure('guidance_complete', 'No analysis data provided in message', { reason: 'no_analysis_data' });
+    olog.failure('audit_persistence_completed', 'No analysis data provided in message', { reason: 'no_analysis_data' });
     return badRequest('Analysis data is required');
   }
 
@@ -188,7 +189,7 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('guidance_complete', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
+      olog.failure('audit_persistence_completed', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -203,7 +204,7 @@ export default async function handler(message, context) {
     // was analyzed but had nothing to improve. Report the outcome to Slack — this
     // path used to return silently, so a Slack-triggered run showed only the trigger.
     if (suggestions.length === 0) {
-      olog.skip('guidance_complete', 'No suggestions found in analysis', { reason: 'no_suggestions' });
+      olog.skip('audit_persistence_completed', 'No suggestions found in analysis', { reason: 'no_suggestions' });
       const outcomeMessage = wikipediaUrl
         ? `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
           + '• Wikipedia page analyzed — no improvement suggestions found'
@@ -212,7 +213,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('guidance_receive', `Processing ${suggestions.length} suggestions`, {
+    olog.debug('audit_analysis_completed', `Processing ${suggestions.length} suggestions`, {
       count: suggestions.length, company,
     });
 
@@ -245,7 +246,7 @@ export default async function handler(message, context) {
       fullAnalysis: analysisData,
     });
     await opportunity.save();
-    ologOpp.success('opportunity_persist', 'Opportunity persisted', {
+    ologOpp.success('audit_persistence_opportunity_persisted', 'Opportunity persisted', {
       peer: PEER.POSTGRES, direction: 'outbound',
     });
 
@@ -262,17 +263,17 @@ export default async function handler(message, context) {
           data: suggestion,
         }),
       });
-      ologOpp.success('suggestion_sync', `Synced ${suggestions.length} suggestions`, {
+      ologOpp.success('audit_persistence_suggestions_synced', `Synced ${suggestions.length} suggestions`, {
         peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
       });
     } catch (error) {
-      ologOpp.failure('suggestion_sync', 'Failed to sync suggestions', {
+      ologOpp.failure('audit_persistence_suggestions_synced', 'Failed to sync suggestions', {
         peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
       });
       throw error;
     }
 
-    ologOpp.success('guidance_complete', `Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`, {
+    ologOpp.success('audit_persistence_completed', `Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`, {
       count: suggestions.length,
     });
 
@@ -285,9 +286,10 @@ export default async function handler(message, context) {
 
     return ok();
   } catch (error) {
-    // Intentional drill-down: a failure already logged by an inner event (e.g. suggestion_sync)
-    // will also surface here as guidance_complete outcome=failure — the terminal, per-run marker.
-    olog.failure('guidance_complete', 'Error processing Wikipedia analysis', { ...errorField(error) }, error);
+    // Intentional drill-down: a failure already logged by an inner event (e.g.
+    // audit_persistence_suggestions_synced) will also surface here as
+    // audit_persistence_completed outcome=failure — the terminal, per-run marker.
+    olog.failure('audit_persistence_completed', 'Error processing Wikipedia analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }
