@@ -451,7 +451,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       // eslint-disable-next-line no-await-in-loop
       const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
       if (!response) {
-        olog?.warn('data_acquisition_scrape_job_status_polled', `DRS lookup returned null for datasetId=${datasetId}, skipping`, {
+        olog?.warn('data_acquisition_scrape_job_status_polled', 'DRS lookup returned null; skipping dataset', {
           peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response',
         });
         // eslint-disable-next-line no-continue
@@ -467,21 +467,27 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       }
       olog?.debug(
         'data_acquisition_scrape_job_status_polled',
-        `DRS lookup datasetId=${datasetId}: `
-        + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available, `
-        + `${response.summary?.scraping ?? 0} scraping, ${response.summary?.not_found ?? 0} not-found`,
-        { peer: PEER.DRS, direction: 'outbound', datasetId },
+        'DRS lookup dataset summary',
+        {
+          peer: PEER.DRS,
+          direction: 'outbound',
+          datasetId,
+          available: response.summary?.available ?? 0,
+          total: response.summary?.total ?? rawUrls.length,
+          scraping: response.summary?.scraping ?? 0,
+          notFound: response.summary?.not_found ?? 0,
+        },
       );
     } catch (error) {
-      olog?.warn('data_acquisition_scrape_job_status_polled', `DRS lookup failed for datasetId=${datasetId}, skipping`, {
+      olog?.warn('data_acquisition_scrape_job_status_polled', 'DRS lookup failed; skipping dataset', {
         peer: PEER.DRS, direction: 'outbound', datasetId, ...errorField(error),
       });
     }
   }
 
   if (!atLeastOneLookupSucceeded) {
-    olog?.warn('data_acquisition_scrape_job_status_polled', `All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`, {
-      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed',
+    olog?.warn('data_acquisition_scrape_job_status_polled', 'All DRS lookups failed or returned null; skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', datasetIds,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -506,8 +512,8 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
   const filtered = urls.filter((item) => availableUrls.has(item.url));
   const removed = total - filtered.length;
   if (removed > 0) {
-    olog?.debug('data_acquisition_scrape_job_status_polled', `DRS availability filter: removed ${removed} URL(s) not yet scraped (${scraping} scraping, ${notFound} not-found), ${filtered.length} remaining`, {
-      peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length,
+    olog?.debug('data_acquisition_scrape_job_status_polled', 'DRS availability filter removed URLs not yet scraped', {
+      peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length, scraping, notFound,
     });
   }
   return { urls: filtered, counts };
@@ -523,13 +529,13 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
     olog?.warn(
       'audit_analysis_url_limit_resolved',
-      `Invalid urlLimit in auditContext (${JSON.stringify(raw)}), using default ${MYSTIQUE_URLS_LIMIT}`,
-      { reason: 'invalid', urlLimit: MYSTIQUE_URLS_LIMIT },
+      'Invalid urlLimit in auditContext; using default',
+      { reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
-    olog?.debug('audit_analysis_url_limit_resolved', `urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`, {
+    olog?.debug('audit_analysis_url_limit_resolved', 'urlLimit exceeds cap; using cap', {
       requested: n, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT,
     });
     return MYSTIQUE_URLS_LIMIT;
@@ -571,7 +577,7 @@ function makeResolveOverride(fieldName) {
     // or forge a second key=value. (This helper is audit-agnostic, so it takes the
     // platform `log`, not an `olog`; the value must still be field-rendered, never
     // interpolated raw into the message.)
-    log?.warn(appendFields(`${prefix} Invalid ${fieldName} in auditContext, omitting`, {
+    log?.warn(appendFields(`${prefix} Invalid override value in auditContext, omitting`, {
       reason: 'invalid_override',
       field: fieldName,
       raw: JSON.stringify(raw).slice(0, 100),
@@ -685,11 +691,11 @@ export async function requestOffsiteScrape(
         messageData: { domainScope, ...overrides },
       },
     });
-    olog?.success('data_acquisition_scrape_job_submitted', `Requested DRS scrape for '${domainScope}' (site ${siteId})`, {
+    olog?.success('data_acquisition_scrape_job_submitted', 'Requested DRS scrape for domain scope', {
       peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides,
     });
   } catch (error) {
-    olog?.warn('data_acquisition_scrape_job_submitted', `Failed to request DRS scrape for '${domainScope}' (site ${siteId})`, {
+    olog?.warn('data_acquisition_scrape_job_submitted', 'Failed to request DRS scrape for domain scope', {
       peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides, ...errorField(error),
     });
   }

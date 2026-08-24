@@ -57,8 +57,8 @@ export async function findSnapshotByTriggerAuditId({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (e) {
-    olog.failure('audit_persistence_snapshot_resolved', `Failed to look up existing auditType ${auditType} snapshots`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(e),
+    olog.failure('audit_persistence_snapshot_resolved', 'Failed to look up existing snapshots', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, ...errorField(e),
     });
     throw e;
   }
@@ -135,7 +135,7 @@ export async function prepareSuppressedRunSnapshot({
   if (existingSuppressedRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSuppressedRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('audit_persistence_snapshot_prepared', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', 'Reusing suppressed-refresh snapshot', {
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
       triggerAuditId,
@@ -187,7 +187,7 @@ export async function prepareSupersededRunSnapshot({
   if (existingSupersededRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSupersededRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('audit_persistence_snapshot_prepared', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', 'Reusing superseded-refresh snapshot', {
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),
       triggerAuditId,
@@ -235,20 +235,20 @@ export async function prepareSupersededRunSnapshot({
           ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
         })));
         if (errorItems?.length > 0) {
-          olog.failure('audit_persistence_snapshot_suggestions_copied', `${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`, {
-            peer: PEER.POSTGRES, opportunityId: snapshot.getId(),
+          olog.failure('audit_persistence_snapshot_suggestions_copied', 'Suggestions failed to copy onto snapshot', {
+            peer: PEER.POSTGRES, opportunityId: snapshot.getId(), failed: errorItems.length,
           });
         }
       } catch (err) {
         // addSuggestions threw entirely — the snapshot record already exists but has no
         // suggestions. Delete the orphan so the next delivery recreates the snapshot cleanly.
-        olog.failure('audit_persistence_snapshot_suggestions_copied', `addSuggestions threw for snapshot ${snapshot.getId()}; deleting orphan and rethrowing`, {
+        olog.failure('audit_persistence_snapshot_suggestions_copied', 'addSuggestions threw for snapshot; deleting orphan and rethrowing', {
           peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(err),
         });
         try {
           await snapshot.remove();
         } catch (removeErr) {
-          olog.failure('audit_persistence_snapshot_cleaned_up', `Failed to delete orphan snapshot ${snapshot.getId()}`, {
+          olog.failure('audit_persistence_snapshot_cleaned_up', 'Failed to delete orphan snapshot', {
             peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(removeErr),
           });
         }
@@ -256,9 +256,10 @@ export async function prepareSupersededRunSnapshot({
       }
     }
 
-    olog.success('audit_persistence_snapshot_prepared', `Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()}`, {
+    olog.success('audit_persistence_snapshot_prepared', 'Created superseded-refresh snapshot from evergreen opportunity', {
       peer: PEER.POSTGRES,
       opportunityId: snapshot.getId(),
+      evergreenOpportunityId: evergreenOpportunity.getId(),
       triggerAuditId: triggerAuditId || undefined,
     });
   }

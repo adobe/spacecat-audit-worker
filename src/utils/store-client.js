@@ -215,7 +215,7 @@ export default class StoreClient {
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
 
-    this.log.info(sc(`Fetching ${auditType} URLs for siteId: ${siteId}`, {
+    this.log.info(sc('Fetching URLs from URL Store', {
       event: 'data_acquisition_store_urls_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
     }));
 
@@ -236,8 +236,8 @@ export default class StoreClient {
         },
       ));
     } catch (error) {
-      this.log.error(sc(`Failed to read ${auditType} URLs for siteId: ${siteId}: ${error.message}`, {
-        event: 'data_acquisition_store_urls_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name,
+      this.log.error(sc('Failed to read URLs from URL Store', {
+        event: 'data_acquisition_store_urls_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name, errorMessage: error.message,
       }));
       throw error;
     }
@@ -247,7 +247,7 @@ export default class StoreClient {
     }
 
     const urls = items.map(toAuditUrlJson);
-    this.log.info(sc(`Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`, {
+    this.log.info(sc('Found URLs in URL Store', {
       event: 'data_acquisition_store_urls_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
     }));
     return urls;
@@ -267,7 +267,7 @@ export default class StoreClient {
     this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
 
-    this.log.info(sc(`Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`, {
+    this.log.info(sc('Fetching sentiment config', {
       event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
     }));
 
@@ -289,7 +289,7 @@ export default class StoreClient {
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }
 
-    this.log.info(sc(`Found ${topics.length} topics and ${guidelines.length} guidelines for siteId: ${siteId}`, {
+    this.log.info(sc('Found topics and guidelines', {
       event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, topics: topics.length, guidelines: guidelines.length,
     }));
     return { topics, guidelines };

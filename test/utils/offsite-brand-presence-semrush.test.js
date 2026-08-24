@@ -466,7 +466,7 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
     expect(getServiceAccessToken).to.not.have.been.called;
-    expect(log.info).to.have.been.calledWithMatch(/not entitled for Semrush \(no-workspace\)/);
+    expect(log.info).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no-workspace/);
     expect(onProgress).to.have.been.calledWith(
       ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
     );

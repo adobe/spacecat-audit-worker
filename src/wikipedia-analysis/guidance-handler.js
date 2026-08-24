@@ -133,13 +133,13 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
 
-  olog.start('audit_analysis_completed', `Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`, {
+  olog.start('audit_analysis_completed', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('audit_persistence_completed', `Site not found for siteId: ${siteId}`, { reason: 'site_not_found' });
+    olog.failure('audit_persistence_completed', 'Site not found', { reason: 'site_not_found' });
     return notFound('Site not found');
   }
   const baseUrl = site.getBaseURL();
@@ -147,7 +147,7 @@ export default async function handler(message, context) {
   // Mystique couldn't complete the analysis (e.g. an upstream producer/service
   // failure). Report it to the Slack thread instead of failing silently, then stop.
   if (data?.error) {
-    olog.failure('audit_analysis_completed', `Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}`, {
+    olog.failure('audit_analysis_completed', 'Mystique returned an error', {
       peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     await postWikipediaOutcomeToSlack(
@@ -189,7 +189,7 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('audit_persistence_completed', `Audit not found for auditId: ${auditId}`, { reason: 'audit_not_found' });
+      olog.failure('audit_persistence_completed', 'Audit not found', { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -213,7 +213,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('audit_analysis_completed', `Processing ${suggestions.length} suggestions`, {
+    olog.debug('audit_analysis_completed', 'Processing suggestions', {
       count: suggestions.length, company,
     });
 
@@ -273,8 +273,8 @@ export default async function handler(message, context) {
       throw error;
     }
 
-    ologOpp.success('audit_persistence_completed', `Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`, {
-      count: suggestions.length,
+    ologOpp.success('audit_persistence_completed', 'Run processed successfully', {
+      count: suggestions.length, company,
     });
 
     await postWikipediaOutcomeToSlack(
@@ -289,7 +289,7 @@ export default async function handler(message, context) {
     // Intentional drill-down: a failure already logged by an inner event (e.g.
     // audit_persistence_suggestions_synced) will also surface here as
     // audit_persistence_completed outcome=failure — the terminal, per-run marker.
-    olog.failure('audit_persistence_completed', 'Error processing Wikipedia analysis', { ...errorField(error) }, error);
+    olog.failure('audit_persistence_completed', 'Error processing analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

@@ -91,12 +91,12 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('data_acquisition_store_urls_read', `Fetching data from stores for siteId: ${siteId}`, {
+  olog.start('data_acquisition_store_urls_read', 'Fetching data from stores', {
     peer: PEER.URL_STORE, direction: 'inbound',
   });
 
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('data_acquisition_store_urls_read', `Retrieved ${rawUrls.length} Reddit URLs from URL Store`, {
+  olog.success('data_acquisition_store_urls_read', 'Retrieved URLs from URL Store', {
     peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
   });
 
@@ -114,10 +114,9 @@ async function fetchStoreData(siteId, context, site) {
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.debug('audit_orchestration_brand_topics_resolved', `Computed ${topics.length} topics from brand presence data`, {
+  olog.debug('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
     count: topics.length,
   });
-  olog.debug('audit_orchestration_brand_topics_resolved', `Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
   let guidelines = [];
   try {
@@ -165,8 +164,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_orchestration_started', `Starting Reddit analysis audit for site: ${siteId}`);
-  olog.debug('audit_orchestration_started', `auditContext: ${JSON.stringify(auditContext)}`);
+  olog.start('audit_orchestration_started', 'Audit started');
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
@@ -188,7 +186,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.success('audit_orchestration_brand_profile_resolved', 'Resolved Reddit config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
       companyName: redditConfig.companyName,
       website: redditConfig.companyWebsite,
     });
@@ -201,8 +199,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     olog.success(
       'data_acquisition_completed',
       scrapedNow
-        ? `DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
-        : `Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
+        ? 'DRS scrape finished this cycle; proceeding to Mystique'
+        : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
       { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
 
@@ -388,7 +386,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('audit_analysis_url_limit_resolved', `urlLimit=${urlLimit} (URLs sent to Mystique)`);
+    olog.success('audit_analysis_url_limit_resolved', 'URL limit resolved', { urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
@@ -430,7 +428,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
       'audit_analysis_mystique_request_handoff',
-      `Queued Reddit analysis request to Mystique with ${enrichedUrls.length} URLs`,
+      'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',

@@ -251,9 +251,6 @@ describe('Cited Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(7);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match('auditContext: {"messageData":{"urlLimit":"7"}}'),
-      );
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
@@ -271,7 +268,7 @@ describe('Cited Analysis Handler', function () {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`),
+        sinon.match(`count=${mockComputedTopics.length}`),
       );
     });
 
@@ -388,7 +385,7 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('Brand-presence topics payload: []'));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
     });
 
     it('should re-throw non-StoreEmptyError from getGuidelines', async () => {
@@ -474,7 +471,7 @@ describe('Cited Analysis Handler', function () {
           .and(sinon.match('companyName=https://bmw.com'))
           .and(sinon.match('website=https://bmw.com')),
       );
-      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -489,7 +486,7 @@ describe('Cited Analysis Handler', function () {
           .and(sinon.match('companyName=https://test-company.com'))
           .and(sinon.match('website=https://test-company.com')),
       );
-      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured for site/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -622,7 +619,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname).sort();
       expect(hosts).to.deep.equal(['caranddriver.com', 'motortrend.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded 3 owned-domain URLs/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded owned-domain URLs.*droppedOwned=3/);
     });
 
     it('drops owned-domain lookalikes that contain the brand token, keeps neutral hosts', async () => {
@@ -642,7 +639,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname);
       expect(hosts).to.deep.equal(['caranddriver.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded 2 non-earned\/branded URLs/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=2/);
     });
 
     it('is a no-op when baseURL is whitespace-only and no brand keywords configured', async () => {
@@ -719,7 +716,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname);
       expect(hosts).to.deep.equal(['caranddriver.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded 4 non-earned\/branded URLs/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=4/);
     });
 
     it('drops brand-owned lookalike domains via configured brand keywords', async () => {
@@ -798,7 +795,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/event=audit_analysis_mystique_request_handoff/)
@@ -847,7 +844,7 @@ describe('Cited Analysis Handler', function () {
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1 (URLs sent to Mystique)'));
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
@@ -927,7 +924,7 @@ describe('Cited Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
     });
 

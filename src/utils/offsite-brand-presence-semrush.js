@@ -156,9 +156,9 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      olog.failure('data_acquisition_bp_data_semrush_read', `Service token rejected for domain-urls (HTTP ${response.status}) — verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)`, logFields);
+      olog.failure('data_acquisition_bp_data_semrush_read', 'Service token rejected for domain-urls; verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)', logFields);
     } else {
-      olog.failure('data_acquisition_bp_data_semrush_read', `domain-urls returned HTTP ${response.status}`, logFields);
+      olog.failure('data_acquisition_bp_data_semrush_read', 'domain-urls returned a non-2xx status', logFields);
     }
     return {
       rows: [], ok: false, authFailure, truncated: false,
@@ -182,7 +182,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
   if (truncated) {
     // A full page is a successful response with a caveat (possible starvation), not a
     // failure — override the default outcome so this doesn't pollute failure-based alerts.
-    olog.warn('data_acquisition_bp_data_semrush_read', `domain-urls returned a full page (${raw.length} >= ${pageSize}); response may be truncated`, {
+    olog.warn('data_acquisition_bp_data_semrush_read', 'domain-urls returned a full page; response may be truncated', {
       peer: PEER.SEMRUSH, direction: 'inbound', rowCount: raw.length, pageSize, outcome: OUTCOME.SUCCESS,
     });
   }
@@ -327,13 +327,13 @@ export async function loadCitedUrlsFromSemrush({
   const { brand, resolved } = await resolveBrandResultForSite(context, site);
   if (!brand?.brandId) {
     if (resolved) {
-      olog.skip('data_acquisition_bp_data_semrush_read', `No active brand for org ${spaceCatId}; skipping Semrush source`, {
+      olog.skip('data_acquisition_bp_data_semrush_read', 'No active brand; skipping Semrush source', {
         peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'no-active-brand',
       });
       await notify(':information_source: No active brand configured for this org — falling back to the legacy source.');
       setDiagnostics({ fallbackReason: 'no-active-brand' });
     } else {
-      olog.warn('data_acquisition_bp_data_semrush_read', `Brand resolution failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+      olog.warn('data_acquisition_bp_data_semrush_read', 'Brand resolution failed (transient); using legacy fallback', {
         peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'brand-resolution-failed',
       });
       await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
@@ -353,7 +353,7 @@ export async function loadCitedUrlsFromSemrush({
   });
   if (!entitlement.entitled) {
     if (entitlement.resolved) {
-      olog.skip('data_acquisition_bp_data_semrush_read', `Brand not entitled for Semrush (${entitlement.reason}) for org ${spaceCatId}; skipping Semrush source`, {
+      olog.skip('data_acquisition_bp_data_semrush_read', 'Brand not entitled for Semrush; skipping Semrush source', {
         peer: PEER.SEMRUSH,
         direction: 'inbound',
         orgId: spaceCatId,
@@ -373,7 +373,7 @@ export async function loadCitedUrlsFromSemrush({
         entitlementReason: entitlement.reason,
       });
     } else {
-      olog.warn('data_acquisition_bp_data_semrush_read', `Semrush entitlement check failed (transient) for org ${spaceCatId}; using legacy fallback`, {
+      olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush entitlement check failed (transient); using legacy fallback', {
         peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
       });
       await notify(':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.');
@@ -480,7 +480,7 @@ export async function loadCitedUrlsFromSemrush({
   });
   await notify(`:package: Loaded ${bucketCounts['youtube.com']} \`youtube.com\`, ${bucketCounts['reddit.com']} \`reddit.com\`, and ${bucketCounts.cited} cited (third-party) URL(s).`);
 
-  olog.success('data_acquisition_bp_data_semrush_read', `Collected ${allUrls.size} cited URLs from Semrush`, {
+  olog.success('data_acquisition_bp_data_semrush_read', 'Collected cited URLs from Semrush', {
     peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, urlCount: allUrls.size, durationMs: elapsed(),
   });
   await notify(`:tada: Semrush source succeeded — *${allUrls.size}* total cited URL(s) in ${elapsed()}ms.`);

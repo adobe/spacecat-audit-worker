@@ -232,7 +232,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(mockOpportunity.save).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.calledBefore(syncSuggestionsStub);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Successfully processed cited analysis/)
+        sinon.match(/Run processed successfully/)
           .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=success/)),
       );
@@ -963,7 +963,7 @@ describe('Cited Analysis Guidance Handler', () => {
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing cited analysis/)
+        sinon.match(/Error processing analysis/)
           .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
@@ -1003,7 +1003,7 @@ describe('Cited Analysis Guidance Handler', () => {
       );
       // ...and the outer catch converts it into a terminal audit_persistence_completed failure.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing cited analysis/).and(sinon.match(/event=audit_persistence_completed/)),
+        sinon.match(/Error processing analysis/).and(sinon.match(/event=audit_persistence_completed/)),
       );
     });
 
@@ -1148,7 +1148,7 @@ describe('Cited Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received cited analysis guidance for siteId/)
+        sinon.match(/Guidance received/)
           .and(sinon.match(/event=audit_analysis_completed/))
           .and(sinon.match(/outcome=start/)),
       );

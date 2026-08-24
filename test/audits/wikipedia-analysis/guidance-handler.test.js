@@ -153,7 +153,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Wikipedia analysis/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
     });
 
     it('should create guidance with industry analysis', async () => {
@@ -463,7 +463,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Wikipedia analysis/)
+        sinon.match(/Error processing analysis/)
           .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
@@ -566,7 +566,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received Wikipedia analysis guidance for siteId/),
+        sinon.match(/Guidance received/),
       );
     });
 

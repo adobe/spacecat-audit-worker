@@ -246,9 +246,6 @@ describe('YouTube Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(7);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match('auditContext: {"messageData":{"urlLimit":"7"}}'),
-      );
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
@@ -266,7 +263,7 @@ describe('YouTube Analysis Handler', function () {
       await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`),
+        sinon.match(`count=${mockComputedTopics.length}`),
       );
     });
 
@@ -401,7 +398,7 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('Brand-presence topics payload: []'));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
     });
 
     it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
@@ -599,7 +596,7 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/event=audit_analysis_mystique_request_handoff/)
@@ -648,7 +645,7 @@ describe('YouTube Analysis Handler', function () {
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1 (URLs sent to Mystique)'));
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
@@ -705,7 +702,7 @@ describe('YouTube Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
     });
 

@@ -253,9 +253,6 @@ describe('Reddit Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(3);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match('auditContext: {"messageData":{"urlLimit":"3"}}'),
-      );
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
@@ -273,7 +270,7 @@ describe('Reddit Analysis Handler', function () {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`),
+        sinon.match(`count=${mockComputedTopics.length}`),
       );
     });
 
@@ -401,7 +398,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('Brand-presence topics payload: []'));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
     });
 
     it('should proceed without guidelines when guidelinesStore returns empty', async () => {
@@ -617,7 +614,7 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/event=audit_analysis_mystique_request_handoff/)
@@ -666,7 +663,7 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1 (URLs sent to Mystique)'));
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
       expect(context.log.info).to.have.been.calledWith(
@@ -725,7 +722,7 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=4 (URLs sent to Mystique)'));
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=4'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(4);
       expect(context.log.info).to.have.been.calledWith(
@@ -758,7 +755,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
     });
 

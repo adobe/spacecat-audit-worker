@@ -75,7 +75,7 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
-    olog.warn('data_acquisition_cooldown_checked', `Failed to check recent ${auditType} audit for site ${siteId}`, {
+    olog.warn('data_acquisition_cooldown_checked', 'Failed to check recent audit', {
       peer: PEER.SPACECAT, direction: 'inbound', auditType, ...errorField(err),
     });
     return false;
@@ -230,7 +230,7 @@ async function triggerAnalysisAudits(
     try {
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-        olog.skip('data_acquisition_analysis_request_handoff', `Skipping ${type} for site ${siteId} — recent audit exists`, {
+        olog.skip('data_acquisition_analysis_request_handoff', 'Skipping analysis dispatch; recent audit exists', {
           peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
         });
         handled.push(type);
@@ -256,12 +256,12 @@ async function triggerAnalysisAudits(
           ...(Object.keys(messageData).length > 0 && { messageData }),
         },
       });
-      olog.success('data_acquisition_analysis_request_handoff', `Triggered ${type} for site ${siteId}`, {
+      olog.success('data_acquisition_analysis_request_handoff', 'Analysis audit dispatched', {
         peer: PEER.SQS, direction: 'outbound', auditType: type,
       });
       handled.push(type);
     } catch (err) {
-      olog.warn('data_acquisition_analysis_request_handoff', `Failed to trigger ${type} analysis audit for site ${siteId}`, {
+      olog.warn('data_acquisition_analysis_request_handoff', 'Failed to dispatch analysis audit', {
         peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
       });
     }
@@ -338,7 +338,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   if (jobs.length === 0) {
     // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
     // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
-    olog.skip('data_acquisition_scrape_job_status_polled', `No jobs to poll, skipping (site ${siteId})`, {
+    olog.skip('data_acquisition_scrape_job_status_polled', 'No jobs to poll, skipping', {
       peer: PEER.DRS, reason: 'no_jobs',
     });
     return ok();
@@ -356,7 +356,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
-      olog.warn('data_acquisition_scrape_job_status_polled', `getJob failed for ${job.jobId}`, {
+      olog.warn('data_acquisition_scrape_job_status_polled', 'DRS getJob call failed', {
         peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
       });
       return { ...job, status: undefined, error: undefined };
@@ -370,7 +370,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
 
   // P1-7: per-poll visibility. Emit a snapshot of terminal/total after resolving statuses
   // so the wait is observable in Splunk (previously nothing was logged on a normal poll).
-  olog.start('data_acquisition_scrape_job_status_polled', `DRS poll for ${baseURL}: ${terminalCount}/${statuses.length} jobs terminal`, {
+  olog.start('data_acquisition_scrape_job_status_polled', 'DRS poll in progress', {
     peer: PEER.DRS, terminal: terminalCount, total: statuses.length,
   });
 
@@ -392,7 +392,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableSemrush,
     );
   } catch (err) {
-    olog.warn('data_acquisition_analysis_request_handoff', `Failed to trigger analysis audits for ${baseURL}`, {
+    olog.warn('data_acquisition_analysis_request_handoff', 'Failed to dispatch analysis audits', {
       peer: PEER.SQS, direction: 'outbound', ...errorField(err),
     });
   }
@@ -422,12 +422,12 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     try {
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
-      olog.failure('data_acquisition_scrape_job_poll_rescheduled', `Failed to re-enqueue DRS status poll for ${baseURL}`, {
+      olog.failure('data_acquisition_scrape_job_poll_rescheduled', 'Failed to re-enqueue DRS status poll', {
         peer: PEER.SQS, direction: 'outbound', ...errorField(err),
       });
       throw err;
     }
-    olog.success('data_acquisition_scrape_job_poll_rescheduled', `${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`, {
+    olog.success('data_acquisition_scrape_job_poll_rescheduled', 'Re-polling DRS status', {
       peer: PEER.SQS, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds,
     });
     return ok();
@@ -445,14 +445,14 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // dropped source (was previously visible only as prose in the Slack summary).
   const dropped = computeDroppedAuditTypes(statuses, new Set(nextTriggered));
   for (const { auditType, reason } of dropped) {
-    olog.failure('data_acquisition_scrape_job_status_polled', `Dropping ${auditType} for ${baseURL}: no DRS success (${reason})`, {
+    olog.failure('data_acquisition_scrape_job_status_polled', 'Dropping analysis audit type; no DRS success', {
       peer: PEER.DRS, reason, auditType,
     });
   }
 
   const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
-  olog.success('data_acquisition_scrape_job_poll_summary_notified', `Posted completion summary for ${baseURL} (${statuses.length} jobs)`, {
+  olog.success('data_acquisition_scrape_job_poll_summary_notified', 'Posted DRS completion summary', {
     peer: PEER.SLACK, direction: 'outbound', jobs: statuses.length,
   });
 

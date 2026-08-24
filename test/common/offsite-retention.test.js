@@ -524,7 +524,8 @@ describe('offsite-retention', () => {
         failed: suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
       });
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to delete 5 expired OUTDATED suggestion\(s\)/)
+        sinon.match(/Failed to delete expired OUTDATED suggestion batch/)
+          .and(sinon.match(/batchSize=5/))
           .and(sinon.match(/errorMessage="batch DELETE failed"/)),
       );
       expect(log.info).to.not.have.been.calledWith(
@@ -559,7 +560,7 @@ describe('offsite-retention', () => {
       });
       expect(removeByIds).to.have.been.calledBefore(log.info);
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Deleted 1 expired OUTDATED suggestion\(s\)/)
+        sinon.match(/Deleted expired OUTDATED suggestions/)
           .and(sinon.match(/event=audit_housekeeping_suggestions_removed/))
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/))

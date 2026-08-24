@@ -686,7 +686,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing YouTube analysis/)
+        sinon.match(/Error processing analysis/)
           .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
@@ -977,7 +977,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.save).to.have.been.calledOnce;
       expect(response.status).to.equal(200);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Successfully processed YouTube analysis/),
+        sinon.match(/Run processed successfully/),
       );
     });
   });

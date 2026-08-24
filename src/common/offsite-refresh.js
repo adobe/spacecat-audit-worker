@@ -112,10 +112,11 @@ export async function persistOffsiteOpportunity(
         data: mappedOpportunity.data,
         ...(mappedOpportunity.status ? { status: mappedOpportunity.status } : {}),
       });
-      olog.success('audit_persistence_opportunity_persisted', `Created ${auditType} opportunity`, {
+      olog.success('audit_persistence_opportunity_persisted', 'Created opportunity', {
         peer: PEER.POSTGRES,
         direction: 'outbound',
         opportunityId: created.getId(),
+        auditType,
         status: mappedOpportunity.status,
       });
       return created;
@@ -126,17 +127,18 @@ export async function persistOffsiteOpportunity(
     opportunityToUpdate.setUpdatedBy('system');
     await opportunityToUpdate.save();
 
-    olog.success('audit_persistence_opportunity_persisted', `Refreshed evergreen ${auditType} opportunity`, {
+    olog.success('audit_persistence_opportunity_persisted', 'Refreshed evergreen opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       opportunityId: opportunityToUpdate.getId(),
+      auditType,
       status: mappedOpportunity.status,
     });
     return opportunityToUpdate;
   } catch (error) {
     // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
     // structured, THEN rethrow unchanged so the caller's error handling is preserved.
-    olog.failure('audit_persistence_opportunity_persisted', `Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}`, {
+    olog.failure('audit_persistence_opportunity_persisted', 'Failed to persist opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       reason: 'db_write',
@@ -168,7 +170,7 @@ export async function resolveEvergreenOffsiteOpportunity({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    olog.failure('audit_persistence_opportunity_resolved', `Failed to fetch opportunities for siteId ${siteId}`, {
+    olog.failure('audit_persistence_opportunity_resolved', 'Failed to fetch opportunities', {
       peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
     });
     throw e;
@@ -187,8 +189,8 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  olog.success('audit_persistence_opportunity_retired', `Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`, {
-    peer: PEER.POSTGRES, direction: 'outbound', retired: duplicates.length, kept: evergreenOpportunity.getId(),
+  olog.success('audit_persistence_opportunity_retired', 'Duplicate opportunities found; retiring extras', {
+    peer: PEER.POSTGRES, direction: 'outbound', found: matchingOpportunities.length, retired: duplicates.length, kept: evergreenOpportunity.getId(),
   });
 
   duplicates.forEach((duplicate) => {

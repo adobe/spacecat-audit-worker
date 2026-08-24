@@ -420,7 +420,7 @@ describe('StoreClient', () => {
       await storeClient.getGuidelines(siteId, 'test');
 
       expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/2 topics and 1 guidelines/),
+        sinon.match(/topics=2/).and(sinon.match(/guidelines=1/)),
       );
     });
   });
