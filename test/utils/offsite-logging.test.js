@@ -242,7 +242,7 @@ describe('offsite-logging helper', () => {
   });
 
   describe('withAuditPersistLog', () => {
-    it('is a post-processor that logs audit_persist success from the persisted audit data', async () => {
+    it('is a post-processor that logs audit_persistence_run_recorded success from the persisted audit data', async () => {
       const pp = withAuditPersistLog(AUDIT.CITED);
       const auditData = { siteId: 's1', id: 'a1', auditType: 'cited-analysis' };
 
@@ -251,7 +251,7 @@ describe('offsite-logging helper', () => {
       // returns the accumulator unchanged so the post-processor chain is transparent
       expect(result).to.equal(auditData);
       expect(log.info).to.have.been.calledOnceWithExactly(
-        '[offsite:cited] Audit persisted domain=offsite audit=cited event=audit_persist '
+        '[offsite:cited] Audit persisted domain=offsite audit=cited event=audit_persistence_run_recorded '
         + 'outcome=success peer=postgres direction=outbound siteId=s1 auditId=a1 auditType=cited-analysis',
       );
     });
@@ -264,7 +264,7 @@ describe('offsite-logging helper', () => {
       await pp('https://example.com', auditData, context, {}, {});
 
       expect(log.info).to.have.been.calledOnceWithExactly(
-        '[offsite:brand-presence] Audit persisted domain=offsite audit=brand-presence event=audit_persist '
+        '[offsite:brand-presence] Audit persisted domain=offsite audit=brand-presence event=audit_persistence_run_recorded '
         + 'outcome=success peer=postgres direction=outbound siteId=s2 auditId=a2 auditType=offsite-brand-presence',
       );
     });

@@ -213,7 +213,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/).and(sinon.match(`url=${override}`)),
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/).and(sinon.match(`url=${override}`)),
       );
     });
 
@@ -287,7 +287,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=url_override/).and(sinon.match(/after Slack\/mrkdwn normalization/)),
+        sinon.match(/event=audit_orchestration_url_override_resolved/).and(sinon.match(/after Slack\/mrkdwn normalization/)),
       );
     });
 
@@ -340,7 +340,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match(/reason=invalid_url_override/))
           .and(sinon.match('value=not-a-valid-url')),
       );
@@ -412,7 +412,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(
           (msg) => typeof msg === 'string'
-            && msg.includes('event=url_override')
+            && msg.includes('event=audit_orchestration_url_override_resolved')
             && msg.includes(`wikiUrl=${path}`),
         ),
       );
@@ -475,7 +475,7 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('wikipediaUrl=https://en.wikipedia.org/wiki/Example_Corp')),
       );
@@ -501,7 +501,7 @@ describe('Wikipedia Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('wikipediaUrl="(empty → auto-detect)"')),
       );
     });
@@ -634,7 +634,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage.brandId).to.equal('brand-1');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-1/).and(sinon.match(/event=mystique_dispatch/)),
+        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_mystique_request_handoff/)),
       );
     });
 

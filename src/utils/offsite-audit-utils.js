@@ -281,7 +281,8 @@ export function isExcludedCitedHost(hostname, brandTokens) {
  *
  * @param {object} [auditContext]
  * @param {number|string} [auditContext.messageData.urlLimit]
- * @param {object} [olog] - bound offsite logger (createOffsiteLogger); emits `url_limit_resolve`
+ * @param {object} [olog] - bound offsite logger (createOffsiteLogger);
+ *   emits `audit_analysis_url_limit_resolved`
  * @returns {number}
  */
 /**
@@ -426,14 +427,15 @@ export function scrapedThisCycle(auditContext) {
  *   (e.g. ['reddit_posts', 'reddit_comments'])
  * @param {string} siteId - Site ID required by the DRS lookup API
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
- * @param {object} [olog] - bound offsite logger (see createOffsiteLogger); emits `drs_availability`
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
+ *   emits `data_acquisition_scrape_job_status_polled`
  * @returns {Promise<{urls: Array<{url: string}>, counts: {total: number, available: number,
  *   scraping: number, notFound: number, determined: boolean}}>}
  * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog) {
   if (!drsClient || !drsClient.isConfigured()) {
-    olog?.skip('drs_availability', 'DRS client not configured, skipping availability filter', {
+    olog?.skip('data_acquisition_scrape_job_status_polled', 'DRS client not configured, skipping availability filter', {
       peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
@@ -449,7 +451,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       // eslint-disable-next-line no-await-in-loop
       const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
       if (!response) {
-        olog?.warn('drs_availability', `DRS lookup returned null for datasetId=${datasetId}, skipping`, {
+        olog?.warn('data_acquisition_scrape_job_status_polled', `DRS lookup returned null for datasetId=${datasetId}, skipping`, {
           peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response',
         });
         // eslint-disable-next-line no-continue
@@ -464,21 +466,21 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
         }
       }
       olog?.debug(
-        'drs_availability',
+        'data_acquisition_scrape_job_status_polled',
         `DRS lookup datasetId=${datasetId}: `
         + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available, `
         + `${response.summary?.scraping ?? 0} scraping, ${response.summary?.not_found ?? 0} not-found`,
         { peer: PEER.DRS, direction: 'outbound', datasetId },
       );
     } catch (error) {
-      olog?.warn('drs_availability', `DRS lookup failed for datasetId=${datasetId}, skipping`, {
+      olog?.warn('data_acquisition_scrape_job_status_polled', `DRS lookup failed for datasetId=${datasetId}, skipping`, {
         peer: PEER.DRS, direction: 'outbound', datasetId, ...errorField(error),
       });
     }
   }
 
   if (!atLeastOneLookupSucceeded) {
-    olog?.warn('drs_availability', `All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`, {
+    olog?.warn('data_acquisition_scrape_job_status_polled', `All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`, {
       peer: PEER.DRS, direction: 'outbound', reason: 'all_failed',
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
@@ -504,7 +506,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
   const filtered = urls.filter((item) => availableUrls.has(item.url));
   const removed = total - filtered.length;
   if (removed > 0) {
-    olog?.debug('drs_availability', `DRS availability filter: removed ${removed} URL(s) not yet scraped (${scraping} scraping, ${notFound} not-found), ${filtered.length} remaining`, {
+    olog?.debug('data_acquisition_scrape_job_status_polled', `DRS availability filter: removed ${removed} URL(s) not yet scraped (${scraping} scraping, ${notFound} not-found), ${filtered.length} remaining`, {
       peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length,
     });
   }
@@ -520,14 +522,14 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
   const n = Number(raw);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
     olog?.warn(
-      'url_limit_resolve',
+      'audit_analysis_url_limit_resolved',
       `Invalid urlLimit in auditContext (${JSON.stringify(raw)}), using default ${MYSTIQUE_URLS_LIMIT}`,
       { reason: 'invalid', urlLimit: MYSTIQUE_URLS_LIMIT },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
-    olog?.debug('url_limit_resolve', `urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`, {
+    olog?.debug('audit_analysis_url_limit_resolved', `urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`, {
       requested: n, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT,
     });
     return MYSTIQUE_URLS_LIMIT;
@@ -646,7 +648,8 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
  *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
  *   the analysis audit that triggered it, instead of falling back to the plain env var.
- * @param {object} [olog] - bound offsite logger (see createOffsiteLogger); emits `scrape_request`
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
+ *   emits `data_acquisition_scrape_job_submitted`
  *   with `reason=self_heal`. Threaded from the analysis-handler caller so the audit slug/ids are
  *   bound (this generic util does not know which analysis triggered the self-heal).
  *
@@ -682,11 +685,11 @@ export async function requestOffsiteScrape(
         messageData: { domainScope, ...overrides },
       },
     });
-    olog?.success('scrape_request', `Requested DRS scrape for '${domainScope}' (site ${siteId})`, {
+    olog?.success('data_acquisition_scrape_job_submitted', `Requested DRS scrape for '${domainScope}' (site ${siteId})`, {
       peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides,
     });
   } catch (error) {
-    olog?.warn('scrape_request', `Failed to request DRS scrape for '${domainScope}' (site ${siteId})`, {
+    olog?.warn('data_acquisition_scrape_job_submitted', `Failed to request DRS scrape for '${domainScope}' (site ${siteId})`, {
       peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides, ...errorField(error),
     });
   }

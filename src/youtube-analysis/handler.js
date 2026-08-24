@@ -91,12 +91,12 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('url_store_read', `Fetching data from stores for siteId: ${siteId}`, {
+  olog.start('data_acquisition_store_urls_read', `Fetching data from stores for siteId: ${siteId}`, {
     peer: PEER.URL_STORE, direction: 'inbound',
   });
 
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('url_store_read', `Retrieved ${rawUrls.length} YouTube URLs from URL Store`, {
+  olog.success('data_acquisition_store_urls_read', `Retrieved ${rawUrls.length} YouTube URLs from URL Store`, {
     peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
   });
 
@@ -109,15 +109,15 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     olog,
   );
-  olog.success('drs_availability', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
+  olog.success('data_acquisition_scrape_job_status_polled', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.debug('topics_load', `Computed ${topics.length} topics from brand presence data`, {
+  olog.debug('audit_orchestration_brand_topics_resolved', `Computed ${topics.length} topics from brand presence data`, {
     count: topics.length,
   });
-  olog.debug('topics_load', `Brand-presence topics payload: ${JSON.stringify(topics)}`);
+  olog.debug('audit_orchestration_brand_topics_resolved', `Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
   let guidelines = [];
   try {
@@ -128,7 +128,7 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      olog.skip('guideline_read', 'No guidelines configured for youtube-analysis, proceeding without', {
+      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines configured for youtube-analysis, proceeding without', {
         peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines',
       });
     } else {
@@ -136,7 +136,7 @@ async function fetchStoreData(siteId, context, site) {
     }
   }
 
-  olog.success('guideline_read', `Retrieved ${guidelines.length} guidelines`, {
+  olog.success('audit_orchestration_brand_guidelines_resolved', `Retrieved ${guidelines.length} guidelines`, {
     peer: PEER.URL_STORE, direction: 'inbound', count: guidelines.length,
   });
 
@@ -165,8 +165,8 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_start', `Starting YouTube analysis audit for site: ${siteId}`);
-  olog.debug('audit_start', `auditContext: ${JSON.stringify(auditContext)}`);
+  olog.start('audit_orchestration_started', `Starting YouTube analysis audit for site: ${siteId}`);
+  olog.debug('audit_orchestration_started', `auditContext: ${JSON.stringify(auditContext)}`);
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
@@ -176,7 +176,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
     const youtubeConfig = getYouTubeConfig(site);
 
     if (!youtubeConfig.companyName) {
-      olog.warn('config_resolve', 'No company name configured for site, skipping audit', {
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site, skipping audit', {
         outcome: OUTCOME.SKIP, reason: 'no_company_name',
       });
       return {
@@ -188,7 +188,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.success('config_resolve', 'Resolved YouTube config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Resolved YouTube config', {
       companyName: youtubeConfig.companyName,
       website: youtubeConfig.companyWebsite,
     });
@@ -199,7 +199,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
     olog.success(
-      'store_fetch_complete',
+      'data_acquisition_completed',
       scrapedNow
         ? `DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
         : `Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
@@ -249,7 +249,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // YouTube URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        olog.failure('url_store_read', 'URL store still empty after scrape', {
+        olog.failure('data_acquisition_store_urls_read', 'URL store still empty after scrape', {
           peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
         });
         await postMessageOptional(
@@ -266,7 +266,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      olog.skip('store_fetch_complete', 'URL store empty, requesting a scoped scrape for youtube.com', {
+      olog.skip('data_acquisition_completed', 'URL store empty, requesting a scoped scrape for youtube.com', {
         status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_store',
       });
       await postMessageOptional(
@@ -297,7 +297,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('drs_availability', 'No DRS content available after scraping', {
+        olog.failure('data_acquisition_scrape_job_status_polled', 'No DRS content available after scraping', {
           peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
         });
         await postMessageOptional(
@@ -311,7 +311,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      olog.skip('store_fetch_complete', 'URLs stored but not scraped in DRS yet, requesting a scrape for youtube.com', {
+      olog.skip('data_acquisition_completed', 'URLs stored but not scraped in DRS yet, requesting a scrape for youtube.com', {
         status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'no_drs_content',
       });
       await postMessageOptional(
@@ -337,7 +337,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_started', 'Audit failed', { ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -363,14 +363,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    olog.skip('mystique_dispatch', 'Audit failed, skipping Mystique message', {
+    olog.skip('audit_analysis_mystique_request_handoff', 'Audit failed, skipping Mystique message', {
       peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('mystique_dispatch', 'SQS or Mystique queue not configured, skipping message', {
+    olog.warn('audit_analysis_mystique_request_handoff', 'SQS or Mystique queue not configured, skipping message', {
       outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'not_configured',
     });
     return auditData;
@@ -380,7 +380,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.warn('mystique_dispatch', 'Site not found, skipping Mystique message', {
+      olog.warn('audit_analysis_mystique_request_handoff', 'Site not found, skipping Mystique message', {
         outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found',
       });
       return auditData;
@@ -388,7 +388,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('url_limit_resolve', `urlLimit=${urlLimit} (URLs sent to Mystique)`);
+    olog.success('audit_analysis_url_limit_resolved', `urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
@@ -418,18 +418,18 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', {
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
         peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
 
-    olog.debug('mystique_dispatch', `Built Mystique message type ${message.type}`, {
+    olog.debug('audit_analysis_mystique_request_built', `Built Mystique message type ${message.type}`, {
       peer: PEER.MYSTIQUE, direction: 'outbound',
     });
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
-      'mystique_dispatch',
+      'audit_analysis_mystique_request_handoff',
       `Queued YouTube analysis request to Mystique with ${enrichedUrls.length} URLs`,
       {
         peer: PEER.MYSTIQUE,
@@ -441,7 +441,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     );
     return auditData;
   } catch (error) {
-    olog.failure('mystique_dispatch', 'Failed to send Mystique message', {
+    olog.failure('audit_analysis_mystique_request_handoff', 'Failed to send Mystique message', {
       peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
     });
     throw error;

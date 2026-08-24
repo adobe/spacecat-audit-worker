@@ -459,17 +459,17 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // The outer catch folds the error into a structured guidance_complete failure line
+      // The outer catch folds the error into a structured audit_persistence_completed failure line
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture.
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Error processing Wikipedia analysis/)
-          .and(sinon.match(/event=guidance_complete/))
+          .and(sinon.match(/event=audit_persistence_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
-        (c) => /event=guidance_complete/.test(String(c.args[0])),
+        (c) => /event=audit_persistence_completed/.test(String(c.args[0])),
       );
       expect(outerCatchCall.args).to.have.lengthOf(2);
       expect(outerCatchCall.args[1]).to.be.an('error');
@@ -496,7 +496,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       // Inner catch logs the failed sync event, then rethrows into the outer catch (badRequest).
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=suggestion_sync outcome=failure/),
+        sinon.match(/event=audit_persistence_suggestions_synced outcome=failure/),
       );
     });
 
@@ -777,7 +777,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Mystique returned an error/)
           .and(sinon.match(/mystiqueError="Wikipedia analysis failed"/))
-          .and(sinon.match(/event=guidance_receive/))
+          .and(sinon.match(/event=audit_analysis_completed/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=mystique/)),
       );

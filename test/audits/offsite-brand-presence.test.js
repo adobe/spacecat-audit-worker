@@ -286,7 +286,7 @@ describe('Offsite Brand Presence Handler', function () {
       // The happy-path load emits a structured success with the loaded URL count.
       expect(log.info).to.have.been.calledWith(
         sinon.match(/Loaded 1 cited URL\(s\) from Semrush/)
-          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=semrush/))
           .and(sinon.match(/count=1/)),
@@ -332,7 +332,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(mockLoadBrandPresenceData).to.not.have.been.called; // no legacy fallback
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Semrush source failed/)
-          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=semrush/))
           .and(sinon.match(/reason=semrush-failed/)),
@@ -353,7 +353,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/falling back to PostgREST\/SharePoint/)
-          .and(sinon.match(/event=brand_data_load/))
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=semrush/))
           .and(sinon.match(/reason=semrush-failed/)),
@@ -1656,7 +1656,7 @@ describe('Offsite Brand Presence Handler', function () {
       // level (outcome=failure) rather than a warn/skip — see Fix C.
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
-          .and(sinon.match(/event=drs_submit/))
+          .and(sinon.match(/event=data_acquisition_scrape_job_submitted/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=not_configured/)),
       );
@@ -1945,7 +1945,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(context.sqs.sendMessage).to.not.have.been.called;
       // P1-4: the previously-silent empty-jobs early return now logs a structured skip.
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=drs_poll_schedule/)
+        sinon.match(/event=data_acquisition_scrape_job_poll_scheduled/)
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=no_jobs/)),
       );
@@ -1964,7 +1964,7 @@ describe('Offsite Brand Presence Handler', function () {
       // transient SQS hiccup here must not page.
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to schedule DRS status poll/)
-          .and(sinon.match(/event=drs_poll_schedule/))
+          .and(sinon.match(/event=data_acquisition_scrape_job_poll_scheduled/))
           .and(sinon.match(/outcome=failure/)),
       );
     });

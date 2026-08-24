@@ -346,7 +346,7 @@ describe('offsite-retention', () => {
       expect(retentionSummary.deleted).to.equal(0);
       expect(retentionSummary.scanned).to.equal(0);
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_retention_summary/)
+        sinon.match(/event=audit_housekeeping_suggestions_removal_summary/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/scanned=0/))
           .and(sinon.match(/eligible=0/))
@@ -380,7 +380,7 @@ describe('offsite-retention', () => {
         scanned: 0, eligible: 0, deleted: 0, failed: 0,
       });
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_lookup/)
+        sinon.match(/event=audit_housekeeping_suggestions_found/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
@@ -407,7 +407,7 @@ describe('offsite-retention', () => {
         scanned: 1, eligible: 1, deleted: 0, failed: 1,
       });
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_delete/)
+        sinon.match(/event=audit_housekeeping_suggestions_removed/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
@@ -533,7 +533,7 @@ describe('offsite-retention', () => {
       // A partial failure must surface at outcome=failure on the summary, not success — an
       // alerting query keyed on outcome=failure must not miss a partial-batch failure.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_retention_summary/)
+        sinon.match(/event=audit_housekeeping_suggestions_removal_summary/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`)),
       );
@@ -560,7 +560,7 @@ describe('offsite-retention', () => {
       expect(removeByIds).to.have.been.calledBefore(log.info);
       expect(log.info).to.have.been.calledWith(
         sinon.match(/Deleted 1 expired OUTDATED suggestion\(s\)/)
-          .and(sinon.match(/event=outdated_suggestion_delete/))
+          .and(sinon.match(/event=audit_housekeeping_suggestions_removed/))
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
@@ -568,7 +568,7 @@ describe('offsite-retention', () => {
       );
       expect(log.info).to.have.been.calledWith(
         sinon.match(/Expired OUTDATED suggestion deletion summary/)
-          .and(sinon.match(/event=outdated_suggestion_retention_summary/))
+          .and(sinon.match(/event=audit_housekeeping_suggestions_removal_summary/))
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
@@ -635,7 +635,7 @@ describe('offsite-retention', () => {
 
       expect(expiredSnapshots).to.deep.equal([]);
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=retention_lookup/)
+        sinon.match(/event=audit_housekeeping_opportunities_found/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/audit=cited/))
           .and(sinon.match(/errorMessage="DB down"/)),
@@ -783,7 +783,7 @@ describe('offsite-retention', () => {
       expect(removeByIdsSuggestion).to.have.been.calledOnceWith(['sugg-2', 'sugg-1']);
       expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['second-expired', 'first-expired']);
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=retention_delete/)
+        sinon.match(/event=audit_housekeeping_opportunities_removed/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/eligible=2/))
           .and(sinon.match(/deleted=2/)),

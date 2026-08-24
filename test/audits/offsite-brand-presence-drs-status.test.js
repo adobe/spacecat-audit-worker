@@ -201,7 +201,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     expect(thrown.message).to.equal('SQS reschedule down');
     expect(log.error).to.have.been.calledWith(
       sinon.match(/Failed to re-enqueue DRS status poll/)
-        .and(sinon.match(/event=drs_poll_reschedule/))
+        .and(sinon.match(/event=data_acquisition_scrape_job_poll_rescheduled/))
         .and(sinon.match(/outcome=failure/)),
     );
   });
@@ -235,7 +235,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     // P1-6: the youtube bucket (still running at the deadline) is dropped with a
     // structured, alertable failure instead of only appearing in the Slack prose.
     expect(log.error).to.have.been.calledWith(
-      sinon.match(/event=drs_poll/)
+      sinon.match(/event=data_acquisition_scrape_job_status_polled/)
         .and(sinon.match(/outcome=failure/))
         .and(sinon.match(/reason=budget_exceeded/))
         .and(sinon.match(/auditType=youtube-analysis/)),
@@ -485,7 +485,7 @@ describe('offsite-brand-presence DRS status handler', function () {
       // P1-6: both buckets failed their scrape (all terminal, no success) → dropped with
       // reason=scrape_failed rather than budget_exceeded.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=drs_poll/)
+        sinon.match(/event=data_acquisition_scrape_job_status_polled/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=scrape_failed/))
           .and(sinon.match(/auditType=reddit-analysis/)),

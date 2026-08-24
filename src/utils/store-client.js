@@ -216,13 +216,13 @@ export default class StoreClient {
     const { AuditUrl } = this.dataAccess;
 
     this.log.info(sc(`Fetching ${auditType} URLs for siteId: ${siteId}`, {
-      event: 'url_store_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
+      event: 'data_acquisition_store_urls_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
     }));
 
-    // P2-3: wrap the DB read so a genuine read error is a distinct, alertable
-    // `url_store_read outcome=failure` rather than surfacing only as the generic
-    // "Audit failed". The empty-store case below stays a StoreEmptyError (a normal
-    // "no URLs yet" signal the callers self-heal on), not a read failure.
+    // Wraps the DB read so a genuine read error is a distinct, alertable
+    // `data_acquisition_store_urls_read outcome=failure` rather than surfacing only as
+    // the generic "Audit failed". The empty-store case below stays a StoreEmptyError (a
+    // normal "no URLs yet" signal the callers self-heal on), not a read failure.
     let items;
     try {
       items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
@@ -237,7 +237,7 @@ export default class StoreClient {
       ));
     } catch (error) {
       this.log.error(sc(`Failed to read ${auditType} URLs for siteId: ${siteId}: ${error.message}`, {
-        event: 'url_store_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name,
+        event: 'data_acquisition_store_urls_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name,
       }));
       throw error;
     }
@@ -248,7 +248,7 @@ export default class StoreClient {
 
     const urls = items.map(toAuditUrlJson);
     this.log.info(sc(`Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`, {
-      event: 'url_store_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
+      event: 'data_acquisition_store_urls_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
     }));
     return urls;
   }
@@ -268,7 +268,7 @@ export default class StoreClient {
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
 
     this.log.info(sc(`Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`, {
-      event: 'guideline_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
+      event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
     }));
 
     const topicItems = await this.#fetchAllPages(
@@ -290,7 +290,7 @@ export default class StoreClient {
     }
 
     this.log.info(sc(`Found ${topics.length} topics and ${guidelines.length} guidelines for siteId: ${siteId}`, {
-      event: 'guideline_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, topics: topics.length, guidelines: guidelines.length,
+      event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, topics: topics.length, guidelines: guidelines.length,
     }));
     return { topics, guidelines };
   }

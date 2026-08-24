@@ -101,26 +101,26 @@ function unwrapSlackMrkdwnLink(raw) {
 function resolveWikipediaUrlOverride(auditContext, olog) {
   const md = auditContext?.messageData;
   if (!md) {
-    olog?.debug('url_override', 'No messageData on audit context', { reason: 'no_message_data' });
+    olog?.debug('audit_orchestration_url_override_resolved', 'No messageData on audit context', { reason: 'no_message_data' });
     return undefined;
   }
 
   const wikiVal = md.wikiUrl;
   const wikipediaVal = md.wikipediaUrl;
 
-  olog?.debug('url_override', 'Resolving Wikipedia URL override from messageData', {
+  olog?.debug('audit_orchestration_url_override_resolved', 'Resolving Wikipedia URL override from messageData', {
     wikiUrl: wikiVal, wikipediaUrl: wikipediaVal,
   });
 
   const rawOverride = wikiVal || wikipediaVal;
 
   if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
-    olog?.debug('url_override', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value' });
+    olog?.debug('audit_orchestration_url_override_resolved', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value' });
     return undefined;
   }
 
   if (typeof rawOverride !== 'string') {
-    olog?.debug('url_override', 'Override rejected: expected a string value', {
+    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: expected a string value', {
       reason: 'non_string', valueType: typeof rawOverride,
     });
     return undefined;
@@ -128,20 +128,20 @@ function resolveWikipediaUrlOverride(auditContext, olog) {
 
   const normalized = unwrapSlackMrkdwnLink(rawOverride);
   if (!normalized) {
-    olog?.debug('url_override', 'Override rejected: empty after Slack/mrkdwn normalization', {
+    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: empty after Slack/mrkdwn normalization', {
       reason: 'empty_after_normalize',
     });
     return undefined;
   }
 
   if (!isValidUrl(normalized)) {
-    olog?.debug('url_override', 'Override rejected: not a valid URL', {
+    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: not a valid URL', {
       reason: 'invalid_url', value: normalized,
     });
     return { invalid: true, value: normalized };
   }
 
-  olog?.debug('url_override', 'Override accepted', { url: normalized });
+  olog?.debug('audit_orchestration_url_override_resolved', 'Override accepted', { url: normalized });
 
   return { url: normalized };
 }
@@ -235,26 +235,26 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   const siteId = site.getId();
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId });
 
-  olog.start('audit_start', `Starting Wikipedia analysis audit for site: ${siteId}`);
+  olog.start('audit_orchestration_started', `Starting Wikipedia analysis audit for site: ${siteId}`);
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
 
     const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, olog);
     if (wikipediaUrlOverride?.invalid) {
-      olog.warn('config_resolve', 'Ignoring invalid wikipedia URL override', {
+      olog.warn('audit_orchestration_brand_profile_resolved', 'Ignoring invalid wikipedia URL override', {
         reason: 'invalid_url_override', value: wikipediaUrlOverride.value,
       });
     } else if (wikipediaUrlOverride?.url) {
       wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
-      olog.debug('config_resolve', 'Using Wikipedia URL override from audit message', {
+      olog.debug('audit_orchestration_brand_profile_resolved', 'Using Wikipedia URL override from audit message', {
         url: wikipediaUrlOverride.url,
       });
     }
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
-      olog.warn('config_resolve', 'No company name configured for site, skipping audit', { reason: 'no_company_name' });
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site, skipping audit', { reason: 'no_company_name' });
       return {
         auditResult: {
           success: false,
@@ -264,7 +264,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       };
     }
 
-    olog.success('config_resolve', 'Resolved Wikipedia config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Resolved Wikipedia config', {
       companyName: wikipediaConfig.companyName,
       website: wikipediaConfig.companyWebsite,
       wikipediaUrl: wikipediaConfig.wikipediaUrl,
@@ -282,7 +282,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       fullAuditRef: url,
     };
   } catch (error) {
-    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_started', 'Audit failed', { ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -312,12 +312,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   // Skip if audit failed
   if (!auditResult.success) {
-    olog.skip('mystique_dispatch', 'Audit failed, skipping Mystique message', { reason: 'audit_failed' });
+    olog.skip('audit_analysis_mystique_request_handoff', 'Audit failed, skipping Mystique message', { reason: 'audit_failed' });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('mystique_dispatch', 'SQS or Mystique queue not configured, skipping message', { reason: 'not_configured' });
+    olog.warn('audit_analysis_mystique_request_handoff', 'SQS or Mystique queue not configured, skipping message', { reason: 'not_configured' });
     return auditData;
   }
 
@@ -326,7 +326,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.warn('mystique_dispatch', 'Site not found, skipping Mystique message', { reason: 'site_not_found' });
+      olog.warn('audit_analysis_mystique_request_handoff', 'Site not found, skipping Mystique message', { reason: 'site_not_found' });
       return auditData;
     }
 
@@ -352,7 +352,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', { ...errorField(brandError) });
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', { ...errorField(brandError) });
     }
     const message = applyBrandScope(baseMessage, brand);
 
@@ -362,7 +362,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       : '(empty → auto-detect)';
 
     olog.success(
-      'mystique_dispatch',
+      'audit_analysis_mystique_request_handoff',
       'Queued Wikipedia analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
@@ -373,7 +373,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     );
   } catch (error) {
-    olog.failure('mystique_dispatch', 'Failed to send Mystique message', { peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error) }, error);
+    olog.failure('audit_analysis_mystique_request_handoff', 'Failed to send Mystique message', { peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error) }, error);
     // Re-throw to fail the audit if we can't send to Mystique
     throw error;
   }

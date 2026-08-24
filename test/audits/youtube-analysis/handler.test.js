@@ -465,7 +465,7 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match('companyName=https://bmw.com'))
           .and(sinon.match('website=https://bmw.com')),
       );
@@ -479,7 +479,7 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match('companyName=https://test-company.com'))
           .and(sinon.match('website=https://test-company.com')),
       );
@@ -602,7 +602,7 @@ describe('YouTube Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('urls=2')),
       );
@@ -676,7 +676,7 @@ describe('YouTube Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
@@ -838,7 +838,7 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.brandId).to.equal('brand-2');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/).and(sinon.match(/brandId=brand-2/)),
+        sinon.match(/event=audit_analysis_mystique_request_handoff/).and(sinon.match(/brandId=brand-2/)),
       );
     });
 

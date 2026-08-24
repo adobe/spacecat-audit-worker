@@ -470,7 +470,7 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match('companyName=https://bmw.com'))
           .and(sinon.match('website=https://bmw.com')),
       );
@@ -485,7 +485,7 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match('companyName=https://test-company.com'))
           .and(sinon.match('website=https://test-company.com')),
       );
@@ -500,7 +500,7 @@ describe('Cited Analysis Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match(`website=${baseURL}`))
           .and(sinon.match('competitors=2')),
@@ -801,7 +801,7 @@ describe('Cited Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('urls=2')),
       );
@@ -898,7 +898,7 @@ describe('Cited Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_handoff/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
@@ -1271,7 +1271,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.siteId).to.equal(siteId);
       // brandId is now a structured field on the mystique_dispatch success line.
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/).and(sinon.match(/brandId=brand-4/)),
+        sinon.match(/event=audit_analysis_mystique_request_handoff/).and(sinon.match(/brandId=brand-4/)),
       );
     });
 
