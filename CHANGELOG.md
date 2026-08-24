@@ -1,3 +1,10 @@
+# [1.526.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.525.2...v1.526.0) (2026-08-24)
+
+
+### Features
+
+* **offsite:** adopt phase-prefixed event names for offsite audit logging (LLMO-6973) ([#2911](https://github.com/adobe/spacecat-audit-worker/issues/2911)) ([cb01991](https://github.com/adobe/spacecat-audit-worker/commit/cb019911c007b1f4445ccc624b68191a5d1fb9d7))
+
 ## [1.525.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.525.1...v1.525.2) (2026-08-24)
 
 
