@@ -367,14 +367,14 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('domain-urls-failed');
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
   });
 
   it('falls back (null) on a non-2xx response', async () => {
     fetchStub.resolves({ ok: false, status: 500 });
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('domain-urls-failed');
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
   });
 
   it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 401', async () => {
@@ -383,7 +383,7 @@ describe('offsite-brand-presence-semrush', function () {
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
     expect(erroredWith(/Service token rejected/)).to.equal(true);
-    expect(diagnostics.fallbackReason).to.equal('domain-urls-auth-failed');
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
   it('logs the response body on a 401 so the rejecter (api-service vs Semrush) is identifiable', async () => {
@@ -411,7 +411,7 @@ describe('offsite-brand-presence-semrush', function () {
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
     expect(erroredWith(/Service token rejected/)).to.equal(true);
-    expect(diagnostics.fallbackReason).to.equal('domain-urls-auth-failed');
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
   it('falls back (null) when the response body fails to parse', async () => {
@@ -435,7 +435,7 @@ describe('offsite-brand-presence-semrush', function () {
     });
     expect(result).to.equal(null);
     expect(fetchStub).to.not.have.been.called;
-    expect(diagnostics.fallbackReason).to.equal('no-organization-id');
+    expect(diagnostics.fallbackReason).to.equal('no_organization_id');
   });
 
   it('returns null and logs info when the brand is confirmed absent (resolved=true)', async () => {
@@ -466,7 +466,7 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
     expect(getServiceAccessToken).to.not.have.been.called;
-    expect(log.info).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no-workspace/);
+    expect(log.info).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no_workspace/);
     expect(onProgress).to.have.been.calledWith(
       ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
     );

@@ -123,6 +123,7 @@ export async function prepareSuppressedRunSnapshot({
   if (!triggerAuditId) {
     olog.warn('audit_persistence_snapshot_prepared', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
+      reasonCategory: 'infra',
     });
   }
 
@@ -139,10 +140,12 @@ export async function prepareSuppressedRunSnapshot({
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
       triggerAuditId,
+      snapshotAction: 'reused',
     });
   } else {
     olog.start('audit_persistence_snapshot_prepared', 'Preparing new suppressed-refresh snapshot', {
       triggerAuditId: triggerAuditId || undefined,
+      snapshotAction: 'creating',
     });
   }
 
@@ -168,13 +171,16 @@ export async function prepareSupersededRunSnapshot({
 
   if (!evergreenOpportunity) {
     // First surfaced run: there is no previous evergreen state to preserve.
-    olog.debug('audit_persistence_snapshot_prepared', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed');
+    olog.debug('audit_persistence_snapshot_prepared', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed', {
+      snapshotAction: 'skipped',
+    });
     return { opportunityData, opportunityToUpdate: null };
   }
 
   if (!triggerAuditId) {
     olog.warn('audit_persistence_snapshot_prepared', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
+      reasonCategory: 'infra',
     });
   }
 
@@ -191,6 +197,7 @@ export async function prepareSupersededRunSnapshot({
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),
       triggerAuditId,
+      snapshotAction: 'reused',
     });
   }
 
@@ -261,6 +268,7 @@ export async function prepareSupersededRunSnapshot({
       opportunityId: snapshot.getId(),
       evergreenOpportunityId: evergreenOpportunity.getId(),
       triggerAuditId: triggerAuditId || undefined,
+      snapshotAction: 'created',
     });
   }
 

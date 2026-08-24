@@ -496,7 +496,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       // Inner catch logs the failed sync event, then rethrows into the outer catch (badRequest).
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced outcome=failure/),
+        sinon.match(/event=audit_persistence_suggestions_persisted outcome=failure/),
       );
     });
 
@@ -777,7 +777,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Mystique returned an error/)
           .and(sinon.match(/mystiqueError="Wikipedia analysis failed"/))
-          .and(sinon.match(/event=audit_analysis_completed/))
+          .and(sinon.match(/event=audit_analysis_result_received/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=mystique/)),
       );

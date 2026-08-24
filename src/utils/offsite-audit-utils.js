@@ -428,15 +428,15 @@ export function scrapedThisCycle(auditContext) {
  * @param {string} siteId - Site ID required by the DRS lookup API
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
  * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
- *   emits `data_acquisition_scrape_job_status_polled`
+ *   emits `data_acquisition_scrape_content_checked`
  * @returns {Promise<{urls: Array<{url: string}>, counts: {total: number, available: number,
  *   scraping: number, notFound: number, determined: boolean}}>}
  * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog) {
   if (!drsClient || !drsClient.isConfigured()) {
-    olog?.skip('data_acquisition_scrape_job_status_polled', 'DRS client not configured, skipping availability filter', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+    olog?.skip('data_acquisition_scrape_content_checked', 'DRS client not configured, skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra',
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -451,8 +451,8 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       // eslint-disable-next-line no-await-in-loop
       const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
       if (!response) {
-        olog?.warn('data_acquisition_scrape_job_status_polled', 'DRS lookup returned null; skipping dataset', {
-          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response',
+        olog?.warn('data_acquisition_scrape_content_checked', 'DRS lookup returned null; skipping dataset', {
+          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response', reasonCategory: 'infra',
         });
         // eslint-disable-next-line no-continue
         continue;
@@ -466,7 +466,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
         }
       }
       olog?.debug(
-        'data_acquisition_scrape_job_status_polled',
+        'data_acquisition_scrape_content_checked',
         'DRS lookup dataset summary',
         {
           peer: PEER.DRS,
@@ -479,15 +479,15 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
         },
       );
     } catch (error) {
-      olog?.warn('data_acquisition_scrape_job_status_polled', 'DRS lookup failed; skipping dataset', {
+      olog?.warn('data_acquisition_scrape_content_checked', 'DRS lookup failed; skipping dataset', {
         peer: PEER.DRS, direction: 'outbound', datasetId, ...errorField(error),
       });
     }
   }
 
   if (!atLeastOneLookupSucceeded) {
-    olog?.warn('data_acquisition_scrape_job_status_polled', 'All DRS lookups failed or returned null; skipping availability filter', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', datasetIds,
+    olog?.warn('data_acquisition_scrape_content_checked', 'All DRS lookups failed or returned null; skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', reasonCategory: 'infra', datasetIds,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -512,7 +512,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
   const filtered = urls.filter((item) => availableUrls.has(item.url));
   const removed = total - filtered.length;
   if (removed > 0) {
-    olog?.debug('data_acquisition_scrape_job_status_polled', 'DRS availability filter removed URLs not yet scraped', {
+    olog?.debug('data_acquisition_scrape_content_checked', 'DRS availability filter removed URLs not yet scraped', {
       peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length, scraping, notFound,
     });
   }
@@ -530,7 +530,9 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
     olog?.warn(
       'audit_analysis_url_limit_resolved',
       'Invalid urlLimit in auditContext; using default',
-      { reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT },
+      {
+        reason: 'invalid', reasonCategory: 'config', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT,
+      },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
@@ -579,6 +581,7 @@ function makeResolveOverride(fieldName) {
     // interpolated raw into the message.)
     log?.warn(appendFields(`${prefix} Invalid override value in auditContext, omitting`, {
       reason: 'invalid_override',
+      reasonCategory: 'config',
       field: fieldName,
       raw: JSON.stringify(raw).slice(0, 100),
     }));
@@ -692,11 +695,11 @@ export async function requestOffsiteScrape(
       },
     });
     olog?.success('data_acquisition_scrape_job_submitted', 'Requested DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides,
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', reasonCategory: 'expected', domainScope, ...overrides,
     });
   } catch (error) {
     olog?.warn('data_acquisition_scrape_job_submitted', 'Failed to request DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides, ...errorField(error),
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', reasonCategory: 'expected', domainScope, ...overrides, ...errorField(error),
     });
   }
 }

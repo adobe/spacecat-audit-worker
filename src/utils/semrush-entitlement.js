@@ -55,14 +55,14 @@ const SERENITY_FLAG_NAME = 'serenity';
  * check (`offsite-brand-presence/handler.js`) share one literal instead of two
  * independently-typed copies that could drift.
  */
-export const SEMRUSH_NOT_ENTITLED_REASON = 'not-entitled';
+export const SEMRUSH_NOT_ENTITLED_REASON = 'not_entitled';
 
 /**
  * Reason code the loader sets on `diagnostics.fallbackReason` when the entitlement
  * check itself could not complete (`resolved:false` — see `entitlementReason` on the
- * same diagnostics object for the granular cause: `no-client` vs `check-failed`).
+ * same diagnostics object for the granular cause: `no_client` vs `check_failed`).
  */
-export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement-check-failed';
+export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement_check_failed';
 
 /**
  * Both entitlement-based skip reasons — a deliberate skip (confirmed or
@@ -82,11 +82,11 @@ export const SEMRUSH_ENTITLEMENT_SKIP_REASONS = Object.freeze(
  */
 export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
   ENTITLED: 'entitled',
-  FLAG_DISABLED: 'flag-disabled',
-  NO_WORKSPACE: 'no-workspace',
-  MISSING_INPUT: 'missing-input',
-  NO_CLIENT: 'no-client',
-  CHECK_FAILED: 'check-failed',
+  FLAG_DISABLED: 'flag_disabled',
+  NO_WORKSPACE: 'no_workspace',
+  MISSING_INPUT: 'missing_input',
+  NO_CLIENT: 'no_client',
+  CHECK_FAILED: 'check_failed',
 });
 
 /**
@@ -97,7 +97,7 @@ export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
  * `Organization.findById`, `Brand.findById`) all run CONCURRENTLY via `Promise.all`, so
  * the critical path here is one round-trip deep, not two — the same budget is, if
  * anything, more generous for this shape. Re-validate against real p99s post-rollout
- * if `check-failed` volume looks high (a symptom the timeout is too tight for
+ * if `check_failed` volume looks high (a symptom the timeout is too tight for
  * `Organization`/`Brand`'s data-access-layer overhead vs a raw PostgREST query).
  */
 export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;

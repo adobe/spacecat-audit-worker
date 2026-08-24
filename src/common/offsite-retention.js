@@ -48,7 +48,7 @@ export async function findExpiredSnapshots({
       .allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (error) {
     olog.failure('audit_housekeeping_opportunities_found', 'Failed to find snapshots', {
-      peer: PEER.POSTGRES, direction: 'inbound', auditType, ...errorField(error),
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', ...errorField(error),
     });
     return [];
   }
@@ -166,7 +166,7 @@ export async function deleteExpiredOutdatedSuggestions({
     opportunitySuggestions = await opportunity.getSuggestions() || [];
   } catch (error) {
     olog.failure('audit_housekeeping_suggestions_found', 'Failed to read suggestions for expired OUTDATED suggestion deletion', {
-      peer: PEER.POSTGRES, direction: 'inbound', auditType, ...errorField(error),
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', ...errorField(error),
     });
     return emptyRetentionSummary;
   }

@@ -69,6 +69,9 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     // (Without this, an individual analysis run that self-heals an empty URL store never
     // reaches Mystique: its pending_scrape audit trips the cooldown for the whole hour.)
     // Only a real completed/in-progress analysis within the window dedupes redelivered polls.
+    olog.debug('data_acquisition_cooldown_checked', 'Recent-audit cooldown check succeeded', {
+      peer: PEER.SPACECAT, direction: 'inbound', auditType,
+    });
     if (latest.getAuditResult?.()?.status === 'pending_scrape') {
       return false;
     }
@@ -144,7 +147,8 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  *
  * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
  * @param {Set<string>} triggered - Audit types already dispatched (this + prior polls)
- * @returns {Array<{auditType: string, reason: string}>} Dropped audit types with a reason
+ * @returns {Array<{auditType: string, reason: string, reasonCategory: string}>} Dropped
+ *   audit types with a reason
  */
 function computeDroppedAuditTypes(statuses, triggered) {
   const groups = new Map();
@@ -172,7 +176,11 @@ function computeDroppedAuditTypes(statuses, triggered) {
       continue;
     }
     const allGroupTerminal = groupJobs.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
-    dropped.push({ auditType, reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded' });
+    dropped.push({
+      auditType,
+      reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded',
+      reasonCategory: 'infra',
+    });
   }
   return dropped;
 }
@@ -230,8 +238,8 @@ async function triggerAnalysisAudits(
     try {
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-        olog.skip('data_acquisition_analysis_request_handoff', 'Skipping analysis dispatch; recent audit exists', {
-          peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
+        olog.skip('data_acquisition_analysis_dispatched', 'Skipping analysis dispatch; recent audit exists', {
+          peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', reasonCategory: 'expected', auditType: type,
         });
         handled.push(type);
         // eslint-disable-next-line no-continue
@@ -256,12 +264,12 @@ async function triggerAnalysisAudits(
           ...(Object.keys(messageData).length > 0 && { messageData }),
         },
       });
-      olog.success('data_acquisition_analysis_request_handoff', 'Analysis audit dispatched', {
+      olog.success('data_acquisition_analysis_dispatched', 'Analysis audit dispatched', {
         peer: PEER.SQS, direction: 'outbound', auditType: type,
       });
       handled.push(type);
     } catch (err) {
-      olog.warn('data_acquisition_analysis_request_handoff', 'Failed to dispatch analysis audit', {
+      olog.warn('data_acquisition_analysis_dispatched', 'Failed to dispatch analysis audit', {
         peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
       });
     }
@@ -338,8 +346,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   if (jobs.length === 0) {
     // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
     // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
-    olog.skip('data_acquisition_scrape_job_status_polled', 'No jobs to poll, skipping', {
-      peer: PEER.DRS, reason: 'no_jobs',
+    olog.skip('data_acquisition_scrape_job_poll_checked', 'No jobs to poll, skipping', {
+      peer: PEER.DRS, reason: 'no_jobs', reasonCategory: 'expected',
     });
     return ok();
   }
@@ -356,7 +364,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
-      olog.warn('data_acquisition_scrape_job_status_polled', 'DRS getJob call failed', {
+      olog.warn('data_acquisition_scrape_job_poll_checked', 'DRS getJob call failed', {
         peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
       });
       return { ...job, status: undefined, error: undefined };
@@ -370,7 +378,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
 
   // P1-7: per-poll visibility. Emit a snapshot of terminal/total after resolving statuses
   // so the wait is observable in Splunk (previously nothing was logged on a normal poll).
-  olog.start('data_acquisition_scrape_job_status_polled', 'DRS poll in progress', {
+  olog.start('data_acquisition_scrape_job_poll_checked', 'DRS poll in progress', {
     peer: PEER.DRS, terminal: terminalCount, total: statuses.length,
   });
 
@@ -392,7 +400,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableSemrush,
     );
   } catch (err) {
-    olog.warn('data_acquisition_analysis_request_handoff', 'Failed to dispatch analysis audits', {
+    olog.warn('data_acquisition_analysis_dispatched', 'Failed to dispatch analysis audits', {
       peer: PEER.SQS, direction: 'outbound', ...errorField(err),
     });
   }
@@ -444,16 +452,20 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // DRS success is dropped here with no dispatch. Emit one structured, alertable failure per
   // dropped source (was previously visible only as prose in the Slack summary).
   const dropped = computeDroppedAuditTypes(statuses, new Set(nextTriggered));
-  for (const { auditType, reason } of dropped) {
-    olog.failure('data_acquisition_scrape_job_status_polled', 'Dropping analysis audit type; no DRS success', {
-      peer: PEER.DRS, reason, auditType,
+  for (const { auditType, reason, reasonCategory } of dropped) {
+    olog.failure('data_acquisition_scrape_job_poll_checked', 'Dropping analysis audit type; no DRS success', {
+      peer: PEER.DRS, reason, reasonCategory, auditType,
     });
   }
 
   const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
-  olog.success('data_acquisition_scrape_job_poll_summary_notified', 'Posted DRS completion summary', {
-    peer: PEER.SLACK, direction: 'outbound', jobs: statuses.length,
+  olog.success('data_acquisition_scrape_poll_completed', 'Posted DRS completion summary', {
+    peer: PEER.SLACK,
+    direction: 'outbound',
+    jobs: statuses.length,
+    dropped: dropped.length,
+    ...(dropped.length > 0 && { reason: 'budget_exceeded', reasonCategory: 'infra' }),
   });
 
   return ok();

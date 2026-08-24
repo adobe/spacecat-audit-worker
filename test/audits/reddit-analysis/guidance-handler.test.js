@@ -861,7 +861,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_suggestions_persisted/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/errorName=Error/)),
@@ -885,7 +885,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_suggestions_persisted/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/opportunityId=opp-123/)),

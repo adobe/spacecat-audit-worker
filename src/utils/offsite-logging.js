@@ -198,7 +198,7 @@ export function createOffsiteLogger(log, bound = {}) {
 }
 
 /**
- * Build an offsite `audit_persistence_run_recorded` post-processor for an AuditBuilder.
+ * Build an offsite `audit_persistence_run_persisted` post-processor for an AuditBuilder.
  *
  * The framework persists the Audit record silently (`defaultPersister` -> `Audit.create`) and
  * sets `context.audit` before post-processors run, so this post-processor makes the persist
@@ -215,7 +215,7 @@ export function withAuditPersistLog(audit) {
       audit,
       siteId: auditData?.siteId,
       auditId: auditData?.id ?? context.audit?.getId?.(),
-    }).success('audit_persistence_run_recorded', 'Audit persisted', {
+    }).success('audit_persistence_run_persisted', 'Audit persisted', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       auditType: auditData?.auditType,

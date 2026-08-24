@@ -109,7 +109,7 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     olog,
   );
-  olog.success('data_acquisition_scrape_job_status_polled', `${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`, {
+  olog.success('data_acquisition_scrape_content_checked', `${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
 
@@ -128,7 +128,7 @@ async function fetchStoreData(siteId, context, site) {
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines configured for reddit-analysis, proceeding without', {
-        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines',
+        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines', reasonCategory: 'expected',
       });
     } else {
       throw error;
@@ -175,7 +175,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
 
     if (!redditConfig.companyName) {
       olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site, skipping audit', {
-        outcome: OUTCOME.SKIP, reason: 'no_company_name',
+        outcome: OUTCOME.SKIP, reason: 'no_company_name', reasonCategory: 'config',
       });
       return {
         auditResult: {
@@ -197,7 +197,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
     olog.success(
-      'data_acquisition_completed',
+      'audit_analysis_readiness_resolved',
       scrapedNow
         ? 'DRS scrape finished this cycle; proceeding to Mystique'
         : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
@@ -225,6 +225,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       { threadTs: slackContext?.threadTs },
     );
 
+    olog.success('audit_orchestration_completed', 'Audit complete', { status: 'pending_analysis' });
+
     return {
       auditResult: {
         success: true,
@@ -248,7 +250,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // Reddit URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
         olog.failure('data_acquisition_store_urls_read', 'URL store still empty after scrape', {
-          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_after_scrape', reasonCategory: 'infra', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -264,8 +266,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      olog.skip('data_acquisition_completed', 'URL store empty, requesting a scoped scrape for reddit.com', {
-        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_store',
+      olog.skip('audit_analysis_readiness_resolved', 'URL store empty, requesting a scoped scrape for reddit.com', {
+        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_first_attempt', reasonCategory: 'expected',
       });
       await postMessageOptional(
         context,
@@ -295,8 +297,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('data_acquisition_scrape_job_status_polled', 'No DRS content available after scraping', {
-          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
+        olog.failure('data_acquisition_scrape_content_checked', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_after_retry', reasonCategory: 'infra', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -309,8 +311,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      olog.skip('data_acquisition_completed', 'URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com', {
-        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'no_drs_content',
+      olog.skip('audit_analysis_readiness_resolved', 'URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com', {
+        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_first_attempt', reasonCategory: 'expected',
       });
       await postMessageOptional(
         context,
@@ -335,7 +337,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_orchestration_started', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_failed', 'Audit failed', { ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -362,14 +364,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   if (!auditResult.success) {
     olog.skip('audit_analysis_mystique_request_handoff', 'Audit failed, skipping Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed', reasonCategory: 'expected',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
     olog.warn('audit_analysis_mystique_request_handoff', 'SQS or Mystique queue not configured, skipping message', {
-      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'not_configured',
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured', reasonCategory: 'infra',
     });
     return auditData;
   }
@@ -379,7 +381,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const site = await Site.findById(siteId);
     if (!site) {
       olog.warn('audit_analysis_mystique_request_handoff', 'Site not found, skipping Mystique message', {
-        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found',
+        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch', reasonCategory: 'infra',
       });
       return auditData;
     }
@@ -417,12 +419,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
       olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
 
-    olog.debug('audit_analysis_mystique_request_built', `Built Mystique message type ${message.type}`, {
+    olog.debug('audit_analysis_mystique_payload_built', `Built Mystique message type ${message.type}`, {
       peer: PEER.MYSTIQUE, direction: 'outbound',
     });
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

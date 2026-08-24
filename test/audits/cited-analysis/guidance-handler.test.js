@@ -438,7 +438,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Mystique returned an error/)
           .and(sinon.match(/mystiqueError="HTTP error.*400 Bad Request"/))
-          .and(sinon.match(/event=audit_analysis_completed/))
+          .and(sinon.match(/event=audit_analysis_result_received/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=mystique/)),
       );
@@ -996,7 +996,7 @@ describe('Cited Analysis Guidance Handler', () => {
       // Behavior is unchanged: the outer catch still acks with badRequest.
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_suggestions_persisted/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/errorName=Error/)),
@@ -1024,7 +1024,7 @@ describe('Cited Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_suggestions_persisted/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/opportunityId=opp-123/)),
@@ -1149,7 +1149,7 @@ describe('Cited Analysis Guidance Handler', () => {
 
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Guidance received/)
-          .and(sinon.match(/event=audit_analysis_completed/))
+          .and(sinon.match(/event=audit_analysis_result_received/))
           .and(sinon.match(/outcome=start/)),
       );
     });

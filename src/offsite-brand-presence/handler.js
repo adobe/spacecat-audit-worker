@@ -336,13 +336,13 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     for (const url of urls) {
       entries.push({ url, audits: [config.auditType] });
     }
-    olog.debug('data_acquisition_store_urls_written', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
+    olog.debug('data_acquisition_urls_persisted', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
   }
   for (const url of topCited) {
     entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
-  olog.debug('data_acquisition_store_urls_written', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
-  olog.start('data_acquisition_store_urls_written', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
+  olog.debug('data_acquisition_urls_persisted', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
+  olog.start('data_acquisition_urls_persisted', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
 
   let existingUrlSet;
   try {
@@ -350,7 +350,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
     existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
   } catch (error) {
-    olog.failure('data_acquisition_store_urls_written', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
+    olog.failure('data_acquisition_urls_persisted', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
     return {};
   }
 
@@ -370,7 +370,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
         });
         return entry.url;
       } catch (createError) {
-        olog.warn('data_acquisition_store_urls_written', 'Failed to add URL to store', {
+        olog.warn('data_acquisition_urls_persisted', 'Failed to add URL to store', {
           peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, ...errorField(createError),
         });
         return null;
@@ -383,7 +383,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   const createdCount = storedUrls.size - existingCount;
   const failCount = entries.length - storedUrls.size;
 
-  olog.success('data_acquisition_store_urls_written', 'URL store write complete', {
+  olog.success('data_acquisition_urls_persisted', 'URL store write complete', {
     peer: PEER.URL_STORE, direction: 'outbound', created: createdCount, existing: existingCount, failed: failCount,
   });
 
@@ -543,7 +543,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
         });
       } else {
         olog.failure('data_acquisition_scrape_job_submitted', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', ...errorField(err),
+          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', reasonCategory: 'infra', ...errorField(err),
         });
         return {
           domain, datasetId, status: 'error', error: err.message,
@@ -603,7 +603,7 @@ async function triggerDrsScraping(
 
   if (!drsClient.isConfigured()) {
     olog.failure('data_acquisition_scrape_job_submitted', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -614,7 +614,7 @@ async function triggerDrsScraping(
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
     olog.warn('data_acquisition_scrape_job_submitted', 'Organization has no imsOrgId; skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org',
+      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
@@ -835,7 +835,7 @@ async function scheduleDrsStatusPoll(
 
   if (jobs.length === 0) {
     olog.skip('data_acquisition_scrape_job_poll_scheduled', 'No successfully submitted DRS jobs; not scheduling status poll', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs',
+      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', reasonCategory: 'expected',
     });
     return;
   }
@@ -902,7 +902,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    olog.failure('audit_orchestration_started', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', domainScope });
+    olog.failure('audit_orchestration_started', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', reasonCategory: 'infra', domainScope });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -922,7 +922,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   } catch {
-    olog.warn('audit_orchestration_started', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url' });
+    olog.warn('audit_orchestration_started', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url', reasonCategory: 'config' });
   }
 
   // Brand tokens drop social/search domains and brand-owned lookalikes
@@ -975,11 +975,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       ),
     });
     // A `null` return means the Semrush source FAILED (auth / no-brand /
-    // no-date-window / outage / whole-surface-zero — see the loader's
+    // no_date_window / outage / whole-surface-zero — see the loader's
     // diagnostics.fallbackReason). A genuinely-empty-but-successful result (Map
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
-      const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
+      const reason = semrushDiagnostics.fallbackReason ?? 'semrush_failed';
       // A deliberate entitlement-based skip is never a hard stop, even when this run
       // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
       // errors" for a non-entitled brand must hold regardless of how Semrush was
@@ -1032,11 +1032,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
-  // Granular cause behind an entitlement-based `fallbackReason` (`flag-disabled` |
-  // `no-workspace` | `no-client` | `check-failed`) — set only on the two entitlement
+  // Granular cause behind an entitlement-based `fallbackReason` (`flag_disabled` |
+  // `no_workspace` | `no_client` | `check_failed`) — set only on the two entitlement
   // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
-  // bug (`no-client`) stays distinguishable from a one-off transient blip
-  // (`check-failed`) without changing the coarse-grained hard-stop-exemption contract.
+  // bug (`no_client`) stays distinguishable from a one-off transient blip
+  // (`check_failed`) without changing the coarse-grained hard-stop-exemption contract.
   const entitlementReason = semrushDiagnostics?.entitlementReason;
 
   // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
@@ -1067,7 +1067,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   if (allUrls.size === 0) {
-    olog.success('audit_orchestration_completed', 'No offsite URLs found, audit complete', { reason: 'no_urls' });
+    olog.success('audit_orchestration_completed', 'No offsite URLs found, audit complete', { reason: 'no_urls', reasonCategory: 'expected' });
     await postMessageOptional(
       context,
       channelId,

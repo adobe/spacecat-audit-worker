@@ -142,6 +142,7 @@ export async function persistOffsiteOpportunity(
       peer: PEER.POSTGRES,
       direction: 'outbound',
       reason: 'db_write',
+      reasonCategory: 'infra',
       ...errorField(error),
     });
     throw error;
@@ -171,7 +172,7 @@ export async function resolveEvergreenOffsiteOpportunity({
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
     olog.failure('audit_persistence_opportunity_resolved', 'Failed to fetch opportunities', {
-      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', reasonCategory: 'infra', ...errorField(e),
     });
     throw e;
   }
