@@ -1,3 +1,10 @@
+## [1.525.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.525.1...v1.525.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **cwv:** only exclude genuinely-gone (404/410) URLs, not bot-blocked ones ([#2734](https://github.com/adobe/spacecat-audit-worker/issues/2734)) ([e5892a4](https://github.com/adobe/spacecat-audit-worker/commit/e5892a46ce0bdfee715018e6d838d9e78dd4872f))
+
 ## [1.525.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.525.0...v1.525.1) (2026-08-22)
 
 
