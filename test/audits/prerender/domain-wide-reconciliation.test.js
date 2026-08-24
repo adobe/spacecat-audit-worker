@@ -16,16 +16,14 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   getDomainWideReconciliationCandidates,
-  reconcileCoveredByDomainWide,
+  syncCoveredByDomainWide,
 } from '../../../src/prerender/domain-wide-reconciliation.js';
 import { DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE } from '../../../src/prerender/utils/constants.js';
 import {
   buildContext,
   buildDataAccess,
   buildOpportunity,
-  buildS3Client,
   buildSuggestion,
-  statusKey,
 } from './behaviour/helpers.js';
 
 use(sinonChai);
@@ -33,9 +31,10 @@ use(sinonChai);
 const SITE_ID = 'test-site-id';
 const DEPLOYED_AT = new Date('2026-08-01T00:00:00.000Z').getTime();
 
-function domainWideSuggestion(sandbox, { edgeDeployed = DEPLOYED_AT } = {}) {
+function domainWideSuggestion(sandbox, { status = 'NEW', edgeDeployed = DEPLOYED_AT } = {}) {
   return buildSuggestion(sandbox, {
     id: 'domain-wide-id',
+    status,
     data: { isDomainWide: true, ...(edgeDeployed !== undefined && { edgeDeployed }) },
   });
 }
@@ -62,7 +61,7 @@ describe('domain-wide-reconciliation', () => {
     it('returns [] when dataAccess has no Opportunity entity at all', async () => {
       const context = buildContext(sandbox, { dataAccess: {} });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -73,22 +72,21 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
 
-    it('treats a missing status.json (no pages key at all) the same as an empty page list', async () => {
+    it('treats a missing/undefined siteStatus the same as an empty page list', async () => {
       const url = 'https://example.com/no-status-json';
       const opportunity = buildOpportunity(sandbox, {
         suggestions: [domainWideSuggestion(sandbox), coveredSuggestion(sandbox, { id: 's1', url })],
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {}),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, undefined);
 
       expect(result).to.deep.equal([url]);
     });
@@ -98,7 +96,7 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -109,7 +107,7 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -122,7 +120,7 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -135,7 +133,24 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
+
+      expect(result).to.deep.equal([]);
+    });
+
+    it('returns [] when the only domain-wide suggestion with edgeDeployed is OUTDATED', async () => {
+      // Bug fix: an OUTDATED domain-wide suggestion that still carries a stale edgeDeployed
+      // must not be treated as currently deployed — mirrors the NEW-status guard that
+      // getDomainWideSuggestionDeployedAtEdge already enforced pre-merge.
+      const outdatedWithEdge = domainWideSuggestion(sandbox, { status: 'OUTDATED' });
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [outdatedWithEdge, coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' })],
+      });
+      const context = buildContext(sandbox, {
+        dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
+      });
+
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -151,7 +166,7 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -172,7 +187,7 @@ describe('domain-wide-reconciliation', () => {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([]);
     });
@@ -184,10 +199,9 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, { [statusKey(SITE_ID)]: statusWithPages([]) }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.deep.equal([url]);
     });
@@ -199,16 +213,14 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([{
-            url,
-            scrapingStatus: 'success',
-            scrapedAt: new Date(DEPLOYED_AT - 1000).toISOString(),
-          }]),
-        }),
       });
+      const siteStatus = statusWithPages([{
+        url,
+        scrapingStatus: 'success',
+        scrapedAt: new Date(DEPLOYED_AT - 1000).toISOString(),
+      }]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([url]);
     });
@@ -220,16 +232,14 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([{
-            url,
-            scrapingStatus: 'success',
-            scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
-          }]),
-        }),
       });
+      const siteStatus = statusWithPages([{
+        url,
+        scrapingStatus: 'success',
+        scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
+      }]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([]);
     });
@@ -241,16 +251,14 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([{
-            url,
-            scrapingStatus: 'error',
-            scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
-          }]),
-        }),
       });
+      const siteStatus = statusWithPages([{
+        url,
+        scrapingStatus: 'error',
+        scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
+      }]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([url]);
     });
@@ -262,16 +270,14 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([{
-            url,
-            scrapingStatus: 'failed',
-            scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
-          }]),
-        }),
       });
+      const siteStatus = statusWithPages([{
+        url,
+        scrapingStatus: 'failed',
+        scrapedAt: new Date(DEPLOYED_AT + 1000).toISOString(),
+      }]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([url]);
     });
@@ -283,12 +289,10 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([{ scrapingStatus: 'success' }]),
-        }),
       });
+      const siteStatus = statusWithPages([{ scrapingStatus: 'success' }]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([url]);
     });
@@ -307,15 +311,13 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, {
-          [statusKey(SITE_ID)]: statusWithPages([
-            { url: urlNew, scrapingStatus: 'error', scrapedAt: new Date(DEPLOYED_AT - 1000).toISOString() },
-            { url: urlOld, scrapingStatus: 'error', scrapedAt: new Date(DEPLOYED_AT - 5000).toISOString() },
-          ]),
-        }),
       });
+      const siteStatus = statusWithPages([
+        { url: urlNew, scrapingStatus: 'error', scrapedAt: new Date(DEPLOYED_AT - 1000).toISOString() },
+        { url: urlOld, scrapingStatus: 'error', scrapedAt: new Date(DEPLOYED_AT - 5000).toISOString() },
+      ]);
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, siteStatus);
 
       expect(result).to.deep.equal([urlMissing, urlOld, urlNew]);
     });
@@ -331,20 +333,33 @@ describe('domain-wide-reconciliation', () => {
       });
       const context = buildContext(sandbox, {
         dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
-        s3Client: buildS3Client(sandbox, { [statusKey(SITE_ID)]: statusWithPages([]) }),
       });
 
-      const result = await getDomainWideReconciliationCandidates(context, SITE_ID);
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
 
       expect(result).to.have.length(DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE);
     });
   });
 
-  describe('reconcileCoveredByDomainWide', () => {
+  describe('syncCoveredByDomainWide', () => {
+    it('falls back to empty string for baseUrl/siteId when site getBaseURL/getId are missing', async () => {
+      const suggestion = coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
+      const context = buildContext(sandbox, { site: { getBaseURL: () => '', getId: () => '' } });
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/a', isDeployedAtEdge: false }],
+      );
+
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion]);
+    });
+
     it('no-ops when opportunity is null', async () => {
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(null, context, [{ url: 'https://example.com/a', isDeployedAtEdge: false }]);
+      await syncCoveredByDomainWide(null, context, [{ url: 'https://example.com/a', isDeployedAtEdge: false }]);
 
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
@@ -352,24 +367,39 @@ describe('domain-wide-reconciliation', () => {
     it('no-ops when opportunity has no getSuggestions function', async () => {
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide({}, context, [{ url: 'https://example.com/a', isDeployedAtEdge: false }]);
+      await syncCoveredByDomainWide({}, context, [{ url: 'https://example.com/a', isDeployedAtEdge: false }]);
 
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
-    it('no-ops when every successful comparison confirms isDeployedAtEdge: true', async () => {
+    it('no-ops when dataAccess.Suggestion.saveMany is missing', async () => {
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' })],
+      });
+      const context = buildContext(sandbox, { dataAccess: { Suggestion: {} } });
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/a', isDeployedAtEdge: false }],
+      );
+
+      // Should not throw — guard returns before touching getSuggestions at all.
+      expect(opportunity.getSuggestions).to.not.have.been.called;
+    });
+
+    it('does not save when every successful comparison confirms isDeployedAtEdge: true and there is no domain-wide suggestion', async () => {
       const opportunity = buildOpportunity(sandbox, {
         suggestions: [coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' })],
       });
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [{ url: 'https://example.com/a', isDeployedAtEdge: true }],
       );
 
-      expect(opportunity.getSuggestions).to.not.have.been.called;
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
@@ -378,7 +408,7 @@ describe('domain-wide-reconciliation', () => {
       const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [{ url: 'https://example.com/a', isDeployedAtEdge: false }],
@@ -399,7 +429,7 @@ describe('domain-wide-reconciliation', () => {
       const opportunity = buildOpportunity(sandbox, { suggestions: [pathSuggestion, dwSuggestion] });
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [{ url: 'https://example.com/blog', isDeployedAtEdge: false }],
@@ -413,7 +443,7 @@ describe('domain-wide-reconciliation', () => {
       const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [{ url: 'https://example.com/a?y=2', isDeployedAtEdge: false }],
@@ -431,7 +461,7 @@ describe('domain-wide-reconciliation', () => {
       const opportunity = buildOpportunity(sandbox, { suggestions: [s1, s2, stillDeployed] });
       const context = buildContext(sandbox);
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [
@@ -451,13 +481,106 @@ describe('domain-wide-reconciliation', () => {
       const context = buildContext(sandbox);
       context.dataAccess.Suggestion.saveMany.rejects(new Error('db unavailable'));
 
-      await reconcileCoveredByDomainWide(
+      await syncCoveredByDomainWide(
         opportunity,
         context,
         [{ url: 'https://example.com/a', isDeployedAtEdge: false }],
       );
 
       expect(context.log.error).to.have.been.called;
+    });
+
+    it('covers NEW per-URL and path suggestions when the domain-wide suggestion is deployed', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const urlSuggestion = buildSuggestion(sandbox, {
+        id: 'url-1',
+        data: { url: 'https://example.com/page1' },
+      });
+      const pathSuggestion = buildSuggestion(sandbox, {
+        id: 'path-1',
+        data: { allowedRegexPatterns: ['/blog/*'] },
+      });
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [domainWide, urlSuggestion, pathSuggestion],
+      });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/page1', isDeployedAtEdge: true }],
+      );
+
+      expect(urlSuggestion.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'domain-wide-id' }));
+      expect(pathSuggestion.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'domain-wide-id' }));
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([urlSuggestion, pathSuggestion]);
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
+    });
+
+    it('does not cover an already edgeDeployed per-URL suggestion or an already-covered path suggestion', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const alreadyDeployed = buildSuggestion(sandbox, {
+        id: 'url-1',
+        data: { url: 'https://example.com/page1', edgeDeployed: 111 },
+      });
+      const alreadyCoveredPath = buildSuggestion(sandbox, {
+        id: 'path-1',
+        data: { allowedRegexPatterns: ['/blog/*'], coveredByDomainWide: 'dw-old' },
+      });
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [domainWide, alreadyDeployed, alreadyCoveredPath],
+      });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/page1', isDeployedAtEdge: true }],
+      );
+
+      expect(alreadyDeployed.setData).to.not.have.been.called;
+      expect(alreadyCoveredPath.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
+    });
+
+    it('logs "no NEW suggestions to cover" when the domain-wide suggestion is deployed but no other NEW suggestions exist', async () => {
+      // The domain-wide suggestion itself is always NEW but never a coverage candidate
+      // (no url, and isPathSuggestionData excludes anything with isDomainWide) — so with
+      // no other suggestions in the opportunity, toCover is empty.
+      const domainWide = domainWideSuggestion(sandbox);
+      const opportunity = buildOpportunity(sandbox, { suggestions: [domainWide] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(opportunity, context, []);
+
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
+    });
+
+    it('covers and clears in the same run via a single saveMany call', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const toCover = buildSuggestion(sandbox, {
+        id: 'url-1',
+        data: { url: 'https://example.com/newly-deployed' },
+      });
+      const toClear = coveredSuggestion(sandbox, { id: 'url-2', url: 'https://example.com/rolled-back' });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [domainWide, toCover, toClear] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [
+          { url: 'https://example.com/newly-deployed', isDeployedAtEdge: true },
+          { url: 'https://example.com/rolled-back', isDeployedAtEdge: false },
+        ],
+      );
+
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
+      const saved = context.dataAccess.Suggestion.saveMany.firstCall.args[0];
+      expect(saved).to.include(toCover);
+      expect(saved).to.include(toClear);
     });
   });
 });

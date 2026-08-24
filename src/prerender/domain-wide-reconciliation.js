@@ -10,12 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import {
   isDomainWideSuggestionData,
   isPathSuggestionData,
   normalizePathnameWithQuery,
-  readSiteStatusJson,
   toPathname,
 } from './utils/utils.js';
 import { DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE } from './utils/constants.js';
@@ -34,6 +33,19 @@ function isIndividualUrlSuggestionData(data) {
 }
 
 /**
+ * True when a suggestion is the active (non-OUTDATED) domain-wide suggestion with
+ * `edgeDeployed` set. Shared predicate for both the batch-selection lookup (which fetches
+ * its own suggestion list) and the write-back (which reuses an already-fetched list) so
+ * the "what counts as deployed" rule can't drift between them.
+ * @param {Object} s - Suggestion entity
+ * @returns {boolean}
+ */
+function isDeployedDomainWideSuggestion(s) {
+  return s.getStatus() === Suggestion.STATUSES.NEW
+    && isDomainWideSuggestionData(s.getData()) && !!s.getData()?.edgeDeployed;
+}
+
+/**
  * Finds the site's NEW prerender opportunity and, within it, the domain-wide
  * suggestion that currently has `edgeDeployed` set.
  * @param {Object} dataAccess - Data access layer
@@ -47,9 +59,7 @@ async function findDeployedDomainWide(dataAccess, siteId) {
     return null;
   }
   const suggestions = await opportunity.getSuggestions?.() ?? [];
-  const domainWide = suggestions.find(
-    (s) => isDomainWideSuggestionData(s.getData()) && !!s.getData()?.edgeDeployed,
-  );
+  const domainWide = suggestions.find(isDeployedDomainWideSuggestion);
   if (!domainWide) {
     return null;
   }
@@ -92,11 +102,13 @@ function hasPostDeployConfirmation(pageEntry, deployedAtMs) {
  * drops out of this selection once it gets any post-deploy scrape — no bookkeeping
  * needed to track "already handled".
  *
- * @param {Object} context - Audit context (dataAccess, log, s3Client, env)
+ * @param {Object} context - Audit context (dataAccess, log)
  * @param {string} siteId - Site ID
+ * @param {Object} siteStatus - The site's already-read status.json (caller fetches this
+ *   once via readSiteStatusJson and reuses it here rather than re-reading from S3)
  * @returns {Promise<string[]>} URLs to append to this run's scrape batch
  */
-export async function getDomainWideReconciliationCandidates(context, siteId) {
+export async function getDomainWideReconciliationCandidates(context, siteId, siteStatus) {
   const { dataAccess, log } = context;
   const found = await findDeployedDomainWide(dataAccess, siteId);
   if (!found) {
@@ -113,9 +125,8 @@ export async function getDomainWideReconciliationCandidates(context, siteId) {
     return [];
   }
 
-  const siteStatus = await readSiteStatusJson(siteId, context);
   const pageByPathname = new Map(
-    (siteStatus.pages ?? [])
+    (siteStatus?.pages ?? [])
       .filter((p) => p.url)
       .map((p) => [normalizePathnameWithQuery(p.url), p]),
   );
@@ -137,49 +148,95 @@ export async function getDomainWideReconciliationCandidates(context, siteId) {
 }
 
 /**
- * Clears `coveredByDomainWide` on any per-URL suggestion whose pathname was scraped
- * successfully this run and confirmed `isDeployedAtEdge: false` (LLMO-7052). Runs
- * against the full set of this run's successful comparisons, not just URLs pulled in by
- * getDomainWideReconciliationCandidates, so incidental confirmations from ordinary
- * organic/agentic/included rotation are caught too.
+ * Reconciles `coveredByDomainWide` against this run's confirmed edge state (LLMO-7052).
+ * One suggestion fetch, one save, covering both directions:
  *
- * No grace period: a single confirmed `isDeployedAtEdge: false` result clears the flag
- * immediately, symmetric with markDeployedUrlSuggestionsAsCovered, which already trusts
- * a single confirmed scrape to *set* it. If this fires before a still-propagating CDN
- * deploy has fully caught up, the next confirmed `isDeployedAtEdge: true` re-covers it
- * via that same add-side path.
+ *  - Add: when the domain-wide suggestion has `edgeDeployed`, NEW per-URL suggestions
+ *    whose pathname is confirmed deployed at edge this run get `coveredByDomainWide` set
+ *    (instead of moving to SKIPPED, so a domain-wide rollback naturally restores them to
+ *    the Current tab). NEW path-type suggestions are covered unconditionally while
+ *    domain-wide is active — they're redundant, not something to individually verify.
+ *  - Remove: any suggestion (any status) currently `coveredByDomainWide` whose pathname is
+ *    confirmed NOT deployed at edge this run has the flag cleared immediately — no grace
+ *    period, and independent of whether a domain-wide suggestion currently exists at all.
+ *
+ * Both directions read from a single `opportunity.getSuggestions()` fetch and write
+ * through a single `saveMany` call; the save is non-fatal on failure (logged, swallowed)
+ * so a transient DB error on this reconciliation step doesn't fail an otherwise-successful
+ * audit run — matching how other post-processing steps in this audit behave.
  *
  * @param {Object|null} opportunity - Opportunity entity (no-op if null)
- * @param {Object} context - Audit context (dataAccess, log)
+ * @param {Object} context - Audit context (dataAccess, log, site)
  * @param {Array} successfulComparisons - This run's non-error comparison results
  * @returns {Promise<void>}
  */
-export async function reconcileCoveredByDomainWide(opportunity, context, successfulComparisons) {
-  const { dataAccess, log } = context;
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
+export async function syncCoveredByDomainWide(opportunity, context, successfulComparisons) {
+  const { dataAccess, log, site } = context;
+  const SuggestionDA = dataAccess?.Suggestion;
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function' || !SuggestionDA?.saveMany) {
     return;
   }
 
-  const notDeployedPathnames = new Set(
-    successfulComparisons
-      .filter((r) => !r.isDeployedAtEdge)
-      .map((r) => toPathname(r.url)),
-  );
-  if (notDeployedPathnames.size === 0) {
-    return;
-  }
+  const baseUrl = site?.getBaseURL?.() || '';
+  const siteId = site?.getId?.() || '';
 
   const suggestions = await opportunity.getSuggestions();
+
+  const domainWideSuggestion = suggestions.find(isDeployedDomainWideSuggestion) ?? null;
+  log.info(`${LOG_PREFIX} syncCoveredByDomainWide: isAllDomainDeployedAtEdge=`
+    + `${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
+
+  const deployedAtEdgePathnames = new Set();
+  const notDeployedPathnames = new Set();
+  successfulComparisons.forEach((r) => {
+    (r.isDeployedAtEdge ? deployedAtEdgePathnames : notDeployedPathnames).add(toPathname(r.url));
+  });
+
+  const toCover = [];
+  if (domainWideSuggestion) {
+    const domainWideSuggestionId = domainWideSuggestion.getId();
+    // The domain-wide suggestion itself is always NEW and always in this list, so
+    // newSuggestions is never empty here — nothing further to guard on that front.
+    const newSuggestions = suggestions.filter((s) => s.getStatus() === Suggestion.STATUSES.NEW);
+
+    // Path and domain-wide suggestions have no url field — guard before calling toPathname.
+    const urlSuggestionsToCover = deployedAtEdgePathnames.size > 0
+      ? newSuggestions.filter((s) => {
+        const data = s.getData();
+        if (!data?.url) {
+          return false;
+        }
+        return deployedAtEdgePathnames.has(toPathname(data.url)) && !data?.edgeDeployed;
+      })
+      : [];
+
+    // Path suggestions are redundant while domain-wide (/*) is active — cover unconditionally.
+    const pathSuggestionsToCover = newSuggestions.filter((s) => {
+      const data = s.getData();
+      return isPathSuggestionData(data) && !data?.edgeDeployed && !data?.coveredByDomainWide;
+    });
+
+    toCover.push(...urlSuggestionsToCover, ...pathSuggestionsToCover);
+    if (toCover.length === 0) {
+      log.info(`${LOG_PREFIX} syncCoveredByDomainWide: no NEW suggestions to cover. `
+        + `baseUrl=${baseUrl}, siteId=${siteId}`);
+    } else {
+      toCover.forEach((s) => s.setData({
+        ...s.getData(),
+        coveredByDomainWide: domainWideSuggestionId,
+      }));
+      log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} `
+        + `per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. `
+        + `baseUrl=${baseUrl}, siteId=${siteId}`);
+    }
+  }
+
   const toClear = suggestions.filter((s) => {
     const data = s.getData();
     return !!data?.coveredByDomainWide
       && isIndividualUrlSuggestionData(data)
       && notDeployedPathnames.has(toPathname(data.url));
   });
-  if (toClear.length === 0) {
-    return;
-  }
-
   toClear.forEach((s) => {
     // eslint-disable-next-line no-unused-vars
     const { coveredByDomainWide, ...rest } = s.getData();
@@ -187,12 +244,19 @@ export async function reconcileCoveredByDomainWide(opportunity, context, success
     s.setUpdatedBy('system');
   });
 
+  const toSave = [...toCover, ...toClear];
+  if (toSave.length === 0) {
+    return;
+  }
+
   try {
-    await dataAccess.Suggestion.saveMany(toClear);
-    log.info(`${LOG_PREFIX} Domain-wide reconciliation: cleared coveredByDomainWide on `
-      + `${toClear.length} suggestion(s) confirmed not deployed at edge this run.`);
+    await SuggestionDA.saveMany(toSave);
+    if (toClear.length > 0) {
+      log.info(`${LOG_PREFIX} Domain-wide reconciliation: cleared coveredByDomainWide on `
+        + `${toClear.length} suggestion(s) confirmed not deployed at edge this run.`);
+    }
   } catch (e) {
-    log.error(`${LOG_PREFIX} Failed to clear coveredByDomainWide on ${toClear.length} `
+    log.error(`${LOG_PREFIX} Failed to save coveredByDomainWide changes for ${toSave.length} `
       + `suggestion(s): ${e.message}`);
   }
 }
