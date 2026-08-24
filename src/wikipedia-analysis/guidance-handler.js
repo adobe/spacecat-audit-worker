@@ -31,7 +31,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
 const HUMAN_PREFIX = `[offsite:${AUDIT.WIKIPEDIA}]`;
 
 /**
- * Classifies a presigned-analysis-fetch failure for the `audit_persistence_payload_fetched`
+ * Classifies a presigned-analysis-fetch failure for the `audit_persistence_mystique_payload_read`
  * event's reason token:
  * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
  * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
@@ -133,13 +133,15 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
 
-  olog.start('audit_analysis_completed', 'Guidance received', {
+  olog.start('audit_persistence_start', 'Persistence started', {});
+
+  olog.start('audit_analysis_end', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('audit_persistence_completed', 'Site not found', { reason: 'site_not_found' });
+    olog.failure('audit_persistence_end', 'Site not found', { reason: 'site_not_found_at_persist', reasonCategory: 'infra' });
     return notFound('Site not found');
   }
   const baseUrl = site.getBaseURL();
@@ -147,8 +149,8 @@ export default async function handler(message, context) {
   // Mystique couldn't complete the analysis (e.g. an upstream producer/service
   // failure). Report it to the Slack thread instead of failing silently, then stop.
   if (data?.error) {
-    olog.failure('audit_analysis_completed', 'Mystique returned an error', {
-      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
+    olog.failure('audit_analysis_end', 'Mystique returned an error', {
+      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', reasonCategory: 'infra', mystiqueError: data.errorMessage,
     });
     await postWikipediaOutcomeToSlack(
       context,
@@ -168,12 +170,12 @@ export default async function handler(message, context) {
         log,
         prefix: HUMAN_PREFIX,
       });
-      olog.success('audit_persistence_payload_fetched', 'Fetched analysis from presigned URL', {
+      olog.success('audit_persistence_mystique_payload_read', 'Fetched analysis from presigned URL', {
         peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      olog.failure('audit_persistence_payload_fetched', 'Error fetching from presigned URL', {
-        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
+      olog.failure('audit_persistence_mystique_payload_read', 'Error fetching from presigned URL', {
+        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), reasonCategory: 'infra', ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
@@ -181,7 +183,7 @@ export default async function handler(message, context) {
 
   // Validate analysis data
   if (!analysisData) {
-    olog.failure('audit_persistence_completed', 'No analysis data provided in message', { reason: 'no_analysis_data' });
+    olog.failure('audit_persistence_end', 'No analysis data provided in message', { reason: 'no_analysis_data', reasonCategory: 'infra' });
     return badRequest('Analysis data is required');
   }
 
@@ -189,7 +191,7 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('audit_persistence_completed', 'Audit not found', { reason: 'audit_not_found' });
+      olog.failure('audit_persistence_end', 'Audit not found', { reason: 'audit_not_found', reasonCategory: 'infra' });
       return notFound('Audit not found');
     }
   }
@@ -204,7 +206,7 @@ export default async function handler(message, context) {
     // was analyzed but had nothing to improve. Report the outcome to Slack — this
     // path used to return silently, so a Slack-triggered run showed only the trigger.
     if (suggestions.length === 0) {
-      olog.skip('audit_persistence_completed', 'No suggestions found in analysis', { reason: 'no_suggestions' });
+      olog.skip('audit_persistence_end', 'No suggestions found in analysis', { reason: 'no_suggestions', reasonCategory: 'expected' });
       const outcomeMessage = wikipediaUrl
         ? `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
           + '• Wikipedia page analyzed — no improvement suggestions found'
@@ -213,7 +215,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('audit_analysis_completed', 'Processing suggestions', {
+    olog.debug('audit_analysis_end', 'Processing suggestions', {
       count: suggestions.length, company,
     });
 
@@ -246,7 +248,7 @@ export default async function handler(message, context) {
       fullAnalysis: analysisData,
     });
     await opportunity.save();
-    ologOpp.success('audit_persistence_opportunity_persisted', 'Opportunity persisted', {
+    ologOpp.success('audit_persistence_evergreen_opportunity_write', 'Opportunity persisted', {
       peer: PEER.POSTGRES, direction: 'outbound',
     });
 
@@ -263,17 +265,17 @@ export default async function handler(message, context) {
           data: suggestion,
         }),
       });
-      ologOpp.success('audit_persistence_suggestions_synced', `Synced ${suggestions.length} suggestions`, {
+      ologOpp.success('audit_persistence_evergreen_opportunity_write', `Synced ${suggestions.length} suggestions`, {
         peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
       });
     } catch (error) {
-      ologOpp.failure('audit_persistence_suggestions_synced', 'Failed to sync suggestions', {
-        peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+      ologOpp.failure('audit_persistence_evergreen_opportunity_write', 'Failed to sync suggestions', {
+        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', ...errorField(error),
       });
       throw error;
     }
 
-    ologOpp.success('audit_persistence_completed', 'Run processed successfully', {
+    ologOpp.success('audit_persistence_end', 'Run processed successfully', {
       count: suggestions.length, company,
     });
 
@@ -287,9 +289,9 @@ export default async function handler(message, context) {
     return ok();
   } catch (error) {
     // Intentional drill-down: a failure already logged by an inner event (e.g.
-    // audit_persistence_suggestions_synced) will also surface here as
-    // audit_persistence_completed outcome=failure — the terminal, per-run marker.
-    olog.failure('audit_persistence_completed', 'Error processing analysis', { ...errorField(error) }, error);
+    // audit_persistence_evergreen_opportunity_write) will also surface here as
+    // audit_persistence_end outcome=failure — the terminal, per-run marker.
+    olog.failure('audit_persistence_end', 'Error processing analysis', { ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

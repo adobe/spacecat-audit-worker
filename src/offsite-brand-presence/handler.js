@@ -336,13 +336,13 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     for (const url of urls) {
       entries.push({ url, audits: [config.auditType] });
     }
-    olog.debug('data_acquisition_store_urls_written', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
+    olog.debug('data_acquisition_url_store_write', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
   }
   for (const url of topCited) {
     entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
-  olog.debug('data_acquisition_store_urls_written', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
-  olog.start('data_acquisition_store_urls_written', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
+  olog.debug('data_acquisition_url_store_write', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
+  olog.start('data_acquisition_url_store_write', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
 
   let existingUrlSet;
   try {
@@ -350,7 +350,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
     existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
   } catch (error) {
-    olog.failure('data_acquisition_store_urls_written', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
+    olog.failure('data_acquisition_url_store_write', 'Failed to check existing URLs', { peer: PEER.URL_STORE, direction: 'outbound', ...errorField(error) });
     return {};
   }
 
@@ -370,7 +370,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
         });
         return entry.url;
       } catch (createError) {
-        olog.warn('data_acquisition_store_urls_written', 'Failed to add URL to store', {
+        olog.warn('data_acquisition_url_store_write', 'Failed to add URL to store', {
           peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, ...errorField(createError),
         });
         return null;
@@ -383,7 +383,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   const createdCount = storedUrls.size - existingCount;
   const failCount = entries.length - storedUrls.size;
 
-  olog.success('data_acquisition_store_urls_written', 'URL store write complete', {
+  olog.success('data_acquisition_url_store_write', 'URL store write complete', {
     peer: PEER.URL_STORE, direction: 'outbound', created: createdCount, existing: existingCount, failed: failCount,
   });
 
@@ -441,7 +441,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
   const existingByName = await fetchExistingTopicsByName(siteId, SentimentTopic);
 
   const entries = [...topicMap.entries()];
-  olog.start('audit_orchestration_guideline_store_written', `Persisting ${entries.length} topics to guideline store (${existingByName.size} existing)`, { peer: PEER.SPACECAT, direction: 'outbound', total: entries.length });
+  olog.start('audit_orchestration_guideline_store_write', `Persisting ${entries.length} topics to guideline store (${existingByName.size} existing)`, { peer: PEER.SPACECAT, direction: 'outbound', total: entries.length });
 
   const results = await Promise.all(
     entries.map(async ([name, topicData]) => {
@@ -474,7 +474,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
         });
         return 'created';
       } catch (error) {
-        olog.warn('audit_orchestration_guideline_store_written', `Failed to save topic ${name}`, { peer: PEER.SPACECAT, direction: 'outbound', ...errorField(error) });
+        olog.warn('audit_orchestration_guideline_store_write', `Failed to save topic ${name}`, { peer: PEER.SPACECAT, direction: 'outbound', ...errorField(error) });
         return 'error';
       }
     }),
@@ -484,7 +484,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
   const updated = results.filter((r) => r === 'updated').length;
   const failed = results.filter((r) => r === 'error').length;
 
-  olog.success('audit_orchestration_guideline_store_written', 'Guideline store write complete', {
+  olog.success('audit_orchestration_guideline_store_write', 'Guideline store write complete', {
     peer: PEER.SPACECAT, direction: 'outbound', created, updated, failed,
   });
 }
@@ -526,7 +526,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       const start = Date.now();
       // eslint-disable-next-line no-await-in-loop
       const result = await submitFn(params);
-      olog.success('data_acquisition_scrape_job_submitted', 'DRS job created', {
+      olog.success('data_acquisition_scrape_job_request_dispatched', 'DRS job created', {
         peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id, durationMs: Date.now() - start,
       });
       return {
@@ -534,7 +534,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       };
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
-        olog.warn('data_acquisition_scrape_job_submitted', 'DRS job submission failed; retrying', {
+        olog.warn('data_acquisition_scrape_job_request_dispatched', 'DRS job submission failed; retrying', {
           peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, delayMs: RETRY_DELAY_MS, ...errorField(err),
         });
         // eslint-disable-next-line no-await-in-loop
@@ -542,8 +542,8 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
           setTimeout(resolve, RETRY_DELAY_MS);
         });
       } else {
-        olog.failure('data_acquisition_scrape_job_submitted', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', ...errorField(err),
+        olog.failure('data_acquisition_scrape_job_request_dispatched', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
+          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', reasonCategory: 'infra', ...errorField(err),
         });
         return {
           domain, datasetId, status: 'error', error: err.message,
@@ -602,8 +602,8 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.failure('data_acquisition_scrape_job_submitted', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -613,8 +613,8 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.warn('data_acquisition_scrape_job_submitted', 'Organization has no imsOrgId; skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org',
+    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
@@ -654,7 +654,7 @@ async function triggerDrsScraping(
   }
 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
-  olog.start('data_acquisition_scrape_job_submitted', `Submitting DRS scrape jobs${orgSuffix}`, { peer: PEER.DRS, direction: 'outbound', jobs: jobs.length });
+  olog.start('data_acquisition_scrape_job_request_dispatched', `Submitting DRS scrape jobs${orgSuffix}`, { peer: PEER.DRS, direction: 'outbound', jobs: jobs.length });
 
   const results = [];
   for (const job of jobs) {
@@ -834,8 +834,8 @@ async function scheduleDrsStatusPoll(
     .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
 
   if (jobs.length === 0) {
-    olog.skip('data_acquisition_scrape_job_poll_scheduled', 'No successfully submitted DRS jobs; not scheduling status poll', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs',
+    olog.skip('data_acquisition_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
+      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', reasonCategory: 'expected', firstSchedule: true,
     });
     return;
   }
@@ -859,8 +859,8 @@ async function scheduleDrsStatusPoll(
     },
   }, null, pollIntervalSeconds);
 
-  olog.success('data_acquisition_scrape_job_poll_scheduled', 'Scheduled DRS status poll', {
-    peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds,
+  olog.success('data_acquisition_scrape_job_poll_request_dispatched', 'Scheduled DRS status poll', {
+    peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds, firstSchedule: true,
   });
 }
 
@@ -902,7 +902,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    olog.failure('audit_orchestration_started', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', domainScope });
+    olog.failure('audit_orchestration_start', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', reasonCategory: 'infra', domainScope });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -916,19 +916,24 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  olog.start('audit_orchestration_started', 'Audit started', { weeks: weekLabels });
+  olog.start('audit_orchestration_start', 'Audit started', { weeks: weekLabels });
 
   let siteHostname;
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   } catch {
-    olog.warn('audit_orchestration_started', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url' });
+    olog.warn('audit_orchestration_start', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url', reasonCategory: 'config' });
   }
 
   // Brand tokens drop social/search domains and brand-owned lookalikes
   // (e.g. lovedbylovesac.com) from the cited URLs before they are stored.
   const brandKeywords = site.getConfig?.()?.getBrandKeywords?.() || [];
   const brandTokens = computeBrandTokens(siteHostname, brandKeywords);
+
+  // Unconditional marker for the real beginning of the data-acquisition phase (P2):
+  // everything above is orchestration setup (brand/topic resolution); everything from
+  // here on acquires the data (Semrush or legacy/SharePoint) that feeds URL selection.
+  olog.start('data_acquisition_start', 'Data acquisition started', {});
 
   const allUrls = new Map();
   let usedSemrush = false;
@@ -975,11 +980,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       ),
     });
     // A `null` return means the Semrush source FAILED (auth / no-brand /
-    // no-date-window / outage / whole-surface-zero — see the loader's
+    // no_date_window / outage / whole-surface-zero — see the loader's
     // diagnostics.fallbackReason). A genuinely-empty-but-successful result (Map
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
-      const reason = semrushDiagnostics.fallbackReason ?? 'semrush-failed';
+      const reason = semrushDiagnostics.fallbackReason ?? 'semrush_failed';
       // A deliberate entitlement-based skip is never a hard stop, even when this run
       // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
       // errors" for a non-entitled brand must hold regardless of how Semrush was
@@ -1032,11 +1037,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     }
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
-  // Granular cause behind an entitlement-based `fallbackReason` (`flag-disabled` |
-  // `no-workspace` | `no-client` | `check-failed`) — set only on the two entitlement
+  // Granular cause behind an entitlement-based `fallbackReason` (`flag_disabled` |
+  // `no_workspace` | `no_client` | `check_failed`) — set only on the two entitlement
   // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
-  // bug (`no-client`) stays distinguishable from a one-off transient blip
-  // (`check-failed`) without changing the coarse-grained hard-stop-exemption contract.
+  // bug (`no_client`) stays distinguishable from a one-off transient blip
+  // (`check_failed`) without changing the coarse-grained hard-stop-exemption contract.
   const entitlementReason = semrushDiagnostics?.entitlementReason;
 
   // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
@@ -1067,7 +1072,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   if (allUrls.size === 0) {
-    olog.success('audit_orchestration_completed', 'No offsite URLs found, audit complete', { reason: 'no_urls' });
+    olog.success('audit_orchestration_end', 'No offsite URLs found, audit complete', { reason: 'no_urls', reasonCategory: 'expected' });
     await postMessageOptional(
       context,
       channelId,
@@ -1135,8 +1140,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // its notification, so a transient SQS/Configuration hiccup scheduling the follow-up
       // poll is non-fatal and must not page. outcome=failure is retained (warn defaults to
       // it) so Splunk still counts it, without the error/paging severity.
-      olog.warn('data_acquisition_scrape_job_poll_scheduled', 'Failed to schedule DRS status poll', {
-        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+      olog.warn('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
+        peer: PEER.SQS, direction: 'outbound', firstSchedule: true, ...errorField(err),
       });
     }
   }
@@ -1146,7 +1151,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   //   await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
   // }
 
-  olog.success('audit_orchestration_completed', 'Audit complete', {
+  olog.success('audit_orchestration_end', 'Audit complete', {
     urls: allUrls.size, drsJobs: drsResults.length,
   });
 

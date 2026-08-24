@@ -216,11 +216,11 @@ export default class StoreClient {
     const { AuditUrl } = this.dataAccess;
 
     this.log.info(sc('Fetching URLs from URL Store', {
-      event: 'data_acquisition_store_urls_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
+      event: 'data_acquisition_url_store_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
     }));
 
     // Wraps the DB read so a genuine read error is a distinct, alertable
-    // `data_acquisition_store_urls_read outcome=failure` rather than surfacing only as
+    // `data_acquisition_url_store_read outcome=failure` rather than surfacing only as
     // the generic "Audit failed". The empty-store case below stays a StoreEmptyError (a
     // normal "no URLs yet" signal the callers self-heal on), not a read failure.
     let items;
@@ -237,7 +237,7 @@ export default class StoreClient {
       ));
     } catch (error) {
       this.log.error(sc('Failed to read URLs from URL Store', {
-        event: 'data_acquisition_store_urls_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name, errorMessage: error.message,
+        event: 'data_acquisition_url_store_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name, errorMessage: error.message,
       }));
       throw error;
     }
@@ -248,7 +248,7 @@ export default class StoreClient {
 
     const urls = items.map(toAuditUrlJson);
     this.log.info(sc('Found URLs in URL Store', {
-      event: 'data_acquisition_store_urls_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
+      event: 'data_acquisition_url_store_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
     }));
     return urls;
   }

@@ -161,7 +161,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ orgWorkspaceId: null, brandSubWorkspaceId: null }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'no-workspace' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'no_workspace' });
   });
 
   it('is not entitled (no-workspace) when Organization/Brand rows do not exist at all', async () => {
@@ -170,7 +170,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess(),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'no-workspace' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'no_workspace' });
   });
 
   it('is not entitled (flag-disabled) even when a workspace exists — flag wins', async () => {
@@ -181,7 +181,7 @@ describe('semrush-entitlement', () => {
       }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag_disabled' });
   });
 
   it('is not entitled (flag-disabled) when no flag row exists at all', async () => {
@@ -190,7 +190,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag_disabled' });
   });
 
   // --- missing input / missing client ----------------------------------------
@@ -204,7 +204,7 @@ describe('semrush-entitlement', () => {
       { orgId: null, brandId: BRAND_ID },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing-input' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing_input' });
     expect(from).to.not.have.been.called;
     expect(dataAccessOverrides.Organization.findById).to.not.have.been.called;
   });
@@ -217,14 +217,14 @@ describe('semrush-entitlement', () => {
       { orgId: ORG_ID, brandId: null },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing-input' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing_input' });
     expect(from).to.not.have.been.called;
   });
 
   it('returns missing-input when called without a context or params', async () => {
     const result = await resolveSemrushEntitlement();
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing-input' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'missing_input' });
   });
 
   it('returns no-client and warns when the PostgREST client is missing', async () => {
@@ -233,7 +233,7 @@ describe('semrush-entitlement', () => {
       { orgId: ORG_ID, brandId: BRAND_ID },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no-client' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no_client' });
     expect(log.warn).to.have.been.calledWithMatch(/PostgREST client or Organization\/Brand data-access not available/);
   });
 
@@ -243,7 +243,7 @@ describe('semrush-entitlement', () => {
       { orgId: ORG_ID, brandId: BRAND_ID },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no-client' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no_client' });
   });
 
   it('returns no-client when the Organization/Brand collections are unavailable', async () => {
@@ -254,7 +254,7 @@ describe('semrush-entitlement', () => {
       { orgId: ORG_ID, brandId: BRAND_ID },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no-client' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'no_client' });
   });
 
   // --- transient failures (resolved:false, fail closed) -----------------------
@@ -265,7 +265,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check_failed' });
   });
 
   it('fails closed (check-failed) and warns when the flag query throws', async () => {
@@ -276,7 +276,7 @@ describe('semrush-entitlement', () => {
       { orgId: ORG_ID, brandId: BRAND_ID },
     );
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check_failed' });
     expect(log.warn).to.have.been.calledWithMatch(/Error checking serenity flag/);
   });
 
@@ -302,7 +302,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag_disabled' });
   });
 
   it("is not entitled (flag-disabled) when the org row is off, even with a different brand's true override", async () => {
@@ -316,7 +316,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag_disabled' });
   });
 
   it("is entitled when THIS brand's own override is true, even though the org row is false", async () => {
@@ -346,7 +346,7 @@ describe('semrush-entitlement', () => {
       dataAccessOverrides: makeDataAccess({ brandSubWorkspaceId: 'sub-ws-1' }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag-disabled' });
+    expect(result).to.deep.equal({ entitled: false, resolved: true, reason: 'flag_disabled' });
   });
 
   it('fails closed (check-failed) and warns when Brand.findById throws', async () => {
@@ -358,7 +358,7 @@ describe('semrush-entitlement', () => {
       }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check_failed' });
     expect(log.warn).to.have.been.calledWithMatch(/Semrush entitlement check failed/);
   });
 
@@ -371,7 +371,7 @@ describe('semrush-entitlement', () => {
       }),
     });
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check_failed' });
   });
 
   it('fails closed (check-failed) and warns on a timeout', async () => {
@@ -389,7 +389,7 @@ describe('semrush-entitlement', () => {
     await clock.tickAsync(SEMRUSH_ENTITLEMENT_TIMEOUT_MS + 1);
     const result = await resultP;
 
-    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check-failed' });
+    expect(result).to.deep.equal({ entitled: false, resolved: false, reason: 'check_failed' });
     expect(log.warn).to.have.been.calledWithMatch(/Semrush entitlement check failed.*timed out/);
   });
 
@@ -398,8 +398,8 @@ describe('semrush-entitlement', () => {
 
   describe('exported reason-string constants', () => {
     it('exposes the two skip-reason literals the loader sets on diagnostics.fallbackReason', () => {
-      expect(SEMRUSH_NOT_ENTITLED_REASON).to.equal('not-entitled');
-      expect(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON).to.equal('entitlement-check-failed');
+      expect(SEMRUSH_NOT_ENTITLED_REASON).to.equal('not_entitled');
+      expect(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON).to.equal('entitlement_check_failed');
     });
 
     it('bundles both reasons into SEMRUSH_ENTITLEMENT_SKIP_REASONS, and nothing else', () => {
@@ -408,8 +408,8 @@ describe('semrush-entitlement', () => {
       expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON))
         .to.equal(true);
       expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.size).to.equal(2);
-      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('semrush-failed')).to.equal(false);
-      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('ims-token-failed')).to.equal(false);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('semrush_failed')).to.equal(false);
+      expect(SEMRUSH_ENTITLEMENT_SKIP_REASONS.has('ims_token_failed')).to.equal(false);
     });
 
     it('is frozen (cannot be mutated by a caller)', () => {
@@ -419,11 +419,11 @@ describe('semrush-entitlement', () => {
     it('exposes the granular reason values resolveSemrushEntitlement returns', () => {
       expect(SEMRUSH_ENTITLEMENT_REASONS).to.deep.equal({
         ENTITLED: 'entitled',
-        FLAG_DISABLED: 'flag-disabled',
-        NO_WORKSPACE: 'no-workspace',
-        MISSING_INPUT: 'missing-input',
-        NO_CLIENT: 'no-client',
-        CHECK_FAILED: 'check-failed',
+        FLAG_DISABLED: 'flag_disabled',
+        NO_WORKSPACE: 'no_workspace',
+        MISSING_INPUT: 'missing_input',
+        NO_CLIENT: 'no_client',
+        CHECK_FAILED: 'check_failed',
       });
       expect(Object.isFrozen(SEMRUSH_ENTITLEMENT_REASONS)).to.equal(true);
     });

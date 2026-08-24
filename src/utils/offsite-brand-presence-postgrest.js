@@ -92,7 +92,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
       log.warn(bp('Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
       }));
       break;
     }
@@ -191,7 +191,7 @@ export async function loadBrandPresenceDataFromPostgrest({
 
     if (executions.length === 0) {
       log?.info(bp('No execution rows found', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', siteId,
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId,
       }));
       return null;
     }
@@ -199,7 +199,7 @@ export async function loadBrandPresenceDataFromPostgrest({
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
       log?.info(bp('No usable rows found', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', siteId,
+        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId,
       }));
       return null;
     }
@@ -210,7 +210,7 @@ export async function loadBrandPresenceDataFromPostgrest({
     return { data: rows };
   } catch (error) {
     log?.warn(bp('PostgREST query failed', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', siteId, errorName: error.name, errorMessage: error.message,
+      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', reasonCategory: 'infra', siteId, errorName: error.name, errorMessage: error.message,
     }));
     return null;
   }

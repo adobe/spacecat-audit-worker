@@ -132,7 +132,7 @@ describe('offsite-refresh', () => {
 
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DB down/)
-          .and(sinon.match(/event=audit_persistence_opportunity_resolved/))
+          .and(sinon.match(/event=audit_persistence_evergreen_opportunity_read/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/audit=cited/)),
       );
@@ -148,7 +148,7 @@ describe('offsite-refresh', () => {
       })).to.be.rejectedWith('DB down');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_opportunity_resolved/).and(sinon.match(/audit=unknown/)),
+        sinon.match(/event=audit_persistence_evergreen_opportunity_read/).and(sinon.match(/audit=unknown/)),
       );
     });
 
@@ -307,7 +307,7 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_opportunity_persisted/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/audit=reddit/))
@@ -341,7 +341,7 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_opportunity_persisted/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/)),
       );
@@ -363,9 +363,9 @@ describe('offsite-refresh', () => {
       )).to.be.rejectedWith('db exploded');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_opportunity_persisted/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=failure/))
-          .and(sinon.match(/reason=db_write/))
+          .and(sinon.match(/reason=opportunity_write_failed/))
           .and(sinon.match(/errorName=Error/))
           .and(sinon.match(/audit=youtube/)),
       );
