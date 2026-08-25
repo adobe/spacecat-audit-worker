@@ -1375,14 +1375,15 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
-      // level (outcome=failure) rather than a warn/skip — see Fix C.
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS scraping unavailable this run/)
+      // Missing DRS credentials is a routine pre-flight skip, not a code/system bug, so it is
+      // emitted at warn level with outcome=skip.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/skipping DRS scraping this run/)
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=drs_not_configured/)),
       );
+      expect(log.error).to.not.have.been.called;
     });
 
   });
@@ -1426,7 +1427,7 @@ describe('Offsite Brand Presence Handler', function () {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs an actionable error when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs a warn/skip when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1435,16 +1436,16 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing imsOrgId is an actionable misconfiguration, aligned in severity with the
-      // DRS-not-configured case above — emitted at error level (outcome=failure).
-      expect(log.error).to.have.been.calledWith(
+      // Missing imsOrgId is a routine pre-flight skip, aligned in severity with the
+      // DRS-not-configured case above — emitted at warn level with outcome=skip.
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/imsOrgId/)
-          .and(sinon.match(/DRS scraping unavailable this run/))
+          .and(sinon.match(/skipping DRS scraping this run/))
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=no_ims_org/)),
       );
-      expect(log.warn).to.not.have.been.calledWith(
+      expect(log.error).to.not.have.been.calledWith(
         sinon.match(/imsOrgId/),
       );
     });

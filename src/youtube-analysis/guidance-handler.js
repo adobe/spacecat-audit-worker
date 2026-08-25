@@ -236,9 +236,9 @@ export default async function handler(message, context) {
         dataAccess, opportunity, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_outdated_suggestions_deleted', 'OUTDATED suggestion deletion failed', {
-        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
-      }, error);
+      ologOpp.warn('audit_housekeeping_outdated_suggestions_deleted', 'OUTDATED suggestion deletion failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
+      });
     }
 
     // Expired snapshot deletion must not fail an otherwise successful refresh.
@@ -247,9 +247,9 @@ export default async function handler(message, context) {
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_outdated_opportunities_deleted', 'Snapshot retention failed', {
-        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
-      }, error);
+      ologOpp.warn('audit_housekeeping_outdated_opportunities_deleted', 'Snapshot retention failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
+      });
     }
 
     if (auditId) {

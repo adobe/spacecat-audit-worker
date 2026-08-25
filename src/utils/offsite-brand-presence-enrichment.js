@@ -22,7 +22,7 @@ import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-pos
 import { createLLMOSharepointClient, readFromSharePointWithRetry } from './report-uploader.js';
 import { buildColumnMap, getColumn } from '../faqs/utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from './offsite-logging.js';
 import {
   BRAND_PRESENCE_REGEX,
@@ -94,8 +94,8 @@ async function readQueryIndexPaths(site, sharepointClient, log) {
   const dataFolder = site.getConfig?.()?.getLlmoDataFolder?.();
   if (!dataFolder) {
     const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId: site.getId?.() });
-    olog.skip('data_acquisition_bp_data_sharepoint_read', 'No LLMO data folder configured for site', {
-      peer: PEER.SHAREPOINT, direction: 'inbound', reason: 'no_data_folder', reasonCategory: 'config',
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'No LLMO data folder configured for site', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', reason: 'no_data_folder', reasonCategory: 'config', outcome: OUTCOME.SKIP,
     });
     return null;
   }
@@ -388,8 +388,8 @@ export async function loadBrandPresenceData({
     : false;
 
   if (isBrandalfOrg === null) {
-    olog.skip('data_acquisition_bp_data_postgres_read', 'Brandalf flag state unknown; skipping legacy file fetch', {
-      reason: 'brandalf_unknown', reasonCategory: 'infra', orgId: organizationId, siteId,
+    olog.warn('data_acquisition_bp_data_postgres_read', 'Brandalf flag state unknown; skipping legacy file fetch', {
+      reason: 'brandalf_unknown', reasonCategory: 'infra', orgId: organizationId, siteId, outcome: OUTCOME.SKIP,
     });
     return null;
   }
@@ -410,8 +410,8 @@ export async function loadBrandPresenceData({
       });
       return dbData;
     }
-    olog.skip('data_acquisition_bp_data_postgres_read', 'No PostgREST data for brandalf-enabled site; falling back to SharePoint file fetch', {
-      peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows', reasonCategory: 'config', siteId,
+    olog.warn('data_acquisition_bp_data_postgres_read', 'No PostgREST data for brandalf-enabled site; falling back to SharePoint file fetch', {
+      peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
     });
   }
 
@@ -420,8 +420,8 @@ export async function loadBrandPresenceData({
     resolvedSite = await context.dataAccess?.Site?.findById(siteId);
   }
   if (!resolvedSite) {
-    olog.skip('data_acquisition_bp_data_sharepoint_read', 'Cannot resolve site; skipping SharePoint fetch', {
-      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site', reasonCategory: 'config', siteId,
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'Cannot resolve site; skipping SharePoint fetch', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
     });
     return null;
   }
@@ -439,8 +439,8 @@ export async function loadBrandPresenceData({
   }
 
   if (!queryResult || queryResult.paths.length === 0) {
-    olog.skip('data_acquisition_bp_data_sharepoint_read', 'Failed to read query-index', {
-      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index', reasonCategory: 'config', siteId,
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'Failed to read query-index', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
     });
     return null;
   }
@@ -476,8 +476,8 @@ export async function loadBrandPresenceData({
       }
       allRows.push(...data.data);
     } catch (err) {
-      olog.failure('data_acquisition_bp_data_sharepoint_read', 'Error reading brand presence sheet', {
-        peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', reasonCategory: 'infra', sheetName, ...errorField(err),
+      olog.warn('data_acquisition_bp_data_sharepoint_read', 'Error reading brand presence sheet', {
+        peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', reasonCategory: 'infra', sheetName, outcome: OUTCOME.DEGRADED, ...errorField(err),
       }, err);
     }
   }

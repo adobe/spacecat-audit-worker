@@ -183,7 +183,7 @@ async function fetchStoreData(siteId, context, site) {
     baseURL,
   );
   if (ownedDroppedCount > 0) {
-    olog.debug(
+    olog.success(
       'data_acquisition_url_store_read',
       'Excluded owned-domain URLs (cited analysis is 3rd-party earned only)',
       { peer: PEER.URL_STORE, direction: 'inbound', droppedOwned: ownedDroppedCount },
@@ -201,7 +201,7 @@ async function fetchStoreData(siteId, context, site) {
     olog,
   );
   if (nonEarnedDroppedCount > 0) {
-    olog.debug(
+    olog.success(
       'data_acquisition_url_store_read',
       'Excluded non-earned/branded URLs (social, search, deal-aggregator, or brand-owned lookalike)',
       { peer: PEER.URL_STORE, direction: 'inbound', droppedNonEarned: nonEarnedDroppedCount },
@@ -295,7 +295,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // empty list Mystique will only count the primary brand in Share of Voice
       // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
       olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
-        outcome: OUTCOME.SKIP, reason: 'no_competitors', reasonCategory: 'config',
+        outcome: OUTCOME.DEGRADED, reason: 'no_competitors', reasonCategory: 'config',
       });
     }
 
@@ -568,7 +568,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         'audit_analysis_start',
         `Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
         {
-          outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget', reasonCategory: 'expected',
+          outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget', reasonCategory: 'expected',
         },
       );
     }
@@ -582,7 +582,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
           'audit_analysis_start',
           `Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
           {
-            outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single', reasonCategory: 'expected',
+            outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single', reasonCategory: 'expected',
           },
         );
         const [singleUrl] = message.data.urls;

@@ -202,7 +202,7 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     && typeof dataAccess?.Brand?.findById === 'function';
   if (!postgrestClient?.from || !hasWorkspaceModels) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement', {
-      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'no_client', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, orgId, brandId,
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'no_client', reasonCategory: 'infra', outcome: OUTCOME.SKIP, orgId, brandId,
     });
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT };
   }

@@ -287,7 +287,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('queries executions with embedded sources and mapped models, without a region filter', async () => {
@@ -442,7 +443,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded brand_presence_sources is null', async () => {
@@ -453,7 +455,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded source_urls have no valid url', async () => {
@@ -466,7 +469,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null and warns when the query fails', async () => {
@@ -505,6 +509,9 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(log.warn).to.have.been.calledWithMatch(
         'Exceeded maximum brand_presence_executions pages; processing rows fetched so far',
       );
+      const maxPagesCall = log.warn.getCalls()
+        .find((c) => c.args[0].includes('Exceeded maximum brand_presence_executions pages'));
+      expect(maxPagesCall.args[0]).to.include('outcome=degraded');
     });
   });
 });

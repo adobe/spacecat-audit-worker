@@ -369,7 +369,9 @@ describe('offsite-snapshot', () => {
       expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: null });
       expect(lookup).to.not.have.been.called;
       expect(create).to.not.have.been.called;
-      expect(log.debug).to.have.been.calledWith(sinon.match(/no superseded-refresh snapshot is needed/i));
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/no superseded-refresh snapshot is needed/i).and(sinon.match(/outcome=skip/)),
+      );
     });
 
     it('reuses an existing superseded snapshot and targets the evergreen refresh', async () => {
@@ -654,12 +656,13 @@ describe('offsite-snapshot', () => {
         log,
       });
 
-      expect(log.error).to.have.been.calledWith(
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/Suggestions failed to copy onto snapshot/)
           .and(sinon.match(/failed=1/))
           .and(sinon.match(/reason=suggestions_copy_failed/))
           .and(sinon.match(/reasonCategory=infra/))
-          .and(sinon.match(/snapshotAction=created/)),
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
       );
     });
 
@@ -735,11 +738,12 @@ describe('offsite-snapshot', () => {
       })).to.be.rejectedWith('DB write failed');
 
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to delete orphan snapshot/i)
           .and(sinon.match(/reason=orphan_cleanup_failed/))
           .and(sinon.match(/reasonCategory=infra/))
-          .and(sinon.match(/snapshotAction=created/)),
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
       );
     });
 

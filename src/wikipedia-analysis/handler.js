@@ -101,7 +101,7 @@ function unwrapSlackMrkdwnLink(raw) {
 function resolveWikipediaUrlOverride(auditContext, olog) {
   const md = auditContext?.messageData;
   if (!md) {
-    olog?.debug('audit_orchestration_url_override_resolved', 'No messageData on audit context', { reason: 'no_message_data', reasonCategory: 'expected' });
+    olog?.skip('audit_orchestration_url_override_resolved', 'No messageData on audit context', { reason: 'no_message_data', reasonCategory: 'expected' });
     return undefined;
   }
 
@@ -115,33 +115,33 @@ function resolveWikipediaUrlOverride(auditContext, olog) {
   const rawOverride = wikiVal || wikipediaVal;
 
   if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
-    olog?.debug('audit_orchestration_url_override_resolved', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value', reasonCategory: 'expected' });
+    olog?.skip('audit_orchestration_url_override_resolved', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value', reasonCategory: 'expected' });
     return undefined;
   }
 
   if (typeof rawOverride !== 'string') {
-    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: expected a string value', {
-      outcome: OUTCOME.SKIP, reason: 'non_string', reasonCategory: 'expected', valueType: typeof rawOverride,
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: expected a string value', {
+      reason: 'non_string', reasonCategory: 'expected', valueType: typeof rawOverride,
     });
     return undefined;
   }
 
   const normalized = unwrapSlackMrkdwnLink(rawOverride);
   if (!normalized) {
-    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: empty after Slack/mrkdwn normalization', {
-      outcome: OUTCOME.SKIP, reason: 'empty_after_normalize', reasonCategory: 'expected',
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: empty after Slack/mrkdwn normalization', {
+      reason: 'empty_after_normalize', reasonCategory: 'expected',
     });
     return undefined;
   }
 
   if (!isValidUrl(normalized)) {
     olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: not a valid URL', {
-      reason: 'invalid_url', reasonCategory: 'expected', value: normalized,
+      reason: 'invalid_url', reasonCategory: 'config', value: normalized,
     });
     return { invalid: true, value: normalized };
   }
 
-  olog?.debug('audit_orchestration_url_override_resolved', 'Override accepted', { url: normalized });
+  olog?.success('audit_orchestration_url_override_resolved', 'Override accepted', { url: normalized });
 
   return { url: normalized };
 }
@@ -247,7 +247,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       });
     } else if (wikipediaUrlOverride?.url) {
       wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
-      olog.debug('audit_orchestration_brand_profile_resolved', 'Using Wikipedia URL override from audit message', {
+      olog.success('audit_orchestration_brand_profile_resolved', 'Using Wikipedia URL override from audit message', {
         url: wikipediaUrlOverride.url,
       });
     }

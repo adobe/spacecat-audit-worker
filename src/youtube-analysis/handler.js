@@ -182,7 +182,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       // empty list Mystique will only count the primary brand in Share of Voice
       // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
       olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
-        outcome: OUTCOME.SKIP, reason: 'no_competitors', reasonCategory: 'config',
+        outcome: OUTCOME.DEGRADED, reason: 'no_competitors', reasonCategory: 'config',
       });
     }
 

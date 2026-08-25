@@ -212,8 +212,10 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_profile_resolved/).and(sinon.match(`url=${override}`)),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(`url=${override}`)),
       );
     });
 
@@ -286,8 +288,10 @@ describe('Wikipedia Analysis Handler', () => {
       );
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_url_override_resolved/).and(sinon.match(/after Slack\/mrkdwn normalization/)),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_url_override_resolved/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/after Slack\/mrkdwn normalization/)),
       );
     });
 
@@ -349,7 +353,7 @@ describe('Wikipedia Analysis Handler', () => {
           .and(sinon.match('Override rejected: not a valid URL'))
           .and(sinon.match('outcome=skip'))
           .and(sinon.match('reason=invalid_url'))
-          .and(sinon.match('reasonCategory=expected'))
+          .and(sinon.match('reasonCategory=config'))
           .and(sinon.match('value=not-a-valid-url')),
       );
     });

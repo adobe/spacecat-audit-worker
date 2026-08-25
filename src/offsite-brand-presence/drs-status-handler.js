@@ -69,7 +69,7 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     // (Without this, an individual analysis run that self-heals an empty URL store never
     // reaches Mystique: its pending_scrape audit trips the cooldown for the whole hour.)
     // Only a real completed/in-progress analysis within the window dedupes redelivered polls.
-    olog.debug('audit_orchestration_analysis_request_dispatched', 'Recent-audit cooldown check succeeded', {
+    olog.success('audit_orchestration_analysis_request_dispatched', 'Recent-audit cooldown check succeeded', {
       peer: PEER.SPACECAT, direction: 'inbound', auditType,
     });
     if (latest.getAuditResult?.()?.status === 'pending_scrape') {

@@ -185,7 +185,7 @@ describe('offsite-audit-utils', () => {
       expect(result.counts).to.deep.equal({
         total: 3, available: 2, scraping: 0, notFound: 1, determined: true,
       });
-      expect(olog.debug).to.have.been.calledWith(
+      expect(olog.success).to.have.been.calledWith(
         'data_acquisition_scrape_content_checked',
         'DRS availability filter removed URLs not yet scraped',
         sinon.match({ peer: PEER.DRS, removed: 1, remaining: 2 }),
@@ -206,7 +206,7 @@ describe('offsite-audit-utils', () => {
 
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
-      expect(olog.debug).to.have.been.calledWith(
+      expect(olog.success).to.have.been.calledWith(
         'data_acquisition_scrape_content_checked',
         'DRS lookup dataset summary',
         sinon.match({
@@ -237,7 +237,7 @@ describe('offsite-audit-utils', () => {
       expect(result.counts).to.deep.equal({
         total: 3, available: 1, scraping: 1, notFound: 1, determined: true,
       });
-      expect(olog.debug).to.have.been.calledWith(
+      expect(olog.success).to.have.been.calledWith(
         'data_acquisition_scrape_content_checked',
         'DRS availability filter removed URLs not yet scraped',
         sinon.match({ peer: PEER.DRS, removed: 2, remaining: 1 }),
@@ -350,7 +350,7 @@ describe('offsite-audit-utils', () => {
 
       await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
-      expect(olog.debug).to.have.been.calledWith(
+      expect(olog.success).to.have.been.calledWith(
         'data_acquisition_scrape_content_checked',
         'DRS lookup dataset summary',
         sinon.match({
@@ -734,16 +734,17 @@ describe('offsite-audit-utils', () => {
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', enableSemrush: false });
     });
 
-    it('swallows and logs a warning when the send fails', async () => {
+    it('swallows and logs a failure when the send fails', async () => {
       context.dataAccess.Configuration.findLatest.rejects(new Error('boom'));
 
       await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, olog);
 
-      expect(olog.warn).to.have.been.calledWith(
+      expect(olog.failure).to.have.been.calledWith(
         'data_acquisition_scrape_job_request_dispatched',
         sinon.match(/Failed to request DRS scrape/),
         sinon.match({ reason: 'self_heal_failed', reasonCategory: 'infra' }),
       );
+      expect(olog.warn).to.not.have.been.called;
     });
   });
 

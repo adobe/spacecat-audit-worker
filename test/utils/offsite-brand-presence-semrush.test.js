@@ -54,7 +54,6 @@ describe('offsite-brand-presence-semrush', function () {
   };
   const makeContext = (env = {}, extra = {}) => ({ log, env, ...extra });
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
-  const erroredWith = (re) => log.error.getCalls().some((c) => re.test(c.args[0]));
 
   async function loadModule(overrides = {}) {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
@@ -382,7 +381,7 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(erroredWith(/Service token rejected/)).to.equal(true);
+    expect(warnedWith(/Service token rejected/)).to.equal(true);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
@@ -391,9 +390,9 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub.resolves({ ok: false, status: 401, text: async () => proxyMsg });
     const result = await run();
     expect(result).to.equal(null);
-    expect(erroredWith(/Service token rejected/)).to.equal(true);
+    expect(warnedWith(/Service token rejected/)).to.equal(true);
     // The captured body identifies the rejecter (api-service vs Semrush) — LLMO-6709.
-    expect(log.error.getCalls().some((c) => c.args[0].includes(`responseBody="${proxyMsg}"`))).to.equal(true);
+    expect(log.warn.getCalls().some((c) => c.args[0].includes(`responseBody="${proxyMsg}"`))).to.equal(true);
   });
 
   it('handles an empty/unreadable error body on a non-2xx response', async () => {
@@ -402,7 +401,7 @@ describe('offsite-brand-presence-semrush', function () {
     expect(result).to.equal(null);
     // Empty values are dropped by the offsite-logging taxonomy, so no responseBody token
     // is emitted at all — the status is still captured.
-    expect(log.error.getCalls().some((c) => c.args[0].includes('status=500') && !c.args[0].includes('responseBody='))).to.equal(true);
+    expect(log.warn.getCalls().some((c) => c.args[0].includes('status=500') && !c.args[0].includes('responseBody='))).to.equal(true);
   });
 
   it('logs a distinct rejection and falls back with domain-urls-auth-failed on a 403', async () => {
@@ -410,7 +409,7 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(erroredWith(/Service token rejected/)).to.equal(true);
+    expect(warnedWith(/Service token rejected/)).to.equal(true);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
@@ -438,10 +437,10 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.fallbackReason).to.equal('no_organization_id');
   });
 
-  it('returns null and logs info when the brand is confirmed absent (resolved=true)', async () => {
+  it('returns null and warns (skip) when the brand is confirmed absent (resolved=true)', async () => {
     resolveBrandResultForSite.resolves({ brand: null, resolved: true });
     expect(await run()).to.equal(null);
-    expect(log.info).to.have.been.called;
+    expect(warnedWith(/No active brand/)).to.equal(true);
   });
 
   it('returns null and warns when brand resolution failed (resolved=false)', async () => {
@@ -466,7 +465,7 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
     expect(getServiceAccessToken).to.not.have.been.called;
-    expect(log.info).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no_workspace/);
+    expect(log.warn).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no_workspace/);
     expect(onProgress).to.have.been.calledWith(
       ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
     );
@@ -512,13 +511,13 @@ describe('offsite-brand-presence-semrush', function () {
   it('returns null when the IMS service token cannot be minted', async () => {
     getServiceAccessToken.rejects(new Error('ims down'));
     expect(await run()).to.equal(null);
-    expect(log.error).to.have.been.called;
+    expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
   });
 
   it('returns null when the IMS token response has no access_token', async () => {
     getServiceAccessToken.resolves({ token_type: 'Bearer' });
     expect(await run()).to.equal(null);
-    expect(erroredWith(/access_token/)).to.equal(true);
+    expect(warnedWith(/access_token/)).to.equal(true);
   });
 
   // --- progress notifications (onProgress) -----------------------------------

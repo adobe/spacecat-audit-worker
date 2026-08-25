@@ -334,12 +334,12 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     for (const url of urls) {
       entries.push({ url, audits: [config.auditType] });
     }
-    olog.debug('data_acquisition_url_store_write', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
+    olog.success('data_acquisition_url_store_write', `Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: domain });
   }
   for (const url of topCited) {
     entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
-  olog.debug('data_acquisition_url_store_write', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
+  olog.success('data_acquisition_url_store_write', `Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`, { peer: PEER.URL_STORE, direction: 'outbound', bucket: 'top-cited' });
   olog.start('data_acquisition_url_store_write', `Adding ${entries.length} URLs to URL store`, { peer: PEER.URL_STORE, direction: 'outbound', total: entries.length });
 
   let existingUrlSet;
@@ -508,8 +508,8 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
+    olog.warn('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; skipping DRS scraping this run', {
+      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -519,8 +519,8 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.failure('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; DRS scraping unavailable this run. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
+    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; skipping DRS scraping this run. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
@@ -980,7 +980,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   if (allUrls.size === 0) {
-    olog.success('audit_orchestration_end', 'No offsite URLs found, audit complete', { reason: 'no_urls', reasonCategory: 'expected' });
+    olog.skip('audit_orchestration_end', 'No offsite URLs found, audit complete', { reason: 'no_urls', reasonCategory: 'expected' });
     await postMessageOptional(
       context,
       channelId,

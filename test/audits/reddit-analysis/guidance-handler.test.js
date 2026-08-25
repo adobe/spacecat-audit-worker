@@ -1599,9 +1599,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
@@ -1688,9 +1688,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });

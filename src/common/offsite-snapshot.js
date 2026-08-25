@@ -173,7 +173,7 @@ export async function prepareSupersededRunSnapshot({
 
   if (!evergreenOpportunity) {
     // First surfaced run: there is no previous evergreen state to preserve.
-    olog.debug('audit_persistence_snapshot_opportunity_write', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed', {
+    olog.skip('audit_persistence_snapshot_opportunity_write', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed', {
       snapshotAction: 'skipped',
     });
     return { opportunityData, opportunityToUpdate: null };
@@ -246,13 +246,14 @@ export async function prepareSupersededRunSnapshot({
           ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
         })));
         if (errorItems?.length > 0) {
-          olog.failure('audit_persistence_snapshot_opportunity_write', 'Suggestions failed to copy onto snapshot', {
+          olog.warn('audit_persistence_snapshot_opportunity_write', 'Suggestions failed to copy onto snapshot', {
             peer: PEER.POSTGRES,
             opportunityId: snapshot.getId(),
             failed: errorItems.length,
             reason: 'suggestions_copy_failed',
             reasonCategory: 'infra',
             snapshotAction: 'created',
+            outcome: OUTCOME.DEGRADED,
           });
         }
       } catch (err) {
@@ -269,12 +270,13 @@ export async function prepareSupersededRunSnapshot({
         try {
           await snapshot.remove();
         } catch (removeErr) {
-          olog.failure('audit_persistence_snapshot_opportunity_write', 'Failed to delete orphan snapshot', {
+          olog.warn('audit_persistence_snapshot_opportunity_write', 'Failed to delete orphan snapshot', {
             peer: PEER.POSTGRES,
             opportunityId: snapshot.getId(),
             reason: 'orphan_cleanup_failed',
             reasonCategory: 'infra',
             snapshotAction: 'created',
+            outcome: OUTCOME.DEGRADED,
             ...errorField(removeErr),
           });
         }

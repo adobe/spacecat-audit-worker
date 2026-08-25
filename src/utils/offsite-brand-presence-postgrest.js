@@ -83,10 +83,11 @@ async function fetchExecutionsWithSources(postgrestClient, {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
-      // Deliberately kept at `.warn()` with `outcome` forced to `SUCCESS`: a full set of
-      // pages was still processed, this is a caveat on a successful fetch, not a failure.
+      // Kept at `.warn()`: hitting an operational page cap and continuing with only the
+      // rows fetched so far is a reduced/partial result, not a full success — outcome
+      // is degraded.
       olog.warn('data_acquisition_bp_data_postgres_read', 'Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
-        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.SUCCESS,
+        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.DEGRADED,
       });
       break;
     }
@@ -186,16 +187,16 @@ export async function loadBrandPresenceDataFromPostgrest({
     });
 
     if (executions.length === 0) {
-      olog.skip('data_acquisition_bp_data_postgres_read', 'No execution rows found', {
-        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId,
+      olog.warn('data_acquisition_bp_data_postgres_read', 'No execution rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
       });
       return null;
     }
 
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
-      olog.skip('data_acquisition_bp_data_postgres_read', 'No usable rows found', {
-        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId,
+      olog.warn('data_acquisition_bp_data_postgres_read', 'No usable rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
       });
       return null;
     }
