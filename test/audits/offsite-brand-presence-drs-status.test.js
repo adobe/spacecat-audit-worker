@@ -201,7 +201,8 @@ describe('offsite-brand-presence DRS status handler', function () {
     expect(thrown.message).to.equal('SQS reschedule down');
     expect(log.error).to.have.been.calledWith(
       sinon.match(/Failed to re-enqueue DRS status poll/)
-        .and(sinon.match(/event=data_acquisition_scrape_job_poll_rescheduled/))
+        .and(sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/))
+        .and(sinon.match(/firstSchedule=false/))
         .and(sinon.match(/outcome=failure/)),
     );
   });
@@ -235,7 +236,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     // P1-6: the youtube bucket (still running at the deadline) is dropped with a
     // structured, alertable failure instead of only appearing in the Slack prose.
     expect(log.error).to.have.been.calledWith(
-      sinon.match(/event=data_acquisition_scrape_job_status_polled/)
+      sinon.match(/event=data_acquisition_scrape_job_poll_checked/)
         .and(sinon.match(/outcome=failure/))
         .and(sinon.match(/reason=budget_exceeded/))
         .and(sinon.match(/auditType=youtube-analysis/)),
@@ -485,13 +486,21 @@ describe('offsite-brand-presence DRS status handler', function () {
       // P1-6: both buckets failed their scrape (all terminal, no success) → dropped with
       // reason=scrape_failed rather than budget_exceeded.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=data_acquisition_scrape_job_status_polled/)
+        sinon.match(/event=data_acquisition_scrape_job_poll_checked/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=scrape_failed/))
           .and(sinon.match(/auditType=reddit-analysis/)),
       );
       expect(log.error).to.have.been.calledWith(
         sinon.match(/reason=scrape_failed/).and(sinon.match(/auditType=youtube-analysis/)),
+      );
+      // The aggregate summary line uses a neutral reason regardless of the per-drop
+      // reasons above, since drops in the same run can be a mix of scrape_failed and
+      // budget_exceeded.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_scrape_job_poll_end/)
+          .and(sinon.match(/reason=partial_drop/))
+          .and(sinon.match(/reasonCategory=infra/)),
       );
     });
 

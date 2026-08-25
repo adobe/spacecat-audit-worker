@@ -316,7 +316,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=audit_persistence_completed/)).and(sinon.match(/outcome=skip/)),
+        sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=audit_persistence_end/)).and(sinon.match(/outcome=skip/)),
       );
     });
 
@@ -370,7 +370,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_completed/)),
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_end/)),
       );
     });
 
@@ -825,17 +825,19 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // The outer catch folds the error into a structured audit_persistence_completed failure line
+      // The outer catch folds the error into a structured audit_persistence_end failure line
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Error processing analysis/)
-          .and(sinon.match(/event=audit_persistence_completed/))
+          .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
-        (c) => /event=audit_persistence_completed/.test(String(c.args[0])),
+        (c) => /event=audit_persistence_end/.test(String(c.args[0])),
       );
       expect(outerCatchCall.args).to.have.lengthOf(2);
       expect(outerCatchCall.args[1]).to.be.an('error');
@@ -861,7 +863,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/errorName=Error/)),
@@ -885,7 +887,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_suggestions_synced/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/opportunityId=opp-123/)),
@@ -918,7 +920,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_completed/)),
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_end/)),
       );
     });
 
@@ -1598,7 +1600,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(200);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_housekeeping_opportunities_removed/)
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
@@ -1687,7 +1689,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(200);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=audit_housekeeping_suggestions_removed/)
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );

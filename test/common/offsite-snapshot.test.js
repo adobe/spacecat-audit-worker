@@ -650,7 +650,12 @@ describe('offsite-snapshot', () => {
         log,
       });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/Suggestions failed to copy onto snapshot/).and(sinon.match(/failed=1/)));
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Suggestions failed to copy onto snapshot/)
+          .and(sinon.match(/failed=1/))
+          .and(sinon.match(/reason=suggestions_copy_failed/))
+          .and(sinon.match(/reasonCategory=infra/)),
+      );
     });
 
     it('deletes the orphan snapshot and rethrows when addSuggestions fully rejects', async () => {
@@ -685,7 +690,11 @@ describe('offsite-snapshot', () => {
       })).to.be.rejectedWith('DB write failed');
 
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(sinon.match(/addSuggestions threw.*deleting orphan/i));
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/addSuggestions threw.*deleting orphan/i)
+          .and(sinon.match(/reason=suggestions_copy_failed/))
+          .and(sinon.match(/reasonCategory=infra/)),
+      );
     });
 
     it('still rethrows the original addSuggestions error when orphan removal also fails', async () => {
@@ -720,7 +729,11 @@ describe('offsite-snapshot', () => {
       })).to.be.rejectedWith('DB write failed');
 
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(sinon.match(/Failed to delete orphan snapshot/i));
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to delete orphan snapshot/i)
+          .and(sinon.match(/reason=orphan_cleanup_failed/))
+          .and(sinon.match(/reasonCategory=infra/)),
+      );
     });
 
     it('creates a managed snapshot without trigger metadata when auditId is missing', async () => {

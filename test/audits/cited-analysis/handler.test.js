@@ -798,7 +798,7 @@ describe('Cited Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('urls=2')),
       );
@@ -895,7 +895,7 @@ describe('Cited Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
@@ -1037,6 +1037,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.data.urls.length).to.be.lessThan(MYSTIQUE_URLS_LIMIT);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=success/);
     });
 
     it('should strip prompts from single URL when payload still exceeds budget', async () => {
@@ -1074,6 +1075,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.data.urls[0].timesCited).to.equal(7);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=success/);
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -1165,7 +1167,10 @@ describe('Cited Analysis Handler', function () {
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+        sinon.match(/Failed to send Mystique message/)
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });
 
@@ -1268,7 +1273,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.siteId).to.equal(siteId);
       // brandId is now a structured field on the mystique_dispatch success line.
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/).and(sinon.match(/brandId=brand-4/)),
+        sinon.match(/event=audit_analysis_start/).and(sinon.match(/brandId=brand-4/)),
       );
     });
 

@@ -149,7 +149,7 @@ function partitionExcludedUrls(urls, brandTokens, olog) {
     const reason = host && isExcludedCitedHost(host, brandTokens);
     if (reason) {
       droppedCount += 1;
-      olog.debug('data_acquisition_store_urls_read', 'Excluding URL', {
+      olog.debug('data_acquisition_url_store_read', 'Excluding URL', {
         peer: PEER.URL_STORE, direction: 'inbound', url: entry.url, reason,
       });
     } else {
@@ -171,12 +171,12 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('data_acquisition_store_urls_read', 'Fetching data from stores', {
+  olog.start('data_acquisition_url_store_read', 'Fetching data from stores', {
     peer: PEER.URL_STORE, direction: 'inbound',
   });
 
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('data_acquisition_store_urls_read', 'Retrieved URLs from URL Store', {
+  olog.success('data_acquisition_url_store_read', 'Retrieved URLs from URL Store', {
     peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
   });
 
@@ -191,7 +191,7 @@ async function fetchStoreData(siteId, context, site) {
   );
   if (ownedDroppedCount > 0) {
     olog.debug(
-      'data_acquisition_store_urls_read',
+      'data_acquisition_url_store_read',
       'Excluded owned-domain URLs (cited analysis is 3rd-party earned only)',
       { peer: PEER.URL_STORE, direction: 'inbound', droppedOwned: ownedDroppedCount },
     );
@@ -209,7 +209,7 @@ async function fetchStoreData(siteId, context, site) {
   );
   if (nonEarnedDroppedCount > 0) {
     olog.debug(
-      'data_acquisition_store_urls_read',
+      'data_acquisition_url_store_read',
       'Excluded non-earned/branded URLs (social, search, deal-aggregator, or brand-owned lookalike)',
       { peer: PEER.URL_STORE, direction: 'inbound', droppedNonEarned: nonEarnedDroppedCount },
     );
@@ -224,7 +224,7 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     olog,
   );
-  olog.success('data_acquisition_scrape_job_status_polled', `${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`, {
+  olog.success('data_acquisition_scrape_content_checked', `${urls.length} cited URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
 
@@ -240,7 +240,7 @@ async function fetchStoreData(siteId, context, site) {
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines configured for cited-analysis, proceeding without', {
-        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines',
+        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines', reasonCategory: 'expected',
       });
     } else {
       throw error;
@@ -276,7 +276,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_orchestration_started', 'Audit started');
+  olog.start('audit_orchestration_start', 'Audit started');
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
@@ -287,7 +287,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     if (!citedConfig.companyName) {
       olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site, skipping audit', {
-        outcome: OUTCOME.SKIP, reason: 'no_company_name',
+        outcome: OUTCOME.SKIP, reason: 'no_company_name', reasonCategory: 'config',
       });
       return {
         auditResult: {
@@ -308,17 +308,18 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // empty list Mystique will only count the primary brand in Share of Voice
       // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
       olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
-        outcome: OUTCOME.SKIP, reason: 'no_competitors',
+        outcome: OUTCOME.SKIP, reason: 'no_competitors', reasonCategory: 'config',
       });
     }
 
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS');
     const storeData = await fetchStoreData(siteId, context, site);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
     olog.success(
-      'data_acquisition_completed',
+      'data_acquisition_end',
       scrapedNow
         ? 'DRS scrape finished this cycle; proceeding to Mystique'
         : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
@@ -346,6 +347,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       { threadTs: slackContext?.threadTs },
     );
 
+    olog.success('audit_orchestration_end', 'Audit complete', { status: 'pending_analysis' });
+
     return {
       auditResult: {
         success: true,
@@ -368,8 +371,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // cited URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        olog.failure('data_acquisition_store_urls_read', 'URL store still empty after scrape', {
-          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
+        olog.failure('data_acquisition_url_store_read', 'URL store still empty after scrape', {
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_after_scrape', reasonCategory: 'infra', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -385,8 +388,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      olog.skip('data_acquisition_completed', 'URL store empty, requesting a scoped scrape for top-cited', {
-        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_store',
+      olog.skip('data_acquisition_end', 'URL store empty, requesting a scoped scrape for top-cited', {
+        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_first_attempt', reasonCategory: 'expected',
       });
       await postMessageOptional(
         context,
@@ -416,8 +419,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('data_acquisition_scrape_job_status_polled', 'No DRS content available after scraping', {
-          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
+        olog.failure('data_acquisition_scrape_content_checked', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_after_retry', reasonCategory: 'infra', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -430,8 +433,8 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      olog.skip('data_acquisition_completed', 'URLs stored but not scraped in DRS yet, requesting a scrape for top-cited', {
-        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'no_drs_content',
+      olog.skip('data_acquisition_end', 'URLs stored but not scraped in DRS yet, requesting a scrape for top-cited', {
+        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_first_attempt', reasonCategory: 'expected',
       });
       await postMessageOptional(
         context,
@@ -456,7 +459,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_orchestration_started', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_end', 'Audit failed', { reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -482,15 +485,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    olog.skip('audit_analysis_mystique_request_handoff', 'Audit failed, skipping Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+    olog.skip('audit_analysis_start', 'Audit failed, skipping Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed', reasonCategory: 'expected',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('audit_analysis_mystique_request_handoff', 'SQS or Mystique queue not configured, skipping message', {
-      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'not_configured',
+    olog.warn('audit_analysis_start', 'SQS or Mystique queue not configured, skipping message', {
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured', reasonCategory: 'infra',
     });
     return auditData;
   }
@@ -499,15 +502,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.warn('audit_analysis_mystique_request_handoff', 'Site not found, skipping Mystique message', {
-        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found',
+      olog.warn('audit_analysis_start', 'Site not found, skipping Mystique message', {
+        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch', reasonCategory: 'infra',
       });
       return auditData;
     }
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('audit_analysis_url_limit_resolved', 'URL limit resolved', { urlLimit });
+    olog.success('audit_orchestration_analysis_url_limit_resolved', 'URL limit resolved', { urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
@@ -553,8 +556,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      olog.warn('audit_orchestration_brand_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
@@ -575,9 +578,11 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       sentUrlCount -= 1;
       message.data.urls = enrichedUrls.slice(0, sentUrlCount);
       olog.warn(
-        'audit_analysis_mystique_request_built',
+        'audit_analysis_start',
         `Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
-        { peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget' },
+        {
+          outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget', reasonCategory: 'expected',
+        },
       );
     }
 
@@ -587,9 +592,11 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
       if (bytes > SQS_MAX_SAFE_BYTES) {
         olog.warn(
-          'audit_analysis_mystique_request_built',
+          'audit_analysis_start',
           `Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
-          { peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single' },
+          {
+            outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single', reasonCategory: 'expected',
+          },
         );
         const [singleUrl] = message.data.urls;
         message.data.urls = [{
@@ -600,25 +607,25 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       }
     }
 
-    olog.debug('audit_analysis_mystique_request_built', `Built Mystique message type ${message.type}`, {
-      peer: PEER.MYSTIQUE, direction: 'outbound',
-    });
+    const finalBytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
-      'audit_analysis_mystique_request_handoff',
+      'audit_analysis_start',
       'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
         companyName: config.companyName,
         urls: message.data.urls.length,
+        messageType: message.type,
+        bytes: finalBytes,
         ...(brand && { brandId: brand.brandId }),
       },
     );
     return auditData;
   } catch (error) {
-    olog.failure('audit_analysis_mystique_request_handoff', 'Failed to send Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
+    olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error),
     });
     // Notify the Slack thread that triggered this audit so the operator knows
     // Mystique was never reached and doesn't wait for results that won't come.

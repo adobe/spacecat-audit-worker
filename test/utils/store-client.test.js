@@ -286,10 +286,10 @@ describe('StoreClient', () => {
         .to.be.rejectedWith('dynamo exploded');
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
       // A genuine read error is logged as a distinct, alertable
-      // data_acquisition_store_urls_read failure before it is re-thrown (rather than
+      // data_acquisition_url_store_read failure before it is re-thrown (rather than
       // surfacing only as the generic "Audit failed").
       expect(mockLog.error).to.have.been.calledWith(
-        sinon.match(/event=data_acquisition_store_urls_read/)
+        sinon.match(/event=data_acquisition_url_store_read/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/dynamo exploded/)),
       );

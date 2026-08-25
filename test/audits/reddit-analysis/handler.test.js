@@ -617,7 +617,7 @@ describe('Reddit Analysis Handler', function () {
         sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('urls=2')),
       );
@@ -667,7 +667,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match('urls=1')),
       );
@@ -696,7 +696,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
@@ -726,7 +726,7 @@ describe('Reddit Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(4);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName=Test'))
           .and(sinon.match('urls=4')),
       );
@@ -848,7 +848,10 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+        sinon.match(/Failed to send Mystique message/)
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });
 
@@ -890,7 +893,7 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage.siteId).to.equal(siteId);
       // brandId is now a structured field on the mystique_dispatch success line.
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/).and(sinon.match(/brandId=brand-3/)),
+        sinon.match(/event=audit_analysis_start/).and(sinon.match(/brandId=brand-3/)),
       );
     });
 

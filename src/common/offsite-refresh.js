@@ -112,7 +112,7 @@ export async function persistOffsiteOpportunity(
         data: mappedOpportunity.data,
         ...(mappedOpportunity.status ? { status: mappedOpportunity.status } : {}),
       });
-      olog.success('audit_persistence_opportunity_persisted', 'Created opportunity', {
+      olog.success('audit_persistence_evergreen_opportunity_write', 'Created opportunity', {
         peer: PEER.POSTGRES,
         direction: 'outbound',
         opportunityId: created.getId(),
@@ -127,7 +127,7 @@ export async function persistOffsiteOpportunity(
     opportunityToUpdate.setUpdatedBy('system');
     await opportunityToUpdate.save();
 
-    olog.success('audit_persistence_opportunity_persisted', 'Refreshed evergreen opportunity', {
+    olog.success('audit_persistence_evergreen_opportunity_write', 'Refreshed evergreen opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       opportunityId: opportunityToUpdate.getId(),
@@ -138,10 +138,11 @@ export async function persistOffsiteOpportunity(
   } catch (error) {
     // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
     // structured, THEN rethrow unchanged so the caller's error handling is preserved.
-    olog.failure('audit_persistence_opportunity_persisted', 'Failed to persist opportunity', {
+    olog.failure('audit_persistence_evergreen_opportunity_write', 'Failed to persist opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
-      reason: 'db_write',
+      reason: 'opportunity_write_failed',
+      reasonCategory: 'infra',
       ...errorField(error),
     });
     throw error;
@@ -170,8 +171,8 @@ export async function resolveEvergreenOffsiteOpportunity({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    olog.failure('audit_persistence_opportunity_resolved', 'Failed to fetch opportunities', {
-      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
+    olog.failure('audit_persistence_evergreen_opportunity_read', 'Failed to fetch opportunities', {
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', reasonCategory: 'infra', ...errorField(e),
     });
     throw e;
   }

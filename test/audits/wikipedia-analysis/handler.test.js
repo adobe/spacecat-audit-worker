@@ -475,7 +475,7 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('wikipediaUrl=https://en.wikipedia.org/wiki/Example_Corp')),
       );
@@ -501,7 +501,7 @@ describe('Wikipedia Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_mystique_request_handoff/)
+        sinon.match(/event=audit_analysis_start/)
           .and(sinon.match('wikipediaUrl="(empty → auto-detect)"')),
       );
     });
@@ -590,7 +590,12 @@ describe('Wikipedia Analysis Handler', () => {
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match('Failed to send Mystique message')
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
@@ -634,7 +639,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage.brandId).to.equal('brand-1');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_mystique_request_handoff/)),
+        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_start/)),
       );
     });
 

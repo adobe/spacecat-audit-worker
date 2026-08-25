@@ -1,7 +1,8 @@
 # 002 — Offsite Audits: Structured Logging Taxonomy
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-31
+- **Superseded by:** ADR [003 — Offsite Event Taxonomy: Phase Boundaries](003-offsite-event-taxonomy-phase-boundaries.md)
 
 ## Context
 
