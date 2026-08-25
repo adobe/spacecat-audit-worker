@@ -1045,10 +1045,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableSemrushOverride,
       );
     } catch (err) {
-      // Best-effort: warn, not failure. The run already submitted the DRS jobs and posted
-      // its notification, so a transient SQS/Configuration hiccup scheduling the follow-up
-      // poll is non-fatal, self-healed on the next run, and must not page. outcome=degraded
-      // reflects that: Splunk still counts it, without the error/paging severity.
+      // The DRS jobs were already submitted successfully, but with no poll ever scheduled,
+      // nothing will ever check on them or trigger the downstream analysis dispatch — those
+      // jobs' results are permanently orphaned, the same unrecoverable loss as the sibling
+      // "Failed to re-enqueue DRS status poll" failure below, which is why this pages too.
       olog.failure('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
         outcome: OUTCOME.FAILURE, peer: PEER.SQS, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', ...errorField(err),
       });

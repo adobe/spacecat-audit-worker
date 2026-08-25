@@ -31,7 +31,7 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
-  createOffsiteLogger, errorField, OUTCOME, PEER,
+  AUDIT, createOffsiteLogger, errorField, OUTCOME, PEER,
 } from './offsite-logging.js';
 
 // Page size for cursor-based pagination over the url-store and sentiment collections.
@@ -71,6 +71,31 @@ export const GUIDELINE_TYPES = {
   YOUTUBE_ANALYSIS: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
   CITED_ANALYSIS: Audit.AUDIT_TYPES.CITED_ANALYSIS,
 };
+
+/**
+ * Maps an `Audit.AUDIT_TYPES` string (e.g. 'wikipedia-analysis') to the matching
+ * {@link AUDIT} taxonomy enum member (e.g. `AUDIT.WIKIPEDIA`) used as the `audit` field in
+ * offsite log lines, so Splunk queries filtering on `audit=<value>` match this file's logs.
+ * Falls back to the raw `auditType` (including `undefined`) when it does not map to a known
+ * audit type, e.g. the `getGuidelines` no-`auditType`-given path.
+ *
+ * @param {string} [auditType] one of `Audit.AUDIT_TYPES`
+ * @returns {string|undefined} the matching {@link AUDIT} member, or the raw `auditType`
+ */
+function toLogAudit(auditType) {
+  switch (auditType) {
+    case Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS:
+      return AUDIT.WIKIPEDIA;
+    case Audit.AUDIT_TYPES.REDDIT_ANALYSIS:
+      return AUDIT.REDDIT;
+    case Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS:
+      return AUDIT.YOUTUBE;
+    case Audit.AUDIT_TYPES.CITED_ANALYSIS:
+      return AUDIT.CITED;
+    default:
+      return auditType;
+  }
+}
 
 /**
  * Maps an AuditUrl model instance to a plain object, matching the shape the
@@ -205,7 +230,7 @@ export default class StoreClient {
     this.#ensureConfigured(['AuditUrl']);
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
-    const olog = createOffsiteLogger(this.log, { audit: 'store-client', siteId });
+    const olog = createOffsiteLogger(this.log, { audit: toLogAudit(auditType), siteId });
 
     olog.start('data_acquisition_url_store_read', 'Fetching URLs from URL Store', {
       peer: PEER.URL_STORE, direction: 'inbound', auditType,
@@ -261,7 +286,7 @@ export default class StoreClient {
   async getGuidelines(siteId, auditType) {
     this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
-    const olog = createOffsiteLogger(this.log, { audit: 'store-client', siteId });
+    const olog = createOffsiteLogger(this.log, { audit: toLogAudit(auditType), siteId });
 
     olog.start('audit_orchestration_brand_guidelines_resolved', 'Fetching sentiment config', {
       peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType,

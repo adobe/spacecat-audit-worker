@@ -1,8 +1,13 @@
 # 003 — Offsite Event Taxonomy: Phase Boundaries
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-25
 - **Supersedes:** the event-naming section of ADR [002](002-offsite-structured-logging-taxonomy.md)
+- **Superseded by (in part):** ADR [005](005-offsite-remove-reason-category.md) removes the
+  `reasonCategory` field this ADR introduced (point 5 of the Decision section, the "A `severity`
+  field instead of `reasonCategory`" alternative, and the `reasonCategory`-as-alerting-split
+  Consequence below). The five-phase boundary structure, the event mergers, and every other
+  decision in this ADR are unaffected and remain in force.
 
 ## Context
 
