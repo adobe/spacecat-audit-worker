@@ -57,6 +57,34 @@ async function isSitePlgTier(site, log) {
 }
 
 /**
+ * Resolves the site's organization, IMS org id, and org name for use in an
+ * alert message. Fails soft — returns nulls on lookup failure.
+ *
+ * @param {object} site    - The Site model instance.
+ * @param {object} context - Lambda context ({ dataAccess }).
+ * @param {object} log     - Logger with a warn method.
+ * @returns {Promise<{organizationId: string|null, imsOrgId: string|null, orgName: string|null}>}
+ */
+async function getOrganizationDetails(site, context, log) {
+  const organizationId = site.getOrganizationId?.() ?? null;
+  if (!organizationId) {
+    return { organizationId: null, imsOrgId: null, orgName: null };
+  }
+
+  try {
+    const organization = await context.dataAccess.Organization.findById(organizationId);
+    return {
+      organizationId,
+      imsOrgId: organization?.getImsOrgId?.() ?? null,
+      orgName: organization?.getName?.() ?? null,
+    };
+  } catch (err) {
+    log.warn(`Failed to look up organization for low suggestion count alert (site ${site.getId()}): ${err.message}`);
+    return { organizationId, imsOrgId: null, orgName: null };
+  }
+}
+
+/**
  * Posts a JSON body message to a Slack channel via the Web API.
  *
  * @param {string} channelId
@@ -142,6 +170,18 @@ export async function sendLowSuggestionCountAlert(site, auditType, suggestionCou
 
     if (errorMessage) {
       message += `\n• *Error:* ${sanitizeForSlack(errorMessage)}`;
+    }
+
+    const { organizationId, imsOrgId, orgName } = await getOrganizationDetails(site, context, log);
+    if (orgName) {
+      message += `\n• *IMS Org Name:* ${sanitizeForSlack(orgName)}`;
+    }
+    if (imsOrgId) {
+      message += `\n• *IMS Org ID:* \`${sanitizeForSlack(imsOrgId)}\``;
+    }
+    if (organizationId) {
+      const experienceUrl = env?.EXPERIENCE_URL || 'https://experience.adobe.com';
+      message += `\n• *ASO Link:* ${experienceUrl}/?organizationId=${organizationId}#/sites-optimizer/sites/${site.getId()}`;
     }
 
     await postSlackMessage(channelId, message, token);
