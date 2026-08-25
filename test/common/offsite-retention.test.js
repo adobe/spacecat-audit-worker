@@ -528,7 +528,6 @@ describe('offsite-retention', () => {
           .and(sinon.match(/batchSize=5/))
           .and(sinon.match(/errorMessage="batch DELETE failed"/))
           .and(sinon.match(/reason=batch_delete_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/outcome=degraded/)),
       );
       expect(log.info).to.not.have.been.calledWith(
@@ -540,8 +539,7 @@ describe('offsite-retention', () => {
         sinon.match(/event=audit_housekeeping_end/)
           .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`))
-          .and(sinon.match(/reason=partial_delete_failure/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reason=partial_delete_failure/)),
       );
     });
 
@@ -836,9 +834,9 @@ describe('offsite-retention', () => {
       expect(deletedSnapshotCount).to.equal(0);
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.not.have.been.called;
-      // "Ran, nothing eligible" must be distinguishable from "never invoked" — an info-level
+      // "Ran, nothing eligible" must be distinguishable from "never invoked" — a warn-level
       // skip line fires on the same event the success path uses, with eligible=0.
-      expect(log.info).to.have.been.calledWith(
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/No expired snapshots eligible for deletion/))

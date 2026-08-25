@@ -30,7 +30,9 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { createOffsiteLogger, errorField, PEER } from './offsite-logging.js';
+import {
+  createOffsiteLogger, errorField, OUTCOME, PEER,
+} from './offsite-logging.js';
 
 // Page size for cursor-based pagination over the url-store and sentiment collections.
 const STORE_PAGE_SIZE = 500;
@@ -233,8 +235,8 @@ export default class StoreClient {
     }
 
     if (items.length === 0) {
-      olog.skip('data_acquisition_url_store_read', 'No URLs found in URL Store', {
-        peer: PEER.URL_STORE, direction: 'inbound', auditType, reason: 'no_urls', reasonCategory: 'expected',
+      olog.warn('data_acquisition_url_store_read', 'No URLs found in URL Store', {
+        peer: PEER.URL_STORE, direction: 'inbound', auditType, reason: 'no_urls', outcome: OUTCOME.SKIP,
       });
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
     }
@@ -280,8 +282,8 @@ export default class StoreClient {
     const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
-      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in Guideline Store', {
-        peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', reasonCategory: 'expected',
+      olog.warn('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in Guideline Store', {
+        peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', outcome: OUTCOME.SKIP,
       });
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }

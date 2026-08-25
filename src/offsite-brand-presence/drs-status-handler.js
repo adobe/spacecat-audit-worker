@@ -79,7 +79,7 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
     olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to check recent audit', {
-      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', ...errorField(err),
+      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT, direction: 'inbound', auditType, reason: 'lookup', ...errorField(err),
     });
     return false;
   }
@@ -147,7 +147,7 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  *
  * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
  * @param {Set<string>} triggered - Audit types already dispatched (this + prior polls)
- * @returns {Array<{auditType: string, reason: string, reasonCategory: string}>} Dropped
+ * @returns {Array<{auditType: string, reason: string}>} Dropped
  *   audit types with a reason
  */
 function computeDroppedAuditTypes(statuses, triggered) {
@@ -179,7 +179,6 @@ function computeDroppedAuditTypes(statuses, triggered) {
     dropped.push({
       auditType,
       reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded',
-      reasonCategory: 'infra',
     });
   }
   return dropped;
@@ -238,8 +237,8 @@ async function triggerAnalysisAudits(
     try {
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-        olog.skip('audit_orchestration_analysis_request_dispatched', 'Skipping analysis dispatch; recent audit exists', {
-          peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', reasonCategory: 'expected', auditType: type,
+        olog.warn('audit_orchestration_analysis_request_dispatched', 'Skipping analysis dispatch; recent audit exists', {
+          outcome: OUTCOME.SKIP, peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
         });
         handled.push(type);
         // eslint-disable-next-line no-continue
@@ -270,7 +269,7 @@ async function triggerAnalysisAudits(
       handled.push(type);
     } catch (err) {
       olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to dispatch analysis audit', {
-        outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', auditType: type, reason: 'dispatch_failed', reasonCategory: 'infra', ...errorField(err),
+        outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', auditType: type, reason: 'dispatch_failed', ...errorField(err),
       });
     }
   }
@@ -347,7 +346,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
     // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
     olog.skip('data_acquisition_scrape_job_poll_checked', 'No jobs to poll, skipping', {
-      peer: PEER.DRS, reason: 'no_jobs', reasonCategory: 'expected',
+      peer: PEER.DRS, reason: 'no_jobs',
     });
     return ok();
   }
@@ -401,7 +400,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     );
   } catch (err) {
     olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to dispatch analysis audits', {
-      outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', reason: 'dispatch_failed', reasonCategory: 'infra', ...errorField(err),
+      outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', reason: 'dispatch_failed', ...errorField(err),
     });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
@@ -431,7 +430,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
       olog.failure('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to re-enqueue DRS status poll', {
-        peer: PEER.SQS, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', reasonCategory: 'infra', ...errorField(err),
+        peer: PEER.SQS, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', ...errorField(err),
       });
       throw err;
     }
@@ -452,9 +451,9 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // DRS success is dropped here with no dispatch. Emit one structured, alertable failure per
   // dropped source (was previously visible only as prose in the Slack summary).
   const dropped = computeDroppedAuditTypes(statuses, new Set(nextTriggered));
-  for (const { auditType, reason, reasonCategory } of dropped) {
+  for (const { auditType, reason } of dropped) {
     olog.failure('data_acquisition_scrape_job_poll_checked', 'Dropping analysis audit type; no DRS success', {
-      peer: PEER.DRS, reason, reasonCategory, auditType,
+      peer: PEER.DRS, reason, auditType,
     });
   }
 
@@ -465,7 +464,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     direction: 'outbound',
     jobs: statuses.length,
     dropped: dropped.length,
-    ...(dropped.length > 0 && { reason: 'partial_drop', reasonCategory: 'infra' }),
+    ...(dropped.length > 0 && { reason: 'partial_drop' }),
   });
 
   return ok();

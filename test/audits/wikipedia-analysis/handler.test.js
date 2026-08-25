@@ -148,7 +148,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should extract brand from URL when company name is not configured', async () => {
@@ -353,7 +353,6 @@ describe('Wikipedia Analysis Handler', () => {
           .and(sinon.match('Override rejected: not a valid URL'))
           .and(sinon.match('outcome=skip'))
           .and(sinon.match('reason=invalid_url'))
-          .and(sinon.match('reasonCategory=config'))
           .and(sinon.match('value=not-a-valid-url')),
       );
     });
@@ -532,8 +531,9 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match('Audit failed, skipping Mystique message')
+          .and(sinon.match('outcome=skip'))
           .and(sinon.match('peer=mystique'))
           .and(sinon.match('direction=outbound')),
       );
@@ -590,7 +590,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -609,7 +609,6 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match('Failed to send Mystique message')
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });

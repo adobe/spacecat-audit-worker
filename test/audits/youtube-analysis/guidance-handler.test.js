@@ -447,7 +447,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -467,7 +467,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -690,7 +690,6 @@ describe('YouTube Analysis Guidance Handler', () => {
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
@@ -720,7 +719,6 @@ describe('YouTube Analysis Guidance Handler', () => {
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/reason=suggestions_write_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
     });

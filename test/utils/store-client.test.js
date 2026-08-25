@@ -301,15 +301,14 @@ describe('StoreClient', () => {
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
 
-      // The empty-result path is now observable: a skip log line precedes the throw,
-      // so an operator can tell "ran, found nothing" from "never ran".
-      expect(mockLog.info).to.have.been.calledWith(
+      // The empty-result path is now observable: a warn-level skip log line precedes the
+      // throw, so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.warn).to.have.been.calledWith(
         sinon.match(/No URLs found in URL Store/)
           .and(sinon.match(/event=data_acquisition_url_store_read/))
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/peer=url_store/))
-          .and(sinon.match(/reason=no_urls/))
-          .and(sinon.match(/reasonCategory=expected/)),
+          .and(sinon.match(/reason=no_urls/)),
       );
     });
 
@@ -417,15 +416,14 @@ describe('StoreClient', () => {
       await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
 
-      // The empty-result path is now observable: a skip log line precedes the throw,
-      // so an operator can tell "ran, found nothing" from "never ran".
-      expect(mockLog.info).to.have.been.calledWith(
+      // The empty-result path is now observable: a warn-level skip log line precedes the
+      // throw, so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.warn).to.have.been.calledWith(
         sinon.match(/No guidelines or topics found in Guideline Store/)
           .and(sinon.match(/event=audit_orchestration_brand_guidelines_resolved/))
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/peer=guideline_store/))
-          .and(sinon.match(/reason=no_guidelines_or_topics/))
-          .and(sinon.match(/reasonCategory=expected/)),
+          .and(sinon.match(/reason=no_guidelines_or_topics/)),
       );
     });
 

@@ -468,7 +468,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should use baseURL as companyName when company name is not configured', async () => {
@@ -793,7 +793,9 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message').and(sinon.match('outcome=skip')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -850,7 +852,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -870,7 +872,6 @@ describe('Reddit Analysis Handler', function () {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send Mystique message/)
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });

@@ -585,7 +585,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
 
       expect(result).to.have.lengthOf(1);
-      expect(log.info).to.have.been.calledWithMatch(/Could not parse baseURL/);
+      expect(log.warn).to.have.been.calledWithMatch(/Could not parse baseURL/);
     });
   });
 

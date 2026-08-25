@@ -48,7 +48,7 @@ export async function findExpiredSnapshots({
       .allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (error) {
     olog.warn('audit_housekeeping_outdated_opportunities_read', 'Failed to find snapshots', {
-      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', outcome: OUTCOME.DEGRADED, ...errorField(error),
     });
     return [];
   }
@@ -89,8 +89,8 @@ export async function deleteExpiredSnapshots({
   const expiredSnapshots = allExpiredSnapshots.slice(0, MAX_DELETIONS_PER_RUN);
 
   if (expiredSnapshots.length === 0) {
-    olog.skip('audit_housekeeping_outdated_opportunities_deleted', 'No expired snapshots eligible for deletion', {
-      auditType, eligible: 0,
+    olog.warn('audit_housekeeping_outdated_opportunities_deleted', 'No expired snapshots eligible for deletion', {
+      auditType, eligible: 0, outcome: OUTCOME.SKIP,
     });
     return 0;
   }
@@ -169,7 +169,7 @@ export async function deleteExpiredOutdatedSuggestions({
     opportunitySuggestions = await opportunity.getSuggestions() || [];
   } catch (error) {
     olog.warn('audit_housekeeping_outdated_suggestions_read', 'Failed to read suggestions for expired OUTDATED suggestion deletion', {
-      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', outcome: OUTCOME.DEGRADED, ...errorField(error),
     });
     return emptyRetentionSummary;
   }
@@ -194,7 +194,7 @@ export async function deleteExpiredOutdatedSuggestions({
         return { deleted: suggestionBatch.length, failed: 0 };
       } catch (error) {
         olog.warn('audit_housekeeping_outdated_suggestions_deleted', 'Failed to delete expired OUTDATED suggestion batch', {
-          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, reason: 'batch_delete_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, ...errorField(error),
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, reason: 'batch_delete_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
         });
         return { deleted: 0, failed: suggestionBatch.length };
       }
@@ -224,7 +224,7 @@ export async function deleteExpiredOutdatedSuggestions({
   };
   if (retentionSummary.failed > 0) {
     olog.warn('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', {
-      ...summaryFields, reason: 'partial_delete_failure', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED,
+      ...summaryFields, reason: 'partial_delete_failure', outcome: OUTCOME.DEGRADED,
     });
   } else {
     olog.success('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', summaryFields);

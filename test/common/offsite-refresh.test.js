@@ -219,10 +219,12 @@ describe('offsite-refresh', () => {
       expect(oldest.setStatus).to.have.been.calledWith('IGNORED');
       expect(middle.setStatus).to.have.been.calledWith('IGNORED');
       expect(newest.setStatus).to.not.have.been.called;
-      // P4-7: retirement is now a structured opportunity_retire line.
-      expect(log.info).to.have.been.calledWith(
+      // P4-7: retirement is now a structured opportunity_retire line. This is a data-integrity
+      // signal (should almost never happen), so it is logged at warn/degraded even though the
+      // pipeline auto-heals by retiring the extras and keeping the most recent.
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_persistence_opportunity_retired/)
-          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/retired=2/))
           .and(sinon.match(/kept=newest/)),
       );

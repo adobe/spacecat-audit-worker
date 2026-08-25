@@ -87,7 +87,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
       // rows fetched so far is a reduced/partial result, not a full success — outcome
       // is degraded.
       olog.warn('data_acquisition_bp_data_postgres_read', 'Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
-        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.DEGRADED,
+        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.DEGRADED,
       });
       break;
     }
@@ -188,7 +188,7 @@ export async function loadBrandPresenceDataFromPostgrest({
 
     if (executions.length === 0) {
       olog.warn('data_acquisition_bp_data_postgres_read', 'No execution rows found', {
-        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', siteId, outcome: OUTCOME.SKIP,
       });
       return null;
     }
@@ -196,7 +196,7 @@ export async function loadBrandPresenceDataFromPostgrest({
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
       olog.warn('data_acquisition_bp_data_postgres_read', 'No usable rows found', {
-        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId, outcome: OUTCOME.SKIP,
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', siteId, outcome: OUTCOME.SKIP,
       });
       return null;
     }
@@ -210,7 +210,7 @@ export async function loadBrandPresenceDataFromPostgrest({
     // failure here is recovered, not terminal — outcome=degraded, not failure, so this
     // doesn't page as a hard stop.
     olog.warn('data_acquisition_bp_data_postgres_read', 'PostgREST query failed', {
-      peer: PEER.POSTGRES, direction: 'inbound', outcome: OUTCOME.DEGRADED, reason: 'query', reasonCategory: 'infra', siteId, ...errorField(error),
+      peer: PEER.POSTGRES, direction: 'inbound', outcome: OUTCOME.DEGRADED, reason: 'query', siteId, ...errorField(error),
     });
     return null;
   }

@@ -148,16 +148,20 @@ describe('offsite-snapshot', () => {
       expect(result).to.be.null;
     });
 
-    it('logs and rethrows lookup failures', async () => {
+    it('logs and returns null (treats as no existing snapshot) on lookup failures', async () => {
       const dataAccess = {
         Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
       };
 
-      await expect(findSnapshotByTriggerAuditId({
+      const result = await findSnapshotByTriggerAuditId({
         dataAccess, siteId: 'site-1', auditType: 'cited-analysis', triggerAuditId: 'audit-1', log,
-      })).to.be.rejectedWith('DB down');
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to look up existing snapshots/).and(sinon.match(/auditType=cited-analysis/)),
+      });
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to look up existing snapshots/)
+          .and(sinon.match(/auditType=cited-analysis/))
+          .and(sinon.match(/outcome=degraded/)),
       );
     });
 
@@ -231,11 +235,12 @@ describe('offsite-snapshot', () => {
         Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
       };
 
-      await expect(findSnapshotByTriggerAuditId({
+      const result = await findSnapshotByTriggerAuditId({
         dataAccess, siteId: 'site-1', auditType: 'not-a-real-audit', triggerAuditId: 'audit-1', log,
-      })).to.be.rejectedWith('DB down');
+      });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/audit=unknown/));
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
   });
 
@@ -660,13 +665,12 @@ describe('offsite-snapshot', () => {
         sinon.match(/Suggestions failed to copy onto snapshot/)
           .and(sinon.match(/failed=1/))
           .and(sinon.match(/reason=suggestions_copy_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/snapshotAction=created/))
           .and(sinon.match(/outcome=degraded/)),
       );
     });
 
-    it('deletes the orphan snapshot and rethrows when addSuggestions fully rejects', async () => {
+    it('deletes the orphan snapshot and returns normally (does not abort the evergreen write) when addSuggestions fully rejects', async () => {
       const addSuggestionsError = new Error('DB write failed');
       const remove = sandbox.stub().resolves();
       const create = sandbox.stub().resolves({
@@ -684,29 +688,31 @@ describe('offsite-snapshot', () => {
         getSkipDetail: () => undefined,
       };
       const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+      const opportunityData = {};
 
-      await expect(prepareSupersededRunSnapshot({
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
+        opportunityData,
         evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB write failed');
+      });
 
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/addSuggestions threw.*deleting orphan/i)
           .and(sinon.match(/reason=suggestions_copy_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
-          .and(sinon.match(/snapshotAction=created/)),
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
       );
     });
 
-    it('still rethrows the original addSuggestions error when orphan removal also fails', async () => {
+    it('does not rethrow the original addSuggestions error when orphan removal also fails; still returns normally', async () => {
       const addSuggestionsError = new Error('DB write failed');
       const remove = sandbox.stub().rejects(new Error('delete also failed'));
       const create = sandbox.stub().resolves({
@@ -724,24 +730,25 @@ describe('offsite-snapshot', () => {
         getSkipDetail: () => undefined,
       };
       const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+      const opportunityData = {};
 
-      await expect(prepareSupersededRunSnapshot({
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
+        opportunityData,
         evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB write failed');
+      });
 
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
       expect(remove).to.have.been.calledOnce;
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to delete orphan snapshot/i)
           .and(sinon.match(/reason=orphan_cleanup_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/snapshotAction=created/))
           .and(sinon.match(/outcome=degraded/)),
       );
@@ -776,20 +783,37 @@ describe('offsite-snapshot', () => {
       );
     });
 
-    it('propagates idempotency lookup failures', async () => {
-      await expect(prepareSupersededRunSnapshot({
+    it('proceeds to create a new snapshot when the idempotency lookup fails', async () => {
+      const evergreenOpportunity = makeEvergreenOpportunity();
+      const create = sandbox.stub().resolves({
+        getId: () => 'snapshot-1',
+        addSuggestions: sandbox.stub(),
+      });
+      const opportunityData = {};
+
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')),
+            create,
           },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
-        evergreenOpportunity: { getId: () => 'evergreen-1' },
+        opportunityData,
+        evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB down');
+      });
+
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
+      expect(create).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to look up existing snapshots/).and(sinon.match(/outcome=degraded/)),
+      );
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Created superseded-refresh snapshot from evergreen opportunity/),
+      );
     });
 
     it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {

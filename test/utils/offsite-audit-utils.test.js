@@ -39,7 +39,7 @@ import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../../src/offsite-brand-presence/constants.js';
-import { PEER } from '../../src/utils/offsite-logging.js';
+import { OUTCOME, PEER } from '../../src/utils/offsite-logging.js';
 
 use(sinonChai);
 
@@ -139,10 +139,10 @@ describe('offsite-audit-utils', () => {
       const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog);
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(olog.skip).to.have.been.calledWith(
+      expect(olog.warn).to.have.been.calledWith(
         'data_acquisition_scrape_content_checked',
         'DRS client not configured, skipping availability filter',
-        sinon.match({ reason: 'drs_not_configured' }),
+        sinon.match({ reason: 'drs_not_configured', outcome: OUTCOME.DEGRADED }),
       );
     });
 
@@ -495,7 +495,16 @@ describe('offsite-audit-utils', () => {
         { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
         olog,
       )).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(olog.debug).to.have.been.calledOnceWith('audit_orchestration_analysis_url_limit_resolved', sinon.match(/exceeds cap/), sinon.match({ requested: MYSTIQUE_URLS_LIMIT + 10, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT }));
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_orchestration_analysis_url_limit_resolved',
+        sinon.match(/exceeds cap/),
+        sinon.match({
+          requested: MYSTIQUE_URLS_LIMIT + 10,
+          cap: MYSTIQUE_URLS_LIMIT,
+          urlLimit: MYSTIQUE_URLS_LIMIT,
+          outcome: OUTCOME.DEGRADED,
+        }),
+      );
     });
 
     it('returns default and warns when urlLimit is invalid', () => {
@@ -571,7 +580,6 @@ describe('offsite-audit-utils', () => {
       expect(message).to.equal('Invalid override value in auditContext, omitting');
       expect(extra).to.include({
         reason: 'invalid_override',
-        reasonCategory: 'config',
         field: 'enableBrandProfile',
       });
     });
@@ -625,7 +633,6 @@ describe('offsite-audit-utils', () => {
       expect(message).to.equal('Invalid override value in auditContext, omitting');
       expect(extra).to.include({
         reason: 'invalid_override',
-        reasonCategory: 'config',
         field: 'enableSemrush',
       });
     });
@@ -742,7 +749,7 @@ describe('offsite-audit-utils', () => {
       expect(olog.failure).to.have.been.calledWith(
         'data_acquisition_scrape_job_request_dispatched',
         sinon.match(/Failed to request DRS scrape/),
-        sinon.match({ reason: 'self_heal_failed', reasonCategory: 'infra' }),
+        sinon.match({ reason: 'self_heal_failed' }),
       );
       expect(olog.warn).to.not.have.been.called;
     });

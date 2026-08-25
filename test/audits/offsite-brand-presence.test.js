@@ -498,9 +498,14 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
-      // A deliberate entitlement skip must log at info, never warn — a regression
-      // that swaps these branches (or always warns) must fail this test.
-      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(not_entitled\); falling back to PostgREST\/SharePoint/);
+      // A deliberate entitlement skip logs at warn with outcome=skip — distinct from a
+      // genuine technical failure, which logs at warn with outcome=degraded (checked
+      // below via the differing message text). A regression that swaps these branches
+      // must fail this test.
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(not_entitled\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
       expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
@@ -524,7 +529,10 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT);
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(entitlement_check_failed\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(entitlement_check_failed\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
       expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
@@ -855,8 +863,11 @@ describe('Offsite Brand Presence Handler', function () {
       // wikipedia is no longer a scraped offsite domain, so it is not counted.
       expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
       expect(result.fullAuditRef).to.equal(FINAL_URL);
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/No offsite URLs found/),
+      // A clean "nothing to report this week" finding still deviates from the full happy
+      // path, so it is logged at warn while keeping outcome=skip (deliberate no-op).
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/No offsite URLs found/)
+          .and(sinon.match(/outcome=skip/)),
       );
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
     });
@@ -1426,7 +1437,7 @@ describe('Offsite Brand Presence Handler', function () {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs a warn/skip when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs an error/failure when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1435,18 +1446,15 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing imsOrgId is that org's onboarding being incomplete — it resolves itself
-      // once they finish onboarding and never needs us to act — so it stays at warn level,
-      // but with outcome=degraded since zero content is scraped for this org this run.
-      expect(log.warn).to.have.been.calledWith(
+      // A missing imsOrgId blocks scraping/deliverable entirely for this org this cycle —
+      // the same class as other zero-deliverable setup gaps — so it is logged at error
+      // level with outcome=failure, not a legitimate "nothing to report" finding.
+      expect(log.error).to.have.been.calledWith(
         sinon.match(/imsOrgId/)
           .and(sinon.match(/produces no scraped content for this org/))
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
-          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=no_ims_org/)),
-      );
-      expect(log.error).to.not.have.been.calledWith(
-        sinon.match(/imsOrgId/),
       );
     });
 
@@ -1673,8 +1681,9 @@ describe('Offsite Brand Presence Handler', function () {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      // P1-4: the previously-silent empty-jobs early return now logs a structured skip.
-      expect(log.info).to.have.been.calledWith(
+      // P1-4: the previously-silent empty-jobs early return now logs a structured
+      // warn-level skip (deviation from the happy path deserves its own visibility).
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/)
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=no_jobs/))
@@ -1691,12 +1700,13 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       // Best-effort follow-up: the schedule-poll failure is structured and counted
-      // (outcome=degraded) but logged at warn — the run already succeeded, so a
-      // transient SQS hiccup here must not page.
-      expect(log.warn).to.have.been.calledWith(
+      // (outcome=failure, error level) even though the run itself already succeeded —
+      // DRS job submission is non-idempotent, so the catch here does not rethrow and
+      // must not trigger the whole runner to re-execute and submit duplicate DRS jobs.
+      expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to schedule DRS status poll/)
           .and(sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/))
-          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=schedule_failed/))
           .and(sinon.match(/firstSchedule=true/)),
       );

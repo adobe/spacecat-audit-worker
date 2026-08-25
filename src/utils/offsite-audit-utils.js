@@ -437,8 +437,8 @@ export function scrapedThisCycle(auditContext) {
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog) {
   if (!drsClient || !drsClient.isConfigured()) {
-    olog?.skip('data_acquisition_scrape_content_checked', 'DRS client not configured, skipping availability filter', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra',
+    olog?.warn('data_acquisition_scrape_content_checked', 'DRS client not configured, skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', outcome: OUTCOME.DEGRADED,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -454,7 +454,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
       if (!response) {
         olog?.warn('data_acquisition_scrape_content_checked', 'DRS lookup returned null; skipping dataset', {
-          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED,
+          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response', outcome: OUTCOME.DEGRADED,
         });
         // eslint-disable-next-line no-continue
         continue;
@@ -482,14 +482,14 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       );
     } catch (error) {
       olog?.warn('data_acquisition_scrape_content_checked', 'DRS lookup failed; skipping dataset', {
-        peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'lookup_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, ...errorField(error),
+        peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'lookup_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
     }
   }
 
   if (!atLeastOneLookupSucceeded) {
     olog?.warn('data_acquisition_scrape_content_checked', 'All DRS lookups failed or returned null; skipping availability filter', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', reasonCategory: 'infra', datasetIds, outcome: OUTCOME.DEGRADED,
+      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', datasetIds, outcome: OUTCOME.DEGRADED,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -533,14 +533,17 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
       'audit_orchestration_analysis_url_limit_resolved',
       'Invalid urlLimit in auditContext; using default',
       {
-        reason: 'invalid', reasonCategory: 'config', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT, outcome: OUTCOME.DEGRADED,
+        reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT, outcome: OUTCOME.DEGRADED,
       },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
-    olog?.debug('audit_orchestration_analysis_url_limit_resolved', 'urlLimit exceeds cap; using cap', {
-      requested: n, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT,
+    olog?.warn('audit_orchestration_analysis_url_limit_resolved', 'urlLimit exceeds cap; using cap', {
+      requested: n,
+      cap: MYSTIQUE_URLS_LIMIT,
+      urlLimit: MYSTIQUE_URLS_LIMIT,
+      outcome: OUTCOME.DEGRADED,
     });
     return MYSTIQUE_URLS_LIMIT;
   }
@@ -585,7 +588,6 @@ function makeResolveOverride(fieldName, eventName) {
     }
     olog?.warn(eventName, 'Invalid override value in auditContext, omitting', {
       reason: 'invalid_override',
-      reasonCategory: 'config',
       field: fieldName,
       raw: JSON.stringify(raw).slice(0, 100),
       outcome: OUTCOME.DEGRADED,
@@ -713,11 +715,11 @@ export async function requestOffsiteScrape(
       },
     });
     olog?.success('data_acquisition_scrape_job_request_dispatched', 'Requested DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', reasonCategory: 'expected', domainScope, dispatchKind: 'self_heal_audit', ...overrides,
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, dispatchKind: 'self_heal_audit', ...overrides,
     });
   } catch (error) {
     olog?.failure('data_acquisition_scrape_job_request_dispatched', 'Failed to request DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal_failed', reasonCategory: 'infra', domainScope, dispatchKind: 'self_heal_audit', ...overrides, ...errorField(error),
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal_failed', domainScope, dispatchKind: 'self_heal_audit', ...overrides, ...errorField(error),
     });
   }
 }

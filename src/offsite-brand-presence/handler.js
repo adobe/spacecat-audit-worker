@@ -349,7 +349,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
   } catch (error) {
     olog.failure('data_acquisition_url_store_write', 'Failed to check existing URLs', {
-      peer: PEER.URL_STORE, direction: 'outbound', reason: 'lookup', reasonCategory: 'infra', ...errorField(error),
+      peer: PEER.URL_STORE, direction: 'inbound', reason: 'lookup', ...errorField(error),
     });
     return {};
   }
@@ -371,7 +371,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
         return entry.url;
       } catch (createError) {
         olog.warn('data_acquisition_url_store_write', 'Failed to add URL to store', {
-          outcome: OUTCOME.DEGRADED, peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, reason: 'url_write_failed', reasonCategory: 'infra', ...errorField(createError),
+          outcome: OUTCOME.DEGRADED, peer: PEER.URL_STORE, direction: 'outbound', url: entry.url, reason: 'url_write_failed', ...errorField(createError),
         });
         return null;
       }
@@ -441,7 +441,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
         olog.warn('data_acquisition_scrape_job_request_dispatched', 'DRS job submission failed; retrying', {
-          outcome: OUTCOME.DEGRADED, peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, delayMs: RETRY_DELAY_MS, reason: 'submit_retry', reasonCategory: 'infra', dispatchKind: 'drs_job', ...errorField(err),
+          outcome: OUTCOME.DEGRADED, peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, delayMs: RETRY_DELAY_MS, reason: 'submit_retry', dispatchKind: 'drs_job', ...errorField(err),
         });
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => {
@@ -449,7 +449,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
         });
       } else {
         olog.failure('data_acquisition_scrape_job_request_dispatched', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
-          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', reasonCategory: 'infra', dispatchKind: 'drs_job', ...errorField(err),
+          peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', dispatchKind: 'drs_job', ...errorField(err),
         });
         return {
           domain, datasetId, status: 'error', error: err.message,
@@ -509,7 +509,7 @@ async function triggerDrsScraping(
 
   if (!drsClient.isConfigured()) {
     olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', dispatchKind: 'drs_job',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -519,8 +519,8 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; this run produces no scraped content for this org. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      outcome: OUTCOME.DEGRADED, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
+    olog.failure('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; this run produces no scraped content for this org. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+      outcome: OUTCOME.FAILURE, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', dispatchKind: 'drs_job',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
@@ -742,8 +742,8 @@ async function scheduleDrsStatusPoll(
     .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
 
   if (jobs.length === 0) {
-    olog.skip('data_acquisition_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', reasonCategory: 'expected', firstSchedule: true,
+    olog.warn('data_acquisition_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
+      outcome: OUTCOME.SKIP, peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', firstSchedule: true,
     });
     return;
   }
@@ -810,7 +810,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    olog.failure('audit_orchestration_start', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', reasonCategory: 'infra', domainScope });
+    olog.failure('audit_orchestration_start', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', domainScope });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -830,7 +830,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   } catch {
-    olog.warn('audit_orchestration_start', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.SKIP, reason: 'unparseable_base_url', reasonCategory: 'config' });
+    olog.warn('audit_orchestration_start', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.DEGRADED, reason: 'unparseable_base_url' });
   }
 
   // Brand tokens drop social/search domains and brand-owned lookalikes
@@ -923,11 +923,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // Enabled by the env var (or override not forced, or an entitlement skip) —
       // fall back to legacy so a Semrush problem never silently zeroes out offsite.
       fallbackReason = reason;
-      // An entitlement-based skip is expected scoping, not a failure — log it at
-      // info/outcome=skip; a genuine technical failure stays warn/outcome=failure.
+      // An entitlement-based skip is expected scoping, not a failure — it still deviates
+      // from the happy path for this run, so it stays warn/outcome=skip; a genuine
+      // technical failure is warn/outcome=degraded.
       if (isEntitlementSkip) {
-        olog.skip('data_acquisition_bp_data_semrush_read', `Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
-          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
+        olog.warn('data_acquisition_bp_data_semrush_read', `Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
+          outcome: OUTCOME.SKIP, peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
         });
       } else {
         olog.warn('data_acquisition_bp_data_semrush_read', `Semrush source failed (${reason}); falling back to PostgREST/SharePoint`, {
@@ -980,7 +981,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   }
 
   if (allUrls.size === 0) {
-    olog.skip('audit_orchestration_end', 'No offsite URLs found, audit complete', { reason: 'no_urls', reasonCategory: 'expected' });
+    olog.warn('audit_orchestration_end', 'No offsite URLs found, audit complete', { outcome: OUTCOME.SKIP, reason: 'no_urls' });
     await postMessageOptional(
       context,
       channelId,
@@ -1048,8 +1049,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // its notification, so a transient SQS/Configuration hiccup scheduling the follow-up
       // poll is non-fatal, self-healed on the next run, and must not page. outcome=degraded
       // reflects that: Splunk still counts it, without the error/paging severity.
-      olog.warn('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
-        outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', reasonCategory: 'infra', ...errorField(err),
+      olog.failure('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
+        outcome: OUTCOME.FAILURE, peer: PEER.SQS, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', ...errorField(err),
       });
     }
   }
