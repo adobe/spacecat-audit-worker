@@ -580,6 +580,8 @@ describe('domain-wide-reconciliation', () => {
 
       expect(urlSuggestion.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'domain-wide-id' }));
       expect(pathSuggestion.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'domain-wide-id' }));
+      expect(urlSuggestion.setUpdatedBy).to.have.been.calledWith('system');
+      expect(pathSuggestion.setUpdatedBy).to.have.been.calledWith('system');
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([urlSuggestion, pathSuggestion]);
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
     });

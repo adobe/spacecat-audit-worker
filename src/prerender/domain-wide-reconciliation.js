@@ -231,10 +231,13 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
       log.info(`${LOG_PREFIX} syncCoveredByDomainWide: no NEW suggestions to cover. `
         + `baseUrl=${baseUrl}, siteId=${siteId}`);
     } else {
-      toCover.forEach((s) => s.setData({
-        ...s.getData(),
-        coveredByDomainWide: domainWideSuggestionId,
-      }));
+      toCover.forEach((s) => {
+        s.setData({
+          ...s.getData(),
+          coveredByDomainWide: domainWideSuggestionId,
+        });
+        s.setUpdatedBy('system');
+      });
       log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} `
         + `per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. `
         + `baseUrl=${baseUrl}, siteId=${siteId}`);
