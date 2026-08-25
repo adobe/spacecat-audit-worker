@@ -127,6 +127,89 @@ describe('internal-links opportunity suggestions step', () => {
     expect(payload.data.brokenLinks[0].urlTo).to.equal('https://example.com/broken-link');
   });
 
+  it('bows out (no convertToOpportunity, no Mystique dispatch) and resolves the legacy opportunity when brokenInternalLinksEngine=blackboard', async () => {
+    const sqs = { sendMessage: sinon.stub().resolves() };
+    const convertToOpportunity = sinon.stub().resolves({
+      getId: () => 'oppty-1', getType: () => 'broken-internal-links',
+    });
+    const legacyOppty = {
+      getType: () => 'broken-internal-links',
+      getId: () => 'legacy-bil-oppty',
+      setStatus: sinon.stub().resolves(),
+      setUpdatedBy: sinon.stub(),
+      save: sinon.stub().resolves(),
+      getSuggestions: sinon.stub().resolves([{ getStatus: () => 'NEW' }]),
+    };
+    const bulkUpdateStatus = sinon.stub().resolves();
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity,
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub() },
+      buildLocaleSearchUrl: sinon.stub(),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const context = {
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getDeliveryConfig: () => ({ brokenInternalLinksEngine: 'blackboard' }),
+        getConfig: () => ({
+          getHandlers: () => ({ 'broken-internal-links': { config: { mystiqueItemTypes: ['link'] } } }),
+          getIncludedURLs: () => [],
+        }),
+      },
+      finalUrl: 'https://example.com',
+      sqs,
+      env: {},
+      dataAccess: {
+        Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([legacyOppty]) },
+        Suggestion: { bulkUpdateStatus },
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link', itemType: 'link' },
+          ],
+          success: true,
+        }),
+      },
+      updatedAuditResult: {
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link', itemType: 'link' },
+        ],
+        success: true,
+      },
+    };
+
+    const result = await step(context);
+
+    expect(result.status).to.equal('complete');
+    expect(convertToOpportunity.called).to.equal(false);
+    expect(sqs.sendMessage.called).to.equal(false);
+    expect(context.dataAccess.Opportunity.allBySiteIdAndStatus.calledWith('site-1', 'NEW')).to.equal(true);
+    expect(bulkUpdateStatus.calledOnce).to.equal(true);
+  });
+
   it('treats missing itemType as link for Mystique filtering', async () => {
     const sqs = { sendMessage: sinon.stub().resolves() };
     const opportunity = {
