@@ -24,8 +24,47 @@ const AUDIT_CONTEXT_URLS_KEY = 'summarizationUrls';
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
+const OBSERVATION_MAX_MESSAGE_BYTES = 200 * 1024;
 // Summarization opportunities remain in NEW status while active/unresolved.
 const ACTIVE_OPPORTUNITY_STATUS = 'NEW';
+
+async function publishSummarizationObservation({
+  site, audit, urls, scrapeResultPaths, urlToContentHash, generatePrompts, sqs, env, log,
+}) {
+  if (env?.OBSERVATION_SUMMARIZATION_ENABLED !== 'true') {
+    return;
+  }
+
+  try {
+    const message = {
+      type: 'observation:summarization',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      baseURL: site.getBaseURL(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        pages: urls.map((url) => ({
+          url,
+          scrapeResultPath: scrapeResultPaths.get(url),
+          contentHash: urlToContentHash[url] ?? null,
+        })),
+        generatePrompts,
+      },
+    };
+
+    const serialized = JSON.stringify(message);
+    if (serialized.length > OBSERVATION_MAX_MESSAGE_BYTES) {
+      log.warn(`[SUMMARIZATION] observation:summarization payload size ${serialized.length} bytes exceeds budget ${OBSERVATION_MAX_MESSAGE_BYTES}; skipping publish`);
+      return;
+    }
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`[SUMMARIZATION] Sent observation:summarization with ${urls.length} pages for site ${site.getId()}`);
+  } catch (error) {
+    log.error(`[SUMMARIZATION] Failed to publish observation:summarization shadow message: ${error.message}`);
+  }
+}
 
 function parseGeneratePromptsFlag(data, log) {
   try {
@@ -347,6 +386,18 @@ export async function sendToMystique(context) {
 
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   log.info(`[SUMMARIZATION] Sent ${topPagesPayload.length} pages to Mystique for site ${site.getId()}`);
+
+  await publishSummarizationObservation({
+    site,
+    audit,
+    urls: urlsToSend,
+    scrapeResultPaths,
+    urlToContentHash,
+    generatePrompts,
+    sqs,
+    env,
+    log,
+  });
 
   return {
     status: 'complete',
