@@ -344,6 +344,14 @@ describe('Wikipedia Analysis Handler', () => {
           .and(sinon.match(/reason=invalid_url_override/))
           .and(sinon.match('value=not-a-valid-url')),
       );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_url_override_resolved/)
+          .and(sinon.match('Override rejected: not a valid URL'))
+          .and(sinon.match('outcome=skip'))
+          .and(sinon.match('reason=invalid_url'))
+          .and(sinon.match('reasonCategory=expected'))
+          .and(sinon.match('value=not-a-valid-url')),
+      );
     });
 
     it('should trim wikiUrl override', async () => {
@@ -520,7 +528,11 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message')
+          .and(sinon.match('peer=mystique'))
+          .and(sinon.match('direction=outbound')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {

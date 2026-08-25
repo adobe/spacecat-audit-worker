@@ -280,7 +280,7 @@ export default class StoreClient {
     const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
-      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in URL Store', {
+      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in Guideline Store', {
         peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', reasonCategory: 'expected',
       });
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);

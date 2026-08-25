@@ -420,7 +420,7 @@ describe('StoreClient', () => {
       // The empty-result path is now observable: a skip log line precedes the throw,
       // so an operator can tell "ran, found nothing" from "never ran".
       expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/No guidelines or topics found in URL Store/)
+        sinon.match(/No guidelines or topics found in Guideline Store/)
           .and(sinon.match(/event=audit_orchestration_brand_guidelines_resolved/))
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/peer=guideline_store/))

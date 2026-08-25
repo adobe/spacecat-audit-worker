@@ -135,8 +135,8 @@ function resolveWikipediaUrlOverride(auditContext, olog) {
   }
 
   if (!isValidUrl(normalized)) {
-    olog?.debug('audit_orchestration_url_override_resolved', 'Override rejected: not a valid URL', {
-      outcome: OUTCOME.SKIP, reason: 'invalid_url', reasonCategory: 'expected', value: normalized,
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: not a valid URL', {
+      reason: 'invalid_url', reasonCategory: 'expected', value: normalized,
     });
     return { invalid: true, value: normalized };
   }
@@ -314,7 +314,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   // Skip if audit failed
   if (!auditResult.success) {
-    olog.skip('audit_analysis_start', 'Audit failed, skipping Mystique message', { reason: 'audit_failed', reasonCategory: 'expected' });
+    olog.skip('audit_analysis_start', 'Audit failed, skipping Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed', reasonCategory: 'expected',
+    });
     return auditData;
   }
 

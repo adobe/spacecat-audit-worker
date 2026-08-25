@@ -21,7 +21,7 @@ import {
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../offsite-brand-presence/constants.js';
 import {
-  PEER, OUTCOME, errorField, appendFields,
+  PEER, OUTCOME, errorField,
 } from './offsite-logging.js';
 
 export const MYSTIQUE_URLS_LIMIT = 50;
@@ -559,12 +559,19 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
  * values as strings, so only those two string forms or real booleans are accepted as
  * explicit values; anything else is invalid and resolves to `undefined` with a warning.
  *
+ * The invalid-override warning is emitted through the caller-supplied bound `olog` (see
+ * {@link createOffsiteLogger}) rather than a raw platform `log`, so the line always
+ * carries the `domain=offsite`, `audit=<slug>` and `event=<eventName>` tokens the rest
+ * of the taxonomy relies on for Splunk `stats ... by domain, audit, event, outcome`.
+ * `eventName` is supplied per field (rather than hardcoded) because two fields built
+ * from this same factory can conceptually belong under two different existing events.
+ *
  * @param {string} fieldName - Key read from `auditContext.messageData`.
- * @returns {function(object, object, string): boolean|undefined}
+ * @param {string} eventName - Existing taxonomy event name to emit the warning under.
+ * @returns {function(object, object): boolean|undefined}
  */
-function makeResolveOverride(fieldName) {
-  return function resolveOverride(auditContext, log, logPrefix) {
-    const prefix = logPrefix ?? '';
+function makeResolveOverride(fieldName, eventName) {
+  return function resolveOverride(auditContext, olog) {
     const ctx = auditContext ?? {};
     const raw = ctx.messageData?.[fieldName];
     if (raw === true || raw === 'true') {
@@ -576,18 +583,13 @@ function makeResolveOverride(fieldName) {
     if (raw === undefined || raw === null || raw === '') {
       return undefined;
     }
-    // Route the Slack-controlled `raw` value through appendFields so renderField
-    // quotes/sanitizes it as a single token — a crafted value cannot split the line
-    // or forge a second key=value. (This helper is audit-agnostic, so it takes the
-    // platform `log`, not an `olog`; the value must still be field-rendered, never
-    // interpolated raw into the message.)
-    log?.warn(appendFields(`${prefix} Invalid override value in auditContext, omitting`, {
+    olog?.warn(eventName, 'Invalid override value in auditContext, omitting', {
       reason: 'invalid_override',
       reasonCategory: 'config',
       field: fieldName,
       raw: JSON.stringify(raw).slice(0, 100),
       outcome: OUTCOME.DEGRADED,
-    }));
+    });
     return undefined;
   };
 }
@@ -598,13 +600,19 @@ function makeResolveOverride(fieldName) {
  * for post-processors, which forward it to Mystique on `data.enableBrandProfile`; `undefined`
  * omits the flag entirely from the outgoing message so Mystique's own default applies.
  *
+ * An invalid override value is warned through the bound `olog` under
+ * `audit_orchestration_brand_profile_resolved` — the same event every caller already uses
+ * for brand-profile resolution — rather than a new/nameless event.
+ *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableBrandProfile]
- * @param {object} [log]
- * @param {string} [logPrefix]
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger)
  * @returns {boolean|undefined}
  */
-export const resolveEnableBrandProfile = makeResolveOverride('enableBrandProfile');
+export const resolveEnableBrandProfile = makeResolveOverride(
+  'enableBrandProfile',
+  'audit_orchestration_brand_profile_resolved',
+);
 
 /**
  * Optional `enableSemrush` flag from `auditContext.messageData.enableSemrush`. Lets a
@@ -613,13 +621,20 @@ export const resolveEnableBrandProfile = makeResolveOverride('enableBrandProfile
  * fleet-wide env var flip, or to force the legacy source for one run while the env var is
  * on. `undefined` means the env var's value applies unchanged.
  *
+ * An invalid override value is warned through the bound `olog` under
+ * `data_acquisition_bp_data_source_selected` — this concerns whether Semrush is even
+ * attempted as a data source, the same event `offsite-brand-presence/handler.js` already
+ * uses for that decision — rather than a new/nameless event.
+ *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableSemrush]
- * @param {object} [log]
- * @param {string} [logPrefix]
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger)
  * @returns {boolean|undefined}
  */
-export const resolveEnableSemrush = makeResolveOverride('enableSemrush');
+export const resolveEnableSemrush = makeResolveOverride(
+  'enableSemrush',
+  'data_acquisition_bp_data_source_selected',
+);
 
 /**
  * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when

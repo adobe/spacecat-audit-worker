@@ -91,14 +91,7 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('data_acquisition_url_store_read', 'Fetching data from stores', {
-    peer: PEER.URL_STORE, direction: 'inbound',
-  });
-
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('data_acquisition_url_store_read', 'Retrieved URLs from URL Store', {
-    peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
-  });
 
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = OFFSITE_DOMAINS['youtube.com'];
@@ -114,7 +107,7 @@ async function fetchStoreData(siteId, context, site) {
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.debug('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
+  olog.success('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
     count: topics.length,
   });
 
@@ -127,17 +120,11 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines configured for youtube-analysis, proceeding without', {
-        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines', reasonCategory: 'expected',
-      });
+      // store-client's getGuidelines already logged the skip; nothing else to do here.
     } else {
       throw error;
     }
   }
-
-  olog.success('audit_orchestration_brand_guidelines_resolved', `Retrieved ${guidelines.length} guidelines`, {
-    peer: PEER.URL_STORE, direction: 'inbound', count: guidelines.length,
-  });
 
   return {
     urls,
@@ -166,9 +153,9 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
   olog.start('audit_orchestration_start', 'Audit started');
 
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
-  const enableSemrush = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, olog);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -190,6 +177,14 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       companyName: youtubeConfig.companyName,
       website: youtubeConfig.companyWebsite,
     });
+    if (youtubeConfig.competitors.length === 0) {
+      // Surfaces the misconfiguration before the SQS hop to Mystique. With an
+      // empty list Mystique will only count the primary brand in Share of Voice
+      // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
+        outcome: OUTCOME.SKIP, reason: 'no_competitors', reasonCategory: 'config',
+      });
+    }
 
     olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 

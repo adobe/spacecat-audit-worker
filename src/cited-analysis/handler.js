@@ -171,14 +171,7 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('data_acquisition_url_store_read', 'Fetching data from stores', {
-    peer: PEER.URL_STORE, direction: 'inbound',
-  });
-
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('data_acquisition_url_store_read', 'Retrieved URLs from URL Store', {
-    peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
-  });
 
   // Drop URLs on the customer's own domain. Cited URLs represent 3rd-party
   // EARNED citations — pages on ``bmw.com`` for the BMW customer would
@@ -229,7 +222,7 @@ async function fetchStoreData(siteId, context, site) {
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.debug('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
+  olog.success('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
     count: topics.length,
   });
 
@@ -239,17 +232,11 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines configured for cited-analysis, proceeding without', {
-        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines', reasonCategory: 'expected',
-      });
+      // store-client's getGuidelines already logged the skip; nothing else to do here.
     } else {
       throw error;
     }
   }
-
-  olog.success('audit_orchestration_brand_guidelines_resolved', `Retrieved ${guidelines.length} guidelines`, {
-    peer: PEER.URL_STORE, direction: 'inbound', count: guidelines.length,
-  });
 
   return {
     urls,
@@ -278,9 +265,9 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
   olog.start('audit_orchestration_start', 'Audit started');
 
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
-  const enableSemrush = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, olog);
 
   try {
     const citedConfig = getCitedConfig(site);

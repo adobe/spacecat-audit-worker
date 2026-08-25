@@ -318,8 +318,8 @@ export async function loadCitedUrlsFromSemrush({
 
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
-    olog.warn('data_acquisition_bp_data_semrush_read', 'Site has no organization id; skipping Semrush source', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: elapsed(), reason: 'no_organization_id', reasonCategory: 'config', outcome: OUTCOME.SKIP,
+    olog.skip('data_acquisition_bp_data_semrush_read', 'Site has no organization id; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: elapsed(), reason: 'no_organization_id', reasonCategory: 'config',
     });
     await notify(':warning: Site has no organization id — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no_organization_id', reasonCategory: 'config' });
@@ -394,8 +394,8 @@ export async function loadCitedUrlsFromSemrush({
 
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (!dateWindow) {
-    olog.warn('data_acquisition_bp_data_semrush_read', 'Could not derive a date window; skipping Semrush source', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'no_date_window', reasonCategory: 'config', outcome: OUTCOME.SKIP,
+    olog.skip('data_acquisition_bp_data_semrush_read', 'Could not derive a date window; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'no_date_window', reasonCategory: 'config',
     });
     await notify(':warning: Could not derive a date window — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no_date_window', reasonCategory: 'config' });

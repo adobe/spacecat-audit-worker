@@ -264,11 +264,12 @@ describe('Cited Analysis Handler', function () {
       expect(result.auditResult.config.enableBrandProfile).to.equal(true);
     });
 
-    it('should log debug payload for brand-presence topics', async () => {
+    it('should log a checkpoint for computed brand-presence topics', async () => {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`count=${mockComputedTopics.length}`),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
 
@@ -307,7 +308,7 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Retrieved 0 guidelines'));
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
@@ -376,7 +377,7 @@ describe('Cited Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
-      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for cited-analysis/);
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('should succeed when brand presence returns no topics', async () => {
@@ -385,7 +386,10 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match('count=0')),
+      );
     });
 
     it('should re-throw non-StoreEmptyError from getGuidelines', async () => {

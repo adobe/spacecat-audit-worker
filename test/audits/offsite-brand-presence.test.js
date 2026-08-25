@@ -1378,7 +1378,7 @@ describe('Offsite Brand Presence Handler', function () {
       // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
       // level (outcome=failure) rather than a warn/skip — see Fix C.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
+        sinon.match(/DRS scraping unavailable this run/)
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=drs_not_configured/)),
@@ -1426,7 +1426,7 @@ describe('Offsite Brand Presence Handler', function () {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs an actionable warning when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs an actionable error when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1435,10 +1435,16 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/imsOrgId/),
+      // Missing imsOrgId is an actionable misconfiguration, aligned in severity with the
+      // DRS-not-configured case above — emitted at error level (outcome=failure).
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/imsOrgId/)
+          .and(sinon.match(/DRS scraping unavailable this run/))
+          .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=no_ims_org/)),
       );
-      expect(log.error).to.not.have.been.calledWith(
+      expect(log.warn).to.not.have.been.calledWith(
         sinon.match(/imsOrgId/),
       );
     });

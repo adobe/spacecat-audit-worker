@@ -310,8 +310,6 @@ function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname, brand
       /* c8 ignore stop */
     }
   }
-
-  olog.debug('data_acquisition_bp_data_urls_extracted', `Found ${allUrls.size} unique source URLs`, { count: allUrls.size });
 }
 
 /**
@@ -510,7 +508,7 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping', {
+    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
       peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
@@ -521,8 +519,8 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; skipping DRS scraping. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
+    olog.failure('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; DRS scraping unavailable this run. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
@@ -799,15 +797,15 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // content) scope collection + scraping to one bucket so only that audit re-triggers.
   const domainScope = messageData?.domainScope;
   const redditCommentsParams = resolveRedditCommentsParams(messageData);
-  // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
-  // scraping completes, so a Slack-requested flag survives the scrape round-trip.
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
-  const urlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
-  const enableSemrushOverride = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
+  // Forwarded to the analysis audits (cited/youtube/reddit) this run triggers once DRS
+  // scraping completes, so a Slack-requested flag survives the scrape round-trip.
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
+  const urlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
+  const enableSemrushOverride = resolveEnableSemrush(auditContext, olog);
 
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.

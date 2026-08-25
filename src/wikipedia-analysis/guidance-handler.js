@@ -215,7 +215,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.debug('audit_analysis_end', 'Processing suggestions', {
+    olog.success('audit_analysis_end', 'Processing suggestions', {
       count: suggestions.length, companyName,
     });
 
