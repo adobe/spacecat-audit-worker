@@ -116,6 +116,11 @@ export async function getDomainWideReconciliationCandidates(context, siteId, sit
   }
   const { suggestions, domainWide } = found;
   const deployedAtMs = new Date(domainWide.getData().edgeDeployed).getTime();
+  if (Number.isNaN(deployedAtMs)) {
+    log.warn(`${LOG_PREFIX} Domain-wide suggestion ${domainWide.getId()} has an unparseable `
+      + `edgeDeployed value; skipping reconciliation batch selection. siteId=${siteId}`);
+    return [];
+  }
 
   const covered = suggestions.filter((s) => {
     const data = s.getData();
@@ -186,11 +191,20 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
   log.info(`${LOG_PREFIX} syncCoveredByDomainWide: isAllDomainDeployedAtEdge=`
     + `${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
 
+  // Pathname-only (not query-aware) is intentional here, unlike normalizePathnameWithQuery
+  // used for status.json/candidate dedup elsewhere: edge routing/deployment rules (a
+  // domain-wide /* rule or a path pattern) apply per-pathname, not per query-string variant,
+  // so two query-param variants of the same page are the same deployment unit for this check.
   const deployedAtEdgePathnames = new Set();
   const notDeployedPathnames = new Set();
   successfulComparisons.forEach((r) => {
     (r.isDeployedAtEdge ? deployedAtEdgePathnames : notDeployedPathnames).add(toPathname(r.url));
   });
+  // If two variants of the same pathname disagreed on isDeployedAtEdge this run (e.g.
+  // /page?v=1 confirmed deployed, /page?v=2 didn't), the positive confirmation wins —
+  // otherwise the same suggestion could match both toCover and toClear below and the
+  // second mutation would silently overwrite the first in the same saveMany call.
+  deployedAtEdgePathnames.forEach((pathname) => notDeployedPathnames.delete(pathname));
 
   const toCover = [];
   if (domainWideSuggestion) {
@@ -206,7 +220,9 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
         if (!data?.url) {
           return false;
         }
-        return deployedAtEdgePathnames.has(toPathname(data.url)) && !data?.edgeDeployed;
+        return deployedAtEdgePathnames.has(toPathname(data.url))
+          && !data?.edgeDeployed
+          && !data?.coveredByDomainWide;
       })
       : [];
 

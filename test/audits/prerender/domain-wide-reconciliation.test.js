@@ -155,6 +155,23 @@ describe('domain-wide-reconciliation', () => {
       expect(result).to.deep.equal([]);
     });
 
+    it('returns [] when the domain-wide suggestion has an unparseable edgeDeployed value', async () => {
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [
+          domainWideSuggestion(sandbox, { edgeDeployed: 'not-a-valid-date' }),
+          coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' }),
+        ],
+      });
+      const context = buildContext(sandbox, {
+        dataAccess: buildDataAccess(sandbox, { opportunities: [opportunity] }),
+      });
+
+      const result = await getDomainWideReconciliationCandidates(context, SITE_ID, statusWithPages([]));
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/unparseable/));
+    });
+
     it('returns [] when no suggestions are coveredByDomainWide', async () => {
       const opportunity = buildOpportunity(sandbox, {
         suggestions: [
@@ -452,6 +469,44 @@ describe('domain-wide-reconciliation', () => {
       expect(suggestion.setData).to.have.been.calledWith({ url: 'https://example.com/a?x=1' });
       expect(suggestion.setUpdatedBy).to.have.been.calledWith('system');
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion]);
+    });
+
+    it('does not clear a suggestion when two query-param variants of its pathname disagree this run — the positive confirmation wins', async () => {
+      // /a?x=1 confirmed deployed, /a?y=2 confirmed not deployed, same pathname /a.
+      // Without de-duplication this suggestion would match both toCover and toClear and
+      // the toClear mutation (running second) would silently win, clearing the flag even
+      // though at least one variant confirmed it's actually deployed.
+      const suggestion = coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a?x=1' });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [
+          { url: 'https://example.com/a?x=1', isDeployedAtEdge: true },
+          { url: 'https://example.com/a?y=2', isDeployedAtEdge: false },
+        ],
+      );
+
+      expect(suggestion.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('does not re-cover (redundant write) a NEW per-URL suggestion that is already coveredByDomainWide', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const alreadyCovered = coveredSuggestion(sandbox, { id: 'url-1', url: 'https://example.com/page1' });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [domainWide, alreadyCovered] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/page1', isDeployedAtEdge: true }],
+      );
+
+      expect(alreadyCovered.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
     it('clears multiple matching suggestions in a single saveMany call', async () => {
