@@ -301,6 +301,21 @@ describe('sendLowSuggestionCountAlert', () => {
     expect(text).to.not.include('ASO Link');
   });
 
+  it('omits IMS org name/id but still shows ASO link when organization lookup resolves null', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext({
+      dataAccess: { Organization: { findById: sandbox.stub().resolves(null) } },
+    });
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, context);
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.not.include('IMS Org Name');
+    expect(text).to.not.include('IMS Org ID');
+    expect(text).to.include('ASO Link');
+  });
+
   it('logs a warning and omits org lines when organization lookup throws', async () => {
     const site = makeSite([makeEnrollment('ASO', 'PLG')]);
     const context = makeContext({
