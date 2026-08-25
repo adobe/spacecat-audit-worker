@@ -586,6 +586,51 @@ describe('domain-wide-reconciliation', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
     });
 
+    it('does not cover a NEW per-URL suggestion when only a different query-param sibling was confirmed deployed', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const uncovered = buildSuggestion(sandbox, {
+        id: 'url-1',
+        data: { url: 'https://example.com/promo?v=2' },
+      });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [domainWide, uncovered] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [{ url: 'https://example.com/promo?v=1', isDeployedAtEdge: true }],
+      );
+
+      expect(uncovered.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    });
+
+    it('covers and clears two suggestions sharing a pathname but different query strings, independently, when both are scraped this run', async () => {
+      const domainWide = domainWideSuggestion(sandbox);
+      const newlyDeployed = buildSuggestion(sandbox, {
+        id: 'url-1',
+        data: { url: 'https://example.com/promo?v=1' },
+      });
+      const rolledBack = coveredSuggestion(sandbox, { id: 'url-2', url: 'https://example.com/promo?v=2' });
+      const opportunity = buildOpportunity(sandbox, {
+        suggestions: [domainWide, newlyDeployed, rolledBack],
+      });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
+        [
+          { url: 'https://example.com/promo?v=1', isDeployedAtEdge: true },
+          { url: 'https://example.com/promo?v=2', isDeployedAtEdge: false },
+        ],
+      );
+
+      expect(newlyDeployed.setData).to.have.been.calledWith(sinon.match({ coveredByDomainWide: 'domain-wide-id' }));
+      expect(rolledBack.setData).to.have.been.calledWith({ url: 'https://example.com/promo?v=2' });
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([newlyDeployed, rolledBack]);
+    });
+
     it('does not cover an already edgeDeployed per-URL suggestion or an already-covered path suggestion', async () => {
       const domainWide = domainWideSuggestion(sandbox);
       const alreadyDeployed = buildSuggestion(sandbox, {
