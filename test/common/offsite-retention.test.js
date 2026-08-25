@@ -343,16 +343,9 @@ describe('offsite-retention', () => {
         log,
       });
       expect(removeByIds).to.not.have.been.called;
-      expect(retentionSummary.deleted).to.equal(0);
-      expect(retentionSummary.scanned).to.equal(0);
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_housekeeping_end/)
-          .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/scanned=0/))
-          .and(sinon.match(/eligible=0/))
-          .and(sinon.match(/deleted=0/))
-          .and(sinon.match(/failed=0/)),
-      );
+      expect(retentionSummary).to.deep.equal({
+        scanned: 0, eligible: 0, deleted: 0, failed: 0,
+      });
     });
 
     it('treats a falsy getSuggestions result as an empty set', async () => {
@@ -533,17 +526,9 @@ describe('offsite-retention', () => {
       expect(log.info).to.not.have.been.calledWith(
         sinon.match(new RegExp(`suggestionIds=.*\\b${failedSuggestionId}\\b`)),
       );
-      // A partial failure must surface at outcome=degraded on the summary, not success — the
-      // per-batch failures it rolls up are self-healed, non-fatal deletion failures.
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/event=audit_housekeeping_end/)
-          .and(sinon.match(/outcome=degraded/))
-          .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`))
-          .and(sinon.match(/reason=partial_delete_failure/)),
-      );
     });
 
-    it('logs each deletion only after its batch succeeds and emits a summary', async () => {
+    it('logs each deletion only after its batch succeeds and returns the summary', async () => {
       const expiredOutdatedSuggestion = buildSuggestion({
         id: 'old',
         updatedAt: daysAgo(40),
@@ -570,16 +555,13 @@ describe('offsite-retention', () => {
           .and(sinon.match(/siteId=site-1/))
           .and(sinon.match(/suggestionIds=old/)),
       );
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Expired OUTDATED suggestion deletion summary/)
-          .and(sinon.match(/event=audit_housekeeping_end/))
-          .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/opportunityId=evergreen-1/))
-          .and(sinon.match(/siteId=site-1/))
-          .and(sinon.match(/scanned=1/))
-          .and(sinon.match(/eligible=1/))
-          .and(sinon.match(/deleted=1/))
-          .and(sinon.match(/failed=0/)),
+      // The combined audit_housekeeping_end summary is now emitted by the guidance-handlers,
+      // not this function — see guidance-handler.test.js for that assertion.
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/),
+      );
+      expect(log.warn).to.not.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/),
       );
     });
   });
@@ -778,11 +760,11 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(2);
+      expect(result).to.deep.equal({ eligible: 2, deleted: 2 });
       // Oldest-first ordering from findExpiredSnapshots is preserved into the bulk call.
       expect(removeByIdsSuggestion).to.have.been.calledOnceWith(['sugg-2', 'sugg-1']);
       expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['second-expired', 'first-expired']);
@@ -806,16 +788,16 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(1);
+      expect(result).to.deep.equal({ eligible: 1, deleted: 1 });
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['no-suggestions']);
     });
 
-    it('returns 0, calls no removeByIds, and does not log when nothing is expired', async () => {
+    it('returns { eligible: 0, deleted: 0 }, calls no removeByIds, and does not log when nothing is expired', async () => {
       const youngSnapshot = buildSnapshotOpportunity({ id: 'young', createdAt: daysAgo(5) });
       const removeByIdsSuggestion = sandbox.stub().resolves();
       const removeByIdsOpportunity = sandbox.stub().resolves();
@@ -827,11 +809,11 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(0);
+      expect(result).to.deep.equal({ eligible: 0, deleted: 0 });
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.not.have.been.called;
       // "Ran, nothing eligible" must be distinguishable from "never invoked" — a warn-level
@@ -845,7 +827,7 @@ describe('offsite-retention', () => {
       );
     });
 
-    it('returns 0 without calling removeByIds when the lookup fails', async () => {
+    it('returns { eligible: 0, deleted: 0 } without calling removeByIds when the lookup fails', async () => {
       const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
         Opportunity: {
@@ -854,11 +836,11 @@ describe('offsite-retention', () => {
         },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(0);
+      expect(result).to.deep.equal({ eligible: 0, deleted: 0 });
       expect(removeByIdsOpportunity).to.not.have.been.called;
     });
 
@@ -931,11 +913,11 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: sandbox.stub().resolves() },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(MAX_DELETIONS_PER_RUN);
+      expect(result).to.deep.equal({ eligible: totalExpired, deleted: MAX_DELETIONS_PER_RUN });
       const deletedIds = removeByIdsOpportunity.firstCall.args[0];
       expect(deletedIds).to.have.lengthOf(MAX_DELETIONS_PER_RUN);
       // The oldest snapshot (snap-<totalExpired>, daysAgo(45 + totalExpired)) must be included.

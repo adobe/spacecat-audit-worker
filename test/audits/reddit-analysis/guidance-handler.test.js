@@ -136,7 +136,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       }
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });
-    deleteExpiredSnapshotsStub = sandbox.stub().resolves(0);
+    deleteExpiredSnapshotsStub = sandbox.stub().resolves({ eligible: 0, deleted: 0 });
     deleteExpiredOutdatedSuggestionsStub = sandbox.stub().resolves({
       scanned: 0, eligible: 0, deleted: 0, failed: 0,
     });
@@ -1659,6 +1659,45 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledAfter(syncSuggestionsStub);
       expect(deleteExpiredOutdatedSuggestionsStub)
         .to.have.been.calledBefore(deleteExpiredSnapshotsStub);
+    });
+
+    it('emits a single combined audit_housekeeping_end summary after both cleanups resolve', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 5, eligible: 3, deleted: 3, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 2, deleted: 2 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/suggestionsScanned=5/))
+          .and(sinon.match(/suggestionsEligible=3/))
+          .and(sinon.match(/suggestionsDeleted=3/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=2/))
+          .and(sinon.match(/snapshotsDeleted=2/)),
+      );
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('emits a degraded audit_housekeeping_end summary when suggestion cleanup fails', async () => {
+      deleteExpiredOutdatedSuggestionsStub.rejects(new Error('sugg cleanup blew up'));
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/)),
+      );
     });
 
     it('does NOT run retention when the handler returns before a successful sync', async () => {

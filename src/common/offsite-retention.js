@@ -92,7 +92,7 @@ export async function deleteExpiredSnapshots({
     olog.warn('audit_housekeeping_outdated_opportunities_deleted', 'No expired snapshots eligible for deletion', {
       auditType, eligible: 0, outcome: OUTCOME.SKIP,
     });
-    return 0;
+    return { eligible: 0, deleted: 0 };
   }
 
   const suggestionIds = [];
@@ -114,7 +114,7 @@ export async function deleteExpiredSnapshots({
     peer: PEER.POSTGRES, direction: 'outbound', auditType, eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
   });
 
-  return snapshotIds.length;
+  return { eligible: allExpiredSnapshots.length, deleted: snapshotIds.length };
 }
 
 export const OUTDATED_SUGGESTION_RETENTION_DAYS = 30;
@@ -212,23 +212,6 @@ export async function deleteExpiredOutdatedSuggestions({
     eligible: expiredOutdatedSuggestions.length,
     ...deletionTotals,
   };
-
-  const summaryFields = {
-    peer: PEER.POSTGRES,
-    direction: 'outbound',
-    auditType,
-    scanned: retentionSummary.scanned,
-    eligible: retentionSummary.eligible,
-    deleted: retentionSummary.deleted,
-    failed: retentionSummary.failed,
-  };
-  if (retentionSummary.failed > 0) {
-    olog.warn('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', {
-      ...summaryFields, reason: 'partial_delete_failure', outcome: OUTCOME.DEGRADED,
-    });
-  } else {
-    olog.success('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', summaryFields);
-  }
 
   return retentionSummary;
 }
