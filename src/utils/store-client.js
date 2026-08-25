@@ -30,21 +30,10 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import {
-  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
-} from './offsite-logging.js';
+import { createOffsiteLogger, errorField, PEER } from './offsite-logging.js';
 
 // Page size for cursor-based pagination over the url-store and sentiment collections.
 const STORE_PAGE_SIZE = 500;
-
-// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
-// Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted
-// (see the offsite structured-logging convention in ./offsite-logging.js).
-const LOG_PREFIX = '[offsite:store-client]';
-const sc = (message, fields) => appendFields(
-  `${LOG_PREFIX} ${message}`,
-  { domain: OFFSITE_DOMAIN, ...fields },
-);
 
 /**
  * Error thrown when a store returns empty results
@@ -214,10 +203,11 @@ export default class StoreClient {
     this.#ensureConfigured(['AuditUrl']);
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
+    const olog = createOffsiteLogger(this.log, { audit: 'store-client', siteId });
 
-    this.log.info(sc('Fetching URLs from URL Store', {
-      event: 'data_acquisition_url_store_read', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
-    }));
+    olog.start('data_acquisition_url_store_read', 'Fetching URLs from URL Store', {
+      peer: PEER.URL_STORE, direction: 'inbound', auditType,
+    });
 
     // Wraps the DB read so a genuine read error is a distinct, alertable
     // `data_acquisition_url_store_read outcome=failure` rather than surfacing only as
@@ -236,20 +226,23 @@ export default class StoreClient {
         },
       ));
     } catch (error) {
-      this.log.error(sc('Failed to read URLs from URL Store', {
-        event: 'data_acquisition_url_store_read', outcome: OUTCOME.FAILURE, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, errorName: error.name, errorMessage: error.message,
-      }));
+      olog.failure('data_acquisition_url_store_read', 'Failed to read URLs from URL Store', {
+        peer: PEER.URL_STORE, direction: 'inbound', auditType, ...errorField(error),
+      });
       throw error;
     }
 
     if (items.length === 0) {
+      olog.skip('data_acquisition_url_store_read', 'No URLs found in URL Store', {
+        peer: PEER.URL_STORE, direction: 'inbound', auditType, reason: 'no_urls', reasonCategory: 'expected',
+      });
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
     }
 
     const urls = items.map(toAuditUrlJson);
-    this.log.info(sc('Found URLs in URL Store', {
-      event: 'data_acquisition_url_store_read', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, count: urls.length,
-    }));
+    olog.success('data_acquisition_url_store_read', 'Found URLs in URL Store', {
+      peer: PEER.URL_STORE, direction: 'inbound', auditType, count: urls.length,
+    });
     return urls;
   }
 
@@ -266,10 +259,11 @@ export default class StoreClient {
   async getGuidelines(siteId, auditType) {
     this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
+    const olog = createOffsiteLogger(this.log, { audit: 'store-client', siteId });
 
-    this.log.info(sc('Fetching sentiment config', {
-      event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.START, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType,
-    }));
+    olog.start('audit_orchestration_brand_guidelines_resolved', 'Fetching sentiment config', {
+      peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType,
+    });
 
     const topicItems = await this.#fetchAllPages(
       (cursor) => SentimentTopic.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor }),
@@ -286,12 +280,15 @@ export default class StoreClient {
     const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
+      olog.skip('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in URL Store', {
+        peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', reasonCategory: 'expected',
+      });
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }
 
-    this.log.info(sc('Found topics and guidelines', {
-      event: 'audit_orchestration_brand_guidelines_resolved', outcome: OUTCOME.SUCCESS, peer: PEER.URL_STORE, direction: 'inbound', siteId, auditType, topics: topics.length, guidelines: guidelines.length,
-    }));
+    olog.success('audit_orchestration_brand_guidelines_resolved', 'Found topics and guidelines', {
+      peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, topics: topics.length, guidelines: guidelines.length,
+    });
     return { topics, guidelines };
   }
 }

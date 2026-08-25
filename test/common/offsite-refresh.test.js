@@ -312,7 +312,8 @@ describe('offsite-refresh', () => {
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/audit=reddit/))
           .and(sinon.match(/opportunityId=new-opp-id/))
-          .and(sinon.match(/status=IGNORED/)),
+          .and(sinon.match(/status=IGNORED/))
+          .and(sinon.match(/writeAction=created/)),
       );
     });
 
@@ -343,7 +344,8 @@ describe('offsite-refresh', () => {
       expect(log.info).to.have.been.calledWith(
         sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/opportunityId=evergreen-1/)),
+          .and(sinon.match(/opportunityId=evergreen-1/))
+          .and(sinon.match(/writeAction=refreshed/)),
       );
     });
 
@@ -367,7 +369,8 @@ describe('offsite-refresh', () => {
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=opportunity_write_failed/))
           .and(sinon.match(/errorName=Error/))
-          .and(sinon.match(/audit=youtube/)),
+          .and(sinon.match(/audit=youtube/))
+          .and(sinon.match(/writeAction=write_failed/)),
       );
     });
   });

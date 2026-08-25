@@ -300,6 +300,17 @@ describe('StoreClient', () => {
 
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
+
+      // The empty-result path is now observable: a skip log line precedes the throw,
+      // so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/No URLs found in URL Store/)
+          .and(sinon.match(/event=data_acquisition_url_store_read/))
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/peer=url_store/))
+          .and(sinon.match(/reason=no_urls/))
+          .and(sinon.match(/reasonCategory=expected/)),
+      );
     });
 
     it('should throw StoreEmptyError when data is undefined', async () => {
@@ -346,6 +357,12 @@ describe('StoreClient', () => {
       expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType)
         .to.have.been.calledWith(siteId, 'wikipedia-analysis');
       expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.not.have.been.called;
+      // The guideline/sentiment store has its own dedicated peer, distinct from url_store.
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_guidelines_resolved/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=guideline_store/)),
+      );
     });
 
     it('should throw when sentiment collections are not configured', async () => {
@@ -399,6 +416,17 @@ describe('StoreClient', () => {
 
       await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
+
+      // The empty-result path is now observable: a skip log line precedes the throw,
+      // so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/No guidelines or topics found in URL Store/)
+          .and(sinon.match(/event=audit_orchestration_brand_guidelines_resolved/))
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/peer=guideline_store/))
+          .and(sinon.match(/reason=no_guidelines_or_topics/))
+          .and(sinon.match(/reasonCategory=expected/)),
+      );
     });
 
     it('should tolerate missing data fields and still throw when empty', async () => {

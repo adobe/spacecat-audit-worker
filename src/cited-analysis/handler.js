@@ -150,7 +150,7 @@ function partitionExcludedUrls(urls, brandTokens, olog) {
     if (reason) {
       droppedCount += 1;
       olog.debug('data_acquisition_url_store_read', 'Excluding URL', {
-        peer: PEER.URL_STORE, direction: 'inbound', url: entry.url, reason,
+        peer: PEER.URL_STORE, direction: 'inbound', url: entry.url, reason, reasonCategory: 'expected',
       });
     } else {
       kept.push(entry);
@@ -312,7 +312,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       });
     }
 
-    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS');
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
     const storeData = await fetchStoreData(siteId, context, site);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
@@ -557,7 +557,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
       olog.warn('audit_orchestration_brand_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
+        outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);

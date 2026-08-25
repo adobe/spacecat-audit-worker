@@ -15,7 +15,7 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_TERMINAL_STATUSES,
@@ -79,7 +79,7 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
     olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to check recent audit', {
-      peer: PEER.SPACECAT, direction: 'inbound', auditType, ...errorField(err),
+      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT, direction: 'inbound', auditType, reason: 'lookup', reasonCategory: 'infra', ...errorField(err),
     });
     return false;
   }
@@ -270,7 +270,7 @@ async function triggerAnalysisAudits(
       handled.push(type);
     } catch (err) {
       olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to dispatch analysis audit', {
-        peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
+        outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', auditType: type, reason: 'dispatch_failed', reasonCategory: 'infra', ...errorField(err),
       });
     }
   }
@@ -365,7 +365,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
       olog.warn('data_acquisition_scrape_job_poll_checked', 'DRS getJob call failed', {
-        peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
+        outcome: OUTCOME.DEGRADED, peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
       });
       return { ...job, status: undefined, error: undefined };
     }
@@ -401,7 +401,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     );
   } catch (err) {
     olog.warn('audit_orchestration_analysis_request_dispatched', 'Failed to dispatch analysis audits', {
-      peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+      outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', reason: 'dispatch_failed', reasonCategory: 'infra', ...errorField(err),
     });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
@@ -431,7 +431,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
       olog.failure('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to re-enqueue DRS status poll', {
-        peer: PEER.SQS, direction: 'outbound', firstSchedule: false, ...errorField(err),
+        peer: PEER.SQS, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', reasonCategory: 'infra', ...errorField(err),
       });
       throw err;
     }

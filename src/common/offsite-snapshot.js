@@ -12,7 +12,7 @@
 
 import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 
 export const SNAPSHOT_TAG = 'offsite-snapshot';
@@ -124,6 +124,8 @@ export async function prepareSuppressedRunSnapshot({
     olog.warn('audit_persistence_snapshot_opportunity_write', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
       reasonCategory: 'infra',
+      snapshotAction: 'creating',
+      outcome: OUTCOME.DEGRADED,
     });
   }
 
@@ -181,6 +183,8 @@ export async function prepareSupersededRunSnapshot({
     olog.warn('audit_persistence_snapshot_opportunity_write', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
       reasonCategory: 'infra',
+      snapshotAction: 'creating',
+      outcome: OUTCOME.DEGRADED,
     });
   }
 
@@ -248,6 +252,7 @@ export async function prepareSupersededRunSnapshot({
             failed: errorItems.length,
             reason: 'suggestions_copy_failed',
             reasonCategory: 'infra',
+            snapshotAction: 'created',
           });
         }
       } catch (err) {
@@ -258,6 +263,7 @@ export async function prepareSupersededRunSnapshot({
           opportunityId: snapshot.getId(),
           reason: 'suggestions_copy_failed',
           reasonCategory: 'infra',
+          snapshotAction: 'created',
           ...errorField(err),
         });
         try {
@@ -268,6 +274,7 @@ export async function prepareSupersededRunSnapshot({
             opportunityId: snapshot.getId(),
             reason: 'orphan_cleanup_failed',
             reasonCategory: 'infra',
+            snapshotAction: 'created',
             ...errorField(removeErr),
           });
         }

@@ -189,9 +189,10 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
       companyName: redditConfig.companyName,
       website: redditConfig.companyWebsite,
+      competitors: redditConfig.competitors.length,
     });
 
-    olog.start('data_acquisition_start', 'Starting data acquisition', {});
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
     const storeData = await fetchStoreData(siteId, context, site);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
@@ -421,7 +422,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
       olog.warn('audit_orchestration_brand_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
+        outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
@@ -429,12 +430,13 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
       'audit_analysis_start',
-      `Queued analysis request to Mystique (message type ${message.type})`,
+      'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
         companyName: config.companyName,
         urls: enrichedUrls.length,
+        messageType: message.type,
         ...(brand && { brandId: brand.brandId }),
       },
     );

@@ -118,6 +118,7 @@ export async function persistOffsiteOpportunity(
         opportunityId: created.getId(),
         auditType,
         status: mappedOpportunity.status,
+        writeAction: 'created',
       });
       return created;
     }
@@ -133,6 +134,7 @@ export async function persistOffsiteOpportunity(
       opportunityId: opportunityToUpdate.getId(),
       auditType,
       status: mappedOpportunity.status,
+      writeAction: 'refreshed',
     });
     return opportunityToUpdate;
   } catch (error) {
@@ -143,6 +145,7 @@ export async function persistOffsiteOpportunity(
       direction: 'outbound',
       reason: 'opportunity_write_failed',
       reasonCategory: 'infra',
+      writeAction: 'write_failed',
       ...errorField(error),
     });
     throw error;

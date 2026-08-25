@@ -89,6 +89,9 @@ export async function deleteExpiredSnapshots({
   const expiredSnapshots = allExpiredSnapshots.slice(0, MAX_DELETIONS_PER_RUN);
 
   if (expiredSnapshots.length === 0) {
+    olog.debug('audit_housekeeping_outdated_opportunities_deleted', 'No expired snapshots eligible for deletion', {
+      auditType, eligible: 0,
+    });
     return 0;
   }
 
@@ -191,7 +194,7 @@ export async function deleteExpiredOutdatedSuggestions({
         return { deleted: suggestionBatch.length, failed: 0 };
       } catch (error) {
         olog.failure('audit_housekeeping_outdated_suggestions_deleted', 'Failed to delete expired OUTDATED suggestion batch', {
-          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, ...errorField(error),
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, reason: 'batch_delete_failed', reasonCategory: 'infra', ...errorField(error),
         });
         return { deleted: 0, failed: suggestionBatch.length };
       }
@@ -220,7 +223,9 @@ export async function deleteExpiredOutdatedSuggestions({
     failed: retentionSummary.failed,
   };
   if (retentionSummary.failed > 0) {
-    olog.failure('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', summaryFields);
+    olog.failure('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', {
+      ...summaryFields, reason: 'partial_delete_failure', reasonCategory: 'infra',
+    });
   } else {
     olog.success('audit_housekeeping_end', 'Expired OUTDATED suggestion deletion summary', summaryFields);
   }

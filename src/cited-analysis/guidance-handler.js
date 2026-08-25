@@ -79,7 +79,7 @@ export default async function handler(message, context) {
   olog.start('audit_analysis_end', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
-  olog.start('audit_persistence_start', 'Persistence started');
+  olog.start('audit_persistence_start', 'Persistence started', {});
 
   if (data?.error) {
     olog.failure('audit_analysis_end', 'Mystique returned an error', {
@@ -215,11 +215,11 @@ export default async function handler(message, context) {
         }),
       });
       ologOpp.success('audit_persistence_evergreen_opportunity_write', `Synced ${suggestions.length} suggestions`, {
-        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
+        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length, writeAction: 'suggestions_synced',
       });
     } catch (error) {
       ologOpp.failure('audit_persistence_evergreen_opportunity_write', 'Failed to sync suggestions', {
-        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', ...errorField(error),
+        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', writeAction: 'suggestions_synced', ...errorField(error),
       });
       throw error;
     }

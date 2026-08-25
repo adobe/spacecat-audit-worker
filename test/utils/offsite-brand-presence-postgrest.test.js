@@ -385,8 +385,11 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.or).to.have.lengthOf(1);
       expect(capture.or[0]).to.include(lastExec.execution_date);
       expect(capture.or[0]).to.include(lastExec.id);
-      expect(log.warn).to.have.been.calledOnce;
-      expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
+      // A genuine PostgREST query failure is a hard failure, logged at `error` level via
+      // `.failure()` (outcome=failure), not `.warn()`.
+      expect(log.warn).to.not.have.been.called;
+      expect(log.error).to.have.been.calledOnce;
+      expect(log.error.firstCall.args[0]).to.include('page 2 failed');
     });
 
     it('accumulates rows across two successful pages via keyset cursor', async () => {
@@ -474,9 +477,13 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.warn).to.have.been.calledWithMatch(
-        '[offsite:brand-presence-postgrest] PostgREST query failed',
+      // A genuine PostgREST query failure is a hard failure, logged at `error` level via
+      // `.failure()` (outcome=failure), not `.warn()`.
+      expect(log.warn).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWithMatch(
+        'PostgREST query failed',
       );
+      expect(log.error.firstCall.args[0]).to.include('outcome=failure');
     });
 
     it('returns fetched rows and warns when keyset pagination reaches the max-page guard', async () => {

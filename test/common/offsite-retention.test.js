@@ -526,7 +526,9 @@ describe('offsite-retention', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to delete expired OUTDATED suggestion batch/)
           .and(sinon.match(/batchSize=5/))
-          .and(sinon.match(/errorMessage="batch DELETE failed"/)),
+          .and(sinon.match(/errorMessage="batch DELETE failed"/))
+          .and(sinon.match(/reason=batch_delete_failed/))
+          .and(sinon.match(/reasonCategory=infra/)),
       );
       expect(log.info).to.not.have.been.calledWith(
         sinon.match(new RegExp(`suggestionIds=.*\\b${failedSuggestionId}\\b`)),
@@ -536,7 +538,9 @@ describe('offsite-retention', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_end/)
           .and(sinon.match(/outcome=failure/))
-          .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`)),
+          .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`))
+          .and(sinon.match(/reason=partial_delete_failure/))
+          .and(sinon.match(/reasonCategory=infra/)),
       );
     });
 
@@ -832,6 +836,14 @@ describe('offsite-retention', () => {
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.not.have.been.called;
       expect(log.info).to.not.have.been.called;
+      // "Ran, nothing eligible" must be distinguishable from "never invoked" — a debug line
+      // fires on the same event the success path uses, but at debug level with eligible=0.
+      expect(log.debug).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
+          .and(sinon.match(/No expired snapshots eligible for deletion/))
+          .and(sinon.match(/eligible=0/))
+          .and(sinon.match(/audit=cited/)),
+      );
     });
 
     it('returns 0 without calling removeByIds when the lookup fails', async () => {

@@ -314,7 +314,11 @@ describe('offsite-snapshot', () => {
         opportunityToUpdate: null,
       });
       expect(allBySiteIdAndStatus).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/idempotency.*traceability/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/idempotency.*traceability/i)
+          .and(sinon.match(/snapshotAction=creating/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
       expect(log.info).to.have.been.calledWith(sinon.match(/Preparing new suppressed-refresh snapshot/));
     });
 
@@ -654,7 +658,8 @@ describe('offsite-snapshot', () => {
         sinon.match(/Suggestions failed to copy onto snapshot/)
           .and(sinon.match(/failed=1/))
           .and(sinon.match(/reason=suggestions_copy_failed/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/snapshotAction=created/)),
       );
     });
 
@@ -693,7 +698,8 @@ describe('offsite-snapshot', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/addSuggestions threw.*deleting orphan/i)
           .and(sinon.match(/reason=suggestions_copy_failed/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/snapshotAction=created/)),
       );
     });
 
@@ -732,7 +738,8 @@ describe('offsite-snapshot', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to delete orphan snapshot/i)
           .and(sinon.match(/reason=orphan_cleanup_failed/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/snapshotAction=created/)),
       );
     });
 
@@ -758,7 +765,11 @@ describe('offsite-snapshot', () => {
         evergreenOpportunityId: 'evergreen-1',
         kind: SNAPSHOT_KINDS.SUPERSEDED_REFRESH,
       });
-      expect(log.warn).to.have.been.calledWith(sinon.match(/idempotency.*traceability/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/idempotency.*traceability/i)
+          .and(sinon.match(/snapshotAction=creating/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
     });
 
     it('propagates idempotency lookup failures', async () => {

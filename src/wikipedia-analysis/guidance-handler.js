@@ -199,7 +199,7 @@ export default async function handler(message, context) {
   try {
     const brandResult = await resolveBrandResultForSite(context, site);
     const {
-      suggestions = [], company, industryAnalysis, wikipediaUrl,
+      suggestions = [], company: companyName, industryAnalysis, wikipediaUrl,
     } = analysisData;
 
     // No suggestions means either no Wikipedia page exists to analyze, or the page
@@ -216,12 +216,12 @@ export default async function handler(message, context) {
     }
 
     olog.debug('audit_analysis_end', 'Processing suggestions', {
-      count: suggestions.length, company,
+      count: suggestions.length, companyName,
     });
 
     // Create guidance object (must be an object, not an array, per Opportunity schema)
     const guidance = {
-      insight: `Wikipedia analysis identified ${suggestions.length} improvement opportunities for ${company}`,
+      insight: `Wikipedia analysis identified ${suggestions.length} improvement opportunities for ${companyName}`,
       rationale: industryAnalysis
         ? `Based on comparison with ${industryAnalysis.industry} competitors`
         : 'Based on Wikipedia best practices analysis',
@@ -249,7 +249,7 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
     ologOpp.success('audit_persistence_evergreen_opportunity_write', 'Opportunity persisted', {
-      peer: PEER.POSTGRES, direction: 'outbound',
+      peer: PEER.POSTGRES, direction: 'outbound', writeAction: 'created',
     });
 
     try {
@@ -266,17 +266,17 @@ export default async function handler(message, context) {
         }),
       });
       ologOpp.success('audit_persistence_evergreen_opportunity_write', `Synced ${suggestions.length} suggestions`, {
-        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
+        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length, writeAction: 'suggestions_synced',
       });
     } catch (error) {
       ologOpp.failure('audit_persistence_evergreen_opportunity_write', 'Failed to sync suggestions', {
-        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', ...errorField(error),
+        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', writeAction: 'suggestions_synced', ...errorField(error),
       });
       throw error;
     }
 
     ologOpp.success('audit_persistence_end', 'Run processed successfully', {
-      count: suggestions.length, company,
+      count: suggestions.length, companyName,
     });
 
     await postWikipediaOutcomeToSlack(

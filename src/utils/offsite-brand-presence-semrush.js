@@ -137,7 +137,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
     olog.failure('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'fetch_failed', reasonCategory: 'infra', ...errorField(error),
     }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
@@ -156,9 +156,13 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
       // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      olog.failure('data_acquisition_bp_data_semrush_read', 'Service token rejected for domain-urls; verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)', logFields);
+      olog.failure('data_acquisition_bp_data_semrush_read', 'Service token rejected for domain-urls; verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)', {
+        ...logFields, reason: 'auth_rejected', reasonCategory: 'infra',
+      });
     } else {
-      olog.failure('data_acquisition_bp_data_semrush_read', 'domain-urls returned a non-2xx status', logFields);
+      olog.failure('data_acquisition_bp_data_semrush_read', 'domain-urls returned a non-2xx status', {
+        ...logFields, reason: 'non_2xx_status', reasonCategory: 'infra',
+      });
     }
     return {
       rows: [], ok: false, authFailure, truncated: false,
@@ -170,7 +174,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     body = await response.json();
   } catch (error) {
     olog.failure('data_acquisition_bp_data_semrush_read', 'Could not parse domain-urls response', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'parse_failed', reasonCategory: 'infra', ...errorField(error),
     }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
@@ -299,7 +303,7 @@ export async function loadCitedUrlsFromSemrush({
       await onProgress(text);
     } catch (error) {
       olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to post Semrush progress update', {
-        peer: PEER.SLACK, direction: 'outbound', ...errorField(error),
+        peer: PEER.SLACK, direction: 'outbound', reason: 'slack_notify_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
     }
   };
@@ -334,7 +338,7 @@ export async function loadCitedUrlsFromSemrush({
       setDiagnostics({ fallbackReason: 'no_active_brand', reasonCategory: 'config' });
     } else {
       olog.warn('data_acquisition_bp_data_semrush_read', 'Brand resolution failed (transient); using legacy fallback', {
-        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'brand_resolution_failed', reasonCategory: 'infra',
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'brand_resolution_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED,
       });
       await notify(':warning: Brand resolution failed (transient) — falling back to the legacy source.');
       setDiagnostics({ fallbackReason: 'brand_resolution_failed', reasonCategory: 'infra' });
@@ -376,7 +380,7 @@ export async function loadCitedUrlsFromSemrush({
       });
     } else {
       olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush entitlement check failed (transient); using legacy fallback', {
-        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(),
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'entitlement_check_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED,
       });
       await notify(':warning: Could not verify Semrush entitlement (transient) — falling back to the legacy source.');
       setDiagnostics({
@@ -391,7 +395,7 @@ export async function loadCitedUrlsFromSemrush({
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (!dateWindow) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Could not derive a date window; skipping Semrush source', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), outcome: OUTCOME.SKIP,
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'no_date_window', reasonCategory: 'config', outcome: OUTCOME.SKIP,
     });
     await notify(':warning: Could not derive a date window — falling back to the legacy source.');
     setDiagnostics({ fallbackReason: 'no_date_window', reasonCategory: 'config' });
@@ -404,7 +408,7 @@ export async function loadCitedUrlsFromSemrush({
     authorization = await getAuthorizationHeader(context);
   } catch (error) {
     olog.failure('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', reasonCategory: 'infra', ...errorField(error),
     }, error);
     await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
     setDiagnostics({ fallbackReason: 'ims_token_failed', reasonCategory: 'infra' });
@@ -434,7 +438,7 @@ export async function loadCitedUrlsFromSemrush({
   const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
   if (!result.ok) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'domain-urls request failed; using legacy fallback', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(),
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'domain_urls_failed', reasonCategory: 'infra', outcome: OUTCOME.DEGRADED,
     });
     await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
     setDiagnostics({

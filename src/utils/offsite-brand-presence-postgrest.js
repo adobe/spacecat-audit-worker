@@ -12,20 +12,12 @@
 
 import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import {
-  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from './offsite-logging.js';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
 export const MAX_EXECUTION_FETCH_PAGES = 50;
-
-// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
-// Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted.
-const LOG_PREFIX = '[offsite:brand-presence-postgrest]';
-const bp = (message, fields) => appendFields(
-  `${LOG_PREFIX} ${message}`,
-  { domain: OFFSITE_DOMAIN, ...fields },
-);
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
   'ai-mode': 'google-ai-mode',
@@ -81,7 +73,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
   startDate,
   endDate,
   models,
-  log,
+  olog,
 }) {
   const rows = [];
   let lastDate = null;
@@ -91,9 +83,11 @@ async function fetchExecutionsWithSources(postgrestClient, {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
-      log.warn(bp('Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
-      }));
+      // Deliberately kept at `.warn()` with `outcome` forced to `SUCCESS`: a full set of
+      // pages was still processed, this is a caveat on a successful fetch, not a failure.
+      olog.warn('data_acquisition_bp_data_postgres_read', 'Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
+        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', reasonCategory: 'infra', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.SUCCESS,
+      });
       break;
     }
 
@@ -127,9 +121,9 @@ async function fetchExecutionsWithSources(postgrestClient, {
 
     const batch = data || [];
     rows.push(...batch);
-    log?.info(bp('Fetched batch', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.START, peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length, total: rows.length,
-    }));
+    olog.start('data_acquisition_bp_data_postgres_read', 'Fetched batch', {
+      peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length, total: rows.length,
+    });
 
     if (batch.length < EXECUTION_FETCH_BATCH_SIZE) {
       break;
@@ -171,6 +165,8 @@ export async function loadBrandPresenceDataFromPostgrest({
     return null;
   }
 
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
+
   const models = getBrandPresenceDbModels();
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
   if (models.length === 0 || !dateWindow) {
@@ -186,32 +182,34 @@ export async function loadBrandPresenceDataFromPostgrest({
       startDate,
       endDate,
       models,
-      log,
+      olog,
     });
 
     if (executions.length === 0) {
-      log?.info(bp('No execution rows found', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId,
-      }));
+      olog.skip('data_acquisition_bp_data_postgres_read', 'No execution rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', reasonCategory: 'config', siteId,
+      });
       return null;
     }
 
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
-      log?.info(bp('No usable rows found', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId,
-      }));
+      olog.skip('data_acquisition_bp_data_postgres_read', 'No usable rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', reasonCategory: 'config', siteId,
+      });
       return null;
     }
 
-    log?.info(bp('Loaded legacy-shaped rows from PostgREST', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', siteId, rows: rows.length,
-    }));
+    olog.success('data_acquisition_bp_data_postgres_read', 'Loaded legacy-shaped rows from PostgREST', {
+      peer: PEER.POSTGRES, direction: 'inbound', siteId, rows: rows.length,
+    });
     return { data: rows };
   } catch (error) {
-    log?.warn(bp('PostgREST query failed', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', reasonCategory: 'infra', siteId, errorName: error.name, errorMessage: error.message,
-    }));
+    // A genuine hard failure (the read failed) — logged via `.failure()` at `error` level,
+    // not `.warn()`, matching every other real failure in this codebase.
+    olog.failure('data_acquisition_bp_data_postgres_read', 'PostgREST query failed', {
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', reasonCategory: 'infra', siteId, ...errorField(error),
+    }, error);
     return null;
   }
 }

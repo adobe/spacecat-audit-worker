@@ -191,7 +191,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       website: youtubeConfig.companyWebsite,
     });
 
-    olog.start('data_acquisition_start', 'Starting data acquisition', {});
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
     const storeData = await fetchStoreData(siteId, context, site);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
@@ -421,7 +421,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
       olog.warn('audit_orchestration_brand_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
+        outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', reasonCategory: 'infra', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);

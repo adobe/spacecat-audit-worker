@@ -366,14 +366,14 @@ describe('offsite-brand-presence-enrichment', function () {
         dataAccess: { Site: { findById: sandbox.stub().resolves(null) } },
       });
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/Cannot resolve site/);
+      expect(log.info).to.have.been.calledWithMatch(/Cannot resolve site/);
     });
 
     it('returns empty array when site has no LLMO data folder', async () => {
       const site = makeSite({ getConfig: () => ({ getLlmoDataFolder: () => null }) });
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/No LLMO data folder configured/);
+      expect(log.info).to.have.been.calledWithMatch(/No LLMO data folder configured/);
     });
 
     it('returns empty array when SharePoint query-index read throws', async () => {
@@ -391,7 +391,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index/);
+      expect(log.info).to.have.been.calledWithMatch(/Failed to read query-index/);
     });
 
     it('aggregates topics from brand presence rows (US, reddit URL, topic)', async () => {
@@ -585,7 +585,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
 
       expect(result).to.have.lengthOf(1);
-      expect(log.warn).to.have.been.calledWithMatch(/Could not parse baseURL/);
+      expect(log.info).to.have.been.calledWithMatch(/Could not parse baseURL/);
     });
   });
 
@@ -676,7 +676,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result).to.be.null;
       expect(loadBrandPresenceDataFromPostgrest).to.not.have.been.called;
       expect(mockReadFromSP).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWithMatch(
+      expect(log.info).to.have.been.calledWithMatch(
         /Brandalf flag state unknown/,
       );
     });
@@ -740,7 +740,7 @@ describe('offsite-brand-presence-enrichment', function () {
       });
 
       expect(result).to.be.null;
-      expect(log.warn).to.have.been.calledWithMatch(
+      expect(log.info).to.have.been.calledWithMatch(
         /Cannot resolve site/,
       );
     });
