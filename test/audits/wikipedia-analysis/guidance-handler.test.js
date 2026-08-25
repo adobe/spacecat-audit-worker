@@ -466,6 +466,8 @@ describe('Wikipedia Analysis Guidance Handler', function () {
         sinon.match(/Error processing analysis/)
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(

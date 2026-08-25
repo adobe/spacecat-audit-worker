@@ -581,7 +581,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         'audit_analysis_start',
         `Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
         {
-          peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget', reasonCategory: 'expected',
+          outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget', reasonCategory: 'expected',
         },
       );
     }
@@ -595,7 +595,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
           'audit_analysis_start',
           `Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
           {
-            peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single', reasonCategory: 'expected',
+            outcome: OUTCOME.SUCCESS, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single', reasonCategory: 'expected',
           },
         );
         const [singleUrl] = message.data.urls;
@@ -625,7 +625,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     return auditData;
   } catch (error) {
     olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error),
     });
     // Notify the Slack thread that triggered this audit so the operator knows
     // Mystique was never reached and doesn't wait for results that won't come.

@@ -699,7 +699,7 @@ export async function requestOffsiteScrape(
     });
   } catch (error) {
     olog?.warn('data_acquisition_scrape_job_request_dispatched', 'Failed to request DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', reasonCategory: 'expected', domainScope, ...overrides, ...errorField(error),
+      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal_failed', reasonCategory: 'infra', domainScope, ...overrides, ...errorField(error),
     });
   }
 }

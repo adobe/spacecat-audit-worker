@@ -291,7 +291,7 @@ export default async function handler(message, context) {
     // Intentional drill-down: a failure already logged by an inner event (e.g.
     // audit_persistence_evergreen_opportunity_write) will also surface here as
     // audit_persistence_end outcome=failure — the terminal, per-run marker.
-    olog.failure('audit_persistence_end', 'Error processing analysis', { ...errorField(error) }, error);
+    olog.failure('audit_persistence_end', 'Error processing analysis', { reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

@@ -848,7 +848,10 @@ describe('Reddit Analysis Handler', function () {
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send Mystique message/).and(sinon.match(/errorMessage="SQS Error"/)),
+        sinon.match(/Failed to send Mystique message/)
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });
 

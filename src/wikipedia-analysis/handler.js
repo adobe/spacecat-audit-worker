@@ -375,7 +375,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     );
   } catch (error) {
-    olog.failure('audit_analysis_start', 'Failed to send Mystique message', { peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error) }, error);
+    olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error),
+    }, error);
     // Re-throw to fail the audit if we can't send to Mystique
     throw error;
   }

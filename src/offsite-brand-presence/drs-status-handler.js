@@ -460,12 +460,12 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
 
   const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
-  olog.success('data_acquisition_scrape_job_poll_completed', 'Posted DRS completion summary', {
+  olog.success('data_acquisition_scrape_job_poll_end', 'Posted DRS completion summary', {
     peer: PEER.SLACK,
     direction: 'outbound',
     jobs: statuses.length,
     dropped: dropped.length,
-    ...(dropped.length > 0 && { reason: 'budget_exceeded', reasonCategory: 'infra' }),
+    ...(dropped.length > 0 && { reason: 'partial_drop', reasonCategory: 'infra' }),
   });
 
   return ok();

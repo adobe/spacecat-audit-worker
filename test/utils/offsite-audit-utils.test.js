@@ -716,7 +716,7 @@ describe('offsite-audit-utils', () => {
       expect(olog.warn).to.have.been.calledWith(
         'data_acquisition_scrape_job_request_dispatched',
         sinon.match(/Failed to request DRS scrape/),
-        sinon.match({ reason: 'self_heal' }),
+        sinon.match({ reason: 'self_heal_failed', reasonCategory: 'infra' }),
       );
     });
   });

@@ -494,6 +494,14 @@ describe('offsite-brand-presence DRS status handler', function () {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/reason=scrape_failed/).and(sinon.match(/auditType=youtube-analysis/)),
       );
+      // The aggregate summary line uses a neutral reason regardless of the per-drop
+      // reasons above, since drops in the same run can be a mix of scrape_failed and
+      // budget_exceeded.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_scrape_job_poll_end/)
+          .and(sinon.match(/reason=partial_drop/))
+          .and(sinon.match(/reasonCategory=infra/)),
+      );
     });
 
     it('skips domains that do not map to an analysis audit', async () => {

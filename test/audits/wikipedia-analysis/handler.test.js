@@ -590,7 +590,11 @@ describe('Wikipedia Analysis Handler', () => {
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match('Failed to send Mystique message')
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/reasonCategory=infra/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
