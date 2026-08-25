@@ -205,11 +205,12 @@ export async function loadBrandPresenceDataFromPostgrest({
     });
     return { data: rows };
   } catch (error) {
-    // A genuine hard failure (the read failed) — logged via `.failure()` at `error` level,
-    // not `.warn()`, matching every other real failure in this codebase.
-    olog.failure('data_acquisition_bp_data_postgres_read', 'PostgREST query failed', {
-      peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', reasonCategory: 'infra', siteId, ...errorField(error),
-    }, error);
+    // The caller falls through to the SharePoint path when this returns null, so a query
+    // failure here is recovered, not terminal — outcome=degraded, not failure, so this
+    // doesn't page as a hard stop.
+    olog.warn('data_acquisition_bp_data_postgres_read', 'PostgREST query failed', {
+      peer: PEER.POSTGRES, direction: 'inbound', outcome: OUTCOME.DEGRADED, reason: 'query', reasonCategory: 'infra', siteId, ...errorField(error),
+    });
     return null;
   }
 }

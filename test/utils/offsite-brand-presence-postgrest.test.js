@@ -385,11 +385,11 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.or).to.have.lengthOf(1);
       expect(capture.or[0]).to.include(lastExec.execution_date);
       expect(capture.or[0]).to.include(lastExec.id);
-      // A genuine PostgREST query failure is a hard failure, logged at `error` level via
-      // `.failure()` (outcome=failure), not `.warn()`.
-      expect(log.warn).to.not.have.been.called;
-      expect(log.error).to.have.been.calledOnce;
-      expect(log.error.firstCall.args[0]).to.include('page 2 failed');
+      // The caller falls through to SharePoint on a null return, so a mid-pagination query
+      // failure here is recovered, not terminal — logged at `warn` level, not `.failure()`.
+      expect(log.error).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledOnce;
+      expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
     });
 
     it('accumulates rows across two successful pages via keyset cursor', async () => {
@@ -477,13 +477,13 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      // A genuine PostgREST query failure is a hard failure, logged at `error` level via
-      // `.failure()` (outcome=failure), not `.warn()`.
-      expect(log.warn).to.not.have.been.called;
-      expect(log.error).to.have.been.calledWithMatch(
+      // The caller falls through to SharePoint on a null return, so a query failure here
+      // is recovered, not terminal — logged at `warn` level (outcome=degraded), not `.failure()`.
+      expect(log.error).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(
         'PostgREST query failed',
       );
-      expect(log.error.firstCall.args[0]).to.include('outcome=failure');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=degraded');
     });
 
     it('returns fetched rows and warns when keyset pagination reaches the max-page guard', async () => {
