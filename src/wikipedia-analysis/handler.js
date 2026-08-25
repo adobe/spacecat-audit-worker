@@ -254,7 +254,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
-      olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site, skipping audit', { outcome: OUTCOME.SKIP, reason: 'no_company_name', reasonCategory: 'config' });
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No company name configured for site; producing no result this run', { outcome: OUTCOME.DEGRADED, reason: 'no_company_name', reasonCategory: 'config' });
       return {
         auditResult: {
           success: false,
@@ -321,8 +321,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('audit_analysis_start', 'SQS or Mystique queue not configured, skipping message', {
-      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured', reasonCategory: 'infra',
+    olog.failure('audit_analysis_start', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured', reasonCategory: 'infra',
     });
     return auditData;
   }

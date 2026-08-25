@@ -350,7 +350,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.status).to.equal('pending_scrape');
-      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
     });
 
     it('requests a scoped scrape and notifies Slack when the urlStore is empty on a first run', async () => {
@@ -812,7 +812,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured; message dispatch unavailable this run'));
     });
 
     it('should skip sending message when queue env is not set', async () => {

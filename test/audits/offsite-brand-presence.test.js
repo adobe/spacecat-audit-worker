@@ -1375,15 +1375,14 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing DRS credentials is a routine pre-flight skip, not a code/system bug, so it is
-      // emitted at warn level with outcome=skip.
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/skipping DRS scraping this run/)
+      // Missing DRS credentials is a system/infra gap that only we can fix — nothing
+      // self-heals — so it is emitted at error level with outcome=failure.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/DRS scraping unavailable this run/)
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
-          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=drs_not_configured/)),
       );
-      expect(log.error).to.not.have.been.called;
     });
 
   });
@@ -1436,13 +1435,14 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing imsOrgId is a routine pre-flight skip, aligned in severity with the
-      // DRS-not-configured case above — emitted at warn level with outcome=skip.
+      // Missing imsOrgId is that org's onboarding being incomplete — it resolves itself
+      // once they finish onboarding and never needs us to act — so it stays at warn level,
+      // but with outcome=degraded since zero content is scraped for this org this run.
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/imsOrgId/)
-          .and(sinon.match(/skipping DRS scraping this run/))
+          .and(sinon.match(/produces no scraped content for this org/))
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
-          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/reason=no_ims_org/)),
       );
       expect(log.error).to.not.have.been.calledWith(

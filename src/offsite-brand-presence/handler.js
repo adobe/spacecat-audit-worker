@@ -508,8 +508,8 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.warn('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; skipping DRS scraping this run', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
+    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', reasonCategory: 'infra', dispatchKind: 'drs_job',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
   }
@@ -519,8 +519,8 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; skipping DRS scraping this run. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
-      outcome: OUTCOME.SKIP, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
+    olog.warn('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; this run produces no scraped content for this org. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+      outcome: OUTCOME.DEGRADED, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', reasonCategory: 'config', dispatchKind: 'drs_job',
     });
     return {
       skipped: 'organization has no imsOrgId — populate imsOrgId on the SpaceCat organization to enable scraping',
