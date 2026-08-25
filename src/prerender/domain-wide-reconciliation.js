@@ -192,9 +192,13 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
     + `${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
 
   // Pathname-only (not query-aware) is intentional here, unlike normalizePathnameWithQuery
-  // used for status.json/candidate dedup elsewhere: edge routing/deployment rules (a
-  // domain-wide /* rule or a path pattern) apply per-pathname, not per query-string variant,
-  // so two query-param variants of the same page are the same deployment unit for this check.
+  // used for status.json/candidate dedup elsewhere: coveredByDomainWide is assigned upstream
+  // by matching /*-suffixed allowedRegexPatterns against pathname only, ignoring the query
+  // string entirely (see buildUrlMatcher in spacecat-shared-tokowaka-client's
+  // src/utils/pattern-utils.js) — a domain-wide or path-level rule covers every query-param
+  // variant of a pathname identically. Reconciling at query-aware granularity would strand
+  // variants like /page?v=2 unreconciled forever unless that exact variant gets scraped,
+  // even though the routing rule that covers it doesn't distinguish query strings either.
   const deployedAtEdgePathnames = new Set();
   const notDeployedPathnames = new Set();
   successfulComparisons.forEach((r) => {
