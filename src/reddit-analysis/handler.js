@@ -339,7 +339,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_orchestration_end', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_end', 'Audit failed', { reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error) });
     return {
       auditResult: {
         success: false,

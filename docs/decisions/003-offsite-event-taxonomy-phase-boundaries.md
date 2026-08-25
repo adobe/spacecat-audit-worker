@@ -147,7 +147,6 @@ helper, the offsite-only post-processor pattern for the audit-persist log, and t
 - `reasonCategory=config` vs `infra` vs `expected` becomes the primary alerting split going
   forward: infra-tagged failures should page, config-tagged ones should route to an operator
   worklist, expected-tagged ones should never alert regardless of log level.
-- The authoritative reference for exact current event names, fields, and example log lines is
-  `05-logging.md` in the operational knowledge base; this ADR documents the *decision* (why the
-  phases and mergers look the way they do), not a field-by-field spec, to avoid the two documents
-  drifting out of sync on the same details.
+- This ADR documents the *decision* (why the phases and mergers look the way they do), not a
+  field-by-field spec of every event's exact fields and example log lines, to avoid drifting out
+  of sync with the implementation's own detail over time.

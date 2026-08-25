@@ -593,7 +593,8 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match('Failed to send Mystique message')
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reasonCategory=infra/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });
 

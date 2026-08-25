@@ -47,7 +47,7 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `data_acquisition_bp_data_semrush_read`, `data_acquisition_bp_data_urls_enriched`,
   `data_acquisition_url_store_write`, `data_acquisition_scrape_job_request_dispatched`,
   `data_acquisition_scrape_job_poll_request_dispatched`,
-  `audit_orchestration_guideline_store_written`, `audit_orchestration_end`,
+  `audit_orchestration_guideline_store_write`, `audit_orchestration_end`,
   `audit_persistence_start`, `audit_persistence_run_write`.
 - Poll `drs-status-handler.js`: `data_acquisition_scrape_job_poll_checked`,
   `audit_orchestration_analysis_request_dispatched`,

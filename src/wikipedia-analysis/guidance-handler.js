@@ -133,11 +133,11 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
 
-  olog.start('audit_persistence_start', 'Persistence started', {});
-
   olog.start('audit_analysis_end', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
+
+  olog.start('audit_persistence_start', 'Persistence started', {});
 
   const site = await Site.findById(siteId);
   if (!site) {

@@ -76,11 +76,11 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId, auditId });
 
-  olog.start('audit_persistence_start', 'Persisting guidance', {});
-
   olog.start('audit_analysis_end', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
+
+  olog.start('audit_persistence_start', 'Persisting guidance', {});
 
   if (data?.error) {
     olog.failure('audit_analysis_end', 'Mystique returned an error', {
