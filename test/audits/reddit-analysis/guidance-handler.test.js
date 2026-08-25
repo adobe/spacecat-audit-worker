@@ -315,7 +315,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=audit_persistence_end/)).and(sinon.match(/outcome=skip/)),
       );
     });
@@ -833,7 +833,6 @@ describe('Reddit Analysis Guidance Handler', () => {
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
@@ -1599,9 +1598,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
@@ -1688,9 +1687,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });

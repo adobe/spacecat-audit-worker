@@ -447,7 +447,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -467,7 +467,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -690,7 +690,6 @@ describe('YouTube Analysis Guidance Handler', () => {
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
@@ -720,7 +719,6 @@ describe('YouTube Analysis Guidance Handler', () => {
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/reason=suggestions_write_failed/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
     });
@@ -775,6 +773,34 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(callText).to.include('audit finished');
       expect(callText).to.include(baseURL);
       expect(callText).to.include('2 suggestions processed');
+    });
+
+    it('logs a slack_notify warn and does not fail the run when the Slack send throws', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+      mockPostMessageOptional.rejects(new Error('Slack API unavailable'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      const response = await guidanceHandler.default(message, context);
+
+      expect(response.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to post outcome to Slack/)
+          .and(sinon.match(/event=slack_notify/))
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/peer=slack/))
+          .and(sinon.match(/errorName=Error/))
+          .and(sinon.match(/errorMessage="Slack API unavailable"/)),
+      );
     });
 
     it('appends DRS / Mystique / total phase timings when present on the audit result', async () => {
@@ -1592,9 +1618,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       const result = await guidanceHandler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
@@ -1681,9 +1707,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       const result = await guidanceHandler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });

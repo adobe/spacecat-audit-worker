@@ -32,7 +32,7 @@ import {
   prepareSupersededRunSnapshot,
 } from '../common/offsite-snapshot.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 import {
   deleteExpiredSnapshots,
@@ -79,11 +79,11 @@ export default async function handler(message, context) {
   olog.start('audit_analysis_end', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
-  olog.start('audit_persistence_start', 'Persistence started');
+  olog.start('audit_persistence_start', 'Persistence started', {});
 
   if (data?.error) {
     olog.failure('audit_analysis_end', 'Mystique returned an error', {
-      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', reasonCategory: 'infra', mystiqueError: data.errorMessage,
+      peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     return noContent();
   }
@@ -102,7 +102,7 @@ export default async function handler(message, context) {
       });
     } catch (error) {
       olog.failure('audit_persistence_mystique_payload_read', 'Error fetching from presigned URL', {
-        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), reasonCategory: 'infra', ...errorField(error),
+        peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
@@ -111,20 +111,20 @@ export default async function handler(message, context) {
   }
 
   if (!analysisData) {
-    olog.failure('audit_persistence_end', 'No analysis data provided in message', { reason: 'no_analysis_data', reasonCategory: 'infra' });
+    olog.failure('audit_persistence_end', 'No analysis data provided in message', { reason: 'no_analysis_data' });
     return badRequest('Analysis data is required');
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    olog.failure('audit_persistence_end', 'Site not found', { reason: 'site_not_found_at_persist', reasonCategory: 'infra' });
+    olog.failure('audit_persistence_end', 'Site not found', { reason: 'site_not_found_at_persist' });
     return notFound('Site not found');
   }
 
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      olog.failure('audit_persistence_end', 'Audit not found', { reason: 'audit_not_found', reasonCategory: 'infra' });
+      olog.failure('audit_persistence_end', 'Audit not found', { reason: 'audit_not_found' });
       return notFound('Audit not found');
     }
   }
@@ -136,11 +136,11 @@ export default async function handler(message, context) {
     const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
-      olog.skip('audit_persistence_end', 'No suggestions found in analysis', { reason: 'no_suggestions', reasonCategory: 'expected' });
+      olog.warn('audit_persistence_end', 'No suggestions found in analysis', { outcome: OUTCOME.SKIP, reason: 'no_suggestions' });
       return noContent();
     }
 
-    olog.debug('audit_analysis_end', 'Processing suggestions', {
+    olog.success('audit_analysis_end', 'Processing suggestions', {
       count: suggestions.length, companyName,
     });
 
@@ -150,7 +150,7 @@ export default async function handler(message, context) {
 
     // Validate before mutating the evergreen opportunity.
     if (!isValidOffsiteAnalysis(analysisData, auditType)) {
-      olog.failure('audit_persistence_end', 'Malformed analysis payload; skipping update', { reason: 'malformed_payload', reasonCategory: 'infra' });
+      olog.failure('audit_persistence_end', 'Malformed analysis payload; skipping update', { reason: 'malformed_payload' });
       return badRequest('Malformed analysis payload');
     }
 
@@ -215,11 +215,11 @@ export default async function handler(message, context) {
         }),
       });
       ologOpp.success('audit_persistence_evergreen_opportunity_write', `Synced ${suggestions.length} suggestions`, {
-        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length,
+        peer: PEER.POSTGRES, direction: 'outbound', count: suggestions.length, writeAction: 'suggestions_synced',
       });
     } catch (error) {
       ologOpp.failure('audit_persistence_evergreen_opportunity_write', 'Failed to sync suggestions', {
-        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', reasonCategory: 'infra', ...errorField(error),
+        peer: PEER.POSTGRES, direction: 'outbound', reason: 'suggestions_write_failed', writeAction: 'suggestions_synced', ...errorField(error),
       });
       throw error;
     }
@@ -237,9 +237,9 @@ export default async function handler(message, context) {
         dataAccess, opportunity, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_outdated_suggestions_deleted', 'OUTDATED suggestion deletion failed', {
-        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
-      }, error);
+      ologOpp.warn('audit_housekeeping_outdated_suggestions_deleted', 'OUTDATED suggestion deletion failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
+      });
     }
 
     // Expired snapshot deletion must not fail an otherwise successful refresh.
@@ -248,9 +248,9 @@ export default async function handler(message, context) {
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
-      ologOpp.failure('audit_housekeeping_outdated_opportunities_deleted', 'Snapshot retention failed', {
-        peer: PEER.POSTGRES, direction: 'outbound', auditType, ...errorField(error),
-      }, error);
+      ologOpp.warn('audit_housekeeping_outdated_opportunities_deleted', 'Snapshot retention failed', {
+        peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
+      });
     }
 
     if (auditId) {
@@ -290,7 +290,7 @@ export default async function handler(message, context) {
     // Intentional drill-down: a failure already logged by an inner event (e.g.
     // audit_persistence_evergreen_opportunity_write) will also surface here as
     // audit_persistence_end outcome=failure - the terminal, per-run marker.
-    olog.failure('audit_persistence_end', 'Error processing analysis', { reason: 'unexpected_error', reasonCategory: 'infra', ...errorField(error) }, error);
+    olog.failure('audit_persistence_end', 'Error processing analysis', { reason: 'unexpected_error', ...errorField(error) }, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

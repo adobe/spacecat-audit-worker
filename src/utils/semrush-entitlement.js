@@ -42,8 +42,9 @@
  */
 
 import { resolveFeatureFlagForBrand } from './feature-flags-utils.js';
-
-const LOG_PREFIX = '[semrush-entitlement]';
+import {
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
+} from './offsite-logging.js';
 
 const SERENITY_FLAG_PRODUCT = 'LLMO';
 const SERENITY_FLAG_NAME = 'serenity';
@@ -194,12 +195,14 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.MISSING_INPUT };
   }
 
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE });
+
   const postgrestClient = dataAccess?.services?.postgrestClient;
   const hasWorkspaceModels = typeof dataAccess?.Organization?.findById === 'function'
     && typeof dataAccess?.Brand?.findById === 'function';
   if (!postgrestClient?.from || !hasWorkspaceModels) {
-    log?.warn(`${LOG_PREFIX} PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement`, {
-      orgId, brandId,
+    olog.warn('data_acquisition_bp_data_semrush_read', 'PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement', {
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'no_client', outcome: OUTCOME.SKIP, orgId, brandId,
     });
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT };
   }
@@ -243,8 +246,8 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     };
   } catch (error) {
     clearTimeout(timeoutHandle);
-    log?.warn(`${LOG_PREFIX} Semrush entitlement check failed for org ${orgId} / brand ${brandId}: ${error.message}`, {
-      orgId, brandId, errorName: error.name,
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush entitlement check failed', {
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'entitlement_check_failed', outcome: OUTCOME.DEGRADED, orgId, brandId, ...errorField(error),
     });
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED };
   }

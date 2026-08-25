@@ -14,7 +14,7 @@ import { Opportunity as Oppty, Audit } from '@adobe/spacecat-shared-data-access'
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 
 // This module is shared by all three offsite guidance handlers, so it does not know the audit
@@ -118,6 +118,7 @@ export async function persistOffsiteOpportunity(
         opportunityId: created.getId(),
         auditType,
         status: mappedOpportunity.status,
+        writeAction: 'created',
       });
       return created;
     }
@@ -133,6 +134,7 @@ export async function persistOffsiteOpportunity(
       opportunityId: opportunityToUpdate.getId(),
       auditType,
       status: mappedOpportunity.status,
+      writeAction: 'refreshed',
     });
     return opportunityToUpdate;
   } catch (error) {
@@ -142,7 +144,7 @@ export async function persistOffsiteOpportunity(
       peer: PEER.POSTGRES,
       direction: 'outbound',
       reason: 'opportunity_write_failed',
-      reasonCategory: 'infra',
+      writeAction: 'write_failed',
       ...errorField(error),
     });
     throw error;
@@ -172,7 +174,7 @@ export async function resolveEvergreenOffsiteOpportunity({
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
     olog.failure('audit_persistence_evergreen_opportunity_read', 'Failed to fetch opportunities', {
-      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', reasonCategory: 'infra', ...errorField(e),
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
     });
     throw e;
   }
@@ -190,8 +192,8 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  olog.success('audit_persistence_opportunity_retired', 'Duplicate opportunities found; retiring extras', {
-    peer: PEER.POSTGRES, direction: 'outbound', found: matchingOpportunities.length, retired: duplicates.length, kept: evergreenOpportunity.getId(),
+  olog.warn('audit_persistence_opportunity_retired', 'Duplicate opportunities found; retiring extras', {
+    peer: PEER.POSTGRES, direction: 'outbound', found: matchingOpportunities.length, retired: duplicates.length, kept: evergreenOpportunity.getId(), outcome: OUTCOME.DEGRADED,
   });
 
   duplicates.forEach((duplicate) => {

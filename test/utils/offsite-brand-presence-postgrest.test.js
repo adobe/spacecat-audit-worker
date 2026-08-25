@@ -287,7 +287,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('queries executions with embedded sources and mapped models, without a region filter', async () => {
@@ -385,6 +386,9 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.or).to.have.lengthOf(1);
       expect(capture.or[0]).to.include(lastExec.execution_date);
       expect(capture.or[0]).to.include(lastExec.id);
+      // The caller falls through to SharePoint on a null return, so a mid-pagination query
+      // failure here is recovered, not terminal — logged at `warn` level, not `.failure()`.
+      expect(log.error).to.not.have.been.called;
       expect(log.warn).to.have.been.calledOnce;
       expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
     });
@@ -439,7 +443,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded brand_presence_sources is null', async () => {
@@ -450,7 +455,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded source_urls have no valid url', async () => {
@@ -463,7 +469,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null and warns when the query fails', async () => {
@@ -474,9 +481,13 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
+      // The caller falls through to SharePoint on a null return, so a query failure here
+      // is recovered, not terminal — logged at `warn` level (outcome=degraded), not `.failure()`.
+      expect(log.error).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(
-        '[offsite:brand-presence-postgrest] PostgREST query failed',
+        'PostgREST query failed',
       );
+      expect(log.warn.firstCall.args[0]).to.include('outcome=degraded');
     });
 
     it('returns fetched rows and warns when keyset pagination reaches the max-page guard', async () => {
@@ -498,6 +509,9 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(log.warn).to.have.been.calledWithMatch(
         'Exceeded maximum brand_presence_executions pages; processing rows fetched so far',
       );
+      const maxPagesCall = log.warn.getCalls()
+        .find((c) => c.args[0].includes('Exceeded maximum brand_presence_executions pages'));
+      expect(maxPagesCall.args[0]).to.include('outcome=degraded');
     });
   });
 });

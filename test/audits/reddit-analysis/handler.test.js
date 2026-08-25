@@ -266,11 +266,12 @@ describe('Reddit Analysis Handler', function () {
       expect(result.auditResult.config.enableBrandProfile).to.equal(true);
     });
 
-    it('should log debug payload for brand-presence topics', async () => {
+    it('should log a checkpoint for computed brand-presence topics', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`count=${mockComputedTopics.length}`),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
 
@@ -349,7 +350,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.status).to.equal('pending_scrape');
-      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
+      expect(context.log.error).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
     });
 
     it('requests a scoped scrape and notifies Slack when the urlStore is empty on a first run', async () => {
@@ -398,7 +399,10 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match('count=0')),
+      );
     });
 
     it('should proceed without guidelines when guidelinesStore returns empty', async () => {
@@ -407,7 +411,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for reddit-analysis/);
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
@@ -425,7 +429,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Retrieved 0 guidelines'));
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('should filter URLs by DRS availability before returning store data', async () => {
@@ -464,7 +468,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should use baseURL as companyName when company name is not configured', async () => {
@@ -484,6 +488,7 @@ describe('Reddit Analysis Handler', function () {
           .and(sinon.match('companyName=https://bmw.com'))
           .and(sinon.match('website=https://bmw.com')),
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -498,7 +503,22 @@ describe('Reddit Analysis Handler', function () {
           .and(sinon.match('companyName=https://test-company.com'))
           .and(sinon.match('website=https://test-company.com')),
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
+    });
+
+    it('should NOT warn when competitors are configured', async () => {
+      // mockSite default config has two competitors configured.
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match(`website=${baseURL}`))
+          .and(sinon.match('competitors=2')),
+      );
     });
 
     it('should handle general errors during execution', async () => {
@@ -773,7 +793,9 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message').and(sinon.match('outcome=skip')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -792,7 +814,7 @@ describe('Reddit Analysis Handler', function () {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured; message dispatch unavailable this run'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -830,7 +852,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -850,7 +872,6 @@ describe('Reddit Analysis Handler', function () {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send Mystique message/)
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });
