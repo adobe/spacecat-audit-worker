@@ -1,3 +1,10 @@
+## [1.526.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.526.0...v1.526.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **offsite:** comprehensive operator-experience logging review (LLMO-6973) ([#2914](https://github.com/adobe/spacecat-audit-worker/issues/2914)) ([6a23730](https://github.com/adobe/spacecat-audit-worker/commit/6a23730bbc0f5881a4470803d50a5857f06e2a87))
+
 # [1.526.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.525.2...v1.526.0) (2026-08-24)
 
 
