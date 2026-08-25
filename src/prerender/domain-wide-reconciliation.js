@@ -15,7 +15,6 @@ import {
   isDomainWideSuggestionData,
   isPathSuggestionData,
   normalizePathnameWithQuery,
-  toPathname,
 } from './utils/utils.js';
 import { DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE } from './utils/constants.js';
 
@@ -157,13 +156,13 @@ export async function getDomainWideReconciliationCandidates(context, siteId, sit
  * One suggestion fetch, one save, covering both directions:
  *
  *  - Add: when the domain-wide suggestion has `edgeDeployed`, NEW per-URL suggestions
- *    whose pathname is confirmed deployed at edge this run get `coveredByDomainWide` set
- *    (instead of moving to SKIPPED, so a domain-wide rollback naturally restores them to
- *    the Current tab). NEW path-type suggestions are covered unconditionally while
+ *    confirmed deployed at edge this run (by their own exact URL) get `coveredByDomainWide`
+ *    set (instead of moving to SKIPPED, so a domain-wide rollback naturally restores them
+ *    to the Current tab). NEW path-type suggestions are covered unconditionally while
  *    domain-wide is active — they're redundant, not something to individually verify.
- *  - Remove: any suggestion (any status) currently `coveredByDomainWide` whose pathname is
- *    confirmed NOT deployed at edge this run has the flag cleared immediately — no grace
- *    period, and independent of whether a domain-wide suggestion currently exists at all.
+ *  - Remove: any suggestion (any status) currently `coveredByDomainWide` confirmed NOT
+ *    deployed at edge this run (by its own exact URL) has the flag cleared immediately —
+ *    no grace period, independent of whether a domain-wide suggestion currently exists.
  *
  * Both directions read from a single `opportunity.getSuggestions()` fetch and write
  * through a single `saveMany` call; the save is non-fatal on failure (logged, swallowed)
@@ -191,24 +190,15 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
   log.info(`${LOG_PREFIX} syncCoveredByDomainWide: isAllDomainDeployedAtEdge=`
     + `${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
 
-  // Pathname-only (not query-aware) is intentional here, unlike normalizePathnameWithQuery
-  // used for status.json/candidate dedup elsewhere: coveredByDomainWide is assigned upstream
-  // by matching /*-suffixed allowedRegexPatterns against pathname only, ignoring the query
-  // string entirely (see buildUrlMatcher in spacecat-shared-tokowaka-client's
-  // src/utils/pattern-utils.js) — a domain-wide or path-level rule covers every query-param
-  // variant of a pathname identically. Reconciling at query-aware granularity would strand
-  // variants like /page?v=2 unreconciled forever unless that exact variant gets scraped,
-  // even though the routing rule that covers it doesn't distinguish query strings either.
-  const deployedAtEdgePathnames = new Set();
-  const notDeployedPathnames = new Set();
+  // Same key as buildSuggestionKey — each suggestion reconciled against its own result only.
+  const deployedAtEdgeKeys = new Set();
+  const notDeployedKeys = new Set();
   successfulComparisons.forEach((r) => {
-    (r.isDeployedAtEdge ? deployedAtEdgePathnames : notDeployedPathnames).add(toPathname(r.url));
+    (r.isDeployedAtEdge ? deployedAtEdgeKeys : notDeployedKeys)
+      .add(normalizePathnameWithQuery(r.url));
   });
-  // If two variants of the same pathname disagreed on isDeployedAtEdge this run (e.g.
-  // /page?v=1 confirmed deployed, /page?v=2 didn't), the positive confirmation wins —
-  // otherwise the same suggestion could match both toCover and toClear below and the
-  // second mutation would silently overwrite the first in the same saveMany call.
-  deployedAtEdgePathnames.forEach((pathname) => notDeployedPathnames.delete(pathname));
+  // On a same-key disagreement this run, positive confirmation wins.
+  deployedAtEdgeKeys.forEach((key) => notDeployedKeys.delete(key));
 
   const toCover = [];
   if (domainWideSuggestion) {
@@ -217,14 +207,14 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
     // newSuggestions is never empty here — nothing further to guard on that front.
     const newSuggestions = suggestions.filter((s) => s.getStatus() === Suggestion.STATUSES.NEW);
 
-    // Path and domain-wide suggestions have no url field — guard before calling toPathname.
-    const urlSuggestionsToCover = deployedAtEdgePathnames.size > 0
+    // Path and domain-wide suggestions have no url field — guard before normalizing.
+    const urlSuggestionsToCover = deployedAtEdgeKeys.size > 0
       ? newSuggestions.filter((s) => {
         const data = s.getData();
         if (!data?.url) {
           return false;
         }
-        return deployedAtEdgePathnames.has(toPathname(data.url))
+        return deployedAtEdgeKeys.has(normalizePathnameWithQuery(data.url))
           && !data?.edgeDeployed
           && !data?.coveredByDomainWide;
       })
@@ -255,7 +245,7 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
     const data = s.getData();
     return !!data?.coveredByDomainWide
       && isIndividualUrlSuggestionData(data)
-      && notDeployedPathnames.has(toPathname(data.url));
+      && notDeployedKeys.has(normalizePathnameWithQuery(data.url));
   });
   toClear.forEach((s) => {
     // eslint-disable-next-line no-unused-vars

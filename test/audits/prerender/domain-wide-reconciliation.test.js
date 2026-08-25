@@ -455,7 +455,7 @@ describe('domain-wide-reconciliation', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
-    it('clears coveredByDomainWide on a suggestion confirmed not deployed at edge, matching by pathname regardless of query params', async () => {
+    it('does not clear a suggestion when only a different query-param sibling was scraped', async () => {
       const suggestion = coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a?x=1' });
       const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
       const context = buildContext(sandbox);
@@ -466,16 +466,11 @@ describe('domain-wide-reconciliation', () => {
         [{ url: 'https://example.com/a?y=2', isDeployedAtEdge: false }],
       );
 
-      expect(suggestion.setData).to.have.been.calledWith({ url: 'https://example.com/a?x=1' });
-      expect(suggestion.setUpdatedBy).to.have.been.calledWith('system');
-      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion]);
+      expect(suggestion.setData).to.not.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
-    it('does not clear a suggestion when two query-param variants of its pathname disagree this run — the positive confirmation wins', async () => {
-      // /a?x=1 confirmed deployed, /a?y=2 confirmed not deployed, same pathname /a.
-      // Without de-duplication this suggestion would match both toCover and toClear and
-      // the toClear mutation (running second) would silently win, clearing the flag even
-      // though at least one variant confirmed it's actually deployed.
+    it('clears a suggestion confirmed not deployed by its own exact URL result', async () => {
       const suggestion = coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a?x=1' });
       const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
       const context = buildContext(sandbox);
@@ -483,9 +478,26 @@ describe('domain-wide-reconciliation', () => {
       await syncCoveredByDomainWide(
         opportunity,
         context,
+        [{ url: 'https://example.com/a?x=1', isDeployedAtEdge: false }],
+      );
+
+      expect(suggestion.setData).to.have.been.calledWith({ url: 'https://example.com/a?x=1' });
+      expect(suggestion.setUpdatedBy).to.have.been.calledWith('system');
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion]);
+    });
+
+    it('does not clear a suggestion when two comparisons normalize to the same key and disagree — the positive confirmation wins', async () => {
+      // ?gclid=... is a stripped tracking param, so both normalize to the same key.
+      const suggestion = coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a?gclid=1' });
+      const opportunity = buildOpportunity(sandbox, { suggestions: [suggestion] });
+      const context = buildContext(sandbox);
+
+      await syncCoveredByDomainWide(
+        opportunity,
+        context,
         [
-          { url: 'https://example.com/a?x=1', isDeployedAtEdge: true },
-          { url: 'https://example.com/a?y=2', isDeployedAtEdge: false },
+          { url: 'https://example.com/a?gclid=1', isDeployedAtEdge: true },
+          { url: 'https://example.com/a?gclid=2', isDeployedAtEdge: false },
         ],
       );
 
