@@ -102,12 +102,12 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     olog,
   );
-  olog.success('data_acquisition_scrape_content_checked', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
+  olog.success('data_acquisition_drs_scrape_content_checked', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.success('audit_orchestration_brand_topics_resolved', 'Computed topics from brand presence data', {
+  olog.success('data_acquisition_bp_data_topics_resolved', 'Computed topics from brand presence data', {
     count: topics.length,
   });
 
@@ -294,7 +294,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('data_acquisition_scrape_content_checked', 'No DRS content available after scraping', {
+        olog.failure('data_acquisition_drs_scrape_content_checked', 'No DRS content available after scraping', {
           peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_after_retry', ...errorField(error),
         });
         await postMessageOptional(
@@ -385,7 +385,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('audit_orchestration_analysis_url_limit_resolved', 'URL limit resolved', { urlLimit });
+    olog.success('audit_analysis_scope_resolved', 'URL limit resolved', { scopeKind: 'url_limit', urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
@@ -415,8 +415,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('audit_orchestration_brand_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        scopeKind: 'brand', outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);

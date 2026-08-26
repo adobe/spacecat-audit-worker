@@ -438,7 +438,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Mystique returned an error/)
           .and(sinon.match(/mystiqueError="HTTP error.*400 Bad Request"/))
-          .and(sinon.match(/event=audit_analysis_end/))
+          .and(sinon.match(/event=audit_analysis_mystique_response_received/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=mystique/)),
       );
@@ -522,7 +522,7 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       // P4-4: successful S3 fetch is now logged (peer=s3, inbound).
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_persistence_mystique_payload_read/).and(sinon.match(/outcome=success/)).and(sinon.match(/peer=s3/)),
+        sinon.match(/event=audit_persistence_mystique_payload_s3_read/).and(sinon.match(/outcome=success/)).and(sinon.match(/peer=s3/)),
       );
 
       const propsArg = convertToOpportunityStub.firstCall.args[5];
@@ -567,7 +567,7 @@ describe('Cited Analysis Guidance Handler', () => {
       // An SSRF/URL-shape rejection is classified reason=validation.
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/hostname is not an allowlisted/)
-          .and(sinon.match(/event=audit_persistence_mystique_payload_read/))
+          .and(sinon.match(/event=audit_persistence_mystique_payload_s3_read/))
           .and(sinon.match(/reason=validation/)),
       );
     });
@@ -590,7 +590,7 @@ describe('Cited Analysis Guidance Handler', () => {
       // A transport error is classified reason=fetch.
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Error fetching from presigned URL/)
-          .and(sinon.match(/event=audit_persistence_mystique_payload_read/))
+          .and(sinon.match(/event=audit_persistence_mystique_payload_s3_read/))
           .and(sinon.match(/reason=fetch/)),
       );
     });
@@ -1150,7 +1150,7 @@ describe('Cited Analysis Guidance Handler', () => {
 
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Guidance received/)
-          .and(sinon.match(/event=audit_analysis_end/))
+          .and(sinon.match(/event=audit_analysis_mystique_response_received/))
           .and(sinon.match(/outcome=start/)),
       );
     });

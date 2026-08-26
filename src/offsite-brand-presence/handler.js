@@ -198,7 +198,7 @@ function classifyAndNormalize(rawUrl, siteHostname, brandTokens, olog) {
   // analysis measures earned, non-branded, non-social citations only.
   const exclusionReason = isExcludedCitedHost(hostname, brandTokens);
   if (exclusionReason) {
-    olog.debug('data_acquisition_bp_data_urls_extracted', 'Excluding URL', { url: rawUrl, reason: exclusionReason });
+    olog.debug('data_acquisition_bp_data_urls_resolved', 'Excluding URL', { url: rawUrl, reason: exclusionReason });
     return null;
   }
 
@@ -432,7 +432,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       const start = Date.now();
       // eslint-disable-next-line no-await-in-loop
       const result = await submitFn(params);
-      olog.success('data_acquisition_scrape_job_request_dispatched', 'DRS job created', {
+      olog.success('data_acquisition_drs_scrape_job_request_dispatched', 'DRS job created', {
         peer: PEER.DRS, direction: 'outbound', jobDataset, drsJobId: result?.job_id, durationMs: Date.now() - start, dispatchKind: 'drs_job',
       });
       return {
@@ -440,7 +440,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
       };
     } catch (err) {
       if (attempt === 0 && isRetriable(err)) {
-        olog.warn('data_acquisition_scrape_job_request_dispatched', 'DRS job submission failed; retrying', {
+        olog.warn('data_acquisition_drs_scrape_job_request_dispatched', 'DRS job submission failed; retrying', {
           outcome: OUTCOME.DEGRADED, peer: PEER.DRS, direction: 'outbound', jobDataset, retry: 1, delayMs: RETRY_DELAY_MS, reason: 'submit_retry', dispatchKind: 'drs_job', ...errorField(err),
         });
         // eslint-disable-next-line no-await-in-loop
@@ -448,7 +448,7 @@ async function submitWithRetry({ domain, datasetId, params }, submitFn, olog) {
           setTimeout(resolve, RETRY_DELAY_MS);
         });
       } else {
-        olog.failure('data_acquisition_scrape_job_request_dispatched', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
+        olog.failure('data_acquisition_drs_scrape_job_request_dispatched', attempt === 0 ? 'DRS job submission failed' : 'DRS job submission failed after retry', {
           peer: PEER.DRS, direction: 'outbound', jobDataset, reason: 'submit_rejected', dispatchKind: 'drs_job', ...errorField(err),
         });
         return {
@@ -508,7 +508,7 @@ async function triggerDrsScraping(
   const drsClient = DrsClient.createFrom(context);
 
   if (!drsClient.isConfigured()) {
-    olog.failure('data_acquisition_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
+    olog.failure('data_acquisition_drs_scrape_job_request_dispatched', 'DRS_API_URL or DRS_API_KEY not configured; DRS scraping unavailable this run', {
       peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', dispatchKind: 'drs_job',
     });
     return { skipped: 'DRS is not configured (DRS_API_URL/DRS_API_KEY missing)', results: [] };
@@ -519,7 +519,7 @@ async function triggerDrsScraping(
   // imsOrgId set. Resolve it here as a faithful pre-flight check: if it is
   // missing we skip rather than fire jobs that are guaranteed to fail.
   if (!imsOrgId) {
-    olog.failure('data_acquisition_scrape_job_request_dispatched', 'Organization has no imsOrgId; this run produces no scraped content for this org. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
+    olog.failure('data_acquisition_drs_scrape_job_request_dispatched', 'Organization has no imsOrgId; this run produces no scraped content for this org. Populate imsOrgId on the SpaceCat organization to enable offsite brand presence scraping.', {
       outcome: OUTCOME.FAILURE, peer: PEER.DRS, direction: 'outbound', reason: 'no_ims_org', dispatchKind: 'drs_job',
     });
     return {
@@ -560,7 +560,7 @@ async function triggerDrsScraping(
   }
 
   const orgSuffix = spacecatOrgId ? ` (with spacecat_org_id: ${spacecatOrgId})` : '';
-  olog.start('data_acquisition_scrape_job_request_dispatched', `Submitting DRS scrape jobs${orgSuffix}`, {
+  olog.start('data_acquisition_drs_scrape_job_request_dispatched', `Submitting DRS scrape jobs${orgSuffix}`, {
     peer: PEER.DRS, direction: 'outbound', jobs: jobs.length, dispatchKind: 'drs_job',
   });
 
@@ -742,7 +742,7 @@ async function scheduleDrsStatusPoll(
     .map((r) => ({ domain: r.domain, datasetId: r.datasetId, jobId: r.response.job_id }));
 
   if (jobs.length === 0) {
-    olog.warn('data_acquisition_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
+    olog.warn('data_acquisition_drs_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
       outcome: OUTCOME.SKIP, peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', firstSchedule: true,
     });
     return;
@@ -767,7 +767,7 @@ async function scheduleDrsStatusPoll(
     },
   }, null, pollIntervalSeconds);
 
-  olog.success('data_acquisition_scrape_job_poll_request_dispatched', 'Scheduled DRS status poll', {
+  olog.success('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Scheduled DRS status poll', {
     peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds, firstSchedule: true,
   });
 }
@@ -830,7 +830,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   try {
     siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   } catch {
-    olog.warn('audit_orchestration_start', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.DEGRADED, reason: 'unparseable_base_url' });
+    olog.warn('data_acquisition_bp_data_urls_resolved', `Could not parse baseURL "${baseURL}", skipping site URL filter`, { outcome: OUTCOME.DEGRADED, reason: 'unparseable_base_url' });
   }
 
   // Brand tokens drop social/search domains and brand-owned lookalikes
@@ -860,14 +860,6 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // override is false/absent), a failure falls back to legacy so production can
   // never be silently zeroed out.
   const hardStopOnFailure = enableSemrushOverride === true;
-  // Logged unconditionally (including the off case) so a Splunk search on siteId
-  // alone shows whether this run even attempted Semrush and, if so, which knob
-  // decided that (Slack per-run override vs the env var) — the two can disagree.
-  olog.success('data_acquisition_bp_data_source_selected', `Semrush source ${semrushEnabled ? 'enabled' : 'disabled'} for this run`, {
-    source: 'semrush',
-    semrushEnabled,
-    decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
-  });
   if (semrushEnabled) {
     // Semrush is the source when enabled. The loader returns the same allUrls
     // shape (count = exact citations); everything downstream (selectTopUrls ->
@@ -944,6 +936,19 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', count: semrushUrls.size,
       });
     }
+  } else {
+    // Logged unconditionally so a Splunk search on siteId alone positively confirms
+    // Semrush was deliberately skipped for this run (and by which knob — Slack
+    // override vs the env var) rather than leaving "disabled" and "event never
+    // reached" looking identical (no data_acquisition_bp_data_semrush_read line
+    // at all).
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush source disabled for this run', {
+      outcome: OUTCOME.SKIP,
+      source: 'semrush',
+      reason: 'disabled',
+      semrushEnabled: false,
+      decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
+    });
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
   // Granular cause behind an entitlement-based `fallbackReason` (`flag_disabled` |
@@ -967,7 +972,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     }
   }
 
-  olog.success('data_acquisition_bp_data_urls_extracted', 'Unique source URLs collected', { count: allUrls.size });
+  olog.success('data_acquisition_bp_data_urls_resolved', 'Unique source URLs collected', { count: allUrls.size });
 
   // Compute per-domain counts for audit result
   const urlCounts = {};
@@ -1007,7 +1012,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
 
   if (domainScope) {
     ({ topByDomain, topCited } = scopeBucketsToDomain(topByDomain, topCited, domainScope));
-    olog.debug('data_acquisition_bp_data_urls_extracted', `Scoped run to '${domainScope}'`, { domainScope });
+    olog.debug('data_acquisition_bp_data_urls_resolved', `Scoped run to '${domainScope}'`, { domainScope });
   }
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
@@ -1049,7 +1054,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // nothing will ever check on them or trigger the downstream analysis dispatch — those
       // jobs' results are permanently orphaned, the same unrecoverable loss as the sibling
       // "Failed to re-enqueue DRS status poll" failure below, which is why this pages too.
-      olog.failure('data_acquisition_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
+      olog.failure('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
         outcome: OUTCOME.FAILURE, peer: PEER.SQS, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', ...errorField(err),
       });
     }

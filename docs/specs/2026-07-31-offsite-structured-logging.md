@@ -39,28 +39,36 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `start/success/skip/failure/warn/debug(event, message, extra)` (each emits one
   string arg) and `.with(moreIds)`.
 - `withAuditPersistLog(audit)` — an offsite-only AuditBuilder post-processor that
-  logs `audit_persistence_run_write` using the framework-set `context.audit` / `auditData.id`.
+  logs `audit_analysis_run_write` using the framework-set `context.audit` / `auditData.id`.
+  Named `audit_analysis_*`, not `audit_persistence_*`, deliberately: this taxonomy groups
+  events by *pipeline phase*, not by operation type (`data_acquisition_url_store_write` in P2
+  and `audit_housekeeping_outdated_*_deleted` in P5 are Postgres/DynamoDB writes outside
+  `audit_persistence_*` too), and this write fires right after P1's own runner returns, before
+  the Mystique request is even assembled — well before anything else `audit_persistence_*`
+  covers, all of which fires only after Mystique's response comes back. A query for every
+  Postgres write regardless of phase should filter on `peer=postgres direction=outbound`,
+  which this event already carries, rather than on the `audit_persistence_*` event-name prefix.
 
 ### Events (by component)
 - Collector `offsite-brand-presence/handler.js`: `audit_orchestration_start`,
-  `data_acquisition_start`, `data_acquisition_bp_data_source_selected`,
-  `data_acquisition_bp_data_semrush_read`, `data_acquisition_bp_data_urls_enriched`,
-  `data_acquisition_url_store_write`, `data_acquisition_scrape_job_request_dispatched`,
-  `data_acquisition_scrape_job_poll_request_dispatched`,
+  `data_acquisition_start`, `data_acquisition_bp_data_semrush_read`,
+  `data_acquisition_bp_data_urls_resolved`,
+  `data_acquisition_url_store_write`, `data_acquisition_drs_scrape_job_request_dispatched`,
+  `data_acquisition_drs_scrape_job_poll_request_dispatched`,
   `audit_orchestration_guideline_store_write`, `audit_orchestration_end`,
-  `audit_persistence_start`, `audit_persistence_run_write`.
-- Poll `drs-status-handler.js`: `data_acquisition_scrape_job_poll_checked`,
-  `audit_orchestration_analysis_request_dispatched`,
-  `data_acquisition_scrape_job_poll_request_dispatched`,
-  `data_acquisition_scrape_job_poll_end`.
+  `audit_persistence_start`, `audit_analysis_run_write`.
+- Poll `drs-status-handler.js`: `data_acquisition_drs_scrape_job_poll_checked`,
+  `data_acquisition_analysis_request_dispatched`,
+  `data_acquisition_drs_scrape_job_poll_request_dispatched`,
+  `data_acquisition_drs_scrape_job_poll_end`.
 - Analysis runners: `audit_orchestration_start`, `audit_orchestration_brand_profile_resolved`,
   `data_acquisition_start`, `data_acquisition_url_store_read`,
-  `data_acquisition_scrape_job_poll_checked`, `data_acquisition_end` (carries `status=`),
-  `data_acquisition_scrape_job_request_dispatched`,
-  `audit_orchestration_analysis_url_limit_resolved`, `audit_analysis_start`,
-  `audit_persistence_start`, `audit_persistence_run_write`.
-- Guidance handlers + `common/offsite-refresh.js`: `audit_analysis_end`,
-  `audit_persistence_start`, `audit_persistence_mystique_payload_read`,
+  `data_acquisition_drs_scrape_job_poll_checked`, `data_acquisition_end` (carries `status=`),
+  `data_acquisition_drs_scrape_job_request_dispatched`,
+  `audit_analysis_scope_resolved`, `audit_analysis_start`,
+  `audit_persistence_start`, `audit_analysis_run_write`.
+- Guidance handlers + `common/offsite-refresh.js`: `audit_analysis_mystique_response_received`,
+  `audit_persistence_start`, `audit_persistence_mystique_payload_s3_read`,
   `audit_persistence_evergreen_opportunity_write`, `audit_persistence_opportunity_retired`,
   `audit_persistence_evergreen_opportunity_read`, `audit_persistence_end`,
   `audit_housekeeping_start`, `audit_housekeeping_outdated_opportunities_read`,
@@ -69,20 +77,20 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `audit_housekeeping_outdated_suggestions_deleted`, `audit_housekeeping_end`.
 
 ### Gaps closed (P1–P4)
-- P1: `data_acquisition_scrape_job_request_dispatched` skip/failure reasons (no_ims_org,
-  not_configured, submit_rejected); loud `data_acquisition_scrape_job_poll_request_dispatched`
+- P1: `data_acquisition_drs_scrape_job_request_dispatched` skip/failure reasons (no_ims_org,
+  not_configured, submit_rejected); loud `data_acquisition_drs_scrape_job_poll_request_dispatched`
   failure + `no_jobs` skip; reschedule failure on the same event
-  (re-throw preserved); per-source `data_acquisition_scrape_job_poll_checked
+  (re-throw preserved); per-source `data_acquisition_drs_scrape_job_poll_checked
   outcome=failure reason=budget_exceeded|scrape_failed` at deadline; per-iteration
-  `data_acquisition_scrape_job_poll_checked outcome=start` snapshot.
+  `data_acquisition_drs_scrape_job_poll_checked outcome=start` snapshot.
 - P2: `data_acquisition_bp_data_*` success/failure/skip with `source`/`rows`;
-  `data_acquisition_url_store_read` failure; self-heal `data_acquisition_scrape_job_request_dispatched`
+  `data_acquisition_url_store_read` failure; self-heal `data_acquisition_drs_scrape_job_request_dispatched`
   (un-prefixed lines fixed); `data_acquisition_end` status token;
-  `audit_orchestration_analysis_request_dispatched` failure + cooldown skip on the same event.
+  `data_acquisition_analysis_request_dispatched` failure + cooldown skip on the same event.
 - P3: `audit_analysis_start` success/failure.
-- P4: `audit_persistence_run_write` (via post-processor);
+- P4: `audit_analysis_run_write` (via post-processor);
   `audit_persistence_evergreen_opportunity_write` success **and** the previously-silent
-  DB-write failure made loud; `audit_persistence_mystique_payload_read` success/failure;
+  DB-write failure made loud; `audit_persistence_mystique_payload_s3_read` success/failure;
   `audit_persistence_evergreen_opportunity_write` (suggestions half); `audit_persistence_opportunity_retired`.
 
 ### Scope boundaries
@@ -103,5 +111,5 @@ runId threading).
 - `npm test` green with the 100% coverage gate.
 - In Splunk (`service=audit-worker domain=offsite`): `stats count by audit, event,
   outcome, peer` returns rows; `event=audit_persistence_evergreen_opportunity_write outcome=failure`
-  and `event=data_acquisition_scrape_job_poll_checked outcome=failure reason=budget_exceeded`
+  and `event=data_acquisition_drs_scrape_job_poll_checked outcome=failure reason=budget_exceeded`
   are alertable; `siteId`/`auditId`/`opportunityId`/`drsJobId` appear as extracted fields.

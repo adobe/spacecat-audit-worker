@@ -288,7 +288,7 @@ export default class StoreClient {
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
     const olog = createOffsiteLogger(this.log, { audit: toLogAudit(auditType), siteId });
 
-    olog.start('audit_orchestration_brand_guidelines_resolved', 'Fetching sentiment config', {
+    olog.start('data_acquisition_guideline_store_read', 'Fetching sentiment config', {
       peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType,
     });
 
@@ -307,13 +307,13 @@ export default class StoreClient {
     const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
-      olog.warn('audit_orchestration_brand_guidelines_resolved', 'No guidelines or topics found in Guideline Store', {
+      olog.warn('data_acquisition_guideline_store_read', 'No guidelines or topics found in Guideline Store', {
         peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', outcome: OUTCOME.SKIP,
       });
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }
 
-    olog.success('audit_orchestration_brand_guidelines_resolved', 'Found topics and guidelines', {
+    olog.success('data_acquisition_guideline_store_read', 'Found topics and guidelines', {
       peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, topics: topics.length, guidelines: guidelines.length,
     });
     return { topics, guidelines };

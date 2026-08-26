@@ -268,7 +268,7 @@ describe('Cited Analysis Handler', function () {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
           .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
@@ -387,7 +387,7 @@ describe('Cited Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
           .and(sinon.match('count=0')),
       );
     });
@@ -1361,7 +1361,8 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Brand resolution failed unexpectedly/),
+        sinon.match(/Brand resolution failed unexpectedly/)
+          .and(sinon.match(/scopeKind=brand/)),
       );
     });
   });
