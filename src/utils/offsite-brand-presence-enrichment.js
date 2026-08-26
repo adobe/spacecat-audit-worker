@@ -22,22 +22,13 @@ import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-pos
 import { createLLMOSharepointClient, readFromSharePointWithRetry } from './report-uploader.js';
 import { buildColumnMap, getColumn } from '../faqs/utils.js';
 import {
-  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from './offsite-logging.js';
 import {
   BRAND_PRESENCE_REGEX,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
 } from '../offsite-brand-presence/constants.js';
-
-// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy
-// as Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is
-// omitted (see the offsite structured-logging convention).
-const LOG_PREFIX = '[offsite:brand-presence-enrichment]';
-const enrich = (message, fields) => appendFields(
-  `${LOG_PREFIX} ${message}`,
-  { domain: OFFSITE_DOMAIN, ...fields },
-);
 
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
@@ -102,9 +93,10 @@ function cellValueToString(value) {
 async function readQueryIndexPaths(site, sharepointClient, log) {
   const dataFolder = site.getConfig?.()?.getLlmoDataFolder?.();
   if (!dataFolder) {
-    log.warn(enrich('No LLMO data folder configured for site', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', reason: 'no_data_folder', reasonCategory: 'config',
-    }));
+    const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId: site.getId?.() });
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'No LLMO data folder configured for site', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', reason: 'no_data_folder', outcome: OUTCOME.SKIP,
+    });
     return null;
   }
 
@@ -319,10 +311,10 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
- * @param {object} log - Logger instance
+ * @param {object} olog - bound offsite logger (see createOffsiteLogger)
  * @param {string} [siteHostname] - Client site hostname to exclude
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
+function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -361,9 +353,9 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
     }
   }
 
-  log.info(enrich('Found unique source URLs', {
-    event: 'data_acquisition_bp_data_urls_enriched', outcome: OUTCOME.SUCCESS, count: allUrls.size,
-  }));
+  olog.success('data_acquisition_bp_data_urls_enriched', 'Found unique source URLs', {
+    count: allUrls.size,
+  });
 }
 
 /**
@@ -382,6 +374,7 @@ export async function loadBrandPresenceData({
   siteId, site, previousWeeks, context,
 }) {
   const { log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const organizationId = await resolveOrganizationIdForSite({
     site,
@@ -395,9 +388,9 @@ export async function loadBrandPresenceData({
     : false;
 
   if (isBrandalfOrg === null) {
-    log.warn(enrich('Brandalf flag state unknown; skipping legacy file fetch', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, reason: 'brandalf_unknown', reasonCategory: 'infra', orgId: organizationId, siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_postgres_read', 'Brandalf flag state unknown; skipping legacy file fetch', {
+      reason: 'brandalf_unknown', orgId: organizationId, siteId, outcome: OUTCOME.SKIP,
+    });
     return null;
   }
 
@@ -412,14 +405,14 @@ export async function loadBrandPresenceData({
     });
     if (dbData) {
       // P2-1: the PostgREST success path previously returned unlogged at the enrichment level.
-      log.info(enrich('Loaded brand presence rows from PostgREST', {
-        event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', siteId, rows: dbData.data.length,
-      }));
+      olog.success('data_acquisition_bp_data_postgres_read', 'Loaded brand presence rows from PostgREST', {
+        peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', siteId, rows: dbData.data.length,
+      });
       return dbData;
     }
-    log.info(enrich('No PostgREST data for brandalf-enabled site; falling back to SharePoint file fetch', {
-      event: 'data_acquisition_bp_data_postgres_read', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows', reasonCategory: 'config', siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_postgres_read', 'No PostgREST data for brandalf-enabled site; falling back to SharePoint file fetch', {
+      peer: PEER.POSTGRES, direction: 'inbound', source: 'postgrest', reason: 'no_rows', siteId, outcome: OUTCOME.SKIP,
+    });
   }
 
   let resolvedSite = site;
@@ -427,9 +420,9 @@ export async function loadBrandPresenceData({
     resolvedSite = await context.dataAccess?.Site?.findById(siteId);
   }
   if (!resolvedSite) {
-    log.warn(enrich('Cannot resolve site; skipping SharePoint fetch', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site', reasonCategory: 'config', siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'Cannot resolve site; skipping SharePoint fetch', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'no_site', siteId, outcome: OUTCOME.SKIP,
+    });
     return null;
   }
 
@@ -439,16 +432,16 @@ export async function loadBrandPresenceData({
     sharepointClient = await createLLMOSharepointClient(context);
     queryResult = await readQueryIndexPaths(resolvedSite, sharepointClient, log);
   } catch (error) {
-    log.error(enrich('Error reading query-index from SharePoint', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'query_index', reasonCategory: 'infra', errorName: error.name, errorMessage: error.message,
-    }));
+    olog.failure('data_acquisition_bp_data_sharepoint_read', 'Error reading query-index from SharePoint', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'query_index', ...errorField(error),
+    }, error);
     return null;
   }
 
   if (!queryResult || queryResult.paths.length === 0) {
-    log.warn(enrich('Failed to read query-index', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index', reasonCategory: 'config', siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'Failed to read query-index', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'empty_query_index', siteId, outcome: OUTCOME.SKIP,
+    });
     return null;
   }
 
@@ -461,14 +454,14 @@ export async function loadBrandPresenceData({
   const matchedFiles = previousWeeks.flatMap(
     ({ week, year }) => filterBrandPresenceFiles(paths, week, year),
   );
-  log.info(enrich('Found brand presence files', {
-    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.START, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', files: matchedFiles.length, weeks: weekLabels,
-  }));
+  olog.start('data_acquisition_bp_data_sharepoint_read', 'Found brand presence files', {
+    peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', files: matchedFiles.length, weeks: weekLabels,
+  });
 
   if (matchedFiles.length === 0) {
-    log.info(enrich('No matching brand presence files', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'No matching brand presence files', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId, reason: 'no_matching_files', outcome: OUTCOME.SKIP,
+    });
     return null;
   }
 
@@ -483,21 +476,21 @@ export async function loadBrandPresenceData({
       }
       allRows.push(...data.data);
     } catch (err) {
-      log.error(enrich('Error reading brand presence sheet', {
-        event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.FAILURE, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', reasonCategory: 'infra', sheetName, errorName: err.name, errorMessage: err.message,
-      }));
+      olog.warn('data_acquisition_bp_data_sharepoint_read', 'Error reading brand presence sheet', {
+        peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', reason: 'sheet_read', sheetName, outcome: OUTCOME.DEGRADED, ...errorField(err),
+      }, err);
     }
   }
 
   if (allRows.length === 0) {
-    log.info(enrich('No usable brand presence rows from SharePoint', {
-      event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SKIP, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId,
-    }));
+    olog.warn('data_acquisition_bp_data_sharepoint_read', 'No usable brand presence rows from SharePoint', {
+      peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', count: 0, siteId, reason: 'no_usable_rows', outcome: OUTCOME.SKIP,
+    });
     return null;
   }
-  log.info(enrich('Loaded brand presence rows from SharePoint', {
-    event: 'data_acquisition_bp_data_sharepoint_read', outcome: OUTCOME.SUCCESS, peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', siteId, rows: allRows.length,
-  }));
+  olog.success('data_acquisition_bp_data_sharepoint_read', 'Loaded brand presence rows from SharePoint', {
+    peer: PEER.SHAREPOINT, direction: 'inbound', source: 'sharepoint', siteId, rows: allRows.length,
+  });
   return { data: allRows };
 }
 
@@ -535,14 +528,13 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  */
 export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const { log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
-  log.info(enrich('Processing weeks', {
-    event: 'data_acquisition_bp_data_source_selected', outcome: OUTCOME.START, weeks: weekLabels,
-  }));
+  olog.start('data_acquisition_bp_data_source_selected', 'Processing weeks', { weeks: weekLabels });
 
   const brandPresenceData = await loadBrandPresenceData({
     siteId, site, previousWeeks, context,
@@ -557,15 +549,15 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
     try {
       siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
     } catch {
-      log.warn(enrich('Could not parse baseURL; skipping site URL filter', {
-        event: 'data_acquisition_bp_data_urls_enriched', outcome: OUTCOME.SKIP, reason: 'unparseable_base_url', reasonCategory: 'config', baseURL,
-      }));
+      olog.warn('data_acquisition_bp_data_urls_enriched', 'Could not parse baseURL; skipping site URL filter', {
+        reason: 'unparseable_base_url', baseURL, outcome: OUTCOME.DEGRADED,
+      });
     }
   }
 
   const allUrls = new Map();
   const topicMap = new Map();
-  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
+  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, olog, siteHostname);
 
   return formatTopicsForEnrichment(topicMap, allUrls);
 }

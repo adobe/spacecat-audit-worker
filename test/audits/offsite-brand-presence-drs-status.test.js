@@ -499,8 +499,7 @@ describe('offsite-brand-presence DRS status handler', function () {
       // budget_exceeded.
       expect(log.info).to.have.been.calledWith(
         sinon.match(/event=data_acquisition_scrape_job_poll_end/)
-          .and(sinon.match(/reason=partial_drop/))
-          .and(sinon.match(/reasonCategory=infra/)),
+          .and(sinon.match(/reason=partial_drop/)),
       );
     });
 
@@ -539,7 +538,7 @@ describe('offsite-brand-presence DRS status handler', function () {
       const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
       expect(types).to.include('youtube-analysis');
       expect(types).to.not.include('reddit-analysis');
-      expect(log.info).to.have.been.calledWithMatch(/Skipping analysis dispatch; recent audit exists.*auditType=reddit-analysis/);
+      expect(log.warn).to.have.been.calledWithMatch(/Skipping analysis dispatch; recent audit exists.*outcome=skip.*auditType=reddit-analysis/);
     });
 
     it('triggers within the cooldown when the recent audit is a pending_scrape run', async () => {

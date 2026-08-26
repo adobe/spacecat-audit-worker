@@ -264,11 +264,12 @@ describe('Cited Analysis Handler', function () {
       expect(result.auditResult.config.enableBrandProfile).to.equal(true);
     });
 
-    it('should log debug payload for brand-presence topics', async () => {
+    it('should log a checkpoint for computed brand-presence topics', async () => {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(`count=${mockComputedTopics.length}`),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
 
@@ -307,7 +308,7 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Retrieved 0 guidelines'));
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
@@ -376,7 +377,7 @@ describe('Cited Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
-      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for cited-analysis/);
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('should succeed when brand presence returns no topics', async () => {
@@ -385,7 +386,10 @@ describe('Cited Analysis Handler', function () {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith(sinon.match('count=0'));
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+          .and(sinon.match('count=0')),
+      );
     });
 
     it('should re-throw non-StoreEmptyError from getGuidelines', async () => {
@@ -451,7 +455,7 @@ describe('Cited Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should use baseURL as companyName when company name is not configured', async () => {
@@ -619,7 +623,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname).sort();
       expect(hosts).to.deep.equal(['caranddriver.com', 'motortrend.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded owned-domain URLs.*droppedOwned=3/);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded owned-domain URLs.*droppedOwned=3/);
     });
 
     it('drops owned-domain lookalikes that contain the brand token, keeps neutral hosts', async () => {
@@ -639,7 +643,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname);
       expect(hosts).to.deep.equal(['caranddriver.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=2/);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=2/);
     });
 
     it('is a no-op when baseURL is whitespace-only and no brand keywords configured', async () => {
@@ -716,7 +720,7 @@ describe('Cited Analysis Handler', function () {
       const filtered = mockFilterUrlsByDrsStatus.firstCall.args[0];
       const hosts = filtered.map((u) => new URL(u.url).hostname);
       expect(hosts).to.deep.equal(['caranddriver.com']);
-      expect(context.log.debug).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=4/);
+      expect(context.log.info).to.have.been.calledWithMatch(/Excluded non-earned\/branded URLs.*droppedNonEarned=4/);
     });
 
     it('drops brand-owned lookalike domains via configured brand keywords', async () => {
@@ -1037,7 +1041,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.data.urls.length).to.be.lessThan(MYSTIQUE_URLS_LIMIT);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Message size \d+ bytes exceeds budget/);
-      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=success/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=degraded/);
     });
 
     it('should strip prompts from single URL when payload still exceeds budget', async () => {
@@ -1075,7 +1079,7 @@ describe('Cited Analysis Handler', function () {
       expect(sentMessage.data.urls[0].timesCited).to.equal(7);
       expect(Buffer.byteLength(JSON.stringify(sentMessage), 'utf8')).to.be.at.most(200 * 1024);
       expect(context.log.warn).to.have.been.calledWithMatch(/Single-URL payload.*still exceeds budget; stripping prompts/);
-      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=success/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/outcome=degraded/);
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -1092,7 +1096,9 @@ describe('Cited Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message').and(sinon.match('outcome=skip')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -1111,7 +1117,7 @@ describe('Cited Analysis Handler', function () {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured; message dispatch unavailable this run'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -1149,7 +1155,7 @@ describe('Cited Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -1169,7 +1175,6 @@ describe('Cited Analysis Handler', function () {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send Mystique message/)
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorMessage="SQS Error"/)),
       );
     });

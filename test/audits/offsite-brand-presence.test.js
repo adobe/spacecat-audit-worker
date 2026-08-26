@@ -354,7 +354,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/falling back to PostgREST\/SharePoint/)
           .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
-          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/peer=semrush/))
           .and(sinon.match(/reason=semrush_failed/)),
       );
@@ -498,9 +498,14 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
-      // A deliberate entitlement skip must log at info, never warn — a regression
-      // that swaps these branches (or always warns) must fail this test.
-      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(not_entitled\); falling back to PostgREST\/SharePoint/);
+      // A deliberate entitlement skip logs at warn with outcome=skip — distinct from a
+      // genuine technical failure, which logs at warn with outcome=degraded (checked
+      // below via the differing message text). A regression that swaps these branches
+      // must fail this test.
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(not_entitled\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
       expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
@@ -524,7 +529,10 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT);
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
       expect(log.error).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWithMatch(/Semrush skipped \(entitlement_check_failed\); falling back to PostgREST\/SharePoint/);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(entitlement_check_failed\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
       expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
@@ -855,8 +863,11 @@ describe('Offsite Brand Presence Handler', function () {
       // wikipedia is no longer a scraped offsite domain, so it is not counted.
       expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
       expect(result.fullAuditRef).to.equal(FINAL_URL);
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/No offsite URLs found/),
+      // A clean "nothing to report this week" finding still deviates from the full happy
+      // path, so it is logged at warn while keeping outcome=skip (deliberate no-op).
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/No offsite URLs found/)
+          .and(sinon.match(/outcome=skip/)),
       );
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
     });
@@ -1121,283 +1132,6 @@ describe('Offsite Brand Presence Handler', function () {
     });
   });
 
-  describe.skip('Guideline Store Integration', () => {
-    function stubWithTopicRows(rows) {
-      stubBrandPresenceData(rows);
-    }
-
-    it('should create SentimentTopic entities from brand presence data with topics', async () => {
-      const rows = [
-        {
-          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page1',
-          Topic: 'BMW XM Latest',
-          Category: 'BMW',
-          Prompt: 'What is the BMW XM?',
-        },
-        {
-          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page2',
-          Topic: 'BMW XM Latest',
-          Category: 'BMW',
-          Prompt: 'BMW XM review',
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId).to.have.been.calledOnceWith(SITE_ID);
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.siteId).to.equal(SITE_ID);
-      expect(createArg.name).to.equal('BMW XM Latest');
-      expect(createArg.description).to.equal('');
-      expect(createArg.enabled).to.equal(true);
-      expect(createArg.createdBy).to.equal('system');
-
-      const ytUrl = createArg.urls.find((u) => u.url === 'https://youtu.be/abc');
-      expect(ytUrl).to.exist;
-      expect(ytUrl.timesCited).to.equal(2);
-      expect(ytUrl.category).to.equal('BMW');
-      expect(ytUrl.subPrompts).to.have.members(['What is the BMW XM?', 'BMW XM review']);
-
-      const page1Url = createArg.urls.find((u) => u.url === 'https://example.com/page1');
-      expect(page1Url).to.exist;
-      expect(page1Url.timesCited).to.equal(1);
-      expect(page1Url.subPrompts).to.deep.equal(['What is the BMW XM?']);
-    });
-
-    it('should create multiple topics from different rows', async () => {
-      const rows = [
-        {
-          Sources: 'https://youtube.com/watch?v=abc', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-        {
-          Sources: 'https://reddit.com/r/test/', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledTwice;
-      const names = dataAccess.SentimentTopic.create.getCalls().map((c) => c.args[0].name);
-      expect(names).to.include('Topic A');
-      expect(names).to.include('Topic B');
-    });
-
-    it('should update existing topics in place', async () => {
-      const mockExistingTopic = {
-        getName: () => 'Existing Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
-
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(mockExistingTopic.setDescription).to.have.been.calledOnceWith('');
-      expect(mockExistingTopic.setUrls).to.have.been.calledOnceWith([
-        {
-          url: 'https://example.com/page1',
-          timesCited: 1,
-          category: 'Cat1',
-          subPrompts: ['Prompt 1'],
-        },
-      ]);
-      expect(mockExistingTopic.setEnabled).to.have.been.calledOnceWith(true);
-      expect(mockExistingTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(mockExistingTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should load existing topics across all pages when matching by name', async () => {
-      const pageOneTopic = {
-        getName: () => 'Other Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      const pagedTopic = {
-        getName: () => 'Paged Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      dataAccess.SentimentTopic.allBySiteId
-        .onFirstCall()
-        .resolves({ data: [pageOneTopic], cursor: 'next-page' });
-      dataAccess.SentimentTopic.allBySiteId
-        .onSecondCall()
-        .resolves({ data: [pagedTopic], cursor: null });
-
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Paged Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId.firstCall).to.have.been.calledWithExactly(SITE_ID, {});
-      expect(dataAccess.SentimentTopic.allBySiteId.secondCall).to.have.been.calledWithExactly(SITE_ID, { cursor: 'next-page' });
-      expect(pageOneTopic.save).to.not.have.been.called;
-      expect(pagedTopic.setDescription).to.have.been.calledOnceWith('');
-      expect(pagedTopic.setEnabled).to.have.been.calledOnceWith(true);
-      expect(pagedTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(pagedTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should deduplicate subPrompts across providers', async () => {
-      const sharedPrompt = 'What is the BMW XM?';
-      const rows = [
-        {
-          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
-        },
-        {
-          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.urls[0].subPrompts).to.deep.equal([sharedPrompt]);
-    });
-
-    it('should use global timesCited count from allUrls', async () => {
-      const rows = [
-        {
-          Sources: 'https://example.com/shared', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-        {
-          Sources: 'https://example.com/shared', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
-        },
-        { Sources: 'https://example.com/shared' },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const createCalls = dataAccess.SentimentTopic.create.getCalls();
-      for (const call of createCalls) {
-        const urlEntry = call.args[0].urls.find((u) => u.url === 'https://example.com/shared');
-        expect(urlEntry.timesCited).to.equal(3);
-      }
-    });
-
-    it('should skip topic creation when no topics are present in data', async () => {
-      stubBrandPresenceData(['https://youtube.com/watch?v=abc']);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should handle topic create failure gracefully', async () => {
-      dataAccess.SentimentTopic.create.rejects(new Error('DynamoDB error'));
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Failing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to save topic Failing Topic/),
-      );
-    });
-
-    it('should handle topic save failure gracefully for existing topics', async () => {
-      const mockExistingTopic = {
-        getName: () => 'Existing Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().rejects(new Error('DynamoDB error')),
-      };
-      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(mockExistingTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to save topic Existing Topic/),
-      );
-    });
-
-    it('should handle allBySiteId returning result with no data property', async () => {
-      dataAccess.SentimentTopic.allBySiteId.resolves({});
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'New Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create.firstCall.args[0].name).to.equal('New Topic');
-    });
-
-    it('should skip topic when all its URLs are invalid', async () => {
-      stubWithTopicRows([
-        {
-          Sources: 'not-a-valid-url;also-not-valid', Topic: 'Empty Topic', Category: 'Cat', Prompt: 'Prompt',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should skip rows without Topic field for topic tracking but still count URLs', async () => {
-      stubWithTopicRows([
-        {
-          Sources: 'https://youtube.com/watch?v=abc', Topic: 'My Topic', Category: 'Cat', Prompt: 'Prompt A',
-        },
-        { Sources: 'https://youtube.com/watch?v=abc' },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.urls[0].timesCited).to.equal(2);
-      expect(createArg.urls[0].subPrompts).to.deep.equal(['Prompt A']);
-    });
-  });
-
   describe('DRS Scraping', () => {
     it('should trigger DRS jobs for youtube (2 datasets) and reddit (2 datasets)', async () => {
       const urls = 'https://youtube.com/shorts/v1;https://reddit.com/r/test/';
@@ -1652,10 +1386,10 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      // Missing DRS credentials is an actionable misconfiguration, so it is emitted at error
-      // level (outcome=failure) rather than a warn/skip — see Fix C.
+      // Missing DRS credentials is a system/infra gap that only we can fix — nothing
+      // self-heals — so it is emitted at error level with outcome=failure.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/)
+        sinon.match(/DRS scraping unavailable this run/)
           .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=drs_not_configured/)),
@@ -1703,7 +1437,7 @@ describe('Offsite Brand Presence Handler', function () {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs an actionable warning when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs an error/failure when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1712,11 +1446,15 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/imsOrgId/),
-      );
-      expect(log.error).to.not.have.been.calledWith(
-        sinon.match(/imsOrgId/),
+      // A missing imsOrgId blocks scraping/deliverable entirely for this org this cycle —
+      // the same class as other zero-deliverable setup gaps — so it is logged at error
+      // level with outcome=failure, not a legitimate "nothing to report" finding.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/imsOrgId/)
+          .and(sinon.match(/produces no scraped content for this org/))
+          .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=no_ims_org/)),
       );
     });
 
@@ -1943,8 +1681,9 @@ describe('Offsite Brand Presence Handler', function () {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      // P1-4: the previously-silent empty-jobs early return now logs a structured skip.
-      expect(log.info).to.have.been.calledWith(
+      // P1-4: the previously-silent empty-jobs early return now logs a structured
+      // warn-level skip (deviation from the happy path deserves its own visibility).
+      expect(log.warn).to.have.been.calledWith(
         sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/)
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=no_jobs/))
@@ -1961,12 +1700,14 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       // Best-effort follow-up: the schedule-poll failure is structured and counted
-      // (outcome=failure) but logged at warn — the run already succeeded, so a
-      // transient SQS hiccup here must not page.
-      expect(log.warn).to.have.been.calledWith(
+      // (outcome=failure, error level) even though the run itself already succeeded —
+      // DRS job submission is non-idempotent, so the catch here does not rethrow and
+      // must not trigger the whole runner to re-execute and submit duplicate DRS jobs.
+      expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to schedule DRS status poll/)
           .and(sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=schedule_failed/))
           .and(sinon.match(/firstSchedule=true/)),
       );
     });

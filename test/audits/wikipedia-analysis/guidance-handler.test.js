@@ -217,7 +217,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('No suggestions found in analysis'));
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('No suggestions found in analysis'));
     });
 
     it('should return badRequest when no analysis data provided', async () => {
@@ -467,7 +467,6 @@ describe('Wikipedia Analysis Guidance Handler', function () {
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=unexpected_error/))
-          .and(sinon.match(/reasonCategory=infra/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(

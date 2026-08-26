@@ -54,11 +54,13 @@ describe('offsite-logging helper', () => {
         BRAND_PRESENCE: 'brand-presence',
       });
       expect(OUTCOME).to.deep.equal({
-        START: 'start', SUCCESS: 'success', FAILURE: 'failure', SKIP: 'skip',
+        START: 'start', SUCCESS: 'success', FAILURE: 'failure', SKIP: 'skip', DEGRADED: 'degraded',
       });
+      expect(OUTCOME.DEGRADED).to.equal('degraded');
       expect(PEER.DRS).to.equal('drs');
       expect(PEER.MYSTIQUE).to.equal('mystique');
       expect(PEER.URL_STORE).to.equal('url_store');
+      expect(PEER.GUIDELINE_STORE).to.equal('guideline_store');
       expect(PEER.S3).to.equal('s3');
       expect(PEER.POSTGRES).to.equal('postgres');
       expect(PEER.SHAREPOINT).to.equal('sharepoint');
@@ -190,15 +192,23 @@ describe('offsite-logging helper', () => {
       );
     });
 
-    it('warn defaults outcome=failure and debug defaults outcome=success', () => {
+    it('warn defaults outcome=degraded and debug defaults outcome=success', () => {
       const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE });
       olog.warn('e', 'm');
       olog.debug('e', 'm');
       expect(log.warn).to.have.been.calledWithExactly(
-        '[offsite:brand-presence] m domain=offsite audit=brand-presence event=e outcome=failure',
+        '[offsite:brand-presence] m domain=offsite audit=brand-presence event=e outcome=degraded',
       );
       expect(log.debug).to.have.been.calledWithExactly(
         '[offsite:brand-presence] m domain=offsite audit=brand-presence event=e outcome=success',
+      );
+    });
+
+    it('warn with an empty extra object also defaults outcome=degraded', () => {
+      const olog = createOffsiteLogger(log, { audit: AUDIT.CITED });
+      olog.warn('drs_submit', 'retrying', {});
+      expect(log.warn).to.have.been.calledWithExactly(
+        '[offsite:cited] retrying domain=offsite audit=cited event=drs_submit outcome=degraded',
       );
     });
 

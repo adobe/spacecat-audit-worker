@@ -339,7 +339,7 @@ describe('offsite-brand-presence-enrichment', function () {
       );
 
       expect(result).to.deep.equal([]);
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
@@ -485,7 +485,7 @@ describe('offsite-brand-presence-enrichment', function () {
 
       const site = makeSite();
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
-      expect(log.error).to.have.been.calledWithMatch(/Error reading brand presence sheet/);
+      expect(log.warn).to.have.been.calledWithMatch(/Error reading brand presence sheet/);
       expect(result).to.have.lengthOf(1);
     });
 
@@ -631,7 +631,7 @@ describe('offsite-brand-presence-enrichment', function () {
       });
 
       expect(result).to.be.null;
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
@@ -653,7 +653,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result.data).to.have.lengthOf(1);
       expect(result.data[0].Sources).to.equal(row.Sources);
       expect(result.data[0].Topics).to.equal(row.Topics);
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
