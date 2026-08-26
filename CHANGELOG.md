@@ -1,3 +1,10 @@
+# [1.527.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.526.2...v1.527.0) (2026-08-26)
+
+
+### Features
+
+* add ASO link and IMS org name to low-suggestion-count slack alert ([#2915](https://github.com/adobe/spacecat-audit-worker/issues/2915)) ([beaec1f](https://github.com/adobe/spacecat-audit-worker/commit/beaec1f4d16e1d095485bdc75004dda188c3807e))
+
 ## [1.526.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.526.1...v1.526.2) (2026-08-26)
 
 
