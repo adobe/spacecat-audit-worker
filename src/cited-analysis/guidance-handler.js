@@ -37,6 +37,7 @@ import {
 import {
   deleteExpiredSnapshots,
   deleteExpiredOutdatedSuggestions,
+  logHousekeepingSummary,
 } from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
@@ -232,26 +233,38 @@ export default async function handler(message, context) {
     ologOpp.start('audit_housekeeping_start', 'Housekeeping started');
 
     // Expired suggestion deletion must not fail an otherwise successful refresh.
+    let suggestionsSummary = {
+      scanned: 0, eligible: 0, deleted: 0, failed: 0,
+    };
+    let suggestionsErrored = false;
     try {
-      await deleteExpiredOutdatedSuggestions({
+      suggestionsSummary = await deleteExpiredOutdatedSuggestions({
         dataAccess, opportunity, siteId, auditType, log,
       });
     } catch (error) {
+      suggestionsErrored = true;
       ologOpp.warn('audit_housekeeping_outdated_suggestions_deleted', 'OUTDATED suggestion deletion failed', {
         peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
     }
 
     // Expired snapshot deletion must not fail an otherwise successful refresh.
+    let snapshotsSummary = { eligible: 0, deleted: 0 };
+    let snapshotsErrored = false;
     try {
-      await deleteExpiredSnapshots({
+      snapshotsSummary = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
     } catch (error) {
+      snapshotsErrored = true;
       ologOpp.warn('audit_housekeeping_outdated_opportunities_deleted', 'Snapshot retention failed', {
         peer: PEER.POSTGRES, direction: 'outbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
     }
+
+    logHousekeepingSummary(ologOpp, {
+      auditType, suggestionsSummary, snapshotsSummary, suggestionsErrored, snapshotsErrored,
+    });
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);
