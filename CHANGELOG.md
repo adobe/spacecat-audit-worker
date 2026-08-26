@@ -1,3 +1,10 @@
+# [1.528.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.527.1...v1.528.0) (2026-08-26)
+
+
+### Features
+
+* **cutover:** bow out of legacy canonical / meta-tags / broken-internal-links audits on deliveryConfig.<opp>Engine=blackboard ([#2916](https://github.com/adobe/spacecat-audit-worker/issues/2916)) ([691a091](https://github.com/adobe/spacecat-audit-worker/commit/691a0919b16ad46058e53c8feeb2d5aaad3306d9)), closes [#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825) [#2825](https://github.com/adobe/spacecat-audit-worker/issues/2825)
+
 ## [1.527.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.527.0...v1.527.1) (2026-08-26)
 
 
