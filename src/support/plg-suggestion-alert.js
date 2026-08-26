@@ -181,7 +181,7 @@ export async function sendLowSuggestionCountAlert(site, auditType, suggestionCou
     }
     if (organizationId) {
       const experienceUrl = env?.EXPERIENCE_URL || 'https://experience.adobe.com';
-      message += `\n• *ASO Link:* ${experienceUrl}/?organizationId=${organizationId}#/sites-optimizer/sites/${site.getId()}`;
+      message += `\n• *ASO Link:* ${experienceUrl}/?organizationId=${encodeURIComponent(organizationId)}#/sites-optimizer/sites/${encodeURIComponent(site.getId())}`;
     }
 
     await postSlackMessage(channelId, message, token);

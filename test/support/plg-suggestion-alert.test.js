@@ -291,6 +291,19 @@ describe('sendLowSuggestionCountAlert', () => {
     expect(text).to.include('/sites-optimizer/sites/site-uuid-123');
   });
 
+  it('URL-encodes organizationId and siteId in the ASO link', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')], 'org&id=weird#value');
+    const weirdSite = { ...site, getId: () => 'site&id=weird#value' };
+
+    await sendLowSuggestionCountAlert(weirdSite, 'cwv', 0, makeContext());
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.include('organizationId=org%26id%3Dweird%23value');
+    expect(text).to.include('/sites-optimizer/sites/site%26id%3Dweird%23value');
+    expect(text).to.not.include('org&id=weird#value');
+  });
+
   it('omits org/ASO lines when the site has no organizationId', async () => {
     const site = makeSite([makeEnrollment('ASO', 'PLG')], null);
     await sendLowSuggestionCountAlert(site, 'cwv', 0, makeContext());
