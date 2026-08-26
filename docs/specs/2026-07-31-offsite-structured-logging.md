@@ -40,6 +40,14 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   string arg) and `.with(moreIds)`.
 - `withAuditPersistLog(audit)` — an offsite-only AuditBuilder post-processor that
   logs `audit_analysis_run_write` using the framework-set `context.audit` / `auditData.id`.
+  Named `audit_analysis_*`, not `audit_persistence_*`, deliberately: this taxonomy groups
+  events by *pipeline phase*, not by operation type (`data_acquisition_url_store_write` in P2
+  and `audit_housekeeping_outdated_*_deleted` in P5 are Postgres/DynamoDB writes outside
+  `audit_persistence_*` too), and this write fires right after P1's own runner returns, before
+  the Mystique request is even assembled — well before anything else `audit_persistence_*`
+  covers, all of which fires only after Mystique's response comes back. A query for every
+  Postgres write regardless of phase should filter on `peer=postgres direction=outbound`,
+  which this event already carries, rather than on the `audit_persistence_*` event-name prefix.
 
 ### Events (by component)
 - Collector `offsite-brand-presence/handler.js`: `audit_orchestration_start`,
