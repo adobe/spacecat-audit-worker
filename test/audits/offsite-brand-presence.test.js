@@ -225,6 +225,15 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult).to.not.have.property('fallbackReason');
       expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      // Logged unconditionally so "disabled" and "event never reached" don't look
+      // identical in Splunk, and so decidedBy tells apart a Slack override from the
+      // standing env-var default.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_semrush_read/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/reason=disabled/))
+          .and(sinon.match(/decidedBy=env-var/)),
+      );
     });
 
     it('treats a non-"true" flag value as off (strict === true)', async () => {
@@ -406,6 +415,11 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.success).to.be.true;
       expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_semrush_read/)
+          .and(sinon.match(/reason=disabled/))
+          .and(sinon.match(/decidedBy=slack-override/)),
+      );
     });
 
     it('an invalid enableSemrush override is ignored and the env var value applies, with a warning logged', async () => {

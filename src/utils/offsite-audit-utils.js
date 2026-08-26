@@ -533,13 +533,14 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
       'audit_analysis_scope_resolved',
       'Invalid urlLimit in auditContext; using default',
       {
-        reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT, outcome: OUTCOME.DEGRADED,
+        scopeKind: 'url_limit', reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT, outcome: OUTCOME.DEGRADED,
       },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
     olog?.warn('audit_analysis_scope_resolved', 'urlLimit exceeds cap; using cap', {
+      scopeKind: 'url_limit',
       requested: n,
       cap: MYSTIQUE_URLS_LIMIT,
       urlLimit: MYSTIQUE_URLS_LIMIT,

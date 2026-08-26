@@ -497,7 +497,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('audit_analysis_scope_resolved', 'URL limit resolved', { urlLimit });
+    olog.success('audit_analysis_scope_resolved', 'URL limit resolved', { scopeKind: 'url_limit', urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     // Project only the fields Mystique reads (url, categories, prompts,
@@ -544,7 +544,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
       olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+        scopeKind: 'brand', outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);

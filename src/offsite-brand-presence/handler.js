@@ -936,6 +936,19 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', count: semrushUrls.size,
       });
     }
+  } else {
+    // Logged unconditionally so a Splunk search on siteId alone positively confirms
+    // Semrush was deliberately skipped for this run (and by which knob — Slack
+    // override vs the env var) rather than leaving "disabled" and "event never
+    // reached" looking identical (no data_acquisition_bp_data_semrush_read line
+    // at all).
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush source disabled for this run', {
+      outcome: OUTCOME.SKIP,
+      source: 'semrush',
+      reason: 'disabled',
+      semrushEnabled: false,
+      decidedBy: enableSemrushOverride !== undefined ? 'slack-override' : 'env-var',
+    });
   }
   const dataSource = usedSemrush ? 'semrush' : 'legacy';
   // Granular cause behind an entitlement-based `fallbackReason` (`flag_disabled` |

@@ -499,6 +499,7 @@ describe('offsite-audit-utils', () => {
         'audit_analysis_scope_resolved',
         sinon.match(/exceeds cap/),
         sinon.match({
+          scopeKind: 'url_limit',
           requested: MYSTIQUE_URLS_LIMIT + 10,
           cap: MYSTIQUE_URLS_LIMIT,
           urlLimit: MYSTIQUE_URLS_LIMIT,
@@ -517,7 +518,7 @@ describe('offsite-audit-utils', () => {
       expect(olog.warn).to.have.been.calledWith(
         'audit_analysis_scope_resolved',
         sinon.match(/Invalid urlLimit/),
-        sinon.match({ reason: 'invalid' }),
+        sinon.match({ scopeKind: 'url_limit', reason: 'invalid' }),
       );
     });
   });

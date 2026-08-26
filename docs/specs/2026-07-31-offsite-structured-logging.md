@@ -43,8 +43,8 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
 
 ### Events (by component)
 - Collector `offsite-brand-presence/handler.js`: `audit_orchestration_start`,
-  `data_acquisition_start`, `data_acquisition_bp_data_source_selected`,
-  `data_acquisition_bp_data_semrush_read`, `data_acquisition_bp_data_urls_resolved`,
+  `data_acquisition_start`, `data_acquisition_bp_data_semrush_read`,
+  `data_acquisition_bp_data_urls_resolved`,
   `data_acquisition_url_store_write`, `data_acquisition_drs_scrape_job_request_dispatched`,
   `data_acquisition_drs_scrape_job_poll_request_dispatched`,
   `audit_orchestration_guideline_store_write`, `audit_orchestration_end`,
@@ -59,7 +59,7 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `data_acquisition_drs_scrape_job_request_dispatched`,
   `audit_analysis_scope_resolved`, `audit_analysis_start`,
   `audit_persistence_start`, `audit_analysis_run_write`.
-- Guidance handlers + `common/offsite-refresh.js`: `audit_analysis_end`,
+- Guidance handlers + `common/offsite-refresh.js`: `audit_analysis_mystique_response_received`,
   `audit_persistence_start`, `audit_persistence_mystique_payload_s3_read`,
   `audit_persistence_evergreen_opportunity_write`, `audit_persistence_opportunity_retired`,
   `audit_persistence_evergreen_opportunity_read`, `audit_persistence_end`,

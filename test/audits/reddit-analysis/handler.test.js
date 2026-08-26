@@ -997,7 +997,8 @@ describe('Reddit Analysis Handler', function () {
       expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Brand resolution failed unexpectedly/),
+        sinon.match(/Brand resolution failed unexpectedly/)
+          .and(sinon.match(/scopeKind=brand/)),
       );
     });
   });
