@@ -23,6 +23,7 @@ import {
   withAuditPersistLog,
   sanitizeForLog,
   errorField,
+  resolveTriggerFields,
 } from '../../src/utils/offsite-logging.js';
 
 use(sinonChai);
@@ -68,6 +69,9 @@ describe('offsite-logging helper', () => {
       expect(PEER.SLACK).to.equal('slack');
       expect(PEER.SQS).to.equal('sqs');
       expect(PEER.SPACECAT).to.equal('spacecat');
+      expect(PEER.JOBS_DISPATCHER).to.equal('spacecat-jobs-dispatcher');
+      expect(PEER.API_SERVICE).to.equal('spacecat-api-service');
+      expect(PEER.SPACECAT_AUDIT_WORKER).to.equal('spacecat-audit-worker');
     });
   });
 
@@ -153,6 +157,29 @@ describe('offsite-logging helper', () => {
     it('returns an empty object for a missing error', () => {
       expect(errorField(undefined)).to.deep.equal({});
       expect(errorField(null)).to.deep.equal({});
+    });
+  });
+
+  describe('resolveTriggerFields', () => {
+    it('resolves scheduled/jobs-dispatcher when origin is absent (legacy/default sender)', () => {
+      expect(resolveTriggerFields(undefined)).to.deep.equal({
+        trigger: 'scheduled', peer: PEER.JOBS_DISPATCHER,
+      });
+      expect(resolveTriggerFields({})).to.deep.equal({
+        trigger: 'scheduled', peer: PEER.JOBS_DISPATCHER,
+      });
+    });
+
+    it('resolves scheduled/jobs-dispatcher when origin is explicitly jobs-dispatcher', () => {
+      expect(resolveTriggerFields({ origin: 'jobs-dispatcher' })).to.deep.equal({
+        trigger: 'scheduled', peer: PEER.JOBS_DISPATCHER,
+      });
+    });
+
+    it('resolves manual/api-service when origin is api-service', () => {
+      expect(resolveTriggerFields({ origin: 'api-service' })).to.deep.equal({
+        trigger: 'manual', peer: PEER.API_SERVICE,
+      });
     });
   });
 

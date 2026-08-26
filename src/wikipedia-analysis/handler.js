@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Long, unambiguous market suffixes. These are safe to strip even when fused
@@ -235,7 +235,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   const siteId = site.getId();
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId });
 
-  olog.start('audit_orchestration_start', 'Audit started');
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', resolveTriggerFields(auditContext));
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);

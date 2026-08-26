@@ -716,11 +716,11 @@ export async function requestOffsiteScrape(
       },
     });
     olog?.success('data_acquisition_drs_scrape_job_request_dispatched', 'Requested DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, dispatchKind: 'self_heal_audit', ...overrides,
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'self_heal', domainScope, dispatchKind: 'self_heal_audit', ...overrides,
     });
   } catch (error) {
     olog?.failure('data_acquisition_drs_scrape_job_request_dispatched', 'Failed to request DRS scrape for domain scope', {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal_failed', domainScope, dispatchKind: 'self_heal_audit', ...overrides, ...errorField(error),
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'self_heal_failed', domainScope, dispatchKind: 'self_heal_audit', ...overrides, ...errorField(error),
     });
   }
 }

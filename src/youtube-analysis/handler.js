@@ -35,7 +35,7 @@ import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
@@ -151,7 +151,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_orchestration_start', 'Audit started');
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', resolveTriggerFields(auditContext));
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);

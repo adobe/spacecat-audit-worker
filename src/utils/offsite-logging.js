@@ -66,6 +66,9 @@ export const PEER = {
   SLACK: 'slack',
   SQS: 'sqs',
   SPACECAT: 'spacecat',
+  JOBS_DISPATCHER: 'spacecat-jobs-dispatcher',
+  API_SERVICE: 'spacecat-api-service',
+  SPACECAT_AUDIT_WORKER: 'spacecat-audit-worker',
 };
 
 // Canonical order so a human scanning logs always sees the dimensions in the same place.
@@ -154,6 +157,26 @@ export function errorField(err) {
     return {};
   }
   return { errorName: err.name, errorMessage: err.message };
+}
+
+/**
+ * Resolve the `trigger`/`peer` fields for `audit_orchestration_spacecat_request_received` from
+ * the explicit `origin` marker stamped into `auditContext` by whichever service dispatched this
+ * run's SQS message. `spacecat-jobs-dispatcher` is the default/legacy sender — it does not stamp
+ * `origin` today — so an absent `origin` (as well as `origin: 'jobs-dispatcher'`) resolves to the
+ * same `scheduled`/`spacecat-jobs-dispatcher` pair as an explicit `origin: 'api-service'`
+ * resolves to `manual`/`spacecat-api-service`.
+ *
+ * @param {object} [auditContext] the `auditContext` a `RunnerAudit` runner receives as its 4th
+ *   argument (see `buildRunnerAuditContext` in `src/common/runner-audit.js`)
+ * @returns {{trigger: 'scheduled'|'manual', peer: string}}
+ */
+export function resolveTriggerFields(auditContext) {
+  const isManual = auditContext?.origin === 'api-service';
+  return {
+    trigger: isManual ? 'manual' : 'scheduled',
+    peer: isManual ? PEER.API_SERVICE : PEER.JOBS_DISPATCHER,
+  };
 }
 
 /**
