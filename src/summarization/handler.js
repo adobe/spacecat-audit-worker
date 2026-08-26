@@ -107,8 +107,20 @@ async function getSummarizationInputUrls(context) {
 /* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
   const {
-    site, dataAccess, log,
+    site, dataAccess, log, data,
   } = context;
+
+  // Extract generatePrompts from the trigger SQS message (context.data).
+  // This flag must be forwarded via auditContext so downstream steps can include it
+  // in the Mystique SQS message — context.data is only available in step 1.
+  let generatePromptsFlag = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePromptsFlag = !!parsedData?.generatePrompts;
+  } catch (e) {
+    log.warn(`[SUMMARIZATION] Failed to parse context.data for generatePrompts flag, defaulting to false: ${e.message}`);
+  }
+
   try {
     const { urls: allUrls } = await getMergedAuditInputUrls({
       site,
@@ -129,6 +141,7 @@ export async function importTopPages(context) {
           topPages: [],
         },
         fullAuditRef: site.getBaseURL(),
+        auditContext: { generatePrompts: generatePromptsFlag },
       };
     }
 
@@ -142,6 +155,7 @@ export async function importTopPages(context) {
         topPages: allUrls,
       },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts: generatePromptsFlag },
     };
   } catch (error) {
     log.error(`[SUMMARIZATION] Failed to import top pages: ${error.message}`, error);
@@ -154,6 +168,7 @@ export async function importTopPages(context) {
         topPages: [],
       },
       fullAuditRef: site.getBaseURL(),
+      auditContext: { generatePrompts: generatePromptsFlag },
     };
   }
 }
@@ -315,6 +330,8 @@ export async function sendToMystique(context) {
     questions: [],
   }));
 
+  const generatePrompts = !!auditContext?.generatePrompts;
+
   const message = {
     type: 'guidance:summarization',
     siteId: site.getId(),
@@ -322,7 +339,7 @@ export async function sendToMystique(context) {
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
-    data: { pages: topPagesPayload },
+    data: { pages: topPagesPayload, generatePrompts },
   };
 
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

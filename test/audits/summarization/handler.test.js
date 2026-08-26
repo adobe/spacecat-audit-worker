@@ -131,6 +131,7 @@ describe('Summarization Handler', () => {
           ],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         'site-id-123',
@@ -153,6 +154,7 @@ describe('Summarization Handler', () => {
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
@@ -174,10 +176,46 @@ describe('Summarization Handler', () => {
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
+        auditContext: { generatePrompts: false },
       });
       expect(log.error).to.have.been.calledWith(
         '[SUMMARIZATION] Failed to import top pages: Database error',
         error,
+      );
+    });
+
+    it('should forward generatePrompts: true from context.data to auditContext', async () => {
+      context.data = { generatePrompts: true };
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('should forward generatePrompts: true when context.data is a JSON string', async () => {
+      context.data = JSON.stringify({ generatePrompts: true });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: true });
+    });
+
+    it('should default generatePrompts to false when context.data is absent', async () => {
+      delete context.data;
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
+    });
+
+    it('should default generatePrompts to false and warn when context.data is unparseable', async () => {
+      context.data = 'not-valid-json{{{';
+
+      const result = await importTopPages(context);
+
+      expect(result.auditContext).to.deep.equal({ generatePrompts: false });
+      expect(log.warn).to.have.been.calledWithMatch(
+        '[SUMMARIZATION] Failed to parse context.data for generatePrompts flag, defaulting to false',
       );
     });
   });
@@ -289,7 +327,7 @@ describe('Summarization Handler', () => {
       const result = await sendToMystique(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      
+
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.type).to.equal('guidance:summarization');
       expect(sentMessage.siteId).to.equal('site-id-123');
@@ -297,6 +335,7 @@ describe('Summarization Handler', () => {
       expect(sentMessage.auditId).to.equal('audit-id-456');
       expect(sentMessage.deliveryType).to.equal('aem');
       expect(sentMessage.data.pages).to.have.lengthOf(3);
+      expect(sentMessage.data.generatePrompts).to.equal(false);
       
       // Check that all pages are from the scraped URLs
       const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
@@ -846,6 +885,29 @@ describe('Summarization Handler', () => {
       expect(log.warn).to.have.been.calledWith(
         '[SUMMARIZATION] Failed to fetch existing suggestion hashes: DB error',
       );
+    });
+
+    it('should include generatePrompts: true in the Mystique message when set in auditContext', async () => {
+      context.auditContext = {
+        summarizationUrls: [
+          'https://adobe.com/page1',
+          'https://adobe.com/page2',
+          'https://adobe.com/page3',
+        ],
+        generatePrompts: true,
+      };
+
+      await sendToMystique(context);
+
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.generatePrompts).to.equal(true);
+    });
+
+    it('should include generatePrompts: false in the Mystique message when not set in auditContext', async () => {
+      await sendToMystique(context);
+
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.generatePrompts).to.equal(false);
     });
   });
 });
