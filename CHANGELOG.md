@@ -1,3 +1,10 @@
+## [1.527.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.527.0...v1.527.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **loffsite:** audit_housekeeping_end fires after both cleanups (LLMO-6973) ([#2917](https://github.com/adobe/spacecat-audit-worker/issues/2917)) ([f72c358](https://github.com/adobe/spacecat-audit-worker/commit/f72c3585207f3ad3111338c500469fa191bafa9a))
+
 # [1.527.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.526.2...v1.527.0) (2026-08-26)
 
 
