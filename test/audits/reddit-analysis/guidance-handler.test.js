@@ -1693,10 +1693,72 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
+      // suggestionsErrored is true because the cleanup threw, so the summary fields for
+      // suggestions fall back to the zero-defaults set before the try/catch, not any partial
+      // values from the (rejected) promise; snapshots resolved normally with its own zeros.
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/event=audit_housekeeping_end/)
           .and(sinon.match(/outcome=degraded/))
-          .and(sinon.match(/reason=partial_cleanup_failure/)),
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=0/))
+          .and(sinon.match(/suggestionsEligible=0/))
+          .and(sinon.match(/suggestionsDeleted=0/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded independently via snapshotsErrored when snapshot cleanup throws (suggestions succeed normally)', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 4, eligible: 1, deleted: 1, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.rejects(new Error('snapshot cleanup blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      // snapshotsErrored is true because the cleanup threw, so the summary fields for
+      // snapshots fall back to the zero-defaults; suggestions resolved normally with no
+      // failures, distinct from the already-tested "suggestions throws" path above.
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=4/))
+          .and(sinon.match(/suggestionsEligible=1/))
+          .and(sinon.match(/suggestionsDeleted=1/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded when suggestion cleanup resolves normally but reports a per-batch failure (failed > 0)', async () => {
+      // This exercises the suggestionsSummary.failed > 0 branch of housekeepingHadFailure,
+      // independent of the suggestionsErrored/exception path above: deleteExpiredOutdatedSuggestions
+      // resolves normally (no throw) but its own returned summary reports a nonzero failed count
+      // (a per-batch delete failure caught inside that function).
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 10, eligible: 4, deleted: 2, failed: 2,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=10/))
+          .and(sinon.match(/suggestionsEligible=4/))
+          .and(sinon.match(/suggestionsDeleted=2/))
+          .and(sinon.match(/suggestionsFailed=2/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
       );
     });
 

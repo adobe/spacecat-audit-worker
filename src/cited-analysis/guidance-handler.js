@@ -37,6 +37,7 @@ import {
 import {
   deleteExpiredSnapshots,
   deleteExpiredOutdatedSuggestions,
+  logHousekeepingSummary,
 } from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
@@ -261,26 +262,9 @@ export default async function handler(message, context) {
       });
     }
 
-    const housekeepingHadFailure = suggestionsErrored || snapshotsErrored
-      || suggestionsSummary.failed > 0;
-    const housekeepingSummaryFields = {
-      peer: PEER.POSTGRES,
-      direction: 'outbound',
-      auditType,
-      suggestionsScanned: suggestionsSummary.scanned,
-      suggestionsEligible: suggestionsSummary.eligible,
-      suggestionsDeleted: suggestionsSummary.deleted,
-      suggestionsFailed: suggestionsSummary.failed,
-      snapshotsEligible: snapshotsSummary.eligible,
-      snapshotsDeleted: snapshotsSummary.deleted,
-    };
-    if (housekeepingHadFailure) {
-      ologOpp.warn('audit_housekeeping_end', 'Housekeeping cleanup summary', {
-        ...housekeepingSummaryFields, reason: 'partial_cleanup_failure', outcome: OUTCOME.DEGRADED,
-      });
-    } else {
-      ologOpp.success('audit_housekeeping_end', 'Housekeeping cleanup summary', housekeepingSummaryFields);
-    }
+    logHousekeepingSummary(ologOpp, {
+      auditType, suggestionsSummary, snapshotsSummary, suggestionsErrored, snapshotsErrored,
+    });
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);

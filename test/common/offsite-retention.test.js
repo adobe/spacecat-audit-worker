@@ -26,6 +26,7 @@ import {
   OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
   isOutdatedSuggestionExpired,
   deleteExpiredOutdatedSuggestions,
+  logHousekeepingSummary,
 } from '../../src/common/offsite-retention.js';
 
 use(sinonChai);
@@ -926,6 +927,131 @@ describe('offsite-retention', () => {
       expect(deletedIds).to.not.include('snap-1');
       expect(log.info).to.have.been.calledWith(
         sinon.match(`eligible=${totalExpired}`).and(sinon.match(`deleted=${MAX_DELETIONS_PER_RUN}`)),
+      );
+    });
+  });
+
+  describe('logHousekeepingSummary', () => {
+    let olog;
+
+    beforeEach(() => {
+      olog = { warn: sandbox.stub(), success: sandbox.stub() };
+    });
+
+    const expectedFields = ({
+      suggestionsSummary, snapshotsSummary,
+    }) => ({
+      peer: 'postgres',
+      direction: 'outbound',
+      auditType,
+      suggestionsScanned: suggestionsSummary.scanned,
+      suggestionsEligible: suggestionsSummary.eligible,
+      suggestionsDeleted: suggestionsSummary.deleted,
+      suggestionsFailed: suggestionsSummary.failed,
+      snapshotsEligible: snapshotsSummary.eligible,
+      snapshotsDeleted: snapshotsSummary.deleted,
+    });
+
+    it('emits success with outcome=success when neither cleanup failed', () => {
+      const suggestionsSummary = {
+        scanned: 5, eligible: 3, deleted: 3, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 2, deleted: 2 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.warn).to.not.have.been.called;
+      expect(olog.success).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          outcome: 'success',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when suggestionsErrored is true', () => {
+      const suggestionsSummary = {
+        scanned: 0, eligible: 0, deleted: 0, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: true,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when snapshotsErrored is true', () => {
+      const suggestionsSummary = {
+        scanned: 4, eligible: 1, deleted: 1, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: true,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when suggestionsSummary.failed > 0 (no exception)', () => {
+      const suggestionsSummary = {
+        scanned: 10, eligible: 4, deleted: 2, failed: 2,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
       );
     });
   });

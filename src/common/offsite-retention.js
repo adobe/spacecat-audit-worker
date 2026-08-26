@@ -215,3 +215,37 @@ export async function deleteExpiredOutdatedSuggestions({
 
   return retentionSummary;
 }
+
+/**
+ * Emits the combined `audit_housekeeping_end` summary for the two retention cleanups
+ * (expired OUTDATED suggestions + expired snapshots) run by each offsite guidance handler.
+ * Escalates to warn/degraded when either cleanup threw (suggestionsErrored/snapshotsErrored)
+ * or when suggestion deletion resolved normally but reported a per-batch failure
+ * (suggestionsSummary.failed > 0).
+ */
+export function logHousekeepingSummary(olog, {
+  auditType, suggestionsSummary, snapshotsSummary, suggestionsErrored, snapshotsErrored,
+}) {
+  const housekeepingHadFailure = suggestionsErrored || snapshotsErrored
+    || suggestionsSummary.failed > 0;
+  const summaryFields = {
+    peer: PEER.POSTGRES,
+    direction: 'outbound',
+    auditType,
+    suggestionsScanned: suggestionsSummary.scanned,
+    suggestionsEligible: suggestionsSummary.eligible,
+    suggestionsDeleted: suggestionsSummary.deleted,
+    suggestionsFailed: suggestionsSummary.failed,
+    snapshotsEligible: snapshotsSummary.eligible,
+    snapshotsDeleted: snapshotsSummary.deleted,
+  };
+  if (housekeepingHadFailure) {
+    olog.warn('audit_housekeeping_end', 'Housekeeping cleanup summary', {
+      ...summaryFields, reason: 'partial_cleanup_failure', outcome: OUTCOME.DEGRADED,
+    });
+  } else {
+    olog.success('audit_housekeeping_end', 'Housekeeping cleanup summary', {
+      ...summaryFields, outcome: OUTCOME.SUCCESS,
+    });
+  }
+}
