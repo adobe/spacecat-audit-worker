@@ -27,6 +27,7 @@ import {
 } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { isBlackboardEngine } from '../common/delivery-engine.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
@@ -773,8 +774,16 @@ export async function processScrapedContent(context) {
 
   log.info(`[canonical] Generated ${sortedSuggestions.length} canonical suggestions for ${baseURL}`);
 
-  // Create opportunities and sync suggestions
-  if (sortedSuggestions.length > 0) {
+  // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the CANONICAL opportunity is
+  // owned by Mystique's blackboard producer cascade (deliveryConfig.canonicalEngine=blackboard),
+  // bow out of the legacy CANONICAL sync and resolve any pre-existing legacy CANONICAL
+  // opportunity so the flip strands no active rows. The Elmo generic-opportunity below is a
+  // separate surface and is intentionally left running.
+  if (isBlackboardEngine(site, 'canonicalEngine')) {
+    log.info(`[canonical] siteId: ${site.getId()} | bowing out of legacy CANONICAL sync — deliveryConfig.canonicalEngine=blackboard (Mystique-owned)`);
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+  } else if (sortedSuggestions.length > 0) {
+    // Create opportunities and sync suggestions
     log.info(`[canonical] Creating canonical opportunity and syncing ${sortedSuggestions.length} suggestions`);
 
     const opportunity = await convertToOpportunity(
