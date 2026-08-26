@@ -1390,7 +1390,7 @@ describe('Offsite Brand Presence Handler', function () {
       // self-heals — so it is emitted at error level with outcome=failure.
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DRS scraping unavailable this run/)
-          .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=drs_not_configured/)),
       );
@@ -1452,7 +1452,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/imsOrgId/)
           .and(sinon.match(/produces no scraped content for this org/))
-          .and(sinon.match(/event=data_acquisition_scrape_job_request_dispatched/))
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=no_ims_org/)),
       );
@@ -1684,7 +1684,7 @@ describe('Offsite Brand Presence Handler', function () {
       // P1-4: the previously-silent empty-jobs early return now logs a structured
       // warn-level skip (deviation from the happy path deserves its own visibility).
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/)
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/)
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/reason=no_jobs/))
           .and(sinon.match(/firstSchedule=true/)),
@@ -1705,7 +1705,7 @@ describe('Offsite Brand Presence Handler', function () {
       // must not trigger the whole runner to re-execute and submit duplicate DRS jobs.
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to schedule DRS status poll/)
-          .and(sinon.match(/event=data_acquisition_scrape_job_poll_request_dispatched/))
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=schedule_failed/))
           .and(sinon.match(/firstSchedule=true/)),

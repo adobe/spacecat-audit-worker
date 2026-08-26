@@ -353,7 +353,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, olog, siteHostname) {
     }
   }
 
-  olog.success('data_acquisition_bp_data_urls_enriched', 'Found unique source URLs', {
+  olog.success('data_acquisition_bp_data_urls_resolved', 'Found unique source URLs', {
     count: allUrls.size,
   });
 }
@@ -531,10 +531,6 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const previousWeeks = getPreviousWeeks();
-  const weekLabels = previousWeeks
-    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
-    .join(', ');
-  olog.start('data_acquisition_bp_data_source_selected', 'Processing weeks', { weeks: weekLabels });
 
   const brandPresenceData = await loadBrandPresenceData({
     siteId, site, previousWeeks, context,
@@ -549,7 +545,7 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
     try {
       siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
     } catch {
-      olog.warn('data_acquisition_bp_data_urls_enriched', 'Could not parse baseURL; skipping site URL filter', {
+      olog.warn('data_acquisition_bp_data_urls_resolved', 'Could not parse baseURL; skipping site URL filter', {
         reason: 'unparseable_base_url', baseURL, outcome: OUTCOME.DEGRADED,
       });
     }

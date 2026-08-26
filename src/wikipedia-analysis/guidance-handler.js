@@ -31,8 +31,8 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
 const HUMAN_PREFIX = `[offsite:${AUDIT.WIKIPEDIA}]`;
 
 /**
- * Classifies a presigned-analysis-fetch failure for the `audit_persistence_mystique_payload_read`
- * event's reason token:
+ * Classifies a presigned-analysis-fetch failure for the
+ * `audit_persistence_mystique_payload_s3_read` event's reason token:
  * URL/SSRF/shape and body-shape rejections are `validation`; network / non-2xx / timeout
  * failures are `fetch`. The messages come from analysis-fetch.js / assertPresignedUrl.
  *
@@ -133,7 +133,7 @@ export default async function handler(message, context) {
 
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId, auditId });
 
-  olog.start('audit_analysis_end', 'Guidance received', {
+  olog.start('audit_analysis_mystique_response_received', 'Guidance received', {
     peer: PEER.MYSTIQUE, direction: 'inbound',
   });
 
@@ -149,7 +149,7 @@ export default async function handler(message, context) {
   // Mystique couldn't complete the analysis (e.g. an upstream producer/service
   // failure). Report it to the Slack thread instead of failing silently, then stop.
   if (data?.error) {
-    olog.failure('audit_analysis_end', 'Mystique returned an error', {
+    olog.failure('audit_analysis_mystique_response_received', 'Mystique returned an error', {
       peer: PEER.MYSTIQUE, direction: 'inbound', reason: 'mystique_error', mystiqueError: data.errorMessage,
     });
     await postWikipediaOutcomeToSlack(
@@ -170,11 +170,11 @@ export default async function handler(message, context) {
         log,
         prefix: HUMAN_PREFIX,
       });
-      olog.success('audit_persistence_mystique_payload_read', 'Fetched analysis from presigned URL', {
+      olog.success('audit_persistence_mystique_payload_s3_read', 'Fetched analysis from presigned URL', {
         peer: PEER.S3, direction: 'inbound',
       });
     } catch (error) {
-      olog.failure('audit_persistence_mystique_payload_read', 'Error fetching from presigned URL', {
+      olog.failure('audit_persistence_mystique_payload_s3_read', 'Error fetching from presigned URL', {
         peer: PEER.S3, direction: 'inbound', reason: classifyFetchFailure(error), ...errorField(error),
       });
       return badRequest(`Error fetching analysis data: ${error.message}`);
@@ -215,7 +215,7 @@ export default async function handler(message, context) {
       return noContent();
     }
 
-    olog.success('audit_analysis_end', 'Processing suggestions', {
+    olog.success('audit_analysis_mystique_response_received', 'Processing suggestions', {
       count: suggestions.length, companyName,
     });
 

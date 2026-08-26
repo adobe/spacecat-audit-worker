@@ -389,7 +389,7 @@ describe('StoreClient', () => {
       // The `audit` taxonomy field must map to the AUDIT enum value ('wikipedia'), not the
       // raw auditType string or a hardcoded literal, so Splunk `audit=` filters match.
       expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_guidelines_resolved/)
+        sinon.match(/event=data_acquisition_guideline_store_read/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=guideline_store/))
           .and(sinon.match(/audit=wikipedia\b/)),
@@ -457,7 +457,7 @@ describe('StoreClient', () => {
       // throw, so an operator can tell "ran, found nothing" from "never ran".
       expect(mockLog.warn).to.have.been.calledWith(
         sinon.match(/No guidelines or topics found in Guideline Store/)
-          .and(sinon.match(/event=audit_orchestration_brand_guidelines_resolved/))
+          .and(sinon.match(/event=data_acquisition_guideline_store_read/))
           .and(sinon.match(/outcome=skip/))
           .and(sinon.match(/peer=guideline_store/))
           .and(sinon.match(/reason=no_guidelines_or_topics/)),

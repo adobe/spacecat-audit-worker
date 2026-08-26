@@ -270,7 +270,7 @@ describe('Reddit Analysis Handler', function () {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
           .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
@@ -400,7 +400,7 @@ describe('Reddit Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_orchestration_brand_topics_resolved/)
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
           .and(sinon.match('count=0')),
       );
     });
