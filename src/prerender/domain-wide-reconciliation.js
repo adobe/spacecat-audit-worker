@@ -32,10 +32,8 @@ function isIndividualUrlSuggestionData(data) {
 }
 
 /**
- * True when a suggestion is the active (non-OUTDATED) domain-wide suggestion with
- * `edgeDeployed` set. Shared predicate for both the batch-selection lookup (which fetches
- * its own suggestion list) and the write-back (which reuses an already-fetched list) so
- * the "what counts as deployed" rule can't drift between them.
+ * True when a suggestion is the active (NEW) domain-wide suggestion with `edgeDeployed` set.
+ * Shared by batch-selection and write-back so "deployed" can't drift between them.
  * @param {Object} s - Suggestion entity
  * @returns {boolean}
  */
@@ -66,18 +64,9 @@ async function findDeployedDomainWide(dataAccess, siteId) {
 }
 
 /**
- * True when a status.json page entry represents a genuine post-deploy confirmation:
- * a *successful* scrape that happened strictly after the domain-wide suggestion's own
- * `edgeDeployed` timestamp. Anything else — no entry, a failed/bot-blocked attempt
- * regardless of when, or a successful-but-pre-deploy entry — means we still don't know
- * this URL's current edge state relative to the deploy, so it stays eligible.
- *
- * Deliberately checks `scrapingStatus`, not just `scrapedAt`: uploadStatusSummaryToS3
- * stamps `scrapedAt` on every attempt regardless of outcome — `currentPages` sets it
- * unconditionally per result, and `missingPages` (bot-blocked/dropped scrapes) carries
- * `scrapingStatus: 'failed'` with its own `scrapedAt` too. A bare age comparison would
- * permanently retire a URL from the backlog after a single failed scrape, even though
- * it was never actually confirmed either way.
+ * True when a status.json page entry is a successful scrape strictly after `deployedAtMs`.
+ * Checks `scrapingStatus`, not just age, so a failed/bot-blocked scrape doesn't permanently
+ * retire a URL from the backlog.
  * @param {Object|undefined} pageEntry - status.json page entry for this URL, if any
  * @param {number} deployedAtMs - domain-wide suggestion's edgeDeployed, as epoch ms
  * @returns {boolean}
@@ -90,17 +79,9 @@ function hasPostDeployConfirmation(pageEntry, deployedAtMs) {
 }
 
 /**
- * Selects up to DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE per-URL suggestions that are
- * currently `coveredByDomainWide` but have no genuine post-deploy scrape confirmation
- * yet (LLMO-7052). Intended to be appended *additively* to the daily scrape batch, on
- * top of DAILY_BATCH_SIZE, so reconciliation runs on a fixed cadence independent of
- * whether these URLs would otherwise be selected by organic/agentic/included ranking.
- *
- * Ordered oldest-`scrapedAt`-first (missing entries sort first) so the backlog drains
- * deterministically rather than resampling the same subset every run. A URL naturally
- * drops out of this selection once it gets any post-deploy scrape — no bookkeeping
- * needed to track "already handled".
- *
+ * Selects up to DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE `coveredByDomainWide` suggestions
+ * with no post-deploy scrape confirmation yet (LLMO-7052), appended additively to the
+ * daily scrape batch. Ordered oldest-`scrapedAt`-first so the backlog drains deterministically.
  * @param {Object} context - Audit context (dataAccess, log)
  * @param {string} siteId - Site ID
  * @param {Object} siteStatus - The site's already-read status.json (caller fetches this
@@ -153,22 +134,11 @@ export async function getDomainWideReconciliationCandidates(context, siteId, sit
 
 /**
  * Reconciles `coveredByDomainWide` against this run's confirmed edge state (LLMO-7052).
- * One suggestion fetch, one save, covering both directions:
- *
- *  - Add: when the domain-wide suggestion has `edgeDeployed`, NEW per-URL suggestions
- *    confirmed deployed at edge this run (by their own exact URL) get `coveredByDomainWide`
- *    set (instead of moving to SKIPPED, so a domain-wide rollback naturally restores them
- *    to the Current tab). NEW path-type suggestions are covered unconditionally while
- *    domain-wide is active — they're redundant, not something to individually verify.
- *  - Remove: any suggestion (any status) currently `coveredByDomainWide` confirmed NOT
- *    deployed at edge this run (by its own exact URL) has the flag cleared immediately —
- *    no grace period, independent of whether a domain-wide suggestion currently exists.
- *
- * Both directions read from a single `opportunity.getSuggestions()` fetch and write
- * through a single `saveMany` call; the save is non-fatal on failure (logged, swallowed)
- * so a transient DB error on this reconciliation step doesn't fail an otherwise-successful
- * audit run — matching how other post-processing steps in this audit behave.
- *
+ * One fetch, one save:
+ *  - Add: NEW suggestions confirmed deployed at edge this run get `coveredByDomainWide` set.
+ *  - Remove: any suggestion confirmed NOT deployed this run has the flag cleared, no grace
+ *    period.
+ * Save failures are logged and swallowed — non-fatal, doesn't fail the audit run.
  * @param {Object|null} opportunity - Opportunity entity (no-op if null)
  * @param {Object} context - Audit context (dataAccess, log, site)
  * @param {Array} successfulComparisons - This run's non-error comparison results
@@ -203,8 +173,7 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
   const toCover = [];
   if (domainWideSuggestion) {
     const domainWideSuggestionId = domainWideSuggestion.getId();
-    // The domain-wide suggestion itself is always NEW and always in this list, so
-    // newSuggestions is never empty here — nothing further to guard on that front.
+    // Domain-wide suggestion is always NEW, so newSuggestions is never empty here.
     const newSuggestions = suggestions.filter((s) => s.getStatus() === Suggestion.STATUSES.NEW);
 
     // Path and domain-wide suggestions have no url field — guard before normalizing.

@@ -595,9 +595,7 @@ export async function submitForScraping(context) {
       (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
     ).length;
 
-    // LLMO-7052: append the coveredByDomainWide reconciliation backlog additively, on top
-    // of DAILY_BATCH_SIZE, so it runs on a fixed cadence rather than competing with
-    // organic/agentic/included for the same slots.
+    // LLMO-7052: reconciliation backlog, additive on top of DAILY_BATCH_SIZE.
     const reconciliationUrls = (
       await getDomainWideReconciliationCandidates(context, siteId, siteStatus)
     ).map((url) => rebaseUrl(url, preferredBase, log));
@@ -1484,11 +1482,7 @@ export async function processContentAndGenerateOpportunities(context) {
       }
     }
 
-    // LLMO-7052: reconcile coveredByDomainWide both ways against this run's confirmed edge
-    // state — add it to newly-deployed NEW suggestions, clear it from any suggestion (any
-    // status) whose pathname is confirmed no longer deployed. Runs against all
-    // successfulComparisons, not just the reconciliation batch, so incidental confirmations
-    // from normal organic/agentic/included rotation are caught too.
+    // LLMO-7052: reconcile coveredByDomainWide against this run's confirmed edge state.
     await syncCoveredByDomainWide(opportunityWithSuggestions, context, successfulComparisons);
 
     const endTime = process.hrtime(startTime);
