@@ -1,3 +1,10 @@
+# [1.529.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.528.1...v1.529.0) (2026-08-27)
+
+
+### Features
+
+* **gsc-search-analytics:** tracking-only GSC before/after audit for fixed URLs ([#2849](https://github.com/adobe/spacecat-audit-worker/issues/2849)) ([858fe7a](https://github.com/adobe/spacecat-audit-worker/commit/858fe7ad40af75e789576adb850f3671b6c0600f))
+
 ## [1.528.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.528.0...v1.528.1) (2026-08-27)
 
 
