@@ -15,6 +15,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
+import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import brandClaimsHandler, { sanitizePathComponent } from '../../src/brand-claims/handler.js';
 
 use(sinonChai);
@@ -289,6 +291,8 @@ describe('Brand Claims audit handler', function () {
         platform: 'chatgpt_free',
         s3_bucket: 'drs-bp-bucket',
         s3_key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`,
+        // Additive ingest_source (LLMO-7177): the DRS branch stamps the explicit default.
+        ingest_source: 'brand_presence_s3',
         parent_job_id: null,
         batch_id: null,
       });
@@ -378,6 +382,218 @@ describe('Brand Claims audit handler', function () {
       expect(res.status).to.equal(200);
       expect(s3Client.send).to.have.callCount(10);
       expect(sqs.sendMessage).to.not.have.been.called;
+    });
+  });
+
+  describe('Semrush ingest-source decision (LLMO-7177)', () => {
+    const BASE_URL = 'https://www.acme.com';
+    const DRS_SHEET_KEY = `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`;
+
+    // Loads the handler with resolveSemrushEntitlement stubbed to a canned verdict, so the
+    // test drives the handler's per-site decision without a live PostgREST/Semrush round trip.
+    const loadHandler = async (entitlement) => {
+      const entitlementStub = sandbox.stub().resolves(entitlement);
+      const mod = await esmock('../../src/brand-claims/handler.js', {
+        '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement: entitlementStub },
+      });
+      return { handler: mod.default, entitlementStub };
+    };
+
+    // Context with Semrush enabled via the env flag and a parseable base URL for the domain.
+    const semrushContext = (overrides = {}) => {
+      const ctx = buildContext({
+        env: {
+          SQS_BP_SHEET_READY_QUEUE_URL: 'https://sqs.test/bp-sheet-ready',
+          DRS_BP_BUCKET: 'drs-bp-bucket',
+          BRAND_CLAIMS_SEMRUSH_ENABLED: 'true',
+        },
+        site: {
+          getId: () => SITE_ID,
+          getOrganizationId: () => ORG_ID,
+          getBaseURL: () => BASE_URL,
+        },
+        ...overrides,
+      });
+      return ctx;
+    };
+
+    it('emits a semrush_feed event (no sheet lookup, domain set) when entitled', async () => {
+      const { handler, entitlementStub } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+
+      const res = await handler(message, semrushContext());
+
+      expect(res.status).to.equal(200);
+      // Semrush branch must skip the DRS-sheet S3 lookup entirely.
+      expect(s3Client.send).to.not.have.been.called;
+      expect(entitlementStub).to.have.been.calledOnceWithExactly(
+        sinon.match.object,
+        { orgId: ORG_ID, brandId: BRAND_ID },
+      );
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+
+      const { week, year } = isoCalendarWeek(new Date());
+      const [queueUrl, event] = sqs.sendMessage.firstCall.args;
+      expect(queueUrl).to.equal('https://sqs.test/bp-sheet-ready');
+      expect(event).to.deep.equal({
+        event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
+        schema_version: 1,
+        organization_id: ORG_ID,
+        brand_id: BRAND_ID,
+        brand: 'acmecorp',
+        site_id: SITE_ID,
+        week,
+        year,
+        cadence: 'weekly',
+        sheet_date: null,
+        platform: 'chatgpt_free',
+        s3_bucket: null,
+        s3_key: null,
+        ingest_source: 'semrush_feed',
+        domain: 'acme.com',
+        parent_job_id: null,
+        batch_id: null,
+      });
+    });
+
+    it('honors a per-brand cadence from the brand config on the semrush event', async () => {
+      selectResult = {
+        data: [{
+          id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true, cadence: 'daily',
+        }],
+        error: null,
+      };
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'subworkspace',
+      });
+
+      await handler(message, semrushContext());
+
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.cadence).to.equal('daily');
+    });
+
+    it('honors a per-run Slack override (enableSemrush) over the env flag', async () => {
+      const { handler, entitlementStub } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      // Env flag OFF; the Slack override turns Semrush on for this run only.
+      const ctx = semrushContext({
+        env: {
+          SQS_BP_SHEET_READY_QUEUE_URL: 'https://sqs.test/bp-sheet-ready',
+          DRS_BP_BUCKET: 'drs-bp-bucket',
+        },
+      });
+      const overrideMessage = {
+        ...message,
+        auditContext: { messageData: { enableSemrush: true } },
+      };
+
+      await handler(overrideMessage, ctx);
+
+      expect(entitlementStub).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('semrush_feed');
+    });
+
+    it('lets a Slack override (enableSemrush:false) force the DRS path even when the env flag is on', async () => {
+      const { handler, entitlementStub } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      s3Client.send.resolves({
+        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      const overrideMessage = {
+        ...message,
+        auditContext: { messageData: { enableSemrush: false } },
+      };
+
+      await handler(overrideMessage, semrushContext());
+
+      // Semrush disabled for this run: entitlement is never consulted and DRS serves.
+      expect(entitlementStub).to.not.have.been.called;
+      expect(s3Client.send).to.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('brand_presence_s3');
+      expect(event.s3_key).to.equal(DRS_SHEET_KEY);
+    });
+
+    const fallbackCases = [
+      ['flag-disabled', { entitled: false, resolved: true, reason: 'flag_disabled' }],
+      ['no-workspace', { entitled: false, resolved: true, reason: 'no_workspace' }],
+      ['transient check failure', { entitled: false, resolved: false, reason: 'check_failed' }],
+      ['no client', { entitled: false, resolved: false, reason: 'no_client' }],
+    ];
+    fallbackCases.forEach(([label, entitlement]) => {
+      it(`falls back to the DRS sheet when the brand is not entitled (${label})`, async () => {
+        const { handler } = await loadHandler(entitlement);
+        s3Client.send.resolves({
+          Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+          IsTruncated: false,
+        });
+
+        const res = await handler(message, semrushContext());
+
+        expect(res.status).to.equal(200);
+        // No regression: the DRS lookup runs and a brand_presence_s3 event is published.
+        expect(s3Client.send).to.have.been.called;
+        expect(sqs.sendMessage).to.have.been.calledOnce;
+        const [, event] = sqs.sendMessage.firstCall.args;
+        expect(event.ingest_source).to.equal('brand_presence_s3');
+        expect(event.s3_key).to.equal(DRS_SHEET_KEY);
+        expect(event.domain).to.be.undefined;
+        expect(log.info).to.have.been.calledWithMatch('not Semrush-entitled');
+      });
+    });
+
+    it('falls back to the DRS sheet when entitled but the base URL is unparseable', async () => {
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      s3Client.send.resolves({
+        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      const ctx = semrushContext({
+        site: {
+          getId: () => SITE_ID,
+          getOrganizationId: () => ORG_ID,
+          getBaseURL: () => undefined,
+        },
+      });
+
+      const res = await handler(message, ctx);
+
+      expect(res.status).to.equal(200);
+      expect(s3Client.send).to.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('brand_presence_s3');
+      expect(log.warn).to.have.been.calledWithMatch('no parseable base URL');
+    });
+
+    it('never consults entitlement or emits a semrush event when Semrush is disabled', async () => {
+      const { handler, entitlementStub } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      s3Client.send.resolves({
+        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      // Default buildContext env has no BRAND_CLAIMS_SEMRUSH_ENABLED flag.
+      const res = await handler(message, buildContext({
+        site: {
+          getId: () => SITE_ID,
+          getOrganizationId: () => ORG_ID,
+          getBaseURL: () => BASE_URL,
+        },
+      }));
+
+      expect(res.status).to.equal(200);
+      expect(entitlementStub).to.not.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('brand_presence_s3');
     });
   });
 });
