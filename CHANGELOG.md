@@ -1,3 +1,10 @@
+## [1.528.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.528.0...v1.528.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **csp:** protect the same suggestion statuses as the shared helper on resolve (SITES-49908) ([#2921](https://github.com/adobe/spacecat-audit-worker/issues/2921)) ([2e306d1](https://github.com/adobe/spacecat-audit-worker/commit/2e306d19004275ead8d34b0b95d0dfee8099dc0d))
+
 # [1.528.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.527.1...v1.528.0) (2026-08-26)
 
 
