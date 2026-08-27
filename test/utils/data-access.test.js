@@ -33,6 +33,7 @@ import {
   isTBYBSite,
   SUMMIT_PLG_HANDLER,
   resolveOpportunityIfNoIssues,
+  RESOLVE_PROTECTED_STATUSES,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -40,6 +41,20 @@ use(sinonChai);
 use(chaiAsPromised);
 
 describe('data-access', () => {
+  describe('RESOLVE_PROTECTED_STATUSES (SITES-49908)', () => {
+    it('protects the 7 terminal / reviewer-acted / mid-remediation statuses', () => {
+      expect([...RESOLVE_PROTECTED_STATUSES].sort()).to.deep.equal([
+        SuggestionDataAccess.STATUSES.OUTDATED,
+        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.ERROR,
+        SuggestionDataAccess.STATUSES.SKIPPED,
+        SuggestionDataAccess.STATUSES.REJECTED,
+        SuggestionDataAccess.STATUSES.APPROVED,
+        SuggestionDataAccess.STATUSES.IN_PROGRESS,
+      ].sort());
+    });
+  });
+
   describe('retrieveSiteBySiteId', () => {
     let mockDataAccess;
     let mockLog;
