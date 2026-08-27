@@ -35,7 +35,7 @@ import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
@@ -151,7 +151,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_orchestration_start', 'Audit started');
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', resolveTriggerFields(auditContext));
 
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
@@ -360,14 +360,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    olog.warn('audit_analysis_start', 'Audit failed, skipping Mystique message', {
+    olog.warn('audit_analysis_mystique_request_dispatched', 'Audit failed, skipping Mystique message', {
       outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.failure('audit_analysis_start', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+    olog.failure('audit_analysis_mystique_request_dispatched', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
       peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured',
     });
     return auditData;
@@ -377,7 +377,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.failure('audit_analysis_start', 'Site not found, skipping Mystique message', {
+      olog.failure('audit_analysis_mystique_request_dispatched', 'Site not found, skipping Mystique message', {
         outcome: OUTCOME.FAILURE, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch',
       });
       return auditData;
@@ -423,7 +423,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
-      'audit_analysis_start',
+      'audit_analysis_mystique_request_dispatched',
       'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
@@ -436,7 +436,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     );
     return auditData;
   } catch (error) {
-    olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
+    olog.failure('audit_analysis_mystique_request_dispatched', 'Failed to send Mystique message', {
       peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', ...errorField(error),
     });
     throw error;

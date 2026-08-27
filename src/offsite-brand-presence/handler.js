@@ -29,7 +29,7 @@ import {
   resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_URLS_LIMIT,
@@ -743,7 +743,7 @@ async function scheduleDrsStatusPoll(
 
   if (jobs.length === 0) {
     olog.warn('data_acquisition_drs_scrape_job_poll_request_dispatched', 'No successfully submitted DRS jobs; not scheduling status poll', {
-      outcome: OUTCOME.SKIP, peer: PEER.SQS, direction: 'outbound', reason: 'no_jobs', firstSchedule: true,
+      outcome: OUTCOME.SKIP, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'no_jobs', firstSchedule: true,
     });
     return;
   }
@@ -768,7 +768,7 @@ async function scheduleDrsStatusPoll(
   }, null, pollIntervalSeconds);
 
   olog.success('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Scheduled DRS status poll', {
-    peer: PEER.SQS, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds, firstSchedule: true,
+    peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', jobs: jobs.length, intervalSeconds: pollIntervalSeconds, firstSchedule: true,
   });
 }
 
@@ -810,7 +810,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
   if (domainScope && !VALID_DOMAIN_SCOPES.has(domainScope)) {
-    olog.failure('audit_orchestration_start', 'Unknown domainScope; aborting run', { reason: 'unknown_scope', domainScope });
+    olog.failure('audit_orchestration_spacecat_request_received', 'Unknown domainScope; aborting run', {
+      reason: 'unknown_scope', domainScope, ...resolveTriggerFields(auditContext),
+    });
     return {
       auditResult: { success: false, error: `Unknown domainScope: ${domainScope}` },
       fullAuditRef: finalUrl,
@@ -824,7 +826,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  olog.start('audit_orchestration_start', 'Audit started', { weeks: weekLabels });
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', {
+    weeks: weekLabels, ...resolveTriggerFields(auditContext),
+  });
 
   let siteHostname;
   try {
@@ -1055,7 +1059,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       // jobs' results are permanently orphaned, the same unrecoverable loss as the sibling
       // "Failed to re-enqueue DRS status poll" failure below, which is why this pages too.
       olog.failure('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Failed to schedule DRS status poll', {
-        outcome: OUTCOME.FAILURE, peer: PEER.SQS, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', ...errorField(err),
+        outcome: OUTCOME.FAILURE, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', firstSchedule: true, reason: 'schedule_failed', ...errorField(err),
       });
     }
   }

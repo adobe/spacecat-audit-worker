@@ -238,7 +238,7 @@ async function triggerAnalysisAudits(
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
         olog.warn('data_acquisition_analysis_request_dispatched', 'Skipping analysis dispatch; recent audit exists', {
-          outcome: OUTCOME.SKIP, peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
+          outcome: OUTCOME.SKIP, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'cooldown', auditType: type,
         });
         handled.push(type);
         // eslint-disable-next-line no-continue
@@ -264,12 +264,12 @@ async function triggerAnalysisAudits(
         },
       });
       olog.success('data_acquisition_analysis_request_dispatched', 'Analysis audit dispatched', {
-        peer: PEER.SQS, direction: 'outbound', auditType: type,
+        peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', auditType: type,
       });
       handled.push(type);
     } catch (err) {
       olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to dispatch analysis audit', {
-        outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', auditType: type, reason: 'dispatch_failed', ...errorField(err),
+        outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', auditType: type, reason: 'dispatch_failed', ...errorField(err),
       });
     }
   }
@@ -400,7 +400,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     );
   } catch (err) {
     olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to dispatch analysis audits', {
-      outcome: OUTCOME.DEGRADED, peer: PEER.SQS, direction: 'outbound', reason: 'dispatch_failed', ...errorField(err),
+      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'dispatch_failed', ...errorField(err),
     });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
@@ -430,12 +430,12 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
       olog.failure('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Failed to re-enqueue DRS status poll', {
-        peer: PEER.SQS, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', ...errorField(err),
+        peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', ...errorField(err),
       });
       throw err;
     }
     olog.success('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Re-polling DRS status', {
-      peer: PEER.SQS, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds, firstSchedule: false,
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds, firstSchedule: false,
     });
     return ok();
   }
