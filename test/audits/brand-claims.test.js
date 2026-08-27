@@ -573,6 +573,34 @@ describe('Brand Claims audit handler', function () {
       expect(log.warn).to.have.been.calledWithMatch('no parseable base URL');
     });
 
+    it('falls back to the DRS sheet when entitled but the base URL is malformed (URL parse throws)', async () => {
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      s3Client.send.resolves({
+        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      // Non-empty text that `new URL()` rejects — exercises the parse-failure catch,
+      // distinct from the empty/absent base URL handled above.
+      const ctx = semrushContext({
+        site: {
+          getId: () => SITE_ID,
+          getOrganizationId: () => ORG_ID,
+          getBaseURL: () => 'not a valid url',
+        },
+      });
+
+      const res = await handler(message, ctx);
+
+      expect(res.status).to.equal(200);
+      expect(s3Client.send).to.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('brand_presence_s3');
+      expect(event.domain).to.be.undefined;
+      expect(log.warn).to.have.been.calledWithMatch('no parseable base URL');
+    });
+
     it('never consults entitlement or emits a semrush event when Semrush is disabled', async () => {
       const { handler, entitlementStub } = await loadHandler({
         entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
