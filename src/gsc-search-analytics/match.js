@@ -1,0 +1,72 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { stripWWW } from '@adobe/spacecat-shared-utils';
+
+/**
+ * Normalize a URL so a supplied fixed URL lines up with how Google reports it:
+ * lowercase host, strip a leading `www.`, drop the fragment, sort the query, and
+ * strip a trailing slash (except root). Returns the input unchanged if unparseable.
+ *
+ * The `www.`/apex reconciliation matters because GSC page rows carry the site's GSC
+ * *property* host while fixedUrls are built from the site's registered base-URL host;
+ * these commonly differ only by `www.`. A run queries a single property, so collapsing
+ * `www.` cannot collide across properties. Assumes `www.` and apex serve the same
+ * content (true for essentially every real site).
+ *
+ * @param {string} u - a URL string.
+ * @returns {string} normalized URL, or the original string if unparseable.
+ */
+export function normalizeUrl(u) {
+  try {
+    const url = new URL(u);
+    url.hash = '';
+    url.searchParams.sort(); // stable query order so reordered params still match
+    const host = stripWWW(url.host.toLowerCase());
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    return `${url.protocol}//${host}${path}${url.search}`;
+  } catch {
+    return u;
+  }
+}
+
+/**
+ * Build a lookup map of normalized URL -> metrics from GSC page rows.
+ *
+ * @param {Array<object>} rows - GSC rows (each with keys[0] = page URL).
+ * @returns {Map<string, {clicks:number, impressions:number, ctr:number, position:number}>}
+ */
+export function indexRows(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    // Use ?? (not ||) so a legitimate zero is preserved and only absent metrics
+    // default. Real GSC rows always populate all four fields.
+    map.set(normalizeUrl(r.keys?.[0] ?? ''), {
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: r.ctr ?? 0,
+      position: r.position ?? 0,
+    });
+  }
+  return map;
+}
+
+/**
+ * Look up one URL's metrics in an indexed map, normalizing first.
+ *
+ * @param {Map} map - map from indexRows.
+ * @param {string} url - the URL to find.
+ * @returns {object|null} metrics, or null if the URL is not present.
+ */
+export function lookup(map, url) {
+  return map.get(normalizeUrl(url)) ?? null;
+}
