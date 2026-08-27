@@ -65,7 +65,7 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `data_acquisition_start`, `data_acquisition_url_store_read`,
   `data_acquisition_drs_scrape_job_poll_checked`, `data_acquisition_end` (carries `status=`),
   `data_acquisition_drs_scrape_job_request_dispatched`,
-  `audit_analysis_scope_resolved`, `audit_analysis_start`,
+  `audit_analysis_scope_resolved`, `audit_analysis_mystique_request_dispatched`,
   `audit_persistence_start`, `audit_analysis_run_write`.
 - Guidance handlers + `common/offsite-refresh.js`: `audit_analysis_mystique_response_received`,
   `audit_persistence_start`, `audit_persistence_mystique_payload_s3_read`,
@@ -87,7 +87,7 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `data_acquisition_url_store_read` failure; self-heal `data_acquisition_drs_scrape_job_request_dispatched`
   (un-prefixed lines fixed); `data_acquisition_end` status token;
   `data_acquisition_analysis_request_dispatched` failure + cooldown skip on the same event.
-- P3: `audit_analysis_start` success/failure.
+- P3: `audit_analysis_mystique_request_dispatched` success/failure.
 - P4: `audit_analysis_run_write` (via post-processor);
   `audit_persistence_evergreen_opportunity_write` success **and** the previously-silent
   DB-write failure made loud; `audit_persistence_mystique_payload_s3_read` success/failure;

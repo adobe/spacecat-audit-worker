@@ -486,7 +486,7 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_start/)
+        sinon.match(/event=audit_analysis_mystique_request_dispatched/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('wikipediaUrl=https://en.wikipedia.org/wiki/Example_Corp')),
       );
@@ -512,7 +512,7 @@ describe('Wikipedia Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=audit_analysis_start/)
+        sinon.match(/event=audit_analysis_mystique_request_dispatched/)
           .and(sinon.match('wikipediaUrl="(empty → auto-detect)"')),
       );
     });
@@ -654,7 +654,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage.brandId).to.equal('brand-1');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_start/)),
+        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_mystique_request_dispatched/)),
       );
     });
 

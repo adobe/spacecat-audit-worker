@@ -61,13 +61,15 @@ question boundaries rather than code-location boundaries.
    it between orchestration and data-acquisition depending on which function happened to contain
    the check.
 
-3. **`audit_analysis` stays deliberately thin.** It carries only `audit_analysis_start` (assemble
-   and send the Mystique request) and `audit_analysis_end` (the completed result comes back).
-   Mystique owns everything in between — validation, its own content lookup, the LLM call, the
-   quality gate — and audit-worker has no visibility into any of it. Adding intermediate events
-   here would either be fabricated (audit-worker doesn't know what's happening on the Mystique
-   side) or would require cross-service correlation we explicitly deferred in ADR 002. The phase's
-   job is to bracket the hand-off, not narrate it.
+3. **`audit_analysis` stays deliberately thin.** From audit-worker, it carries only
+   `audit_analysis_mystique_request_dispatched` (assemble and send the Mystique request) and
+   `audit_analysis_end` (the completed result comes back). Mystique marks its own task start with
+   its own `audit_analysis_start` event, on its own service — the two are non-simultaneous and must
+   be joined on `auditId`, not on event name. Mystique owns everything in between — validation, its
+   own content lookup, the LLM call, the quality gate — and audit-worker has no visibility into any
+   of it. Adding intermediate events here would either be fabricated (audit-worker doesn't know
+   what's happening on the Mystique side) or would require cross-service correlation we explicitly
+   deferred in ADR 002. The phase's job is to bracket the hand-off, not narrate it.
 
 4. **Events that answered overlapping questions were merged under one event name**, distinguished
    by `reason` and, where a single lifecycle has multiple checkpoint-like states, `snapshotAction`

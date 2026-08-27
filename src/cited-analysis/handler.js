@@ -472,14 +472,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    olog.warn('audit_analysis_start', 'Audit failed, skipping Mystique message', {
+    olog.warn('audit_analysis_mystique_request_dispatched', 'Audit failed, skipping Mystique message', {
       outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.failure('audit_analysis_start', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+    olog.failure('audit_analysis_mystique_request_dispatched', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
       peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured',
     });
     return auditData;
@@ -489,7 +489,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.failure('audit_analysis_start', 'Site not found, skipping Mystique message', {
+      olog.failure('audit_analysis_mystique_request_dispatched', 'Site not found, skipping Mystique message', {
         outcome: OUTCOME.FAILURE, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch',
       });
       return auditData;
@@ -565,7 +565,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       sentUrlCount -= 1;
       message.data.urls = enrichedUrls.slice(0, sentUrlCount);
       olog.warn(
-        'audit_analysis_start',
+        'audit_analysis_mystique_request_dispatched',
         `Message size ${bytes} bytes exceeds budget; reducing to ${sentUrlCount} URLs`,
         {
           outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget',
@@ -579,7 +579,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
       if (bytes > SQS_MAX_SAFE_BYTES) {
         olog.warn(
-          'audit_analysis_start',
+          'audit_analysis_mystique_request_dispatched',
           `Single-URL payload (${bytes} bytes) still exceeds budget; stripping prompts`,
           {
             outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'sqs_budget_single',
@@ -597,7 +597,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const finalBytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
-      'audit_analysis_start',
+      'audit_analysis_mystique_request_dispatched',
       'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
@@ -611,7 +611,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     );
     return auditData;
   } catch (error) {
-    olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
+    olog.failure('audit_analysis_mystique_request_dispatched', 'Failed to send Mystique message', {
       peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', ...errorField(error),
     });
     // Notify the Slack thread that triggered this audit so the operator knows
